@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.schemas.tool_invocation import ToolInvocationContext
-from omichub.infrastructure.config.agent_ability_catalog import agent_ability_catalog
-from omichub.infrastructure.mcp.presets import PLATFORM_HANDLERS, PLATFORM_PRESET_TOOLS
+from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+from cygnusx.infrastructure.config.agent_ability_catalog import agent_ability_catalog
+from cygnusx.infrastructure.mcp.presets import PLATFORM_HANDLERS, PLATFORM_PRESET_TOOLS
 
 _TOOL_NAMES = {"ability_catalog_query", "room_state_query"}
 

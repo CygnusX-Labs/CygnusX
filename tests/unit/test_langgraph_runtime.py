@@ -6,10 +6,10 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from omichub.application.services.execution_events import validate_event_sequence
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
-from omichub.infrastructure.execution.langgraph_nodes import NodeDeps, llm_call_node, tool_exec_node
-from omichub.infrastructure.execution.langgraph_runtime import LangGraphRuntimeService
+from cygnusx.application.services.execution_events import validate_event_sequence
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.execution.langgraph_nodes import NodeDeps, llm_call_node, tool_exec_node
+from cygnusx.infrastructure.execution.langgraph_runtime import LangGraphRuntimeService
 
 USAGE = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
 

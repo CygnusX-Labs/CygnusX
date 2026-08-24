@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.api.v1 import studio as studio_api
+from cygnusx.api.v1 import studio as studio_api
 
 
 @pytest.fixture(autouse=True)

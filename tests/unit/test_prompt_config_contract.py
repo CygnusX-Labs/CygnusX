@@ -2,8 +2,8 @@ from pathlib import Path
 
 import yaml
 
-from omichub.infrastructure.config.prompt_loader import PromptRegistry
-from omichub.infrastructure.config.runtime_image_loader import RuntimeImageRegistryManager
+from cygnusx.infrastructure.config.prompt_loader import PromptRegistry
+from cygnusx.infrastructure.config.runtime_image_loader import RuntimeImageRegistryManager
 
 
 def test_all_registered_prompt_files_exist():
@@ -16,7 +16,7 @@ def test_all_registered_prompt_files_exist():
 
 
 def test_all_enabled_agents_use_external_prompt_files():
-    site = yaml.safe_load(Path("data/OmicHub.yaml").read_text(encoding="utf-8"))
+    site = yaml.safe_load(Path("data/CygnusX.yaml").read_text(encoding="utf-8"))
     for name in site["agents"]["enabled"]:
         agent_path = Path(f"data/ai/{name}.yaml")
         agent = yaml.safe_load(agent_path.read_text(encoding="utf-8"))

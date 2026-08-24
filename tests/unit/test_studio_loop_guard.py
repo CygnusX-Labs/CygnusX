@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from omichub.application.services.studio_loop_guard import (
+from cygnusx.application.services.studio_loop_guard import (
     LoopGuardTrigger,
     StudioLoopGuard,
     handle_loop_guard_trigger,
 )
-from omichub.infrastructure.config.studio_loader import StudioLoopControlConfig
+from cygnusx.infrastructure.config.studio_loader import StudioLoopControlConfig
 
 
 @pytest.mark.unit

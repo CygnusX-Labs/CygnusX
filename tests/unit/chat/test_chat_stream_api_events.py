@@ -6,10 +6,10 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.api.v1 import chat as chat_api
-from omichub.application.schemas.chat import ChatStreamRequest
-from omichub.application.services.chat.chat_event_service import ChatEventService
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.api.v1 import chat as chat_api
+from cygnusx.application.schemas.chat import ChatStreamRequest
+from cygnusx.application.services.chat.chat_event_service import ChatEventService
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class _Db:

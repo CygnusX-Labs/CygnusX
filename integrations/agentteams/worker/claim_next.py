@@ -353,7 +353,7 @@ def _assignment_identity(assignment: dict[str, Any]) -> tuple[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Claim one assigned OmicHub AgentTeams Work Item")
+    parser = argparse.ArgumentParser(description="Claim one assigned CygnusX AgentTeams Work Item")
     parser.add_argument("--bridge-url", default=os.environ.get("AGENTTEAMS_BRIDGE_BASE_URL", ""))
     parser.add_argument("--identity", default=os.environ.get("AGENTTEAMS_WORKER_IDENTITY", ""))
     parser.add_argument("--token", default=os.environ.get("AGENTTEAMS_BRIDGE_TOKEN", ""))

@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services.pdf_models import (
+from cygnusx.application.services.pdf_models import (
     CHAT_ATTACHMENT_CONFIG,
     KNOWLEDGE_BASE_CONFIG,
     WORKSPACE_MCP_CONFIG,
     PDFSource,
     PDFType,
 )
-from omichub.application.services.pdf_processor import PDFProcessor
+from cygnusx.application.services.pdf_processor import PDFProcessor
 
 
 @pytest.fixture

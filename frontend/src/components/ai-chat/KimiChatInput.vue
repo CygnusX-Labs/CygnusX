@@ -1157,7 +1157,7 @@ onMounted(() => {
   syncMcpSelection()
   refreshGoalStatus()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
-  window.addEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
+  window.addEventListener('cygnusx:agentteams-create', handleAgentTeamsCreateEvent)
   getTextareaElement()?.addEventListener('scroll', syncHighlightScroll, { passive: true })
   nextTick(() => {
     bindAskScroller()
@@ -1168,7 +1168,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (blurTimer) clearTimeout(blurTimer)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
-  window.removeEventListener('omichub:agentteams-create', handleAgentTeamsCreateEvent)
+  window.removeEventListener('cygnusx:agentteams-create', handleAgentTeamsCreateEvent)
   getTextareaElement()?.removeEventListener('scroll', syncHighlightScroll)
   askScrollEl?.removeEventListener('scroll', updateAskPill)
   askScrollEl = null

@@ -1,6 +1,6 @@
-# OmicHub Dockerfile 职责
+# CygnusX Dockerfile 职责
 
-`deploy/docker/` 统一存放 OmicHub 主服务、计算 Worker 和工具运行时镜像的 Dockerfile。
+`deploy/docker/` 统一存放 CygnusX 主服务、计算 Worker 和工具运行时镜像的 Dockerfile。
 工具目录只保存运行配置、脚本、示例和数据契约；Dockerfile 不应放回 `tool_configs/`。
 
 | Dockerfile | 镜像职责 | 构建上下文 | 主要入口 |
@@ -25,7 +25,7 @@
 - **禁止 `latest` 裸推**：任何推送/发布的镜像必须打 git SHA 短号 tag，即 `make` 导出的
   `IMAGE_TAG`（默认 `git rev-parse --short HEAD`）。本地 `docker compose build` 的开发
   路径不受此约束，但不允许把未打 SHA tag 的镜像推送到任何 registry。
-- 主栈后端镜像构建时经 `OMICHUB_BUILD_SHA` / `OMICHUB_BUILD_TIME` 构建参数注入版本信息
+- 主栈后端镜像构建时经 `CYGNUSX_BUILD_SHA` / `CYGNUSX_BUILD_TIME` 构建参数注入版本信息
   （`Dockerfile` ARG → `APP_GIT_SHA` / `APP_BUILD_TIME` ENV），`/health` 返回
   `version` / `git_sha` / `build_time`；AgentTeams Bridge 镜像经 `BRIDGE_BUILD_SHA` /
   `BRIDGE_BUILD_TIME` 注入，`/healthz` 返回 `build_sha` / `build_time`。
@@ -42,7 +42,7 @@
 ## 基因组共线性运行时
 
 `Dockerfile.synteny` 用于基因组共线性 Worker，构建上下文为 `tool_configs/synteny/`，不向 Web
-容器提供 Docker Socket。使用 `make docker-build-synteny` 构建 `omichub-synteny:v1`；Worker 负责运行
+容器提供 Docker Socket。使用 `make docker-build-synteny` 构建 `cygnusx-synteny:v1`；Worker 负责运行
 MCScanX 思路的区块识别并输出结构化 TSV/JSON，浏览器使用 Plotly `scattergl` 渲染 dot plot。
 
 ## PolarDB PostgreSQL / pgvector

@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_submit_download(
+    async def cygnusx_submit_download(
         source: str = "sra",
         accession: str = "",
         download_method: str = "aws",
@@ -96,15 +96,15 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 ),
                 "data": result,
                 "next_steps": [
-                    f"调用 omichub_get_download_progress(task_id='{task_id}') 查看逐 run 下载进度",
-                    "也可用 omichub_list_downloads 查看全部下载任务状态",
+                    f"调用 cygnusx_get_download_progress(task_id='{task_id}') 查看逐 run 下载进度",
+                    "也可用 cygnusx_list_downloads 查看全部下载任务状态",
                 ],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"提交下载失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_list_downloads() -> dict:
+    async def cygnusx_list_downloads() -> dict:
         """列出用户的数据下载任务（名称、状态、进度、产物目录）。"""
         try:
             data = await api.list_downloads()
@@ -121,11 +121,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": "下载任务:\n" + "\n".join(lines) if lines else "暂无下载任务",
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取下载列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_download_progress(task_id: str) -> dict:
+    async def cygnusx_get_download_progress(task_id: str) -> dict:
         """获取下载任务的逐 run 分阶段进度（下载/解压/压缩）。
 
         返回每个 SRR run 的 stage（downloading/extracting/compressing/completed/failed）
@@ -151,5 +151,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"总进度: {overall:.1f}%\n" + "\n".join(lines),
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取下载进度失败: {e.detail}"}

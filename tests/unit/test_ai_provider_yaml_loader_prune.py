@@ -12,9 +12,9 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.ai_provider_yaml_loader import AIProviderYamlLoader
-from omichub.domain.ai_provider.entities import AIProviderConfig
-from omichub.domain.ai_provider.value_objects import ProviderType
+from cygnusx.application.services.ai_provider_yaml_loader import AIProviderYamlLoader
+from cygnusx.domain.ai_provider.entities import AIProviderConfig
+from cygnusx.domain.ai_provider.value_objects import ProviderType
 
 
 class _FakeRepo:
@@ -71,7 +71,7 @@ def _loader(tmp_path, repo: _FakeRepo, yaml_text: str) -> AIProviderYamlLoader:
 @pytest.mark.asyncio
 @pytest.mark.quarantine(reason="YAML 未声明的 provider 未被停用，剪枝行为与现行 loader 实现不一致")
 async def test_loader_prunes_providers_not_in_yaml(tmp_path, monkeypatch):
-    from omichub.core import config as config_module
+    from cygnusx.core import config as config_module
 
     monkeypatch.setattr(config_module.get_settings(), "ai_provider_config_yaml", str(tmp_path / "providers.yaml"))
     # DB 现有：deepseek(声明保留)、qwen3.7(YAML 没有→应停用)、openai(YAML 没有→应停用)
@@ -103,7 +103,7 @@ providers:
 
 @pytest.mark.asyncio
 async def test_loader_keeps_declared_active(tmp_path, monkeypatch):
-    from omichub.core import config as config_module
+    from cygnusx.core import config as config_module
 
     monkeypatch.setattr(config_module.get_settings(), "ai_provider_config_yaml", str(tmp_path / "providers.yaml"))
     repo = _FakeRepo()

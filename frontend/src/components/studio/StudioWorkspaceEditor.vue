@@ -49,7 +49,7 @@ const line = ref(1)
 const column = ref(1)
 const terminalOpen = ref(!props.terminalCollapsed)
 // 终端高度：默认容器 40%（≥280px、≤60%），可拖拽 160px~70%，写入 localStorage 记忆（问题⑧）
-const TERMINAL_HEIGHT_KEY = 'omichub:studio:terminal-height'
+const TERMINAL_HEIGHT_KEY = 'cygnusx:studio:terminal-height'
 const shellRef = ref<HTMLElement | null>(null)
 const terminalDragging = ref(false)
 function loadTerminalHeight(): number | null {

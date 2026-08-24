@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services.chat.golden_records import (
+from cygnusx.application.services.chat.golden_records import (
     diff_events,
     diff_normalized_events,
     load_events,
     normalize_events,
     save_events,
 )
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 def test_normalize_events_ignores_volatile_identifiers() -> None:

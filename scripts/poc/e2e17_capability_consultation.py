@@ -7,7 +7,7 @@
 - V4 接单回归：发要素齐全的执行类需求 → 正常出立项确认卡（room.proposal_confirm）
 - V5 零接单侧事件：咨询交互零 room.proposal_* 事件
 
-运行：OMICHUB_E2E_TOKEN=<jwt> uv run python scripts/poc/e2e17_capability_consultation.py
+运行：CYGNUSX_E2E_TOKEN=<jwt> uv run python scripts/poc/e2e17_capability_consultation.py
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from pathlib import Path
 
 import httpx
 
-BASE_URL = os.environ.get("OMICHUB_E2E_BASE_URL", "http://localhost:8000").rstrip("/")
-TOKEN = os.environ.get("OMICHUB_E2E_TOKEN") or Path("/tmp/e2e_token.txt").read_text().strip()
+BASE_URL = os.environ.get("CYGNUSX_E2E_BASE_URL", "http://localhost:8000").rstrip("/")
+TOKEN = os.environ.get("CYGNUSX_E2E_TOKEN") or Path("/tmp/e2e_token.txt").read_text().strip()
 API = "/api/v1/agent-teams"
 OUT_DIR = Path("evidence/e2e-2026-08-21/E2E-17")
 

@@ -1,5 +1,5 @@
 # ============================================
-# OmicHub AI Provider 外置配置示例
+# CygnusX AI Provider 外置配置示例
 # ============================================
 # 在 data/ai/providers.yaml 中填入真实 API Key。
 # 支持 ${ENV_VAR} 或 ${ENV_VAR:-default} 语法引用环境变量，

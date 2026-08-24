@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.project_service import ProjectService
+from cygnusx.application.services.project_service import ProjectService
 
 
 class _FakeResult:

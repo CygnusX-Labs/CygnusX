@@ -423,7 +423,7 @@ defineExpose({ refresh: loadMarketplace })
       >
         <template #prefix><NIcon :component="SearchOutline" /></template>
       </NInput>
-      <div class="omichub-segmented-toggle" role="group" aria-label="来源筛选">
+      <div class="cygnusx-segmented-toggle" role="group" aria-label="来源筛选">
         <button :class="{ active: sourceFilter === 'all' }" :aria-pressed="sourceFilter === 'all'" @click="sourceFilter = 'all'">全部</button>
         <button :class="{ active: sourceFilter === 'builtin' }" :aria-pressed="sourceFilter === 'builtin'" @click="sourceFilter = 'builtin'">平台内置</button>
         <button :class="{ active: sourceFilter === 'aliyun' }" :aria-pressed="sourceFilter === 'aliyun'" @click="sourceFilter = 'aliyun'">阿里云官方</button>

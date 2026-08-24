@@ -1,6 +1,6 @@
 # MCP 架构与自生成框架设计
 
-> **用途**：本文件记录 OmicHub MCP（Model Context Protocol）子系统的完整架构现状，并给出"Agent 自生成 MCP"的可行性分析与实施方案。
+> **用途**：本文件记录 CygnusX MCP（Model Context Protocol）子系统的完整架构现状，并给出"Agent 自生成 MCP"的可行性分析与实施方案。
 >
 > **最后更新**：2026-07-29
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
@@ -11,7 +11,7 @@
 
 ### 1.1 三层 MCP 体系
 
-OmicHub 的 MCP 能力由三层构成：
+CygnusX 的 MCP 能力由三层构成：
 
 | 层级 | 说明 | 传输方式 | 延迟 |
 |------|------|----------|------|
@@ -23,20 +23,20 @@ OmicHub 的 MCP 能力由三层构成：
 
 | 功能 | 文件路径 |
 |------|----------|
-| Preset 注册与工具定义 | `src/omichub/infrastructure/mcp/presets.py` |
-| 管线 Preset（RNA/ATAC） | `src/omichub/infrastructure/mcp/pipeline_preset.py` |
-| 统一 MCP 客户端 | `src/omichub/infrastructure/mcp/client.py` |
-| 域实体与服务 | `src/omichub/domain/mcp/entities.py`, `services.py`, `repositories.py` |
-| 值对象（Transport/Status） | `src/omichub/domain/mcp/value_objects.py` |
-| Admin API 路由 | `src/omichub/api/v1/mcp.py` |
-| 渐进式能力加载 | `src/omichub/application/services/studio_capabilities.py` |
+| Preset 注册与工具定义 | `src/cygnusx/infrastructure/mcp/presets.py` |
+| 管线 Preset（RNA/ATAC） | `src/cygnusx/infrastructure/mcp/pipeline_preset.py` |
+| 统一 MCP 客户端 | `src/cygnusx/infrastructure/mcp/client.py` |
+| 域实体与服务 | `src/cygnusx/domain/mcp/entities.py`, `services.py`, `repositories.py` |
+| 值对象（Transport/Status） | `src/cygnusx/domain/mcp/value_objects.py` |
+| Admin API 路由 | `src/cygnusx/api/v1/mcp.py` |
+| 渐进式能力加载 | `src/cygnusx/application/services/studio_capabilities.py` |
 | 独立 MCP Server | `mcp-server/main.py` + `mcp-server/config.yaml` |
-| 数据库模型 | `src/omichub/infrastructure/database/models/` (mcp_servers, mcp_logs 表) |
+| 数据库模型 | `src/cygnusx/infrastructure/database/models/` (mcp_servers, mcp_logs 表) |
 | 前端 Store | `frontend/src/stores/mcp.ts` |
 
 ### 1.3 内置 Preset 工具清单
 
-**omichub-platform**（11 个工具）：
+**cygnusx-platform**（11 个工具）：
 
 ```
 platform_list_tasks, platform_get_task, platform_list_flows,
@@ -46,7 +46,7 @@ workspace_list_files, workspace_read_file, workspace_get_file_info,
 find_session_uploads
 ```
 
-**omichub-pipelines**（10 个工具）：
+**cygnusx-pipelines**（10 个工具）：
 
 ```
 rna_seq_prepare, rna_seq_submit, rna_seq_status, rna_seq_results,
@@ -54,7 +54,7 @@ atac_seq_prepare, atac_seq_submit, atac_seq_status, atac_seq_results,
 list_available_pipelines, check_workspace_data
 ```
 
-**omichub-tools**（动态构建）：从 `tools_schema.yaml` + 启用了 `ai.enabled=True` 的 Flow 配置动态生成。
+**cygnusx-tools**（动态构建）：从 `tools_schema.yaml` + 启用了 `ai.enabled=True` 的 Flow 配置动态生成。
 
 ### 1.4 MCP 注册与发现流程
 
@@ -140,7 +140,7 @@ source        VARCHAR
 
 | 组件 | 热重载支持 | 机制 |
 |------|-----------|------|
-| omichub-tools preset | 部分支持 | 每次 `get_preset_by_name()` 动态构建，新 Flow 自动出现 |
+| cygnusx-tools preset | 部分支持 | 每次 `get_preset_by_name()` 动态构建，新 Flow 自动出现 |
 | 外部 MCP Server | 支持 | `MCPClient` 每次调用新建 session，注册后立即可用 |
 | Preset 工具定义变更 | 不支持 | 需重启（`ensure_presets()` 仅在启动时同步） |
 | workspace_files_prompt.md | 不支持 | import 时加载，需重启 |
@@ -186,7 +186,7 @@ sandbox:
   memory: 4g               # mem_limit
   exec_timeout_seconds: 600
 
-# src/omichub/core/config.py (基础池)
+# src/cygnusx/core/config.py (基础池)
 sandbox_default_cpu: 2.0
 sandbox_default_memory: "4g"
 sandbox_exec_timeout: 300
@@ -202,7 +202,7 @@ sandbox_network_isolated: true
 
 **模式二：`whitelist`（当前 studio.yaml 配置）**
 - 每会话创建 Docker `internal` 桥接网络（无互联网网关）
-- 仅两个容器接入：沙箱 + `omichub-studio-egress-proxy`
+- 仅两个容器接入：沙箱 + `cygnusx-studio-egress-proxy`
 - Egress Proxy（`deploy/studio/egress_proxy.py`）强制域名白名单：
   - 仅允许 HTTP 80 / HTTPS CONNECT 443
   - 当前白名单：`conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.ustc.edu.cn`
@@ -269,7 +269,7 @@ StateGraph:
 依赖注入: NodeDeps (model_config, system_prompt, tools, tool_executor, event_emitter)
 ```
 
-文件：`src/omichub/infrastructure/execution/langgraph_runtime.py`
+文件：`src/cygnusx/infrastructure/execution/langgraph_runtime.py`
 
 ---
 
@@ -310,7 +310,7 @@ StateGraph:
 1. `MCPClient` 无连接池，每次调用新建 session → 新注册的 MCP 无需"热重载"即可使用
 2. Studio 沙箱已有完整的容器生命周期管理（创建/健康检查/回收/TTL）
 3. Egress Proxy 已实现域名白名单 → 生成代码的网络访问天然受限
-4. `omichub-tools` preset 已是动态构建 → 有"运行时发现新工具"的先例
+4. `cygnusx-tools` preset 已是动态构建 → 有"运行时发现新工具"的先例
 5. Agent YAML 声明式配置 → 新增 `agent-mcp-builder` 无需改代码
 
 ---
@@ -563,7 +563,7 @@ pipelines/ATACFlow/mcp/
 
 | 配置文件 | 用途 |
 |----------|------|
-| `src/omichub/core/config.py` | 平台级 MCP 开关与超时 |
+| `src/cygnusx/core/config.py` | 平台级 MCP 开关与超时 |
 | `data/ai/*.yaml` | Agent 绑定 `mcp_ids` |
 | `data/ai/studio.yaml` | Studio 沙箱配置 |
 | `mcp-server/config.yaml` | 独立 MCP Server 配置 |

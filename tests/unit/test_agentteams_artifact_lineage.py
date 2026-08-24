@@ -8,13 +8,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from omichub.application.services.agent_consultation_service import AgentConsultationService
-from omichub.application.services.agentteams_artifact_lineage_service import (
+from cygnusx.application.services.agent_consultation_service import AgentConsultationService
+from cygnusx.application.services.agentteams_artifact_lineage_service import (
     AgentTeamsArtifactLineageService,
     normalize_source_refs,
 )
-from omichub.application.services.agentteams_service import AgentTeamsService
-from omichub.infrastructure.database.models.chat import (
+from cygnusx.application.services.agentteams_service import AgentTeamsService
+from cygnusx.infrastructure.database.models.chat import (
     CaseArtifactDependencyModel,
     CaseArtifactVersionModel,
 )
@@ -227,7 +227,7 @@ async def _test_workspace_registration() -> None:
             flush=AsyncMock(),
         )
 
-        import omichub.application.services.agent_consultation_service as module
+        import cygnusx.application.services.agent_consultation_service as module
 
         original_factory = module.get_path_factory
         original_repo = module.FileRepositoryImpl

@@ -24,7 +24,7 @@ function createModels() {
 onMounted(() => {
   if (!host.value) return
   editor = monaco.editor.createDiffEditor(host.value, {
-    theme: 'omichub-studio-light',
+    theme: 'cygnusx-studio-light',
     automaticLayout: true,
     readOnly: true,
     renderSideBySide: true,

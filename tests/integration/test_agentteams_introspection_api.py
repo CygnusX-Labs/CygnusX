@@ -21,13 +21,13 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import omichub.api.v1.agentteams as agentteams_api
-from omichub.api.deps import get_db
-from omichub.infrastructure.database.models.chat import (
+import cygnusx.api.v1.agentteams as agentteams_api
+from cygnusx.api.deps import get_db
+from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsRoomModel,
     CaseArtifactVersionModel,
 )
-from omichub.main import app
+from cygnusx.main import app
 
 _TOKEN = "itest-integration-token"
 _QUERY_URL = "/api/v1/agent-teams/introspection/query"

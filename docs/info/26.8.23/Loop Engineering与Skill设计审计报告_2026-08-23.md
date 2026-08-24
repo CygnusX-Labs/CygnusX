@@ -1,4 +1,4 @@
-# OmicHub Loop Engineering 与 Skill 设计审计报告
+# CygnusX Loop Engineering 与 Skill 设计审计报告
 
 - **审计日期**：2026-08-23
 - **审计输入**：`/home/zj/.codex/attachments/d65a5017-d840-4575-9b41-a004ec611074/pasted-text-1.txt`
@@ -24,7 +24,7 @@
 
 | 检查项 | 状态 | 得分 | 证据与判断 |
 |---|---:|---:|---|
-| LE-01 显式/隐式循环 | 已实现 | 1 | `src/omichub/application/services/chat/runtimes/direct_chat_runtime.py:265` 使用 `range(8)`；`src/omichub/application/services/chat/runtimes/langgraph_runtime.py:246` 使用 `while True`；Provider 还有有限重试循环。 |
+| LE-01 显式/隐式循环 | 已实现 | 1 | `src/cygnusx/application/services/chat/runtimes/direct_chat_runtime.py:265` 使用 `range(8)`；`src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:246` 使用 `while True`；Provider 还有有限重试循环。 |
 | LE-02 独立于模型的退出控制 | 部分实现 | 0.5 | LangGraph 有 `max_rounds`，Studio 有工具调用和连续失败 Guard；但普通完成仍可由“本轮没有 tool calls”结束，未统一要求外部完成度判定。 |
 | LE-03 `judge_goal_achieved` 等效逻辑 | 部分实现 | 0.5 | AgentTeams 有质量门控和报告交付门控，但没有覆盖所有 Runtime/任务类型的统一目标完成判定器。 |
 | P1-01 最小执行预算 | 未实现 | 0 | 代码主要定义最大轮次/最大工具调用，没有按任务类型强制的最少搜索或验证轮次。 |
@@ -53,7 +53,7 @@
 | 检查项 | 状态 | 得分 | 证据与判断 |
 |---|---:|---:|---|
 | S1-01 触发条件 | 已实现 | 1 | `data/ai/skill_marketplace/atac-tools/SKILL.md:3,11-13` 明确输入场景和排除场景；`data/ai/prompts/skills/index.md:5-8` 定义按命中场景加载。 |
-| S1-02 自适应路由 | 已实现 | 1 | Runtime 路由在 `src/omichub/application/services/chat/chat_router_service.py:26-37` 按 runtime/mode/overdrive 选择路径；Skill 索引要求按输入场景选择技能。 |
+| S1-02 自适应路由 | 已实现 | 1 | Runtime 路由在 `src/cygnusx/application/services/chat/chat_router_service.py:26-37` 按 runtime/mode/overdrive 选择路径；Skill 索引要求按输入场景选择技能。 |
 | S2-01 Phase/Step 工作流 | 已实现 | 1 | Flow Skill 明确 5 阶段；ATAC Skill 在 `:24-36` 给出环境检查、TSS/matrix 分支和收尾步骤。 |
 | S2-02 每阶段输入/输出/成功标准 | 已实现 | 1 | ATAC Skill 定义输入契约、命令、成功后读取 `summary.json`、输出文件和失败停止条件。部分复杂 Agent 流程仍依赖 Prompt，故不代表所有流程都同等完整。 |
 | S3-01 工具参数/返回/错误契约 | 已实现 | 1 | ATAC Skill 定义 `--operation/--input/--output/--feature/--peaks`；输出为固定文件；错误由 stderr/缺失文件/外部命令失败表达。 |
@@ -124,13 +124,13 @@ pytest -q \
 
 ## 7. 关键证据索引
 
-- `src/omichub/application/services/studio_loop_guard.py:33-121`：Loop Guard、工具调用上限、连续失败熔断、权限降级事件。
-- `src/omichub/application/services/chat/runtimes/langgraph_runtime.py:186-189,246-263,537-570`：默认/扩展轮次、执行循环、轮次耗尽事件和终态。
-- `src/omichub/infrastructure/execution/langgraph_nodes.py:94-169,322-329`：到达工具预算后撤销 tools、工具调用路由。
-- `src/omichub/application/services/chat/runtimes/direct_chat_runtime.py:265-327`：手写 ReAct 的最大 8 轮和无工具调用收尾。
+- `src/cygnusx/application/services/studio_loop_guard.py:33-121`：Loop Guard、工具调用上限、连续失败熔断、权限降级事件。
+- `src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:186-189,246-263,537-570`：默认/扩展轮次、执行循环、轮次耗尽事件和终态。
+- `src/cygnusx/infrastructure/execution/langgraph_nodes.py:94-169,322-329`：到达工具预算后撤销 tools、工具调用路由。
+- `src/cygnusx/application/services/chat/runtimes/direct_chat_runtime.py:265-327`：手写 ReAct 的最大 8 轮和无工具调用收尾。
 - `data/ai/studio.yaml:28-29`：Studio `max_tool_calls_per_turn` 与 `max_consecutive_failures` 配置。
-- `src/omichub/application/services/agentteams_quality_gate_service.py:17-75,77-120`：质量/报告交付硬门控。
-- `src/omichub/application/services/agentteams_qc_verification_service.py:32-85,87-103`：QC check、降级 `inconclusive` 和证据化落库。
+- `src/cygnusx/application/services/agentteams_quality_gate_service.py:17-75,77-120`：质量/报告交付硬门控。
+- `src/cygnusx/application/services/agentteams_qc_verification_service.py:32-85,87-103`：QC check、降级 `inconclusive` 和证据化落库。
 - `data/ai/skill_marketplace/atac-tools/SKILL.md:1-45`：Trigger、Input、Workflow、Output、QC 和禁止范围示例。
 - `data/ai/prompts/skills/index.md:3-8`：Skill 元数据索引和渐进式加载契约。
 - `data/ai/prompts/shared/sandbox_protocol.md:44-50`：依赖安装、验证、失败重试和禁止绕过行为。

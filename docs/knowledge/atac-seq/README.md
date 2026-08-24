@@ -1,6 +1,6 @@
 # ATAC-seq 知识库资源目录
 
-本目录是 OmicHub ATAC-seq 知识库的文件源。Markdown 正文会由
+本目录是 CygnusX ATAC-seq 知识库的文件源。Markdown 正文会由
 `scripts/import_atacseq_knowledge.py` 全量同步到 `atacseq` AI 检索库；PDF 和图片保留为
 `/docs-static/knowledge/atac-seq/` 下的静态证据与下载附件。
 

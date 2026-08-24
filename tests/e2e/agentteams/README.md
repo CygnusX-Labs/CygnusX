@@ -21,5 +21,5 @@
 
 - 新增 e2e 用例放在本目录，标注 `@pytest.mark.e2e`，默认不依赖外部服务/凭证。
 - 真实服务版验收链路保持 opt-in：`AGENTTEAMS_ACCEPTANCE_E2E=1 uv run pytest tests/e2e/agentteams/test_acceptance_profile.py`。
-- 流程报告真实栈验收：`AGENTTEAMS_LIVE_E2E=1 OMICHUB_E2E_BASE_URL=http://localhost:8000 OMICHUB_E2E_TOKEN=<JWT> uv run pytest tests/e2e/agentteams/test_live_foundation_e2e.py -k e2e10 -v`。该用例实际走后端、Bridge、PostgreSQL 和 MinIO；当前登录用户必须可创建通用 Case。
+- 流程报告真实栈验收：`AGENTTEAMS_LIVE_E2E=1 CYGNUSX_E2E_BASE_URL=http://localhost:8000 CYGNUSX_E2E_TOKEN=<JWT> uv run pytest tests/e2e/agentteams/test_live_foundation_e2e.py -k e2e10 -v`。该用例实际走后端、Bridge、PostgreSQL 和 MinIO；当前登录用户必须可创建通用 Case。
 - 上表"缺口"行是后续补强的登记项，不是豁免；补用例时优先把缺口场景做成进程内默认可跑版本。

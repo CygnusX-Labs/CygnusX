@@ -1,4 +1,4 @@
-# OmicHub 内置 AI Provider 模板
+# CygnusX 内置 AI Provider 模板
 # 管理员可在后台“从模板创建”快速填充 Provider 配置。
 # api_key 建议通过环境变量注入，YAML 中可写 ${ENV_VAR:-}。
 

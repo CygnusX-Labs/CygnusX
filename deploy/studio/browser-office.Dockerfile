@@ -1,9 +1,9 @@
 # OmicStudio 独立浏览器/文档能力镜像。
 # 先构建 base，再执行：
-# docker build --build-arg OMICHUB_IMAGE_TAG=v0.0.2dev \
-#   -t omichub-sandbox-browser-office:v0.0.2dev \
+# docker build --build-arg CYGNUSX_IMAGE_TAG=v0.0.2dev \
+#   -t cygnusx-sandbox-browser-office:v0.0.2dev \
 #   -f deploy/studio/browser-office.Dockerfile deploy/studio
-FROM omichub-sandbox-bio:${OMICHUB_IMAGE_TAG}
+FROM cygnusx-sandbox-bio:${CYGNUSX_IMAGE_TAG}
 
 USER root
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \

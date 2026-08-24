@@ -165,7 +165,7 @@ agents:
       input_examples: ["Artifact 引用清单 + 质量结论 + 运行参数与交付目标"]
 
   agent-cloud-ops:
-    summary: OmicHub 与云基础设施的只读巡检、故障分诊、容量评估与变更方案审查。未经审批的基础设施变更、直接修改生产资源或生物学分析结论不属于它——Stop and consult，变更必须走人工批准。
+    summary: CygnusX 与云基础设施的只读巡检、故障分诊、容量评估与变更方案审查。未经审批的基础设施变更、直接修改生产资源或生物学分析结论不属于它——Stop and consult，变更必须走人工批准。
     detail:
       capabilities: [平台健康检查, 云服务器, 存储, 容器仓库, 网络, Terraform, Slurm, 容量与故障分诊]
       not_suitable_for: [未经审批的基础设施变更, 生物学分析结论, 直接修改生产资源]

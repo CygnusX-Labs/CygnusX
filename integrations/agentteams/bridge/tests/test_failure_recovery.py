@@ -6,10 +6,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
-from omichub_agentteams_bridge.audit import AuditStore
-from omichub_agentteams_bridge.case_store import CaseStore
-from omichub_agentteams_bridge.config import BridgeSettings
-from omichub_agentteams_bridge.models import (
+from cygnusx_agentteams_bridge.audit import AuditStore
+from cygnusx_agentteams_bridge.case_store import CaseStore
+from cygnusx_agentteams_bridge.config import BridgeSettings
+from cygnusx_agentteams_bridge.models import (
     ApprovalRequest,
     CaseCreateRequest,
     ContextRef,
@@ -17,10 +17,10 @@ from omichub_agentteams_bridge.models import (
     WorkItemCreateRequest,
     WorkItemUpdateRequest,
 )
-from omichub_agentteams_bridge.service import BridgeService
+from cygnusx_agentteams_bridge.service import BridgeService
 
 
-class FakeOmicHubClient:
+class FakeCygnusXClient:
     async def aclose(self) -> None:
         return None
 
@@ -76,7 +76,7 @@ class PlanningGateway(CompletingGateway):
 
 def make_settings(tmp_path) -> BridgeSettings:
     return BridgeSettings(
-        omichub_service_token="service-token",
+        cygnusx_service_token="service-token",
         approval_signing_secret="test-signing-secret",
         identities=(
             "approval-authority:approval,bioops-manager:manager,"
@@ -93,7 +93,7 @@ def make_service(tmp_path, gateway=None) -> BridgeService:
     settings = make_settings(tmp_path)
     return BridgeService(
         settings,
-        FakeOmicHubClient(),
+        FakeCygnusXClient(),
         AuditStore(settings.audit_log_path),
         CaseStore(settings.case_store_path),
         gateway if gateway is not None else CompletingGateway(),
@@ -157,7 +157,7 @@ async def test_lease_renewal_failure_is_recorded_for_diagnosis(tmp_path, monkeyp
 
     monkeypatch.setattr(service._cases, "heartbeat_work_item", fail_heartbeat)
     monkeypatch.setattr(service._audit, "record", record)
-    monkeypatch.setattr("omichub_agentteams_bridge.service.asyncio.sleep", no_wait)
+    monkeypatch.setattr("cygnusx_agentteams_bridge.service.asyncio.sleep", no_wait)
 
     await service._renew_work_item_lease("recovery-case", "code-01", "agent-code", 30)
 
@@ -299,7 +299,7 @@ async def test_restart_resumes_without_reexecuting_completed_stages(tmp_path) ->
     settings = make_settings(tmp_path)
     restarted = BridgeService(
         settings,
-        FakeOmicHubClient(),
+        FakeCygnusXClient(),
         AuditStore(settings.audit_log_path),
         CaseStore(settings.case_store_path),
         CompletingGateway(),

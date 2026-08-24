@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from loguru import logger
 
-from omichub.application.services.chat import routing_observability
+from cygnusx.application.services.chat import routing_observability
 
 
 def _db_with_agent_ids(agent_ids: list[str]) -> SimpleNamespace:

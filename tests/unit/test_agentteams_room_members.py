@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.agentteams_room_service import AgentTeamsRoomService
-from omichub.infrastructure.database.models.chat import (
+from cygnusx.application.services.agentteams_room_service import AgentTeamsRoomService
+from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsRoomMemberModel,
     AgentTeamsRoomModel,
 )

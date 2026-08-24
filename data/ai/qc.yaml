@@ -32,7 +32,7 @@ features:
     require_verified_tool_evidence: true
     require_metric_name_value_threshold: true
     # F2 证据化验收：结构化判决契约。权威 schema 在平台侧
-    # omichub.application.schemas.qc_verification；判决逐行落 qc_verification_checks。
+    # cygnusx.application.schemas.qc_verification；判决逐行落 qc_verification_checks。
     verdict_schema:
       verdicts: [pass, warn, fail, inconclusive]
       claim_types: [factual, metric, citation, external_lookup, computation, procedural]

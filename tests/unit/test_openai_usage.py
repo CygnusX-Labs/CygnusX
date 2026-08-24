@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
 
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.ai_provider.openai_compatible import (
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.ai_provider.openai_compatible import (
     merge_token_usage,
     normalize_token_usage,
 )
-from omichub.infrastructure.database.models.chat import ChatMessageModel
+from cygnusx.infrastructure.database.models.chat import ChatMessageModel
 
 
 def test_normalize_qwen_input_output_tokens():

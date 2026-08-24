@@ -1,4 +1,4 @@
-# OmicHub BioOps
+# CygnusX · 天鹅座智能科研平台
 
 可复现的组学分析多 Agent 交付基础设施 —— 华中农业大学园艺林学学院
 
@@ -9,7 +9,7 @@
 
 ## 平台概览
 
-OmicHub 提供从轻量探索到受控交付的四级入口，共享同一份用户工作区数据底座（下载入库、零搬运、`omic://` 逻辑引用，按用户与 Case 严格隔离）：
+CygnusX 提供从轻量探索到受控交付的四级入口，共享同一份用户工作区数据底座（下载入库、零搬运、`omic://` 逻辑引用，按用户与 Case 严格隔离）：
 
 | 产品形态 | 定位 | 特点 |
 |---|---|---|
@@ -20,7 +20,7 @@ OmicHub 提供从轻量探索到受控交付的四级入口，共享同一份用
 
 核心原则：**不让 LLM 为确定性计算花 token，不让探索性分析污染交付链路** —— 越靠近探索越自由，越接近交付约束越强。
 
-竞赛方案与产品叙事见 `docs/info/26.8.21/OmicHubBioOps_初赛_v1.pdf`。
+竞赛方案与产品叙事见 `docs/info/26.8.21/CygnusXBioOps_初赛_v1.pdf`。
 
 ## 技术栈与总体架构
 
@@ -33,7 +33,7 @@ OmicHub 提供从轻量探索到受控交付的四级入口，共享同一份用
 ```text
 Browser → Nginx → Web/API ──→ PostgreSQL / Redis
                      │
-                     ├──→ Celery/RocketMQ Worker 栈 → Snakemake → /data/omichub（共享存储）
+                     ├──→ Celery/RocketMQ Worker 栈 → Snakemake → /data/cygnusx（共享存储）
                      └──→ AgentTeams Bridge/Gateway → 专家 Worker 池（按角色令牌最小权限）
 ```
 
@@ -112,7 +112,7 @@ make docker-up-all                       # 主栈 + Worker 一键全启
 | `make docker-reload` | 全量热重载：重建前端 + pgvector 主栈 + RocketMQ + AgentTeams + Worker |
 | `make docker-logs` / `make docker-logs-worker` | 查看主栈 / Worker 日志 |
 | `make docker-down` / `docker-down-all` / `docker-stop-all` | 停主栈 / 主栈+Worker / 全平台 |
-| `make docker-fix-permissions` | 修复 `/data/omichub` 权限事故（登录 500 / PermissionError 时） |
+| `make docker-fix-permissions` | 修复 `/data/cygnusx` 权限事故（登录 500 / PermissionError 时） |
 
 ### 镜像构建
 
@@ -130,7 +130,7 @@ make docker-up-all                       # 主栈 + Worker 一键全启
 | 命令 | 容器 | 数据卷 | 镜像 | 用途 |
 |---|---|---|---|---|
 | `make docker-clean` | down | 保留 | 保留 | 停服务，数据不动 |
-| `make docker-purge` | 删除 | 清空 | 删除 | ⚠️ 只清理不启动（宿主 `/data/omichub` 不受影响） |
+| `make docker-purge` | 删除 | 清空 | 删除 | ⚠️ 只清理不启动（宿主 `/data/cygnusx` 不受影响） |
 | `make docker-start` | purge + 重建 | 清空 | 重建 | ⚠️ 彻底重建并启动 |
 | `make clean` | — | — | — | 清理 Python 缓存 |
 
@@ -148,17 +148,17 @@ deploy/
 │                      模板、matrix-dev 开发栈、check_setup.sh 与各项验证脚本、kubernetes/
 ├── runtime-images/    Studio 分析运行时三件套（core/plot/scrna Dockerfile + build.sh）
 ├── studio/            OmicStudio 沙箱镜像（base/bio）、出站白名单代理、sandbox_agent
-├── sandbox/           旧版沙盒池镜像（omichub/sandbox-base）
+├── sandbox/           旧版沙盒池镜像（cygnusx/sandbox-base）
 ├── mas/               MAS Apptainer Worker（systemd unit + env 模板）
-└── logrotate/         宿主机日志轮转配置（omichub-logs）
+└── logrotate/         宿主机日志轮转配置（cygnusx-logs）
 ```
 
 ### 单机 / 跨机 / 生产
 
 - **单机**：一份 `.env` + `make docker-up-all`；数据库、Redis 等默认只监听 `127.0.0.1`。
-- **跨机器**：控制面与每台 Worker 各自维护私有 `.env`（共享密钥相同，网络/挂载路径按节点配置），分别执行 `make docker-up-cross-web` 与 `make docker-up-cross-worker`。Worker 路径统一由 `data/worker_config.yaml` 定义（`shared_data_dir` / `pipeline_dir`），容器内统一映射为 `/data/omichub`；**Web、Worker、计算节点必须看到一致的绝对路径**。
+- **跨机器**：控制面与每台 Worker 各自维护私有 `.env`（共享密钥相同，网络/挂载路径按节点配置），分别执行 `make docker-up-cross-web` 与 `make docker-up-cross-worker`。Worker 路径统一由 `data/worker_config.yaml` 定义（`shared_data_dir` / `pipeline_dir`），容器内统一映射为 `/data/cygnusx`；**Web、Worker、计算节点必须看到一致的绝对路径**。
 - **生产**：`docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.prod.yml up -d`（4 uvicorn worker + 关闭 DB/Redis 宿主端口 + SSL）；Worker 栈用 `./scripts/worker-compose.sh --scale worker=N up -d` 水平扩展。生产 `APP_ENV=production` 时默认密钥会导致启动失败。
-- **私有镜像仓库**：云部署建议在 CI 构建并按 git SHA 推送 `omichub-backend` / `omichub-worker` / `omichub-frontend` 及分析运行时镜像，节点只拉取不可变 digest；不要把 `.env`、密钥或数据目录打进镜像。
+- **私有镜像仓库**：云部署建议在 CI 构建并按 git SHA 推送 `cygnusx-backend` / `cygnusx-worker` / `cygnusx-frontend` 及分析运行时镜像，节点只拉取不可变 digest；不要把 `.env`、密钥或数据目录打进镜像。
 - **HPC / Kubernetes**：Slurm 接入（Worker 转为 `sbatch` 提交器 + Snakemake profile）与 K8s 高可用（无状态控制面 + 按队列拆分 Worker + RWX PVC）为规划路径，详见 `report/07_K8s大规模部署方案.md`、`report/09_管理节点与任务节点分离方案.md`。
 
 ### 开启 Multi-Agent 与 AgentTeams
@@ -172,7 +172,7 @@ deploy/
 ## 项目结构
 
 ```
-src/omichub/          后端 Python 包（DDD 分层）
+src/cygnusx/          后端 Python 包（DDD 分层）
   api/v1/             FastAPI 路由（含 admin/）
   application/        应用层（services/ 用例编排 + schemas/ DTO）
   domain/             领域层（user/flow/task/file/ai/mcp/skill/cookie）
@@ -185,7 +185,7 @@ integrations/agentteams/  AgentTeams Bridge / Gateway / Worker 工程（独立�
 flows/                Snakemake 流程 YAML 声明（rna_seq / atac_seq）
 pipelines/            流程实现（RNAFlow / ATACFlow / scrna / EBIDownload / jbrowse2 / ...）
 tool_configs/         生信工具箱配置（tools_schema.yaml / terminal / jbrowse / enrichments / deg / ...）
-data/                 运行时配置（OmicHub.yaml / ai/*.yaml / worker_config.yaml）
+data/                 运行时配置（CygnusX.yaml / ai/*.yaml / worker_config.yaml）
 alembic/              数据库迁移
 docs/                 文档（knowledge/ 知识库源、info/ 竞赛与评审材料、modules/ 模块设计）
 ARCHITECTURE_DESIN/   项目级架构与设计文档（索引见其 README.md）
@@ -202,7 +202,7 @@ tests/                后端测试（unit / integration / e2e / performance）
 
 ### 工具箱 ↔ AI 助手联动
 
-工具在 `tool_configs/tools_schema.yaml` 注册为 LLM function，经内置 MCP `omichub-tools` 由 `ToolBridgeService` 校验分发（`backend_shim` / `backend_sync` / `backend_async` / `open_page` 四种调用模式），返回双通道结果：`llm_payload`（≤3KB 摘要回灌 LLM）+ `ui_payload`（前端渲染 `plotly_figure` / `table_data` / `confirm_card` / 任务进度卡）。大文本参数用 `upload://file_id` 引用已上传文件。新增工具步骤与规范见 `tool_configs/tools_design.md`。
+工具在 `tool_configs/tools_schema.yaml` 注册为 LLM function，经内置 MCP `cygnusx-tools` 由 `ToolBridgeService` 校验分发（`backend_shim` / `backend_sync` / `backend_async` / `open_page` 四种调用模式），返回双通道结果：`llm_payload`（≤3KB 摘要回灌 LLM）+ `ui_payload`（前端渲染 `plotly_figure` / `table_data` / `confirm_card` / 任务进度卡）。大文本参数用 `upload://file_id` 引用已上传文件。新增工具步骤与规范见 `tool_configs/tools_design.md`。
 
 ### Skill 工程体系
 
@@ -210,7 +210,7 @@ tests/                后端测试（unit / integration / e2e / performance）
 
 ### 数据下载与聚合
 
-「数据下载」（`/downloads`）统一承载公共数据库（EBIDownload → EBI/NCBI FASTQ）与云存储直拉（OSS/TOS/OBS 官方 CLI），复用通用 Task 聚合与实时日志链路，产物自动入库「数据管理」。默认关闭，通过 `ENABLE_EBI_DOWNLOAD` / `ENABLE_CLOUD_STORAGE_DOWNLOAD` 及 `/data/omichub/bin/` 下对应二进制启用。
+「数据下载」（`/downloads`）统一承载公共数据库（EBIDownload → EBI/NCBI FASTQ）与云存储直拉（OSS/TOS/OBS 官方 CLI），复用通用 Task 聚合与实时日志链路，产物自动入库「数据管理」。默认关闭，通过 `ENABLE_EBI_DOWNLOAD` / `ENABLE_CLOUD_STORAGE_DOWNLOAD` 及 `/data/cygnusx/bin/` 下对应二进制启用。
 
 ### 知识库
 
@@ -222,21 +222,21 @@ tests/                后端测试（unit / integration / e2e / performance）
 
 ## 数据与日志
 
-### 数据目录（`/data/omichub`，bind mount，`docker-purge` 不删）
+### 数据目录（`/data/cygnusx`，bind mount，`docker-purge` 不删）
 
 ```
-/data/omichub/
-├── omichub_data/        集中数据区：_pgdata(PG) / _redis / jbrowse / knowledge / welcome
+/data/cygnusx/
+├── cygnusx_data/        集中数据区：_pgdata(PG) / _redis / jbrowse / knowledge / welcome
 ├── users/<user_id>/     raw_data / workspace / temp（按用户隔离，注册时幂等创建）
 ├── uploads/  bin/  refdata/  .tmp/  .conda_envs/
 └── logs/                app / celery/tasks / nginx / snakemake
 ```
 
-备份迁移：停服后 `sudo rsync -aP /data/omichub/ <目标机>:/data/omichub/`（`_pgdata` 需 `-a` 保留属主）。
+备份迁移：停服后 `sudo rsync -aP /data/cygnusx/ <目标机>:/data/cygnusx/`（`_pgdata` 需 `-a` 保留属主）。
 
 ### 日志排查
 
-日志统一收口 `/data/omichub/logs/`，应用/Celery 日志由 loguru 轮转（50MB/30天、20MB/7天），Nginx/Snakemake 由宿主机 logrotate 兜底（`deploy/logrotate/omichub-logs`），Docker stdout 限制 50m×3。常用：`tail -f logs/app/omichub.log`、按任务 `logs/celery/tasks/{task_id}.log`、JSON 日志用 `jq` 按 `trace_id` / `session_id` / `event` 过滤。详细策略见 `ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md`。
+日志统一收口 `/data/cygnusx/logs/`，应用/Celery 日志由 loguru 轮转（50MB/30天、20MB/7天），Nginx/Snakemake 由宿主机 logrotate 兜底（`deploy/logrotate/cygnusx-logs`），Docker stdout 限制 50m×3。常用：`tail -f logs/app/cygnusx.log`、按任务 `logs/celery/tasks/{task_id}.log`、JSON 日志用 `jq` 按 `trace_id` / `session_id` / `event` 过滤。详细策略见 `ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md`。
 
 ### 可观测性（OpenTelemetry）
 

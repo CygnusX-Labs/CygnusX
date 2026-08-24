@@ -1,8 +1,8 @@
-ARG OMICHUB_IMAGE_TAG=v0.0.2dev
-FROM omichub-analysis:plot-${OMICHUB_IMAGE_TAG}
+ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
+FROM cygnusx-analysis:plot-${CYGNUSX_IMAGE_TAG}
 
-LABEL org.opencontainers.image.title="OmicHub Analysis Single Cell"
-LABEL org.omichub.runtime.profile="analysis-scrna"
+LABEL org.opencontainers.image.title="CygnusX Analysis Single Cell"
+LABEL org.cygnusx.runtime.profile="analysis-scrna"
 
 USER "$MAMBA_USER"
 RUN micromamba install -y -n base -c conda-forge -c bioconda \

@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services.chat.chat_router_service import ChatRouterService
-from omichub.application.services.chat.runtimes.base import ChatRuntimeRequest
-from omichub.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
-from omichub.application.services.chat.runtimes.langgraph_runtime import LangGraphChatRuntime
-from omichub.application.services.chat.runtimes.legacy_runtime import LegacyChatRuntime
-from omichub.application.services.chat.runtimes.overdrive_runtime import OverdriveChatRuntime
-from omichub.application.services.chat.runtimes.studio_runtime import StudioChatRuntime
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.chat_router_service import ChatRouterService
+from cygnusx.application.services.chat.runtimes.base import ChatRuntimeRequest
+from cygnusx.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
+from cygnusx.application.services.chat.runtimes.langgraph_runtime import LangGraphChatRuntime
+from cygnusx.application.services.chat.runtimes.legacy_runtime import LegacyChatRuntime
+from cygnusx.application.services.chat.runtimes.overdrive_runtime import OverdriveChatRuntime
+from cygnusx.application.services.chat.runtimes.studio_runtime import StudioChatRuntime
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class _LegacyService:

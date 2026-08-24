@@ -1,8 +1,8 @@
-ARG OMICHUB_IMAGE_TAG=v0.0.2dev
-FROM omichub-analysis:core-${OMICHUB_IMAGE_TAG}
+ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
+FROM cygnusx-analysis:core-${CYGNUSX_IMAGE_TAG}
 
-LABEL org.opencontainers.image.title="OmicHub Analysis Plot"
-LABEL org.omichub.runtime.profile="analysis-plot"
+LABEL org.opencontainers.image.title="CygnusX Analysis Plot"
+LABEL org.cygnusx.runtime.profile="analysis-plot"
 
 USER root
 RUN apt-get update \

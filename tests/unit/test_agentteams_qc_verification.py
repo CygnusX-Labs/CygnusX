@@ -8,18 +8,18 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from omichub.application.schemas.qc_verification import (
+from cygnusx.application.schemas.qc_verification import (
     QcVerificationReport,
     aggregate_qc_decision,
     enforce_fabrication_clause,
     merge_gate_decision,
     parse_qc_verification,
 )
-from omichub.application.services.agent_consultation_service import (
+from cygnusx.application.services.agent_consultation_service import (
     AgentConsultationService,
     ConsultationEnvelope,
 )
-from omichub.application.services.agentteams_qc_verification_service import (
+from cygnusx.application.services.agentteams_qc_verification_service import (
     AgentTeamsQcVerificationService,
 )
 

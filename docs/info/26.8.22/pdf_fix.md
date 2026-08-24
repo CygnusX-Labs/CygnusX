@@ -1,6 +1,6 @@
 # OmiHub PDF 处理流程优化指南（Kimi Code 版）
 > **目标**: 一步到位，将三处独立的 pypdf 实现替换为 `PDFProcessor` + `pdf-inspector` 主路径 / `pypdf` 降级路径  
-> **范围**: `src/omichub`  
+> **范围**: `src/cygnusx`  
 > **基于**: `pdf_inspection_report_2026-08-22.md`
 
 ---
@@ -67,7 +67,7 @@
 
 ## 3. 新建文件（完整代码）
 
-### 3.1 `src/omichub/application/services/pdf_models.py`
+### 3.1 `src/cygnusx/application/services/pdf_models.py`
 
 ```python
 """PDF 处理数据模型与场景配置常量。"""
@@ -174,7 +174,7 @@ WORKSPACE_MCP_CONFIG: dict = {
 }
 ```
 
-### 3.2 `src/omichub/infrastructure/pdf/exceptions.py`
+### 3.2 `src/cygnusx/infrastructure/pdf/exceptions.py`
 
 ```python
 """PDF 处理异常定义。"""
@@ -204,7 +204,7 @@ class PDFQualityGateError(PDFProcessingError):
     pass
 ```
 
-### 3.3 `src/omichub/infrastructure/pdf/__init__.py`
+### 3.3 `src/cygnusx/infrastructure/pdf/__init__.py`
 
 ```python
 """PDF 处理基础设施包。"""
@@ -219,7 +219,7 @@ __all__ = [
 ]
 ```
 
-### 3.4 `src/omichub/infrastructure/pdf/inspector_adapter.py`
+### 3.4 `src/cygnusx/infrastructure/pdf/inspector_adapter.py`
 
 ```python
 """pdf-inspector 主路径适配器。
@@ -332,7 +332,7 @@ class PDFInspectorAdapter:
         #     raise PDFInspectorError(f"pdf-inspector failed: {exc}") from exc
 ```
 
-### 3.5 `src/omichub/infrastructure/pdf/pypdf_adapter.py`
+### 3.5 `src/cygnusx/infrastructure/pdf/pypdf_adapter.py`
 
 ```python
 """pypdf 降级路径适配器。
@@ -407,7 +407,7 @@ class PyPDFAdapter:
             raise PDFLegacyError(f"pypdf failed: {exc}") from exc
 ```
 
-### 3.6 `src/omichub/application/services/pdf_processor.py`
+### 3.6 `src/cygnusx/application/services/pdf_processor.py`
 
 ```python
 """OmiHub 统一 PDF 处理器。
@@ -417,7 +417,7 @@ class PyPDFAdapter:
 
 使用方式::
 
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor,
         CHAT_ATTACHMENT_CONFIG,
         KNOWLEDGE_BASE_CONFIG,
@@ -439,7 +439,7 @@ from typing import Optional
 
 import anyio
 
-from omichub.application.services.pdf_models import (
+from cygnusx.application.services.pdf_models import (
     CHAT_ATTACHMENT_CONFIG,
     KNOWLEDGE_BASE_CONFIG,
     PDFMetadata,
@@ -449,9 +449,9 @@ from omichub.application.services.pdf_models import (
     PDFType,
     WORKSPACE_MCP_CONFIG,
 )
-from omichub.infrastructure.pdf.exceptions import PDFInspectorError
-from omichub.infrastructure.pdf.inspector_adapter import PDFInspectorAdapter
-from omichub.infrastructure.pdf.pypdf_adapter import PyPDFAdapter
+from cygnusx.infrastructure.pdf.exceptions import PDFInspectorError
+from cygnusx.infrastructure.pdf.inspector_adapter import PDFInspectorAdapter
+from cygnusx.infrastructure.pdf.pypdf_adapter import PyPDFAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -768,14 +768,14 @@ class PDFProcessor:
 
 ## 4. 修改文件（精确到行号）
 
-### 4.1 `src/omichub/application/services/chat_service.py`
+### 4.1 `src/cygnusx/application/services/chat_service.py`
 
 **找到 `_extract_pdf_text` 方法（约第 9369 行）**，替换为：
 
 ```python
 async def _extract_pdf_text(self, file_path: str) -> str:
     """提取 PDF 文本（已迁移至 PDFProcessor）。"""
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor,
         CHAT_ATTACHMENT_CONFIG,
     )
@@ -792,7 +792,7 @@ async def _extract_pdf_text(self, file_path: str) -> str:
 **更简单的方式**：如果调用链难以改动，在 `_read_attachment_text` 中使用：
 
 ```python
-from omichub.application.services.pdf_processor import PDFProcessor, CHAT_ATTACHMENT_CONFIG
+from cygnusx.application.services.pdf_processor import PDFProcessor, CHAT_ATTACHMENT_CONFIG
 
 processor = PDFProcessor(config=CHAT_ATTACHMENT_CONFIG)
 # 同步调用方式
@@ -800,14 +800,14 @@ result = await anyio.to_thread.run_sync(processor.process_sync, file_path)
 return result.content
 ```
 
-### 4.2 `src/omichub/application/services/knowledge_asset_service.py`
+### 4.2 `src/cygnusx/application/services/knowledge_asset_service.py`
 
 **找到 `_extract_pdf` 方法（约第 152 行）**，替换为：
 
 ```python
 async def _extract_pdf(self, file_path: str) -> str:
     """提取 PDF 文本（已迁移至 PDFProcessor）。"""
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor,
         KNOWLEDGE_BASE_CONFIG,
     )
@@ -817,14 +817,14 @@ async def _extract_pdf(self, file_path: str) -> str:
     return result.content
 ```
 
-### 4.3 `src/omichub/infrastructure/mcp/presets.py`
+### 4.3 `src/cygnusx/infrastructure/mcp/presets.py`
 
 **找到 `_extract_workspace_pdf_text` 方法（约第 553 行）**，替换为：
 
 ```python
 async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
     """提取工作区 PDF 文本（已迁移至 PDFProcessor）。"""
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor,
         WORKSPACE_MCP_CONFIG,
     )
@@ -886,40 +886,40 @@ asyncio_mode = "auto"
 
 # 背景
 当前代码中共有 3 处独立的 PDF 文本提取实现，全部基于 `pypdf`，分别位于：
-1. `src/omichub/application/services/chat_service.py` ~9369 行 — `_extract_pdf_text`
-2. `src/omichub/application/services/knowledge_asset_service.py` ~152 行 — `_extract_pdf`
-3. `src/omichub/infrastructure/mcp/presets.py` ~553 行 — `_extract_workspace_pdf_text`
+1. `src/cygnusx/application/services/chat_service.py` ~9369 行 — `_extract_pdf_text`
+2. `src/cygnusx/application/services/knowledge_asset_service.py` ~152 行 — `_extract_pdf`
+3. `src/cygnusx/infrastructure/mcp/presets.py` ~553 行 — `_extract_workspace_pdf_text`
 
 # 目标
 将三处独立实现统一替换为 `PDFProcessor`，采用"pdf-inspector 主路径 + pypdf 降级路径"架构。
 
 # 新建文件清单（请按以下代码创建）
 
-## 文件 1: `src/omichub/application/services/pdf_models.py`
+## 文件 1: `src/cygnusx/application/services/pdf_models.py`
 [粘贴 3.1 节完整代码]
 
-## 文件 2: `src/omichub/infrastructure/pdf/exceptions.py`
+## 文件 2: `src/cygnusx/infrastructure/pdf/exceptions.py`
 [粘贴 3.2 节完整代码]
 
-## 文件 3: `src/omichub/infrastructure/pdf/__init__.py`
+## 文件 3: `src/cygnusx/infrastructure/pdf/__init__.py`
 [粘贴 3.3 节完整代码]
 
-## 文件 4: `src/omichub/infrastructure/pdf/inspector_adapter.py`
+## 文件 4: `src/cygnusx/infrastructure/pdf/inspector_adapter.py`
 [粘贴 3.4 节完整代码]
 
-## 文件 5: `src/omichub/infrastructure/pdf/pypdf_adapter.py`
+## 文件 5: `src/cygnusx/infrastructure/pdf/pypdf_adapter.py`
 [粘贴 3.5 节完整代码]
 
-## 文件 6: `src/omichub/application/services/pdf_processor.py`
+## 文件 6: `src/cygnusx/application/services/pdf_processor.py`
 [粘贴 3.6 节完整代码]
 
 # 修改文件清单
 
-## 修改 1: `src/omichub/application/services/chat_service.py`
+## 修改 1: `src/cygnusx/application/services/chat_service.py`
 - 找到 `_extract_pdf_text` 方法（约 9369 行），替换为：
 ```python
 async def _extract_pdf_text(self, file_path: str) -> str:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, CHAT_ATTACHMENT_CONFIG,
     )
     processor = PDFProcessor(config=CHAT_ATTACHMENT_CONFIG)
@@ -929,11 +929,11 @@ async def _extract_pdf_text(self, file_path: str) -> str:
 - 检查 `_read_attachment_text`（约 9336 行）的调用链，确保支持 `await self._extract_pdf_text(file_path)`
 - 如果 `_read_attachment_text` 是同步方法，保持 `anyio.to_thread.run_sync` 包装，但注意 `_extract_pdf_text` 现在是 async，需要再包一层 `anyio.run` 或使用 `process_sync`
 
-## 修改 2: `src/omichub/application/services/knowledge_asset_service.py`
+## 修改 2: `src/cygnusx/application/services/knowledge_asset_service.py`
 - 找到 `_extract_pdf` 方法（约 152 行），替换为：
 ```python
 async def _extract_pdf(self, file_path: str) -> str:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, KNOWLEDGE_BASE_CONFIG,
     )
     processor = PDFProcessor(config=KNOWLEDGE_BASE_CONFIG)
@@ -941,11 +941,11 @@ async def _extract_pdf(self, file_path: str) -> str:
     return result.content
 ```
 
-## 修改 3: `src/omichub/infrastructure/mcp/presets.py`
+## 修改 3: `src/cygnusx/infrastructure/mcp/presets.py`
 - 找到 `_extract_workspace_pdf_text` 方法（约 553 行），替换为：
 ```python
 async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, WORKSPACE_MCP_CONFIG,
     )
     processor = PDFProcessor(config=WORKSPACE_MCP_CONFIG)
@@ -984,13 +984,13 @@ async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
 ### 6.2 快速提示词：仅创建文件
 
 ```markdown
-请在 `src/omichub` 下创建以下 6 个新文件，代码内容如下：
+请在 `src/cygnusx` 下创建以下 6 个新文件，代码内容如下：
 
 [依次列出 6 个文件的完整代码]
 
 要求：
 - 文件路径必须准确
-- 代码中的 import 路径基于 `src/omichub` 为包根
+- 代码中的 import 路径基于 `src/cygnusx` 为包根
 - 不要修改任何现有文件
 - 创建完成后列出所有新建文件的路径
 ```
@@ -1001,12 +1001,12 @@ async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
 请修改以下 3 个文件中的 PDF 提取方法，将其替换为对 `PDFProcessor` 的调用。
 
 ## 修改 1
-文件：`src/omichub/application/services/chat_service.py`
+文件：`src/cygnusx/application/services/chat_service.py`
 方法：`_extract_pdf_text`（约第 9369 行）
 替换为：
 ```python
 async def _extract_pdf_text(self, file_path: str) -> str:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, CHAT_ATTACHMENT_CONFIG,
     )
     processor = PDFProcessor(config=CHAT_ATTACHMENT_CONFIG)
@@ -1015,12 +1015,12 @@ async def _extract_pdf_text(self, file_path: str) -> str:
 ```
 
 ## 修改 2
-文件：`src/omichub/application/services/knowledge_asset_service.py`
+文件：`src/cygnusx/application/services/knowledge_asset_service.py`
 方法：`_extract_pdf`（约第 152 行）
 替换为：
 ```python
 async def _extract_pdf(self, file_path: str) -> str:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, KNOWLEDGE_BASE_CONFIG,
     )
     processor = PDFProcessor(config=KNOWLEDGE_BASE_CONFIG)
@@ -1029,12 +1029,12 @@ async def _extract_pdf(self, file_path: str) -> str:
 ```
 
 ## 修改 3
-文件：`src/omichub/infrastructure/mcp/presets.py`
+文件：`src/cygnusx/infrastructure/mcp/presets.py`
 方法：`_extract_workspace_pdf_text`（约第 553 行）
 替换为：
 ```python
 async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
-    from omichub.application.services.pdf_processor import (
+    from cygnusx.application.services.pdf_processor import (
         PDFProcessor, WORKSPACE_MCP_CONFIG,
     )
     processor = PDFProcessor(config=WORKSPACE_MCP_CONFIG)
@@ -1061,7 +1061,7 @@ async def _extract_workspace_pdf_text(self, file_path: str) -> dict:
 ```markdown
 请验证以下事项：
 
-1. 运行 `python -c "from omichub.application.services.pdf_processor import PDFProcessor, CHAT_ATTACHMENT_CONFIG; print('import ok')"` 确认无 import 错误
+1. 运行 `python -c "from cygnusx.application.services.pdf_processor import PDFProcessor, CHAT_ATTACHMENT_CONFIG; print('import ok')"` 确认无 import 错误
 2. 运行 `python -m pytest tests/unit/test_chat_attachment_reading.py -v` 确认测试通过
 3. 运行 `python -m pytest tests/unit/test_knowledge_asset_service.py -v` 确认测试通过
 4. 检查三处原有 `from pypdf import PdfReader` 是否已被移除（降级路径内部保留，但业务代码中不应再有直接 import）
@@ -1086,14 +1086,14 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services.pdf_models import (
+from cygnusx.application.services.pdf_models import (
     CHAT_ATTACHMENT_CONFIG,
     KNOWLEDGE_BASE_CONFIG,
     PDFSource,
     PDFType,
     WORKSPACE_MCP_CONFIG,
 )
-from omichub.application.services.pdf_processor import PDFProcessor
+from cygnusx.application.services.pdf_processor import PDFProcessor
 
 
 @pytest.fixture
@@ -1184,12 +1184,12 @@ class TestPDFProcessor:
 
 | 测试项 | 命令 | 期望结果 |
 |--------|------|---------|
-| import 检查 | `python -c "from omichub.application.services.pdf_processor import PDFProcessor"` | 无错误 |
+| import 检查 | `python -c "from cygnusx.application.services.pdf_processor import PDFProcessor"` | 无错误 |
 | 聊天附件测试 | `pytest tests/unit/test_chat_attachment_reading.py -v` | 全部通过 |
 | 知识库测试 | `pytest tests/unit/test_knowledge_asset_service.py -v` | 全部通过 |
 | 回归测试 | `pytest tests/unit/test_general_assistant_regression.py -v` | 全部通过 |
 | 新处理器测试 | `pytest tests/unit/test_pdf_processor.py -v` | 全部通过 |
-| 类型检查 | `mypy src/omichub/application/services/pdf_processor.py` | 无类型错误 |
+| 类型检查 | `mypy src/cygnusx/application/services/pdf_processor.py` | 无类型错误 |
 
 ---
 

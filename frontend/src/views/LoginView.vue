@@ -1,5 +1,5 @@
 <template>
-  <div class="login-page" role="main" aria-label="登录 OmicHub">
+  <div class="login-page" role="main" aria-label="登录 CygnusX">
     <StarField />
     <LoginPageQuote />
     <div class="login-content">
@@ -7,13 +7,13 @@
         <div class="login-card animate-scale-in">
           <div class="login-header">
             <LogoAnimation />
-            <h2 class="login-title">OmicHub</h2>
+            <h2 class="login-title">CygnusX</h2>
             <p class="login-subtitle">欢迎登录多组学分析平台</p>
           </div>
           <!-- Demo 模式：演示账号提示 + 一键填入 -->
           <div v-if="step === 'credentials'" class="demo-account-hint">
             <span class="demo-account-text">
-              演示账号 <code>demo</code> · 密码 <code>demo_omichub</code>
+              演示账号 <code>demo</code> · 密码 <code>demo_cygnusx</code>
             </span>
             <n-button text size="tiny" type="primary" @click="fillDemoAccount">
               一键填入
@@ -189,7 +189,7 @@ function resetToCredentials() {
 // Demo 模式：一键填入演示账号（与 scripts/init_demo_user.py 的默认账号一致）
 function fillDemoAccount() {
   formData.value.username = 'demo'
-  formData.value.password = 'demo_omichub'
+  formData.value.password = 'demo_cygnusx'
   errorMessage.value = ''
 }
 

@@ -6,8 +6,8 @@
 门控（与 test_acceptance_profile.py 风格一致，默认 skip，不影响 CI）：
 
     AGENTTEAMS_LIVE_E2E=1 \
-    OMICHUB_E2E_BASE_URL=http://localhost:8000 \
-    OMICHUB_E2E_TOKEN=<平台 JWT access token> \
+    CYGNUSX_E2E_BASE_URL=http://localhost:8000 \
+    CYGNUSX_E2E_TOKEN=<平台 JWT access token> \
     uv run pytest tests/e2e/agentteams/test_live_foundation_e2e.py -v
 
 可选 Bridge 侧直查（E2E-9 事件计数对账）：
@@ -28,8 +28,8 @@ import httpx
 import pytest
 
 RUN_LIVE = os.environ.get("AGENTTEAMS_LIVE_E2E") == "1"
-BASE_URL = os.environ.get("OMICHUB_E2E_BASE_URL", "http://localhost:8000").rstrip("/")
-TOKEN = os.environ.get("OMICHUB_E2E_TOKEN", "")
+BASE_URL = os.environ.get("CYGNUSX_E2E_BASE_URL", "http://localhost:8000").rstrip("/")
+TOKEN = os.environ.get("CYGNUSX_E2E_TOKEN", "")
 BRIDGE_URL = os.environ.get("AGENTTEAMS_E2E_BRIDGE_URL", "").rstrip("/")
 MANAGER_TOKEN = os.environ.get("AGENTTEAMS_E2E_MANAGER_TOKEN", "")
 
@@ -37,7 +37,7 @@ pytestmark = [
     pytest.mark.e2e,
     pytest.mark.skipif(
         not (RUN_LIVE and TOKEN),
-        reason="set AGENTTEAMS_LIVE_E2E=1 with OMICHUB_E2E_TOKEN to run against a live stack",
+        reason="set AGENTTEAMS_LIVE_E2E=1 with CYGNUSX_E2E_TOKEN to run against a live stack",
     ),
 ]
 

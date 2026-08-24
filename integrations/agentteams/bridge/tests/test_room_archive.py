@@ -17,16 +17,16 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import HTTPException
-from omichub_agentteams_bridge.app import create_app
-from omichub_agentteams_bridge.audit import AuditStore
-from omichub_agentteams_bridge.case_store import CaseStore
-from omichub_agentteams_bridge.config import BridgeSettings
-from omichub_agentteams_bridge.minio_store import MinioBridgeStorage
-from omichub_agentteams_bridge.models import CaseCreateRequest, EvidenceRequest
-from omichub_agentteams_bridge.service import BridgeService
+from cygnusx_agentteams_bridge.app import create_app
+from cygnusx_agentteams_bridge.audit import AuditStore
+from cygnusx_agentteams_bridge.case_store import CaseStore
+from cygnusx_agentteams_bridge.config import BridgeSettings
+from cygnusx_agentteams_bridge.minio_store import MinioBridgeStorage
+from cygnusx_agentteams_bridge.models import CaseCreateRequest, EvidenceRequest
+from cygnusx_agentteams_bridge.service import BridgeService
 
 
-class FakeOmicHubClient:
+class FakeCygnusXClient:
     async def aclose(self) -> None:
         return None
 
@@ -93,7 +93,7 @@ class FakeMinioClient:
 
 def make_settings(tmp_path: Path, **overrides: Any) -> BridgeSettings:
     values = {
-        "omichub_service_token": "service-token",
+        "cygnusx_service_token": "service-token",
         "approval_signing_secret": "test-signing-secret",
         "identities": "bioops-manager:manager,approval-authority:approval,data-steward:steward",
         "audit_log_path": str(tmp_path / "audit.jsonl"),
@@ -111,7 +111,7 @@ def make_minio_service(
     storage = MinioBridgeStorage("http://minio:9000", "ak", "sk", "agentteams", client=fake)
     audit = AuditStore(settings.audit_log_path, minio_storage=storage)
     cases = CaseStore(settings.case_store_path, minio_storage=storage)
-    service = BridgeService(settings, FakeOmicHubClient(), audit, cases)
+    service = BridgeService(settings, FakeCygnusXClient(), audit, cases)
     return service, storage, audit, settings
 
 
@@ -309,7 +309,7 @@ async def test_archive_requires_minio_persistence(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     service = BridgeService(
         settings,
-        FakeOmicHubClient(),
+        FakeCygnusXClient(),
         AuditStore(settings.audit_log_path),
         CaseStore(settings.case_store_path),
     )
@@ -382,7 +382,7 @@ async def test_room_archive_endpoints(tmp_path: Path) -> None:
     fake = FakeMinioClient()
     storage = MinioBridgeStorage("http://minio:9000", "ak", "sk", "agentteams", client=fake)
     settings = make_settings(tmp_path)
-    app = create_app(settings, FakeOmicHubClient(), minio_storage=storage)
+    app = create_app(settings, FakeCygnusXClient(), minio_storage=storage)
     manager = {"X-Bridge-Identity": "bioops-manager", "X-Bridge-Token": "manager"}
     steward = {"X-Bridge-Identity": "data-steward", "X-Bridge-Token": "steward"}
     async with httpx.AsyncClient(

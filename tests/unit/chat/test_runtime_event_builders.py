@@ -3,8 +3,8 @@
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
-from omichub.application.services.chat.runtimes.base import ChatRuntime, ChatRuntimeRequest
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.runtimes.base import ChatRuntime, ChatRuntimeRequest
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class _Runtime(ChatRuntime):

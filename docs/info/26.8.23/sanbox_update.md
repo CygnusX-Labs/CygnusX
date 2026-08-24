@@ -1,4 +1,4 @@
-# OmicHub 沙箱增强实施方案：sandbox_tools
+# CygnusX 沙箱增强实施方案：sandbox_tools
 
 ## 一、总体架构：与现有 Studio 的对接方式
 
@@ -22,7 +22,7 @@
               ┌────────────┴────────────┐       │
               │                         │       │
     ┌─────────▼──────────┐   ┌──────────▼───────┴──┐
-    │ omichub-sandbox-   │   │ omichub-sandbox-    │
+    │ cygnusx-sandbox-   │   │ cygnusx-sandbox-    │
     │ bio (现有数据分析)  │   │ browser-office (新增)│
     │                    │   │                     │
     │ • Python/R/Bash    │   │ • Python/R/Bash     │
@@ -36,7 +36,7 @@
 
 **核心设计原则**：
 
-1. **不改造现有镜像**：`omichub-sandbox-bio` 保持原样，新增 `omichub-sandbox-browser-office` 独立镜像
+1. **不改造现有镜像**：`cygnusx-sandbox-bio` 保持原样，新增 `cygnusx-sandbox-browser-office` 独立镜像
 2. **复用 Studio 编排**：会话创建、生命周期、网络策略、文件挂载全部复用 `StudioSandboxManager`
 3. **Capability 授权**：创建会话时通过 `capability` 字段声明需要浏览器/文档能力，平台只分配对应镜像
 4. **工具路由而非容器内 MCP**：AI 调用 `sandbox_tools` 时，请求先到平台 MCP Adapter，平台根据 capability 决定是否转发到 Studio 工具路由执行
@@ -496,7 +496,7 @@
 ### 3.1 Studio 会话创建增强（Capability 模型）
 
 ```python
-# src/omichub/api/v1/studio/schemas.py
+# src/cygnusx/api/v1/studio/schemas.py
 from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -546,7 +546,7 @@ class StudioSessionResponse(BaseModel):
 ### 3.2 StudioSandboxManager 增强（安全基线 + Capability 路由）
 
 ```python
-# src/omichub/services/studio/manager.py
+# src/cygnusx/services/studio/manager.py
 import docker
 import redis
 import json
@@ -554,16 +554,16 @@ import os
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 
-from omichub.core.config import settings
-from omichub.services.studio.schemas import SandboxCapability
+from cygnusx.core.config import settings
+from cygnusx.services.studio.schemas import SandboxCapability
 
 # 镜像映射表：能力 -> 镜像
 CAPABILITY_IMAGE_MAP = {
-    (SandboxCapability.CODE,): "omichub-sandbox-bio:latest",
-    (SandboxCapability.CODE, SandboxCapability.BROWSER): "omichub-sandbox-browser-office:latest",
-    (SandboxCapability.CODE, SandboxCapability.BROWSER, SandboxCapability.DOCUMENT): "omichub-sandbox-browser-office:latest",
+    (SandboxCapability.CODE,): "cygnusx-sandbox-bio:latest",
+    (SandboxCapability.CODE, SandboxCapability.BROWSER): "cygnusx-sandbox-browser-office:latest",
+    (SandboxCapability.CODE, SandboxCapability.BROWSER, SandboxCapability.DOCUMENT): "cygnusx-sandbox-browser-office:latest",
     # 未来可扩展
-    (SandboxCapability.CODE, SandboxCapability.DESKTOP): "omichub-sandbox-desktop:latest",
+    (SandboxCapability.CODE, SandboxCapability.DESKTOP): "cygnusx-sandbox-desktop:latest",
 }
 
 class StudioSandboxManager:
@@ -577,7 +577,7 @@ class StudioSandboxManager:
         if requested_tag:
             # 用户显式指定镜像，验证能力兼容
             # TODO: 增加镜像 capability 元数据校验
-            return f"omichub-sandbox-{requested_tag}"
+            return f"cygnusx-sandbox-{requested_tag}"
         
         # 按能力组合匹配镜像
         caps_tuple = tuple(sorted(set(capabilities)))
@@ -676,7 +676,7 @@ class StudioSandboxManager:
         
         # 6. 容器标签（用于审计和清理）
         labels = {
-            "app": "omichub-studio",
+            "app": "cygnusx-studio",
             "user_id": user_id,
             "capabilities": ",".join(c.value for c in capabilities),
             "network_mode": network_mode,
@@ -803,7 +803,7 @@ class StudioSandboxManager:
         import aiohttp
         
         # UDS 路径由 Docker volume 或 host path 映射
-        uds_path = f"/var/run/omichub/studio/{session_id}/agent.sock"
+        uds_path = f"/var/run/cygnusx/studio/{session_id}/agent.sock"
         
         connector = aiohttp.UnixConnector(path=uds_path)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -842,7 +842,7 @@ class StudioSandboxManager:
 ### 3.3 MCP Adapter（平台侧 MCP Server）
 
 ```python
-# src/omichub/api/v1/mcp/sandbox_adapter.py
+# src/cygnusx/api/v1/mcp/sandbox_adapter.py
 """
 sandbox_tools MCP Adapter
 将外部 MCP 客户端的工具调用转换为 Studio 内部工具调用
@@ -864,8 +864,8 @@ from mcp.types import (
     LoggingLevel,
 )
 
-from omichub.services.studio.manager import StudioSandboxManager
-from omichub.core.security import verify_mcp_token  # 你需要实现
+from cygnusx.services.studio.manager import StudioSandboxManager
+from cygnusx.core.security import verify_mcp_token  # 你需要实现
 
 # 工具定义（与第二节 Schema 对应）
 SANDBOX_TOOLS = [
@@ -1192,13 +1192,13 @@ class SandboxMCPAdapter:
 
 
 # FastAPI 路由：暴露 MCP 端点
-# src/omichub/api/v1/mcp/router.py
+# src/cygnusx/api/v1/mcp/router.py
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from omichub.core.auth import get_current_user
-from omichub.services.studio.manager import StudioSandboxManager
-from omichub.api.v1.mcp.sandbox_adapter import SandboxMCPAdapter
+from cygnusx.core.auth import get_current_user
+from cygnusx.services.studio.manager import StudioSandboxManager
+from cygnusx.api.v1.mcp.sandbox_adapter import SandboxMCPAdapter
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
 
@@ -1272,12 +1272,12 @@ async def mcp_sandbox_stream(
 
 ```dockerfile
 # deploy/studio/Dockerfile.browser-office
-# omichub-sandbox-browser-office:latest
+# cygnusx-sandbox-browser-office:latest
 
 # =============================================================================
 # 阶段 1：基础层（复用现有 bio 镜像的基础）
 # =============================================================================
-FROM omichub-sandbox-bio:latest AS base
+FROM cygnusx-sandbox-bio:latest AS base
 
 # =============================================================================
 # 阶段 2：浏览器层
@@ -1595,7 +1595,7 @@ async function callTool(tool: string, params: Record<string, any>) {
 
 | 周次 | 任务 | 产出 |
 |------|------|------|
-| W1 | 构建 `omichub-sandbox-browser-office` 镜像 | Dockerfile、镜像构建 CI |
+| W1 | 构建 `cygnusx-sandbox-browser-office` 镜像 | Dockerfile、镜像构建 CI |
 | W2 | 实现 sandbox-agent 浏览器工具（Playwright） | `tools/browser.py`、UDS 接口测试 |
 | W3 | 平台侧 MCP Adapter + 前端 BrowserToolbar | `/api/v1/mcp/sandbox/*`、Vue 组件 |
 

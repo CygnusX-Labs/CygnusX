@@ -9,10 +9,10 @@ from uuid import UUID
 
 import pytest
 
-from omichub.application.services import studio_task_service
-from omichub.domain.task.entities import Task, TaskLog
-from omichub.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
-from omichub.infrastructure.celery_app.tasks import studio as studio_tasks
+from cygnusx.application.services import studio_task_service
+from cygnusx.domain.task.entities import Task, TaskLog
+from cygnusx.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
+from cygnusx.infrastructure.celery_app.tasks import studio as studio_tasks
 
 
 class _FakeDb:
@@ -110,15 +110,15 @@ def _patch_runtime(monkeypatch, task: Task, events: list[dict[str, Any]]):
         return session_context()
 
     monkeypatch.setattr(
-        "omichub.infrastructure.database.session.get_session_factory",
+        "cygnusx.infrastructure.database.session.get_session_factory",
         lambda: session_factory,
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.database.repositories.task_repository.TaskRepositoryImpl",
+        "cygnusx.infrastructure.database.repositories.task_repository.TaskRepositoryImpl",
         lambda _db: repo,
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.studio.manager.studio_sandbox_manager",
+        "cygnusx.infrastructure.studio.manager.studio_sandbox_manager",
         manager,
     )
 
@@ -165,7 +165,7 @@ async def test_submit_studio_long_task_commits_before_celery_dispatch(monkeypatc
         language="python",
         code="print(1)",
         timeout_sec=601,
-        image="omichub-sandbox:bio",
+        image="cygnusx-sandbox:bio",
     )
 
     assert db.commits == 1

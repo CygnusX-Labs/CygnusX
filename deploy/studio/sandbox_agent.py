@@ -383,7 +383,7 @@ async def _stream_exec(req: ExecRequest):
                     yield emit(
                         {
                             "type": "stderr",
-                            "data": "[omichub] plotly 图表 JSON 超限，已丢弃；请降采样后重试\n",
+                            "data": "[cygnusx] plotly 图表 JSON 超限，已丢弃；请降采样后重试\n",
                         }
                     )
                     continue
@@ -391,7 +391,7 @@ async def _stream_exec(req: ExecRequest):
                     figure = json.loads(raw)
                 except json.JSONDecodeError:
                     yield emit(
-                        {"type": "stderr", "data": "[omichub] plotly 标记行解析失败，已跳过\n"}
+                        {"type": "stderr", "data": "[cygnusx] plotly 标记行解析失败，已跳过\n"}
                     )
                     continue
                 yield emit({"type": "plotly", "data": figure})
@@ -507,7 +507,7 @@ async def exec_code(req: ExecRequest) -> StreamingResponse:
     return StreamingResponse(
         _stream_exec(req),
         media_type="application/x-ndjson",
-        headers={"X-Exec-Engine": "omichub-sandbox-agent"},
+        headers={"X-Exec-Engine": "cygnusx-sandbox-agent"},
     )
 
 
@@ -545,10 +545,10 @@ async def interactive_terminal(websocket: WebSocket) -> None:
         # 仅作 bash 兜底；zsh 提示符由 oh-my-posh 渲染（见下方 zsh 分支）。
         "PS1": "\\[\\033[38;5;111m\\]studio@omicbox\\[\\033[0m\\]:\\[\\033[38;5;150m\\]\\w\\[\\033[0m\\]$ ",
     }
-    # 优先 zsh（镜像内置 /opt/conda/bin/zsh + /opt/omichub/zdotdir/.zshrc，
+    # 优先 zsh（镜像内置 /opt/conda/bin/zsh + /opt/cygnusx/zdotdir/.zshrc，
     # oh-my-zsh + oh-my-posh）；缺失时回退 bash + PS1。
     zsh_path = "/opt/conda/bin/zsh"
-    zdotdir = "/opt/omichub/zdotdir"
+    zdotdir = "/opt/cygnusx/zdotdir"
     if os.path.isfile(zsh_path) and os.path.isfile(os.path.join(zdotdir, ".zshrc")):
         shell_argv = [zsh_path, "-i"]
         env["ZDOTDIR"] = zdotdir

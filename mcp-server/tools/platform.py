@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_get_user_info() -> dict:
+    async def cygnusx_get_user_info() -> dict:
         """获取当前用户信息和存储配额。"""
         try:
             user = await api.get_me()
@@ -21,11 +21,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 f"存储: {used_gb:.1f}GB / {total_gb:.1f}GB ({quota.get('percent', 0):.0%})\n"
             )
             return {"success": True, "summary": summary, "data": {"user": user, "quota": quota}}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取用户信息失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_platform_status() -> dict:
+    async def cygnusx_get_platform_status() -> dict:
         """获取平台状态概览：任务统计、可用流程、存储情况。"""
         try:
             tasks = await api.list_tasks()
@@ -52,5 +52,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": summary,
                 "data": {"tasks": status_counts, "quota": quota},
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取平台状态失败: {e.detail}"}

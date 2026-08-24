@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services.agent_service import AgentService
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk, provider_manager
-from omichub.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.application.services.agent_service import AgentService
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk, provider_manager
+from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 
 _PLAN_ARGS = {
     "steps": [
@@ -63,7 +63,7 @@ def _make_session(mode: str) -> ChatSessionModel:
         mode=mode,
         message_count=0,
         total_tokens=0,
-        sandbox_meta={"image": "omichub-sandbox:bio"} if mode == "studio" else None,
+        sandbox_meta={"image": "cygnusx-sandbox:bio"} if mode == "studio" else None,
     )
 
 
@@ -90,7 +90,7 @@ def mocked_agent_runtime(monkeypatch):
     monkeypatch.setattr(AgentService, "assemble_context", _assemble)
 
     # ToolInvocationContext 强校验 db 为 AsyncSession；本测试链路不触 MCP 调用，替身即可
-    import omichub.application.schemas.tool_invocation as _tiv
+    import cygnusx.application.schemas.tool_invocation as _tiv
 
     monkeypatch.setattr(
         _tiv, "ToolInvocationContext", lambda **kw: SimpleNamespace(**kw)

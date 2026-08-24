@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_submit_analysis(
+    async def cygnusx_submit_analysis(
         flow_id: str,
         name: str = "",
         parameters: dict | None = None,
@@ -65,19 +65,19 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                     f"分析任务已提交!\n"
                     f"  任务 ID: {task_id}\n"
                     f"  状态: {result.get('status', 'queued')}\n"
-                    f"使用 omichub_get_task_progress 监控进度。"
+                    f"使用 cygnusx_get_task_progress 监控进度。"
                 ),
                 "data": result,
                 "next_steps": [
-                    f"调用 omichub_get_task_progress(task_id='{task_id}') 监控进度",
-                    "任务完成后调用 omichub_get_task_outputs 查看结果",
+                    f"调用 cygnusx_get_task_progress(task_id='{task_id}') 监控进度",
+                    "任务完成后调用 cygnusx_get_task_outputs 查看结果",
                 ],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"提交失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_preview_analysis(
+    async def cygnusx_preview_analysis(
         flow_id: str,
         parameters: dict | None = None,
         sample_sheet: list[dict] | None = None,
@@ -111,5 +111,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"参数验证通过，可以提交 {flow_id} 分析。",
                 "data": {"flow_id": flow_id, "valid": True},
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"验证失败: {e.detail}"}

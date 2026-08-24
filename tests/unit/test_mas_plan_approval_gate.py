@@ -17,10 +17,10 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services import mas_service as mas_service_module
-from omichub.application.services.mas_service import MASService
-from omichub.core.exceptions import BusinessError
-from omichub.domain.mas.models import A2AEvent, A2AEventType
+from cygnusx.application.services import mas_service as mas_service_module
+from cygnusx.application.services.mas_service import MASService
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.domain.mas.models import A2AEvent, A2AEventType
 
 
 class _FakeRunRepository:
@@ -109,7 +109,7 @@ async def test_execution_never_starts_from_unapproved_draft() -> None:
 @pytest.mark.quarantine(reason="审批事件 payload 字段集合断言与现行实现不一致")
 async def test_no_auto_approve_bypass_exists() -> None:
     """固化现状：MASRunCreateRequest 无任何 auto/放权字段，审批无法被请求侧跳过。"""
-    from omichub.application.schemas.mas import MASRunCreateRequest
+    from cygnusx.application.schemas.mas import MASRunCreateRequest
 
     fields = set(MASRunCreateRequest.model_fields)
     # 创建请求只有计划与上下文，没有 auto_approve / autonomous / skip_approval 之类

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omichub.infrastructure.sandbox.pool import SandboxPool, SandboxUnavailableError
+from cygnusx.infrastructure.sandbox.pool import SandboxPool, SandboxUnavailableError
 
 
 class _FakeContainer:
@@ -19,7 +19,7 @@ class _FakeContainer:
         status: str = "running",
     ) -> None:
         self.id = container_id
-        self.labels = labels or {"omicshub.sandbox": "warm"}
+        self.labels = labels or {"cygnusx.sandbox": "warm"}
         self.status = status
         self.removed = False
 
@@ -64,8 +64,8 @@ def _settings(*, warm_size: int = 2, max_size: int = 2) -> SimpleNamespace:
         sandbox_default_memory="1g",
         sandbox_default_cpu=1.0,
         sandbox_network_isolated=True,
-        sandbox_docker_network="omichub_default",
-        sandbox_image="omichub/sandbox-base:latest",
+        sandbox_docker_network="cygnusx_default",
+        sandbox_image="cygnusx/sandbox-base:latest",
     )
 
 

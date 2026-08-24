@@ -8,18 +8,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.schemas.tool_invocation import ToolInvocationContext
-from omichub.application.services.agentteams_data_tool_service import AgentTeamsDataToolService
-from omichub.application.services.agentteams_quality_gate_service import (
+from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+from cygnusx.application.services.agentteams_data_tool_service import AgentTeamsDataToolService
+from cygnusx.application.services.agentteams_quality_gate_service import (
     AgentTeamsQualityGateService,
 )
-from omichub.application.services.pipeline_result_service import PipelineResultService
-from omichub.core.exceptions import ValidationError
-from omichub.infrastructure.config.storage_config import StorageConfig
-from omichub.infrastructure.storage import LocalStorageBackend
-from omichub.infrastructure.storage.minio_store import ObjectMeta
-from omichub.infrastructure.storage.path_factory import StoragePathFactory
-from omichub.tools.schema_loader import ToolsSchemaLoader
+from cygnusx.application.services.pipeline_result_service import PipelineResultService
+from cygnusx.core.exceptions import ValidationError
+from cygnusx.infrastructure.config.storage_config import StorageConfig
+from cygnusx.infrastructure.storage import LocalStorageBackend
+from cygnusx.infrastructure.storage.minio_store import ObjectMeta
+from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
+from cygnusx.tools.schema_loader import ToolsSchemaLoader
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
 TASK_ID = "00000000-0000-0000-0000-000000000002"
@@ -68,7 +68,7 @@ async def test_task_summary_reads_qc_metrics_and_artifacts(tmp_path, monkeypatch
             return str(path.resolve().relative_to(self.data_root.resolve()))
 
     monkeypatch.setattr(
-        "omichub.application.services.pipeline_result_service.get_path_factory", lambda: Factory()
+        "cygnusx.application.services.pipeline_result_service.get_path_factory", lambda: Factory()
     )
     path_factory = StoragePathFactory(
         StorageConfig(data_root=str(tmp_path), users_subdir="users")
@@ -84,7 +84,7 @@ async def test_task_summary_reads_qc_metrics_and_artifacts(tmp_path, monkeypatch
         error_message="",
     )
     with patch(
-        "omichub.application.services.pipeline_result_service.TaskService.get_task",
+        "cygnusx.application.services.pipeline_result_service.TaskService.get_task",
         new_callable=AsyncMock,
         return_value=task,
     ):
@@ -109,7 +109,7 @@ async def test_task_file_preview_rejects_traversal_and_symlink(tmp_path, monkeyp
         StorageConfig(data_root=str(tmp_path), users_subdir="users")
     )
     monkeypatch.setattr(
-        "omichub.application.services.pipeline_result_service.get_path_factory",
+        "cygnusx.application.services.pipeline_result_service.get_path_factory",
         lambda: path_factory,
     )
     backend = LocalStorageBackend(path_factory=path_factory)
@@ -141,23 +141,23 @@ async def test_workspace_preview_is_requester_scoped(monkeypatch, tmp_path) -> N
 
     factory = Factory()
     monkeypatch.setattr(
-        "omichub.infrastructure.storage.path_factory.get_path_factory",
+        "cygnusx.infrastructure.storage.path_factory.get_path_factory",
         lambda: factory,
     )
     monkeypatch.setattr(
-        "omichub.application.services.pipeline_result_service.get_path_factory",
+        "cygnusx.application.services.pipeline_result_service.get_path_factory",
         lambda: factory,
     )
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_data_tool_service.get_path_factory",
+        "cygnusx.application.services.agentteams_data_tool_service.get_path_factory",
         lambda: factory,
     )
-    from omichub.infrastructure.storage import reset_storage_backend
+    from cygnusx.infrastructure.storage import reset_storage_backend
 
     reset_storage_backend()
     backend = LocalStorageBackend(path_factory=factory)
     monkeypatch.setattr(
-        "omichub.application.services.pipeline_result_service.get_storage_backend",
+        "cygnusx.application.services.pipeline_result_service.get_storage_backend",
         lambda: backend,
     )
     service = AgentTeamsDataToolService()

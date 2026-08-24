@@ -1,6 +1,6 @@
-# OmicHub 科研绘图 ggplot2 沙盒镜像
-# 构建: docker build -t omichub/sandbox-ggplot2:latest -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
-FROM omichub/sandbox-terminal:latest
+# CygnusX 科研绘图 ggplot2 沙盒镜像
+# 构建: docker build -t cygnusx/sandbox-ggplot2:latest -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
+FROM cygnusx/sandbox-terminal:latest
 
 USER root
 

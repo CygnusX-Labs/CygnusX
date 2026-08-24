@@ -70,7 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
   streamingThought: '',
   userAvatar: '',
   userName: '我',
-  agentName: 'OmicHub AI',
+  agentName: 'CygnusX AI',
   agentAvatar: '🤖',
   agentColor: '#4f8ef7',
   modelName: 'AI 助手',
@@ -210,7 +210,7 @@ async function renderPlotlyCharts() {
             // 默认 600 DPI 导出（scale = 600/96）
             toImageButtonOptions: {
               format: 'png',
-              filename: 'omichub_plot_600dpi',
+              filename: 'cygnusx_plot_600dpi',
               scale: 6.25,
             } as Plotly.Config['toImageButtonOptions'],
           },
@@ -244,14 +244,14 @@ const tableData = computed(() => {
   if (!raw || !Array.isArray(raw) || !raw.length) return null
   return (raw as Record<string, unknown>[]).map((row, index) => ({
     ...row,
-    __omicHubRowKey: `${props.message.id}-${index}`,
+    __cygnusXRowKey: `${props.message.id}-${index}`,
   }))
 })
 
 const tableColumns = computed(() => {
   if (!tableData.value) return []
   return Object.keys(tableData.value[0])
-    .filter((key) => key !== '__omicHubRowKey')
+    .filter((key) => key !== '__cygnusXRowKey')
     .map((key) => ({
       title: key,
       key,
@@ -1191,7 +1191,7 @@ function handleEdit() {
             <n-data-table
               :data="tableData"
               :columns="tableColumns"
-              :row-key="(row) => String(row.__omicHubRowKey)"
+              :row-key="(row) => String(row.__cygnusXRowKey)"
               :max-height="300"
               size="small"
             />

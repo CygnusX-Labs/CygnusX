@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services import chat_service as chat_service_module
-from omichub.application.services.chat.request_preparation import (
+from cygnusx.application.services import chat_service as chat_service_module
+from cygnusx.application.services.chat.request_preparation import (
     AgentRequestPreparationFailure,
     PreparedAgentRequest,
     prepare_agent_request,

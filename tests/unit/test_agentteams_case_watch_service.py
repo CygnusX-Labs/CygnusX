@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.dialects import postgresql
 
-import omichub.application.services.agentteams_case_watch_service as watch_module
-from omichub.application.services.agentteams_case_watch_service import (
+import cygnusx.application.services.agentteams_case_watch_service as watch_module
+from cygnusx.application.services.agentteams_case_watch_service import (
     AgentTeamsCaseWatchService,
     _watchable_sessions_query,
 )
-from omichub.infrastructure.database.models.chat import (
+from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsCaseCursorModel,
     ChatMessageModel,
     ChatSessionModel,

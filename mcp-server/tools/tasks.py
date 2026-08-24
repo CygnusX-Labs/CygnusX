@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_list_tasks(status: str = "") -> dict:
+    async def cygnusx_list_tasks(status: str = "") -> dict:
         """列出用户的分析任务。可按状态过滤: pending/queued/running/success/failed/cancelled。"""
         try:
             data = await api.list_tasks(status=status or None)
@@ -24,11 +24,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"共 {len(summary_lines)} 个任务:\n" + "\n".join(summary_lines[:20]),
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取任务列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_task(task_id: str) -> dict:
+    async def cygnusx_get_task(task_id: str) -> dict:
         """获取任务详情：状态、进度、参数、时间、错误信息。"""
         try:
             t = await api.get_task(task_id)
@@ -45,11 +45,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
             if t.get("work_dir"):
                 summary += f"工作目录: {t['work_dir']}\n"
             return {"success": True, "summary": summary, "data": t}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取任务失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_task_progress(task_id: str) -> dict:
+    async def cygnusx_get_task_progress(task_id: str) -> dict:
         """获取任务当前进度百分比和状态。用于轮询监控任务执行。"""
         try:
             t = await api.get_task(task_id)
@@ -65,13 +65,13 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "success": True,
                 "summary": summary,
                 "data": {"status": status, "progress": progress, "is_done": is_done},
-                "next_steps": [] if is_done else ["稍后再次调用 omichub_get_task_progress 查看进度"],
+                "next_steps": [] if is_done else ["稍后再次调用 cygnusx_get_task_progress 查看进度"],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"查询进度失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_task_logs(task_id: str, lines: int = 50) -> dict:
+    async def cygnusx_get_task_logs(task_id: str, lines: int = 50) -> dict:
         """获取任务执行日志（最近 N 条）。用于排查失败原因或了解执行进展。"""
         try:
             t = await api.get_task(task_id)
@@ -85,11 +85,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"最近 {len(recent)} 条日志:\n{log_text}" if recent else "暂无日志",
                 "data": {"logs": recent, "total": len(logs)},
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取日志失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_cancel_task(task_id: str, user_confirmed: bool = False) -> dict:
+    async def cygnusx_cancel_task(task_id: str, user_confirmed: bool = False) -> dict:
         """取消正在运行或排队的任务。需要 user_confirmed=True 确认执行。"""
         if not user_confirmed:
             return {
@@ -101,11 +101,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
         try:
             result = await api.cancel_task(task_id)
             return {"success": True, "summary": f"任务已取消", "data": result}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"取消失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_task_dag(task_id: str) -> dict:
+    async def cygnusx_get_task_dag(task_id: str) -> dict:
         """获取任务的 Snakemake DAG 工作流图（DOT 格式文本）。"""
         try:
             data = await api.get_task_dag(task_id)
@@ -115,5 +115,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"DAG 包含 {dot.count('->')} 条边" if dot else "无 DAG 数据",
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取 DAG 失败: {e.detail}"}

@@ -7,14 +7,14 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.schemas import tool_invocation
-from omichub.application.services import chat_service, search_provider_service
-from omichub.application.services.agent_service import AgentContext, AgentService
-from omichub.application.services.chat_service import ChatService
-from omichub.application.services.search_provider_service import SearchProviderService
-from omichub.core.exceptions import BusinessError
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
-from omichub.infrastructure.web_search.service import WebSearchService
+from cygnusx.application.schemas import tool_invocation
+from cygnusx.application.services import chat_service, search_provider_service
+from cygnusx.application.services.agent_service import AgentContext, AgentService
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.application.services.search_provider_service import SearchProviderService
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.web_search.service import WebSearchService
 
 
 @pytest.mark.parametrize(
@@ -138,7 +138,7 @@ async def test_local_provider_is_rejected_before_network_request():
     service = WebSearchService(provider_id="google", api_key="", base_url="https://www.google.com")
 
     with pytest.raises(BusinessError, match="暂未启用"):
-        await service.search("OmicHub")
+        await service.search("CygnusX")
 
 
 @pytest.mark.asyncio
@@ -343,8 +343,8 @@ async def test_direct_chat_mounts_research_tools_and_emits_mcp_style_web_events(
     assert [event.type for event in events] == [
         "tool_call", "web_search", "web_search_results", "tool_result", "text", "done",
     ]
-    assert events[0].metadata["mcp_server"] == "omichub-research"
-    assert events[3].metadata["mcp_server"] == "omichub-research"
+    assert events[0].metadata["mcp_server"] == "cygnusx-research"
+    assert events[3].metadata["mcp_server"] == "cygnusx-research"
 
 
 @pytest.mark.asyncio
@@ -516,8 +516,8 @@ async def test_agent_without_tools_uses_presearch_context(monkeypatch):
     assert [event.type for event in events] == [
         "tool_call", "web_search", "tool_result", "web_search_results", "text", "done",
     ]
-    assert events[0].metadata["mcp_server"] == "omichub-research"
-    assert events[2].metadata["mcp_server"] == "omichub-research"
+    assert events[0].metadata["mcp_server"] == "cygnusx-research"
+    assert events[2].metadata["mcp_server"] == "cygnusx-research"
 
 
 @pytest.mark.asyncio
@@ -535,7 +535,7 @@ async def test_agent_injects_user_memory_into_system_prompt(monkeypatch):
         return "## 用户记忆（跨会话，可能过时；与当前对话冲突时以当前对话为准）\n- 用户常用小鼠脑 10x V3 数据。"
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.AgentMemoryService.build_prompt_context",
+        "cygnusx.application.services.agent_memory_service.AgentMemoryService.build_prompt_context",
         fake_memory_context,
     )
     service = _configure_agent_stream(monkeypatch, supports_tools=False, provider_stream=fake_provider_stream)
@@ -604,8 +604,8 @@ async def test_agent_with_tools_executes_and_reinjects_web_search(monkeypatch):
     assert [event.type for event in events] == [
         "tool_call", "web_search", "web_search_results", "tool_result", "text", "done",
     ]
-    assert events[0].metadata["mcp_server"] == "omichub-research"
-    assert events[3].metadata["mcp_server"] == "omichub-research"
+    assert events[0].metadata["mcp_server"] == "cygnusx-research"
+    assert events[3].metadata["mcp_server"] == "cygnusx-research"
 
 
 @pytest.mark.asyncio
@@ -635,7 +635,7 @@ async def test_presearch_failure_does_not_interrupt_agent_response(monkeypatch):
         "tool_call", "web_search", "web_search", "tool_result", "text", "done",
     ]
     assert events[2].metadata["status"] == "failed"
-    assert events[3].metadata["mcp_server"] == "omichub-research"
+    assert events[3].metadata["mcp_server"] == "cygnusx-research"
 
 
 @pytest.mark.asyncio

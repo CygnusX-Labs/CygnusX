@@ -307,7 +307,7 @@ function resolveQualitySender(actor: string, metadata: RoomRoleMetadata): RoomSe
 }
 
 const OMIC_TASK_LABELS: Record<string, string> = {
-  'omic_task.submitted': 'OmicHub 任务已提交',
+  'omic_task.submitted': 'CygnusX 任务已提交',
   'omic_task.status_changed': '任务状态已回传',
   'omic_task.completed': '任务已完成，转入质量核验',
   'omic_task.failed': '任务执行失败',
@@ -1287,7 +1287,7 @@ export function projectCaseEvent(
   }
 
   if (event_type.startsWith('omic_task.')) {
-    const label = OMIC_TASK_LABELS[event_type] || 'OmicHub 任务状态变更'
+    const label = OMIC_TASK_LABELS[event_type] || 'CygnusX 任务状态变更'
     const detail = pickString(body, ['summary', 'status', 'omic_task_id'])
     return {
       id: event_id,

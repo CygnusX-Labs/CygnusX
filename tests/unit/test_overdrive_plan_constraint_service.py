@@ -2,12 +2,12 @@
 
 import pytest
 
-from omichub.application.services.overdrive_plan_constraint_service import (
+from cygnusx.application.services.overdrive_plan_constraint_service import (
     apply_authoritative_plan,
     merge_with_authoritative,
     validate_plan,
 )
-from omichub.domain.domains.schema import AssignmentRule
+from cygnusx.domain.domains.schema import AssignmentRule
 
 
 def _rules() -> list[AssignmentRule]:

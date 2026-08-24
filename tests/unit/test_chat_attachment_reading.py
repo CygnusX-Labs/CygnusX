@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omichub.application.services.chat_service import ChatService
+from cygnusx.application.services.chat_service import ChatService
 
 
 @pytest.mark.asyncio
@@ -48,7 +48,7 @@ async def test_extract_pdf_text_delegates_to_pdf_processor(monkeypatch, tmp_path
         )
 
     monkeypatch.setattr(
-        "omichub.application.services.pdf_processor.PDFProcessor.process",
+        "cygnusx.application.services.pdf_processor.PDFProcessor.process",
         fake_process,
     )
 

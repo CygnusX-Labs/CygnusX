@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services import agentteams_turn_recorder as recorder_module
-from omichub.application.services.agentteams_turn_recorder import AgentTeamsTurnRecorder
-from omichub.core.agentteams_context import agentteams_ctx_var
+from cygnusx.application.services import agentteams_turn_recorder as recorder_module
+from cygnusx.application.services.agentteams_turn_recorder import AgentTeamsTurnRecorder
+from cygnusx.core.agentteams_context import agentteams_ctx_var
 
 
 @pytest.mark.asyncio

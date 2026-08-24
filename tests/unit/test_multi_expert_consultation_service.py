@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from omichub.application.services.multi_expert_consultation_service import (
+from cygnusx.application.services.multi_expert_consultation_service import (
     MultiExpertConsultationService,
 )
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class ContextBuilderStub:
@@ -38,7 +38,7 @@ async def test_collect_runs_experts_and_ignores_failed_opinion(monkeypatch) -> N
         yield ChatChunk(type="text", content="建议先检查输入数据质量。")
 
     monkeypatch.setattr(
-        "omichub.application.services.multi_expert_consultation_service.provider_manager.chat_stream",
+        "cygnusx.application.services.multi_expert_consultation_service.provider_manager.chat_stream",
         fake_stream,
     )
     service = MultiExpertConsultationService(

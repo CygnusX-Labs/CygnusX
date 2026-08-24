@@ -1,5 +1,5 @@
 /**
- * OmicHub 动态背景动画引擎 v5
+ * CygnusX 动态背景动画引擎 v5
  * 支持 19 种动画模式，Hero 和登录页共用，每次加载随机命中一种（互斥）。
  * 使用方式：initHeroAnimation(canvas) 或 initLoginAnimation(canvas)
  *

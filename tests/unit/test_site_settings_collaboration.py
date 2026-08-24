@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from omichub.application.schemas.site_settings import UpdateSiteSettingsDTO
-from omichub.application.services.site_settings_service import (
+from cygnusx.application.schemas.site_settings import UpdateSiteSettingsDTO
+from cygnusx.application.services.site_settings_service import (
     DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_EN,
     DEFAULT_COLLABORATION_DEGRADATION_TEMPLATE_ZH,
     SiteSettingsService,
 )
-from omichub.infrastructure.database.models.site_settings import SiteSettingModel
+from cygnusx.infrastructure.database.models.site_settings import SiteSettingModel
 
 
 class FakeSession:

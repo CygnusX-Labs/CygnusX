@@ -1,17 +1,17 @@
 FROM mambaorg/micromamba:2.0.5
 
-LABEL org.opencontainers.image.title="OmicHub Analysis Core"
+LABEL org.opencontainers.image.title="CygnusX Analysis Core"
 LABEL org.opencontainers.image.description="Independent micromamba Python/R task runtime for OmicStudio and toolbox executors"
-LABEL org.omichub.runtime.family="omichub-analysis"
-LABEL org.omichub.runtime.profile="analysis-core"
+LABEL org.cygnusx.runtime.family="cygnusx-analysis"
+LABEL org.cygnusx.runtime.profile="analysis-core"
 
 USER root
 COPY requirements-agent.txt /tmp/requirements-agent.txt
 RUN usermod --uid 10001 "$MAMBA_USER" \
     && groupmod --gid 10001 "$MAMBA_USER" \
     && chown -R 10001:10001 /home/"$MAMBA_USER" /opt/conda \
-    && mkdir -p /opt/omichub \
-    && chown -R 10001:10001 /opt/omichub /tmp/requirements-agent.txt \
+    && mkdir -p /opt/cygnusx \
+    && chown -R 10001:10001 /opt/cygnusx /tmp/requirements-agent.txt \
     && mkdir -p /workspace/.logs \
     && chown -R 10001:10001 /workspace \
     && printf '%s\n' \
@@ -63,7 +63,7 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
     && micromamba clean --all --yes
 
 # agent 脚本变动频繁，放在重型依赖层之后，改动时不触发 micromamba 重装
-COPY --chown=10001:10001 sandbox_agent.py /opt/omichub/sandbox_agent.py
+COPY --chown=10001:10001 sandbox_agent.py /opt/cygnusx/sandbox_agent.py
 
 # sitecustomize.py：Python 启动时自动注入 show_plotly 图表回传 helper，
 # 与聊天轻量沙盒（deploy/sandbox/sitecustomize.py）同一 %%PLOTLY%% 标记协议；
@@ -78,10 +78,10 @@ RUN micromamba install -y -n base -c conda-forge \
       git \
       oh-my-posh \
     && micromamba clean --all --yes \
-    && micromamba run -n base git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git /opt/omichub/oh-my-zsh
-COPY --chown=10001:10001 studio-zshrc /opt/omichub/zdotdir/.zshrc
-COPY --chown=10001:10001 studio.omp.json /opt/omichub/themes/studio.omp.json
+    && micromamba run -n base git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git /opt/cygnusx/oh-my-zsh
+COPY --chown=10001:10001 studio-zshrc /opt/cygnusx/zdotdir/.zshrc
+COPY --chown=10001:10001 studio.omp.json /opt/cygnusx/themes/studio.omp.json
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg SANDBOX_WORKSPACE=/workspace
 WORKDIR /workspace
-CMD ["micromamba", "run", "-n", "base", "sh", "-c", "rm -f /workspace/.agent.sock && exec uvicorn --app-dir /opt/omichub sandbox_agent:app --uds /workspace/.agent.sock"]
+CMD ["micromamba", "run", "-n", "base", "sh", "-c", "rm -f /workspace/.agent.sock && exec uvicorn --app-dir /opt/cygnusx sandbox_agent:app --uds /workspace/.agent.sock"]

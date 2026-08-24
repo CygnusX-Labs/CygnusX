@@ -9,8 +9,8 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.chat.direct_chat_entrypoint import DirectChatEntrypoint
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.direct_chat_entrypoint import DirectChatEntrypoint
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_direct_entrypoint_builds_normalized_runtime_request(monkeypatch) 
             yield ChatChunk(type="done")
 
     monkeypatch.setattr(
-        "omichub.application.services.chat.direct_chat_entrypoint.ChatRouterService",
+        "cygnusx.application.services.chat.direct_chat_entrypoint.ChatRouterService",
         _Router,
     )
     entrypoint = DirectChatEntrypoint()

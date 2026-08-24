@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 from fastmcp import FastMCP
 
 
-def _failure(error: OmicHubAPIError) -> dict[str, Any]:
+def _failure(error: CygnusXAPIError) -> dict[str, Any]:
     return {
         "success": False,
         "error": error.detail,
@@ -17,23 +17,23 @@ def _failure(error: OmicHubAPIError) -> dict[str, Any]:
     }
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def prepare(pipeline_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return await api.prepare_pipeline(pipeline_type, payload)
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)
 
     async def submit(pipeline_type: str, prepared_params: dict[str, Any]) -> dict[str, Any]:
         try:
             return await api.submit_pipeline(pipeline_type, prepared_params)
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)
 
     async def status(pipeline_type: str, task_id: str) -> dict[str, Any]:
         try:
             return await api.get_pipeline_status(pipeline_type, task_id)
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)
 
     async def results(
@@ -43,7 +43,7 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
             return await api.get_pipeline_results(
                 pipeline_type, task_id, result_types or ["summary", "artifacts"]
             )
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)
 
     @mcp.tool()
@@ -118,7 +118,7 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
         try:
             pipelines = await api.list_available_pipelines()
             return {"success": True, "pipelines": pipelines}
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)
 
     @mcp.tool()
@@ -126,5 +126,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
         """检查当前 API Key 所属用户工作区内的数据完整性。"""
         try:
             return await api.check_workspace_data(analysis_type, data_path)
-        except OmicHubAPIError as error:
+        except CygnusXAPIError as error:
             return _failure(error)

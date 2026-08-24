@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 AI_DIR = Path("data/ai")
-SITE_YAML = Path("data/OmicHub.yaml")
+SITE_YAML = Path("data/CygnusX.yaml")
 CAPABILITIES_YAML = AI_DIR / "mas" / "agent_capabilities.yaml"
 ABILITY_YAML = AI_DIR / "agent_ability.yaml"
 ROUTER_PROMPT = AI_DIR / "prompts" / "router.md"
@@ -200,14 +200,14 @@ def test_rnaseq_prompt_keeps_analysis_center_priority_contract() -> None:
 
     required_prompt_phrases = (
         "最高优先级：正式分析优先使用平台分析中心",
-        "默认且优先使用 OmicHub「分析中心」的 RNAFlow 标准流程",
+        "默认且优先使用 CygnusX「分析中心」的 RNAFlow 标准流程",
         "完整主流程不在聊天沙盒中手工拼接运行",
         "避免只说“可以调用 RNAFlow”",
     )
     for phrase in required_prompt_phrases:
         assert phrase in prompt, f"RNA-seq 提示词缺少分析中心优先约束：{phrase}"
 
-    assert "OmicHub 正式 bulk RNA-seq 分析的默认首选能力" in skill
+    assert "CygnusX 正式 bulk RNA-seq 分析的默认首选能力" in skill
     assert "优先通过平台「分析中心」运行 RNAFlow" in skill
 
 

@@ -5,7 +5,7 @@
 - 典型用户问句 → 期望专家 的参数化映射（mock router 决策输出）
 - 边界与容错：空输出、纯思考、空 agent_id、幻觉 consult_agent_ids、expect_handoff 异常值
 - 配置一致性：data/ai/*.yaml 可加载、router.md 只依赖运行时目录、
-  OmicHub.yaml agents.enabled 配置文件齐全
+  CygnusX.yaml agents.enabled 配置文件齐全
 """
 
 import json
@@ -15,14 +15,14 @@ from typing import Any
 
 import pytest
 
-import omichub.application.services.chat_service as chat_service_module
-from omichub.application.schemas.agent import AgentTemplateDTO
-from omichub.application.services.chat_service import ROUTER_SYSTEM_PROMPT, ChatService
-from omichub.infrastructure.config import agent_loader
+import cygnusx.application.services.chat_service as chat_service_module
+from cygnusx.application.schemas.agent import AgentTemplateDTO
+from cygnusx.application.services.chat_service import ROUTER_SYSTEM_PROMPT, ChatService
+from cygnusx.infrastructure.config import agent_loader
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_DIR = REPO_ROOT / "data" / "ai"
-SITE_YAML = REPO_ROOT / "data" / "OmicHub.yaml"
+SITE_YAML = REPO_ROOT / "data" / "CygnusX.yaml"
 ROUTER_PROMPT_MD = AI_DIR / "prompts" / "router.md"
 
 
@@ -43,7 +43,7 @@ def _candidate(agent_id: str, category: str, name: str, router: bool = False) ->
     )
 
 
-# 与 data/OmicHub.yaml agents.enabled 对齐的完整候选清单
+# 与 data/CygnusX.yaml agents.enabled 对齐的完整候选清单
 CANDIDATES = [
     _candidate("agent-router", "general", "智能助手", router=True),
     _candidate("agent-general", "general", "通用助手"),
@@ -131,10 +131,10 @@ def _fake_chat_stream(text: str):
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch) -> ChatService:
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", _FakeAgentService
+        "cygnusx.application.services.agent_service.AgentService", _FakeAgentService
     )
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_capability_registry"
+        "cygnusx.application.services.agentteams_capability_registry"
         ".get_agentteams_capability_registry",
         lambda: _FakeCapabilityRegistry(),
     )
@@ -225,12 +225,12 @@ async def test_router_excludes_runtime_internal_chat_role(
 
     # 注册表负责 chat_entry 过滤:内部角色不出现在快照候选目录中。
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_capability_registry"
+        "cygnusx.application.services.agentteams_capability_registry"
         ".get_agentteams_capability_registry",
         lambda: _FakeCapabilityRegistry(CANDIDATES),
     )
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.AgentService", FakeAgentService
+        "cygnusx.application.services.agent_service.AgentService", FakeAgentService
     )
     _mock_router_output(
         monkeypatch,
@@ -527,7 +527,7 @@ async def test_json_embedded_in_code_block(service: ChatService, router_ctx: Any
 
 @pytest.mark.unit
 def test_all_enabled_agent_yamls_loadable():
-    """data/OmicHub.yaml agents.enabled 中每个 agent 的 yaml 都能被 agent_loader 加载"""
+    """data/CygnusX.yaml agents.enabled 中每个 agent 的 yaml 都能被 agent_loader 加载"""
     enabled = agent_loader._load_enabled_agents(SITE_YAML)
     assert enabled, "agents.enabled 不应为空"
     configs = agent_loader.load_agent_configs()
@@ -579,7 +579,7 @@ def test_router_prompt_uses_runtime_catalog_instead_of_static_candidates():
 
 @pytest.mark.unit
 def test_site_yaml_enabled_agents_have_config_files():
-    """data/OmicHub.yaml agents.enabled 中的每个 agent 都有对应配置文件"""
+    """data/CygnusX.yaml agents.enabled 中的每个 agent 都有对应配置文件"""
     enabled = agent_loader._load_enabled_agents(SITE_YAML)
     assert enabled == [
         "router",

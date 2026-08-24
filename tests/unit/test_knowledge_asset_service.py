@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from omichub.application.services.knowledge_asset_service import KnowledgeAssetService
+from cygnusx.application.services.knowledge_asset_service import KnowledgeAssetService
 
 
 def test_asset_enrichment_indexes_referenced_and_sibling_assets(
@@ -36,7 +36,7 @@ def test_asset_enrichment_indexes_referenced_and_sibling_assets(
             self.pages = [FakePage(1), FakePage(2)]
 
     monkeypatch.setattr(
-        "omichub.infrastructure.pdf.pypdf_adapter.pypdf",
+        "cygnusx.infrastructure.pdf.pypdf_adapter.pypdf",
         SimpleNamespace(PdfReader=FakeReader),
     )
 

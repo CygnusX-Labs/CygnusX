@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services.chat.agent_runtime_gateway import AgentRuntimeGateway
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.agent_runtime_gateway import AgentRuntimeGateway
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class _Gateway(AgentRuntimeGateway):
@@ -59,14 +59,14 @@ async def test_gateway_routes_to_runtime_when_refactor_enabled(
             yield ChatChunk(type="done")
 
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway.ChatRouterService", _Router
+        "cygnusx.application.services.chat.agent_runtime_gateway.ChatRouterService", _Router
     )
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway.get_settings",
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_settings",
         lambda: SimpleNamespace(chat_runtime_refactor_enabled=True),
     )
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway.get_tracer",
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_tracer",
         lambda name: _Tracer(),
     )
     gateway = _Gateway()
@@ -91,15 +91,15 @@ async def test_gateway_records_legacy_entry_when_refactor_is_disabled(
 ) -> None:
     counter = _Counter()
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway.get_settings",
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_settings",
         lambda: SimpleNamespace(chat_runtime_refactor_enabled=False),
     )
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway.get_tracer",
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_tracer",
         lambda name: _Tracer(),
     )
     monkeypatch.setattr(
-        "omichub.application.services.chat.agent_runtime_gateway._legacy_runtime_entry_count",
+        "cygnusx.application.services.chat.agent_runtime_gateway._legacy_runtime_entry_count",
         counter,
     )
 

@@ -6,9 +6,9 @@ from xml.etree import ElementTree
 
 import pytest
 
-from omichub.application.services.arxiv_literature_service import ArxivLiteratureService
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.mcp.presets import (
+from cygnusx.application.services.arxiv_literature_service import ArxivLiteratureService
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.mcp.presets import (
     PLATFORM_HANDLERS,
     PLATFORM_PRESET_TOOLS,
     _extract_workspace_pdf_text,

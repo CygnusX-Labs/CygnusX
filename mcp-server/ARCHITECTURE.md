@@ -1,4 +1,4 @@
-# OmicHub MCP Server 架构与扩展指南
+# CygnusX MCP Server 架构与扩展指南
 
 ## 目录结构
 
@@ -42,7 +42,7 @@ limits:        # 输出限制 (行数、超时)
 tool_groups:   # 工具组开关 (true/false)
 ```
 
-**优先级**: 环境变量 (`OMICSHUB_BASE_URL`) > `config.yaml` > 代码默认值
+**优先级**: 环境变量 (`CYGNUSX_BASE_URL`) > `config.yaml` > 代码默认值
 
 ### tools.yaml
 
@@ -57,13 +57,13 @@ tool_groups:   # 工具组开关 (true/false)
 """<group> 工具"""
 
 from fastmcp import FastMCP
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_<group>_<action>(param: str) -> dict:
+    async def cygnusx_<group>_<action>(param: str) -> dict:
         """工具描述（AI 助手看到的说明）。"""
         try:
             data = await api.get(f"/<endpoint>", params={"param": param})
@@ -73,7 +73,7 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "data": data,
                 "next_steps": ["建议的后续操作"],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"失败: {e.detail}"}
 ```
 
@@ -99,7 +99,7 @@ groups:
     module: tools.<group>
     description: "..."
     tools:
-      - name: omichub_<group>_<action>
+      - name: cygnusx_<group>_<action>
         description: "..."
         read_only: true
 ```
@@ -109,7 +109,7 @@ groups:
 在 `resources/catalog.py` 的 `register()` 中添加:
 
 ```python
-@mcp.resource("omichub://<domain>/<id>")
+@mcp.resource("cygnusx://<domain>/<id>")
 async def my_resource(id: str) -> str:
     """资源描述"""
     data = await api.get(f"/<endpoint>/{id}")
@@ -132,7 +132,7 @@ def my_workflow(param: str = "default") -> str:
 
 ## 扩展平台 API 客户端
 
-在 `client/api_client.py` 的 `OmicHubAPIClient` 类中添加方法:
+在 `client/api_client.py` 的 `CygnusXAPIClient` 类中添加方法:
 
 ```python
 async def my_endpoint(self, param: str) -> dict:
@@ -143,10 +143,10 @@ async def my_endpoint(self, param: str) -> dict:
 
 | 约定 | 说明 |
 |------|------|
-| 工具命名 | `omichub_<group>_<action>`，全小写下划线 |
+| 工具命名 | `cygnusx_<group>_<action>`，全小写下划线 |
 | 确认门 | 破坏性操作 (提交/取消/删除) 必须有 `user_confirmed: bool = False` 参数 |
 | 返回格式 | `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}` |
-| 错误处理 | 捕获 `OmicHubAPIError`，返回 `{"success": False, "summary": "..."}` |
+| 错误处理 | 捕获 `CygnusXAPIError`，返回 `{"success": False, "summary": "..."}` |
 | 文件大小 | `read_file_content` 最多 500 行，超出截断并标注 |
 | 认证 | 所有请求通过 `X-API-Key` 头，由 `api_client.py` 统一注入 |
 
@@ -165,7 +165,7 @@ async def my_endpoint(self, param: str) -> dict:
 
 ## 内部 Builtin Preset
 
-平台内部 AI (Copilot/Studio) 通过 `src/omichub/infrastructure/mcp/presets.py` 中的
-`omichub-platform` preset 获得相同能力（直接调用 application services，零网络开销）。
+平台内部 AI (Copilot/Studio) 通过 `src/cygnusx/infrastructure/mcp/presets.py` 中的
+`cygnusx-platform` preset 获得相同能力（直接调用 application services，零网络开销）。
 
 新增内部工具时同步更新 `PLATFORM_PRESET_TOOLS` 和 `PLATFORM_HANDLERS`。

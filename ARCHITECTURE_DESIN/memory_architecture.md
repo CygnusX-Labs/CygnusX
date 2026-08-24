@@ -1,13 +1,13 @@
-# OmicHub AI 记忆系统当前架构
+# CygnusX AI 记忆系统当前架构
 
 > 更新时间：2026-08-22  
 > 文档定位：记录仓库当前已经落地的 AI 记忆系统架构、数据流、开关和回滚边界。  
-> 相关实施计划：`docs/info/26.8.18/OmicHub记忆系统优化实施计划.md`  
-> 最新变更（2026-08-22）：`docs/info/26.8.22/OmicHub记忆模块优化实施手册.md`（M0 settle 泄漏面封堵 / M1 v2 共享分区召回修复 / M2 L4 读取面接入 / M3 L4 写入纪律）；终验收口：`docs/info/26.8.22/记忆系统终验与收口待办-2026-08-22.md`（`memory.settle_skipped` 升级 OTel 计数器、新增 `memory.l4_inject_degraded` 降级计数、M0–M3 单测证据清单补齐，见 §11）
+> 相关实施计划：`docs/info/26.8.18/CygnusX记忆系统优化实施计划.md`  
+> 最新变更（2026-08-22）：`docs/info/26.8.22/CygnusX记忆模块优化实施手册.md`（M0 settle 泄漏面封堵 / M1 v2 共享分区召回修复 / M2 L4 读取面接入 / M3 L4 写入纪律）；终验收口：`docs/info/26.8.22/记忆系统终验与收口待办-2026-08-22.md`（`memory.settle_skipped` 升级 OTel 计数器、新增 `memory.l4_inject_degraded` 降级计数、M0–M3 单测证据清单补齐，见 §11）
 
 ## 1. 一页结论
 
-OmicHub 的记忆系统目前采用**自研 PostgreSQL + pgvector 薄层**，不依赖
+CygnusX 的记忆系统目前采用**自研 PostgreSQL + pgvector 薄层**，不依赖
 mem0。系统处于 v2 灰度阶段：
 
 - `memory_v2_enabled=False`：保留 `agent_memories` 旧链路，作为兼容和回滚路径。
@@ -45,10 +45,10 @@ mem0。系统处于 v2 灰度阶段：
    │              （AgentTeams 合成会话在入口与任务体双重排除）
    │
    ├─ AgentMemoryToolService
-   │    ├─ omichub_save_memory
-   │    ├─ omichub_update_memory_block（v2 乐观锁）
-   │    ├─ omichub_search_memory
-   │    └─ omichub_forget_memory
+   │    ├─ cygnusx_save_memory
+   │    ├─ cygnusx_update_memory_block（v2 乐观锁）
+   │    ├─ cygnusx_search_memory
+   │    └─ cygnusx_forget_memory
    │
    ├─ AgentTeams 协作室（L4）
    │    ├─ Manager 主回路 / tool_execute 分支
@@ -60,7 +60,7 @@ mem0。系统处于 v2 灰度阶段：
    └─ OmicStudio
         ├─ MEMORY.md → 每轮系统提示词注入索引
         ├─ .memory/*.md → workspace_read 按需读取
-        ├─ omichub_workspace_remember → 正文 + 索引
+        ├─ cygnusx_workspace_remember → 正文 + 索引
         └─ Git checkpoint → 工作区版本恢复
 ```
 
@@ -68,17 +68,17 @@ mem0。系统处于 v2 灰度阶段：
 
 | 层 | 主要文件 | 职责 |
 | --- | --- | --- |
-| 应用服务 | `src/omichub/application/services/agent_memory_service.py` | 记忆校验、旧/v2 读写分流、提示词上下文组装、敏感信息过滤 |
-| 工具服务 | `src/omichub/application/services/agent_memory_tool_service.py` | 将模型工具调用映射到应用服务和命名记忆块更新 |
-| 存储抽象 | `src/omichub/infrastructure/memory/fact_store.py` | `FactStore` 协议与 PostgreSQL 实现 |
-| 数据模型 | `src/omichub/infrastructure/database/models/agent_memory.py` | 旧表、`memory_blocks`、`memory_facts`、settlement 模型 |
-| 异步沉淀 | `src/omichub/infrastructure/celery_app/tasks/memory.py` | 旧数据迁移、向量回填、增量事实抽取与幂等 settle |
-| 聊天装配 | `src/omichub/application/services/chat_service.py` | 记忆提示词、写入纪律、settle 任务投递（含 AgentTeams 合成会话排除） |
-| L4 房间装配 | `src/omichub/application/services/agentteams_room_response_service.py` | Manager 问题装配时注入共享层 + Manager 分区记忆（v2 on） |
-| L4 会诊装配 | `src/omichub/application/services/agent_consultation_service.py` | 会诊 system prompt 追加 L4 版记忆写入纪律（v2 on） |
-| Studio 上下文 | `src/omichub/application/services/studio_context_service.py` | `AGENTS.md`、`MEMORY.md` 读取与不可信包装 |
-| Studio 工具 | `src/omichub/application/services/studio_tools.py` | `omichub_workspace_remember` 和工作区文件操作 |
-| Studio 检查点 | `src/omichub/application/services/studio_checkpoints.py` | Git 快照、密钥排除、单文件大小限制、恢复 |
+| 应用服务 | `src/cygnusx/application/services/agent_memory_service.py` | 记忆校验、旧/v2 读写分流、提示词上下文组装、敏感信息过滤 |
+| 工具服务 | `src/cygnusx/application/services/agent_memory_tool_service.py` | 将模型工具调用映射到应用服务和命名记忆块更新 |
+| 存储抽象 | `src/cygnusx/infrastructure/memory/fact_store.py` | `FactStore` 协议与 PostgreSQL 实现 |
+| 数据模型 | `src/cygnusx/infrastructure/database/models/agent_memory.py` | 旧表、`memory_blocks`、`memory_facts`、settlement 模型 |
+| 异步沉淀 | `src/cygnusx/infrastructure/celery_app/tasks/memory.py` | 旧数据迁移、向量回填、增量事实抽取与幂等 settle |
+| 聊天装配 | `src/cygnusx/application/services/chat_service.py` | 记忆提示词、写入纪律、settle 任务投递（含 AgentTeams 合成会话排除） |
+| L4 房间装配 | `src/cygnusx/application/services/agentteams_room_response_service.py` | Manager 问题装配时注入共享层 + Manager 分区记忆（v2 on） |
+| L4 会诊装配 | `src/cygnusx/application/services/agent_consultation_service.py` | 会诊 system prompt 追加 L4 版记忆写入纪律（v2 on） |
+| Studio 上下文 | `src/cygnusx/application/services/studio_context_service.py` | `AGENTS.md`、`MEMORY.md` 读取与不可信包装 |
+| Studio 工具 | `src/cygnusx/application/services/studio_tools.py` | `cygnusx_workspace_remember` 和工作区文件操作 |
+| Studio 检查点 | `src/cygnusx/application/services/studio_checkpoints.py` | Git 快照、密钥排除、单文件大小限制、恢复 |
 | 工具授权 | `data/ai/tools/memory.yaml` | Agent 可用的跨会话记忆工具包 |
 | 数据迁移 | `alembic/versions/m5n6o7p8q9r0_add_memory_v2_tables.py` | v2 表与 HNSW 索引 |
 | 数据迁移 | `alembic/versions/n6o7p8q9r0s1_add_memory_settlement_cursor.py` | 增量游标与 settle 幂等表 |
@@ -221,11 +221,11 @@ Case 事实源永远是事件流 + 血缘；长期记忆只承载“关于人的
 
 | 工具 | v2 行为 |
 | --- | --- |
-| `omichub_save_memory` | 写入 `memory_facts`，使用 `FactStore.insert` 去重 |
-| `omichub_update_memory` | v2 下拒绝旧式整条更新，引导使用事实新增或记忆块更新 |
-| `omichub_update_memory_block` | 对命名块执行容量校验和乐观锁更新 |
-| `omichub_search_memory` | v2 下通过 embedding 检索 `memory_facts` |
-| `omichub_forget_memory` | 将事实或旧记忆标记为 archived，不物理删除 |
+| `cygnusx_save_memory` | 写入 `memory_facts`，使用 `FactStore.insert` 去重 |
+| `cygnusx_update_memory` | v2 下拒绝旧式整条更新，引导使用事实新增或记忆块更新 |
+| `cygnusx_update_memory_block` | 对命名块执行容量校验和乐观锁更新 |
+| `cygnusx_search_memory` | v2 下通过 embedding 检索 `memory_facts` |
+| `cygnusx_forget_memory` | 将事实或旧记忆标记为 archived，不物理删除 |
 
 写入前执行：
 
@@ -281,7 +281,7 @@ L4 会诊另有独立的三条纪律（2026-08-22 M3，装配于
   推测不进长期记忆，因为它们只对当前 Case 有意义；
 - Case 事实（样本/分组/文件路径/中间决策）禁止写入长期记忆——要查历史用血缘与
   `case_facts_query`，因为记忆会漂移、血缘与事件流不会；
-- 写入前先 `omichub_search_memory` 查重，避免同一事实多版本漂移。
+- 写入前先 `cygnusx_search_memory` 查重，避免同一事实多版本漂移。
 
 ## 7. Studio 文件型工作区记忆
 
@@ -301,7 +301,7 @@ L4 会诊另有独立的三条纪律（2026-08-22 M3，装配于
 
 ### 7.2 写入事务
 
-`omichub_workspace_remember(title, summary, content)` 执行：
+`cygnusx_workspace_remember(title, summary, content)` 执行：
 
 1. 创建 `.memory/`；
 2. 根据日期和标题生成 slug 文件名；同名文件追加序号，避免覆盖；
@@ -410,7 +410,7 @@ settle 幂等命中和块冲突率；出现异常时关闭开关即可回到旧�
 - `FactStore` 抽象及 PostgreSQL 实现；
 - v2 常驻记忆块、事实召回、时间衰减排序；
 - 增量 settle 游标、区间幂等和事实 superseded；
-- `omichub_update_memory_block` 乐观锁；
+- `cygnusx_update_memory_block` 乐观锁；
 - Studio `MEMORY.md` / `.memory/` 和工作区记忆工具；
 - 检查点密钥排除、10 MB 文件限制和恢复保护点；
 - mem0 引擎文件及依赖已从当前代码路径移除；

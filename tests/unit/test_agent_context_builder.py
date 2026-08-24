@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from omichub.application.services.agent_context_builder import AgentContextBuilder
+from cygnusx.application.services.agent_context_builder import AgentContextBuilder
 
 
 class _AgentService:

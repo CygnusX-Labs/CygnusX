@@ -2,9 +2,9 @@
 
 import pytest
 
-import omichub.application.services.chat_service as chat_module
-import omichub.application.services.chat.overdrive_control as overdrive_module
-from omichub.application.services.chat.overdrive_control import (
+import cygnusx.application.services.chat_service as chat_module
+import cygnusx.application.services.chat.overdrive_control as overdrive_module
+from cygnusx.application.services.chat.overdrive_control import (
     _analysis_intake_questions,
     _default_overdrive_assignments,
     _extract_overdrive_intake_slots,
@@ -13,8 +13,8 @@ from omichub.application.services.chat.overdrive_control import (
     _overdrive_capability_profile,
     _overdrive_preflight_questions,
 )
-from omichub.application.services.domain_registry import DomainRegistry
-from omichub.application.services.overdrive_plan_constraint_service import validate_plan
+from cygnusx.application.services.domain_registry import DomainRegistry
+from cygnusx.application.services.overdrive_plan_constraint_service import validate_plan
 
 CATALOG = [
     {"agent_id": "agent-general", "name": "通用助手", "category": "general"},

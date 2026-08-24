@@ -14,31 +14,31 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services import agentteams_room_service as room_service_module
-from omichub.application.services import agentteams_service as agentteams_service_module
-from omichub.application.services.agent_consultation_service import (
+from cygnusx.application.services import agentteams_room_service as room_service_module
+from cygnusx.application.services import agentteams_service as agentteams_service_module
+from cygnusx.application.services.agent_consultation_service import (
     AgentConsultationService,
     ConsultationEnvelope,
 )
-from omichub.application.services.agentteams_audit_events import event_stream_sort_key
-from omichub.application.services.agentteams_capability_registry import (
+from cygnusx.application.services.agentteams_audit_events import event_stream_sort_key
+from cygnusx.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
-from omichub.application.services.agentteams_room_response_service import (
+from cygnusx.application.services.agentteams_room_response_service import (
     AgentTeamsRoomResponseService,
 )
-from omichub.application.services.agentteams_room_service import (
+from cygnusx.application.services.agentteams_room_service import (
     AgentTeamsRoomService,
     build_room_proposal,
     proposal_project_name,
 )
-from omichub.application.services.agentteams_service import (
+from cygnusx.application.services.agentteams_service import (
     AgentTeamsService,
     room_namespace_case_id,
 )
-from omichub.core.config import Settings
-from omichub.core.exceptions import AuthorizationError, BusinessError
-from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
+from cygnusx.core.config import Settings
+from cygnusx.core.exceptions import AuthorizationError, BusinessError
+from cygnusx.infrastructure.database.models.chat import AgentTeamsRoomModel
 
 _STATUS_LINES = {
     key: [key]
@@ -158,7 +158,7 @@ def make_agentteams(
         delete_case=AsyncMock(return_value={"deleted": True}),
         create_element_session=AsyncMock(
             return_value={
-                "user_id": "@omichub-user-user-a:test",
+                "user_id": "@cygnusx-user-user-a:test",
                 "device_id": "DEVTEST",
                 "access_token": "syt_test_token",
                 "homeserver_url": "http://synapse.test",
@@ -246,7 +246,7 @@ async def test_create_element_session_returns_credentials_and_room_url() -> None
     assert session["room_url"] == "http://element.test/#/room/!room:test"
     agentteams.create_element_session.assert_awaited_once()
     # 携带房间 id 透传给 Gateway，由其先幂等入房再签发
-    assert agentteams.create_element_session.await_args.args == ("omichub-user-user-a", "!room:test")
+    assert agentteams.create_element_session.await_args.args == ("cygnusx-user-user-a", "!room:test")
 
 
 @pytest.mark.asyncio
@@ -307,7 +307,7 @@ async def test_delete_room_leaves_matrix_room() -> None:
     await service.delete_room(room, "user-a")
 
     # 删除协作室时让请求者的 Matrix 身份离房，Element 房间列表随之移除。
-    agentteams.leave_matrix_room.assert_awaited_once_with("omichub-user-user-a", "!room:test")
+    agentteams.leave_matrix_room.assert_awaited_once_with("cygnusx-user-user-a", "!room:test")
 
 
 @pytest.mark.asyncio
@@ -1430,7 +1430,7 @@ async def test_room_events_endpoint_clamps_limit_above_100(
 ) -> None:
     """limit=101/200 不再被 Query(le=100) 422 抹平：端点钳制到 100 交给 Service，
     调用方凭 next_cursor 续拉（Bridge 自身的硬上限校验保留，不在本层）。"""
-    from omichub.api.v1 import agentteams as agentteams_api
+    from cygnusx.api.v1 import agentteams as agentteams_api
 
     captured: dict[str, Any] = {}
 

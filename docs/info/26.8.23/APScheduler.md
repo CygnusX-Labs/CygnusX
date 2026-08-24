@@ -1,4 +1,4 @@
-# OmicHub AI 日程管理与提醒系统 - 完整实现文档
+# CygnusX AI 日程管理与提醒系统 - 完整实现文档
 
 > **版本**: v1.0 | **日期**: 2026-08-23 | **状态**: 可直接施工
 
@@ -35,11 +35,11 @@ AI 工具:   ToolBridge (tools_schema.yaml) + ToolInvocationContext
 | 现有模块 | 对接方式 |
 |---------|---------|
 | `tool_configs/tools_schema.yaml` | 追加 6 个日程工具定义 |
-| `src/omichub/api/v1/router.py` | `include_router(schedules.router, prefix="/schedules")` |
-| `src/omichub/infrastructure/celery_app/celery.py` | Beat 追加 `scan_due_schedules` 周期任务 |
-| `src/omichub/infrastructure/cache/` | 复用 Redis Pub/Sub 发布用户级通知事件 |
+| `src/cygnusx/api/v1/router.py` | `include_router(schedules.router, prefix="/schedules")` |
+| `src/cygnusx/infrastructure/celery_app/celery.py` | Beat 追加 `scan_due_schedules` 周期任务 |
+| `src/cygnusx/infrastructure/cache/` | 复用 Redis Pub/Sub 发布用户级通知事件 |
 | `frontend/src/stores/notification.ts` | 扩展为统一通知流，复用 Drawer |
-| `src/omichub/api/deps.py` | `get_current_user` 注入 user_id/workspace_id |
+| `src/cygnusx/api/deps.py` | `get_current_user` 注入 user_id/workspace_id |
 
 ---
 
@@ -139,7 +139,7 @@ schedules --1-->* schedule_occurrences --1-->* reminder_deliveries
 ### 3.1 目录结构
 
 ```
-src/omichub/
+src/cygnusx/
 ├── infrastructure/database/models/schedule.py      # 模型定义
 ├── application/schemas/schedule.py                 # Pydantic DTO
 ├── application/services/schedule_service.py        # 领域服务
@@ -206,16 +206,16 @@ A: DB 统一存 UTC，`start_at/end_at/next_fire_at` 都是 UTC。展示层根�
 
 ### 4.1 Beat 周期任务配置
 
-在 `src/omichub/infrastructure/celery_app/celery.py` 的 `beat_schedule` 中追加：
+在 `src/cygnusx/infrastructure/celery_app/celery.py` 的 `beat_schedule` 中追加：
 
 ```python
 "schedule-scan-due": {
-    "task": "src.omichub.infrastructure.celery_app.tasks.schedules.scan_due_schedules",
+    "task": "src.cygnusx.infrastructure.celery_app.tasks.schedules.scan_due_schedules",
     "schedule": 30.0,  # 每 30 秒
     "options": {"queue": "schedules"},
 },
 "schedule-retry-failed": {
-    "task": "src.omichub.infrastructure.celery_app.tasks.schedules.retry_failed_deliveries",
+    "task": "src.cygnusx.infrastructure.celery_app.tasks.schedules.retry_failed_deliveries",
     "schedule": 300.0,  # 每 5 分钟
     "options": {"queue": "schedules"},
 },
@@ -433,10 +433,10 @@ redisSubscriber.subscribe(channel, (message) => {
 | # | 文件 | 修改内容 |
 |---|------|---------|
 | 1 | `tool_configs/tools_schema.yaml` | 追加 6 个日程工具定义 |
-| 2 | `src/omichub/api/v1/router.py` | `include_router(schedules.router, prefix="/schedules")` |
-| 3 | `src/omichub/infrastructure/celery_app/celery.py` | Beat 追加扫描任务 |
-| 4 | `src/omichub/infrastructure/celery_app/celery.py` | 追加 `schedules` 队列路由 |
-| 5 | `src/omichub/core/config.py` | 追加日程相关配置项 |
+| 2 | `src/cygnusx/api/v1/router.py` | `include_router(schedules.router, prefix="/schedules")` |
+| 3 | `src/cygnusx/infrastructure/celery_app/celery.py` | Beat 追加扫描任务 |
+| 4 | `src/cygnusx/infrastructure/celery_app/celery.py` | 追加 `schedules` 队列路由 |
+| 5 | `src/cygnusx/core/config.py` | 追加日程相关配置项 |
 | 6 | `frontend/src/router/index.ts` | 追加 `/schedules` 路由 |
 | 7 | `alembic/env.py` | 确保新模型被 Alembic 发现 |
 
@@ -444,15 +444,15 @@ redisSubscriber.subscribe(channel, (message) => {
 
 | # | 文件 | 说明 |
 |---|------|------|
-| 1 | `src/omichub/infrastructure/database/models/schedule.py` | 3 个模型 |
+| 1 | `src/cygnusx/infrastructure/database/models/schedule.py` | 3 个模型 |
 | 2 | `alembic/versions/xxx_add_schedule_tables.py` | 迁移脚本 |
-| 3 | `src/omichub/application/schemas/schedule.py` | Pydantic DTO |
-| 4 | `src/omichub/application/services/schedule_service.py` | 领域服务 |
-| 5 | `src/omichub/application/services/reminder_service.py` | 提醒投递 |
-| 6 | `src/omichub/application/services/schedule_tool_service.py` | AI 工具适配 |
-| 7 | `src/omichub/api/v1/schedules.py` | REST API |
-| 8 | `src/omichub/api/v1/reminders.py` | 提醒操作 API |
-| 9 | `src/omichub/infrastructure/celery_app/tasks/schedules.py` | Celery 任务 |
+| 3 | `src/cygnusx/application/schemas/schedule.py` | Pydantic DTO |
+| 4 | `src/cygnusx/application/services/schedule_service.py` | 领域服务 |
+| 5 | `src/cygnusx/application/services/reminder_service.py` | 提醒投递 |
+| 6 | `src/cygnusx/application/services/schedule_tool_service.py` | AI 工具适配 |
+| 7 | `src/cygnusx/api/v1/schedules.py` | REST API |
+| 8 | `src/cygnusx/api/v1/reminders.py` | 提醒操作 API |
+| 9 | `src/cygnusx/infrastructure/celery_app/tasks/schedules.py` | Celery 任务 |
 | 10 | `frontend/src/api/schedules.ts` | API 封装 |
 | 11 | `frontend/src/stores/schedule.ts` | Pinia Store |
 | 12 | `frontend/src/views/SchedulesView.vue` | 主页面 |

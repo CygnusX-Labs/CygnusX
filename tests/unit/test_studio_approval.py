@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services import studio_approval_service as approval_module
-from omichub.application.services.studio_approval_service import (
+from cygnusx.application.services import studio_approval_service as approval_module
+from cygnusx.application.services.studio_approval_service import (
     APPROVAL_REQUIRED_TOOLS,
     StudioApprovalService,
 )
-from omichub.application.services.studio_tools import STUDIO_TOOL_NAMES, STUDIO_TOOL_SCHEMAS
+from cygnusx.application.services.studio_tools import STUDIO_TOOL_NAMES, STUDIO_TOOL_SCHEMAS
 
 
 class _FakeRedis:

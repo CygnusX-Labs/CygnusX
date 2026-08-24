@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from omichub.application.services.agentteams_execution_intent import (
+from cygnusx.application.services.agentteams_execution_intent import (
     GENERAL_PLAN_CONTRACT,
     ExecutionIntent,
     classify_execution_intent,

@@ -195,7 +195,7 @@ prompts:
 ```
 
 ```yaml
-# data/OmicHub.yaml
+# data/CygnusX.yaml
 agents:
   enabled:
     - agent-router
@@ -222,7 +222,7 @@ agents:
     {
       "task_id": "codebase-investigation",
       "agent_id": "agent-explorer",
-      "task": "调查 /mnt/agents/output/omichub-schedule 目录结构，识别前端框架、关键配置文件和路由结构",
+      "task": "调查 /mnt/agents/output/cygnusx-schedule 目录结构，识别前端框架、关键配置文件和路由结构",
       "depends_on": [],
       "accepts_inputs": ["directory-path"],
       "produces_outputs": ["exploration-report"],
@@ -320,7 +320,7 @@ agents:
 
 2. **注册集成**
    - [ ] `data/ai/prompts/registry.yaml` 登记 explorer
-   - [ ] `data/OmicHub.yaml` `agents.enabled` 加入 `agent-explorer`
+   - [ ] `data/CygnusX.yaml` `agents.enabled` 加入 `agent-explorer`
    - [ ] 管理端发布 Agent（或调用 `PUT /api/v1/admin/agents/agent-explorer`）
 
 3. **MAS 集成**

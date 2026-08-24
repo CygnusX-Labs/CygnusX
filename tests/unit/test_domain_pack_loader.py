@@ -6,10 +6,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from omichub.application.services.chat_service import OVERDRIVE_MANAGER_PROMPT
-from omichub.application.services.domain_registry import DomainRegistry
-from omichub.domain.domains.schema import DomainPack
-from omichub.infrastructure.config.domain_pack_loader import DomainPackLoader
+from cygnusx.application.services.chat_service import OVERDRIVE_MANAGER_PROMPT
+from cygnusx.application.services.domain_registry import DomainRegistry
+from cygnusx.domain.domains.schema import DomainPack
+from cygnusx.infrastructure.config.domain_pack_loader import DomainPackLoader
 
 
 def _pack(domain: str = "phylo", *, display_name: str = "Phylo") -> dict:

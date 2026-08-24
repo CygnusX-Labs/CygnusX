@@ -2083,7 +2083,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             id: `mode-overdrive-${Date.now()}`,
             role: 'system',
             content: degraded
-              ? '协作服务出现可恢复降级，已继续使用 OmicHub 内置协作。'
+              ? '协作服务出现可恢复降级，已继续使用 CygnusX 内置协作。'
               : enabled
                 ? '已进入超频模式：Manager 将组织专家协作。'
                 : '已退出超频模式：恢复普通对话。',
@@ -2363,7 +2363,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             if (event.success && (tc.name === 'workspace_write' || tc.name === 'workspace_edit')) {
               const changedPath = String(tc.arguments.path || uiPayload?.path || '')
               if (changedPath) {
-                window.dispatchEvent(new CustomEvent('omichub:studio-file-changed', {
+                window.dispatchEvent(new CustomEvent('cygnusx:studio-file-changed', {
                   detail: { sessionId: session.id, path: changedPath, tool: tc.name },
                 }))
               }
@@ -2398,7 +2398,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               // 交错时间线：技能卡片渲染在发生位置的正文之后
               aiMsg.timeline?.push({ kind: 'skill', skillCardId: card.id })
               // 首次调用通知：宿主组件监听后按 localStorage 去重弹轻提示
-              window.dispatchEvent(new CustomEvent('omichub:skill-invoked', {
+              window.dispatchEvent(new CustomEvent('cygnusx:skill-invoked', {
                 detail: { skill_id: event.skill_id, name: card.name, version: card.version },
               }))
             }
@@ -2797,7 +2797,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         return
       }
       if (approval.caseId) {
-        const resolved = await agentTeamsApi.submitCase(approval.caseId, { task_name: approval.toolName || 'OmicHub 分析任务' })
+        const resolved = await agentTeamsApi.submitCase(approval.caseId, { task_name: approval.toolName || 'CygnusX 分析任务' })
         Object.assign(approval, { status: resolved.status === 'submitted' ? 'completed' : 'executing' })
         return
       }

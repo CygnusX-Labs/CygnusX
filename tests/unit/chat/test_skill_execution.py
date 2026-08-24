@@ -7,7 +7,7 @@ from unittest.mock import ANY, AsyncMock
 
 import pytest
 
-from omichub.application.services.chat.skill_execution import (
+from cygnusx.application.services.chat.skill_execution import (
     SkillExecutionResult,
     stream_skill_execution,
 )

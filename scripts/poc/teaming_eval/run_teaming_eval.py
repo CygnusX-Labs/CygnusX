@@ -46,13 +46,13 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from omichub.application.services.agentteams_capability_registry import (  # noqa: E402
+from cygnusx.application.services.agentteams_capability_registry import (  # noqa: E402
     AgentTeamsCapabilityRegistry,
 )
-from omichub.application.services.agentteams_route_decision import (  # noqa: E402
+from cygnusx.application.services.agentteams_route_decision import (  # noqa: E402
     build_route_decision,
 )
-from omichub.application.services.chat_service import (  # noqa: E402
+from cygnusx.application.services.chat_service import (  # noqa: E402
     ROUTER_CATALOG_SUMMARY_KEYS,
     ROUTER_SYSTEM_PROMPT,
 )

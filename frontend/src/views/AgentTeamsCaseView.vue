@@ -133,7 +133,7 @@ const nextStep = computed(() => {
   if (status === 'approval_pending') {
     return {
       title: '预检已通过，等待人工审批',
-      description: '审批机关确认后，Workflow Operator 才能携带短期令牌提交 OmicHub 计算任务。',
+      description: '审批机关确认后，Workflow Operator 才能携带短期令牌提交 CygnusX 计算任务。',
     }
   }
   if (status === 'preflight_blocked' || status === 'waiting_for_correction') {
@@ -151,7 +151,7 @@ const nextStep = computed(() => {
   if (status === 'executing') {
     return {
       title: 'Workflow Operator 正在跟踪执行',
-      description: 'OmicHub 是任务状态、日志和产物的唯一事实来源；完成后将进入质量门禁。',
+      description: 'CygnusX 是任务状态、日志和产物的唯一事实来源；完成后将进入质量门禁。',
     }
   }
   if (status === 'execution_failed') {
@@ -201,7 +201,7 @@ const eventLabel = (type: string) => ({
   'skill.failed': 'Skill 未完成',
   'approval.requested': '已请求人工审批',
   'approval.resolved': '审批已决议',
-  'omic_task.submitted': 'OmicHub 任务已提交',
+  'omic_task.submitted': 'CygnusX 任务已提交',
   'omic_task.status_changed': '任务状态已回传',
   'omic_task.completed': '任务已完成，已转入质量核验',
   'omic_task.failed': '任务执行失败，等待修复处理',
@@ -294,7 +294,7 @@ async function confirmSubmit() {
       task_name: taskName,
     })
     submitVisible.value = false
-    message.success(`已通过 Workflow Operator 提交 OmicHub 任务 ${receipt.omic_task_id}。`)
+    message.success(`已通过 Workflow Operator 提交 CygnusX 任务 ${receipt.omic_task_id}。`)
     await refresh({ resetEvents: true })
   } catch (cause: any) {
     message.error(cause?.response?.data?.detail || '任务提交失败，未确认前请勿重复操作。')
@@ -636,7 +636,7 @@ onBeforeUnmount(() => {
             <dl class="approval-card__scope">
               <div><dt>执行者</dt><dd>Workflow Operator</dd></div>
               <div><dt>输入</dt><dd>已通过预检的固定样本表与分组对比</dd></div>
-              <div><dt>动作</dt><dd>创建一个真实 OmicHub RNA-seq 计算任务</dd></div>
+              <div><dt>动作</dt><dd>创建一个真实 CygnusX RNA-seq 计算任务</dd></div>
               <div><dt>审计</dt><dd>审批、提交回执与后续状态均写入此 Case</dd></div>
             </dl>
             <NButton type="primary" size="small" @click="openSubmit">审阅并批准执行</NButton>
@@ -737,7 +737,7 @@ onBeforeUnmount(() => {
     </NSpin>
     <NModal v-model:show="submitVisible" preset="card" title="人工确认并提交计算任务" :style="{ width: 'min(92vw, 560px)' }" :mask-closable="!submitting">
       <NAlert type="warning" :show-icon="true" class="submit-warning">
-        此操作会由后端以独立审批与 Workflow Operator 身份创建真实 OmicHub 计算任务，并严格复用已通过预检的样本表、分组对比和流程输入。浏览器无法修改这些输入。
+        此操作会由后端以独立审批与 Workflow Operator 身份创建真实 CygnusX 计算任务，并严格复用已通过预检的样本表、分组对比和流程输入。浏览器无法修改这些输入。
       </NAlert>
       <NForm label-placement="top" @submit.prevent="confirmSubmit">
         <NFormItem label="任务名称" required><NInput v-model:value="submitForm.task_name" /></NFormItem>
@@ -753,7 +753,7 @@ onBeforeUnmount(() => {
     <NModal v-model:show="qualityGateVisible" preset="card" title="提交质量门禁结论" :style="{ width: 'min(92vw, 520px)' }" :mask-closable="!qualityGateSubmitting">
       <NForm label-placement="top" @submit.prevent="confirmQualityGate">
         <NFormItem label="关联任务" required>
-          <NSelect v-model:value="qualityGateForm.task_id" :options="detail?.omic_task_ids.map((id) => ({ label: id, value: id })) || []" placeholder="选择 OmicHub 任务" />
+          <NSelect v-model:value="qualityGateForm.task_id" :options="detail?.omic_task_ids.map((id) => ({ label: id, value: id })) || []" placeholder="选择 CygnusX 任务" />
         </NFormItem>
         <NFormItem label="决策" required>
           <NSelect v-model:value="qualityGateForm.decision" :options="[

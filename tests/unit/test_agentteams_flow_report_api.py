@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.api.v1 import agentteams as agentteams_api
-from omichub.application.services.agentteams_flow_report_service import FlowReportArtifact
+from cygnusx.api.v1 import agentteams as agentteams_api
+from cygnusx.application.services.agentteams_flow_report_service import FlowReportArtifact
 
 
 @pytest.mark.asyncio

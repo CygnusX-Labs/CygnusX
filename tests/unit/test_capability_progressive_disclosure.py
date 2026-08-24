@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services.agentteams_capability_registry import (
+from cygnusx.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
-from omichub.application.services.chat_service import ROUTER_CATALOG_SUMMARY_KEYS
-from omichub.infrastructure.config.agent_ability_catalog import AgentAbilityCatalog
+from cygnusx.application.services.chat_service import ROUTER_CATALOG_SUMMARY_KEYS
+from cygnusx.infrastructure.config.agent_ability_catalog import AgentAbilityCatalog
 
 _DETAIL_KEYS = {
     "capabilities",

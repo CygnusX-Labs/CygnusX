@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from omichub.infrastructure.config.agent_ability_catalog import AgentAbilityCatalog
+from cygnusx.infrastructure.config.agent_ability_catalog import AgentAbilityCatalog
 
 
 def test_ability_catalog_normalizes_and_reloads(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
-ARG OMICHUB_IMAGE_TAG=v0.0.2dev
-# OmicHub 生信分析沙盒镜像
-# 构建：docker build --build-arg OMICHUB_IMAGE_TAG=v0.0.2dev -t omichub/sandbox-base:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
+ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
+# CygnusX 生信分析沙盒镜像
+# 构建：docker build --build-arg CYGNUSX_IMAGE_TAG=v0.0.2dev -t cygnusx/sandbox-base:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
 #
 # 设计（符合 1 人运维 / 单机部署原则）：
 # - 基于 condaforge/mambaforge，通过 bioconda 预装 scanpy + R/Seurat 交互式分析栈
@@ -9,8 +9,8 @@ ARG OMICHUB_IMAGE_TAG=v0.0.2dev
 # - matplotlib 无头（Agg），图表通过 %%ECHARTS%% / %%IMAGE%% 标记行回传
 FROM condaforge/mambaforge:24.3.0-0
 
-LABEL maintainer="OmicHub"
-LABEL description="Bioinformatics sandbox for OmicHub AI Copilot (scanpy + Seurat)"
+LABEL maintainer="CygnusX"
+LABEL description="Bioinformatics sandbox for CygnusX AI Copilot (scanpy + Seurat)"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -70,9 +70,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # conda 渠道已在 /root/.condarc 配好（conda-forge/bioconda/menpo → USTC，channel_priority flexible），
 # 不再用 conda config 调整（strict + 重复加渠道会导致混渠道求解脆弱）。
 
-# 创建 omichub 环境（Python 3.11），预装核心生信 Python 栈
-RUN mamba create -n omichub python=3.11 -y \
-    && mamba install -n omichub -y \
+# 创建 cygnusx 环境（Python 3.11），预装核心生信 Python 栈
+RUN mamba create -n cygnusx python=3.11 -y \
+    && mamba install -n cygnusx -y \
         scanpy=1.10.2 \
         anndata=0.10.8 \
         muon=0.1.7 \
@@ -97,13 +97,13 @@ RUN mamba create -n omichub python=3.11 -y \
 # 先装 CPU-only PyTorch（走 USTC 镜像的 pytorch 渠道）：
 # 否则下一步 pip 装 scvi-tools 时会从 PyPI 拉 torch 及其 NVIDIA CUDA 依赖（约 3GB），极慢且沙盒用不到 CUDA。
 # conda 的 pytorch 包自带 torch dist-info，pip 会判定 torch 依赖已满足。
-RUN mamba install -n omichub -y -c pytorch -c conda-forge \
+RUN mamba install -n cygnusx -y -c pytorch -c conda-forge \
         pytorch=2.4 \
         cpuonly \
     && mamba clean --all -y
 
 # conda 缺少的较新单细胞工具走 pip
-SHELL ["conda", "run", "-n", "omichub", "/bin/bash", "-c"]
+SHELL ["conda", "run", "-n", "cygnusx", "/bin/bash", "-c"]
 RUN pip install --no-cache-dir -i https://pypi.mirrors.ustc.edu.cn/simple \
         "squidpy>=1.4.0" \
         "scvi-tools>=1.1.0" \
@@ -116,7 +116,7 @@ RUN pip install --no-cache-dir -i https://pypi.mirrors.ustc.edu.cn/simple \
 # R + Seurat + IRkernel
 # 注意：r-base 必须 >=4.5 —— Python 栈已引入 icu 78（libharfbuzz 依赖），
 # r-base 4.3/4.4 仅接受 icu 72~75，会与 Python 栈无解（2026-07-28 实测）。
-RUN mamba install -n omichub -c conda-forge -c bioconda -y \
+RUN mamba install -n cygnusx -c conda-forge -c bioconda -y \
         r-base=4.5 \
         r-irkernel \
         r-seurat \
@@ -133,29 +133,29 @@ RUN mamba install -n omichub -c conda-forge -c bioconda -y \
     && mamba clean --all -y
 
 # 注册 IRkernel（R 代码可在同一环境执行）
-RUN conda run -n omichub R -e "IRkernel::installspec(user = FALSE)"
+RUN conda run -n cygnusx R -e "IRkernel::installspec(user = FALSE)"
 
 # 可视化提示词约定 ggpubr::theme_pubclean() 为 R 出图默认主题，预装避免现场安装失败。
 # 独立层，避免变更上层 R/Seurat 依赖的构建缓存。
-RUN mamba install -n omichub -c conda-forge -y \
+RUN mamba install -n cygnusx -c conda-forge -y \
         r-ggpubr \
     && mamba clean --all -y
 
 # micromamba 兼容 shim：提示词历史版本指示 `micromamba install -y -n base <pkg>`，
-# 本镜像为 mambaforge（mamba + omichub 环境），shim 负责转发并把 base 映射为 omichub。
+# 本镜像为 mambaforge（mamba + cygnusx 环境），shim 负责转发并把 base 映射为 cygnusx。
 COPY micromamba-shim.sh /usr/local/bin/micromamba
 RUN chmod +x /usr/local/bin/micromamba
 
 # sitecustomize.py：Python 启动时自动注入 sc/np/pd + 图表回传 helper
 # 后端池通过 `docker exec -i <c> python -` 投递用户代码，sitecustomize 对所有启动方式生效
 # 放入 site-packages 目录，Python 启动时自动加载（无需手动 PYTHONPATH）
-COPY sitecustomize.py /opt/conda/envs/omichub/lib/python3.11/site-packages/sitecustomize.py
+COPY sitecustomize.py /opt/conda/envs/cygnusx/lib/python3.11/site-packages/sitecustomize.py
 
-ENV PATH=/opt/conda/envs/omichub/bin:$PATH \
-    CONDA_DEFAULT_ENV=omichub \
+ENV PATH=/opt/conda/envs/cygnusx/bin:$PATH \
+    CONDA_DEFAULT_ENV=cygnusx \
     MPLBACKEND=Agg
 
-# 工作目录与数据挂载点（后端池挂载 /data/omichub -> /data）
+# 工作目录与数据挂载点（后端池挂载 /data/cygnusx -> /data）
 WORKDIR /workspace
 RUN mkdir -p /workspace/data /workspace/output
 

@@ -14,8 +14,8 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.services import parallel_subagent_service as pss
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services import parallel_subagent_service as pss
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 # --- 桩件 -----------------------------------------------------------------
 
@@ -111,7 +111,7 @@ def env(monkeypatch, tmp_path):
     )
     bridge = FakeBridge()
     monkeypatch.setattr(
-        "omichub.application.services.tool_bridge_service.get_tool_bridge_service",
+        "cygnusx.application.services.tool_bridge_service.get_tool_bridge_service",
         lambda: bridge,
     )
     FakeSession.created = 0
@@ -128,7 +128,7 @@ def env(monkeypatch, tmp_path):
             return type(self).db_flag
 
     monkeypatch.setattr(
-        "omichub.application.services.site_settings_service.SiteSettingsService",
+        "cygnusx.application.services.site_settings_service.SiteSettingsService",
         SiteSettingsServiceStub,
     )
     return SimpleNamespace(
@@ -770,7 +770,7 @@ async def test_child_executes_bound_mcp_tool_with_child_context(env, monkeypatch
             calls.append((tool_name, arguments, context.session_id))
             return {"success": True, "result": {"source": server.name}}
 
-    monkeypatch.setattr("omichub.infrastructure.mcp.client.MCPClient", FakeMCPClient)
+    monkeypatch.setattr("cygnusx.infrastructure.mcp.client.MCPClient", FakeMCPClient)
     server = SimpleNamespace(
         name="research-mcp",
         tools=[SimpleNamespace(tool_name="remote_lookup")],

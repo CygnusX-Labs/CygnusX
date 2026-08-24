@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services.chat.runtimes.langgraph_runtime import LangGraphChatRuntime
-from omichub.application.services.chat.dual_run import (
+from cygnusx.application.services.chat.runtimes.langgraph_runtime import LangGraphChatRuntime
+from cygnusx.application.services.chat.dual_run import (
     assert_equivalent,
     compare_golden_record,
 )
-from omichub.application.services.execution_events import validate_event_sequence
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.execution_events import validate_event_sequence
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 _GOLDEN_ROOT = Path(__file__).parents[2] / "e2e" / "chat_golden"
@@ -66,7 +66,7 @@ async def test_langgraph_runtime_error_stream_emits_failed_terminal_and_done(
         async def stream(self, _: list[dict[str, Any]]) -> AsyncIterator[ChatChunk]:
             yield ChatChunk(type="error", content="provider unavailable")
 
-    import omichub.infrastructure.execution.langgraph_runtime as runtime_module
+    import cygnusx.infrastructure.execution.langgraph_runtime as runtime_module
 
     monkeypatch.setattr(runtime_module, "LangGraphRuntimeService", _FailingRuntime)
     service = _Service()
@@ -120,7 +120,7 @@ async def test_unhandled_langgraph_handoff_emits_failed_terminal_and_done(
             if False:
                 yield ChatChunk(type="text")
 
-    import omichub.infrastructure.execution.langgraph_runtime as runtime_module
+    import cygnusx.infrastructure.execution.langgraph_runtime as runtime_module
 
     monkeypatch.setattr(runtime_module, "LangGraphRuntimeService", _HandoffRuntime)
     service = _Service()

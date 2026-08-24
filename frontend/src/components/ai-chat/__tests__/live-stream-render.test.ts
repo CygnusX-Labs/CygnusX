@@ -66,12 +66,12 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     await nextTick()
     props.streamingContent = '你好！我是'
     await nextTick()
-    props.streamingContent = '你好！我是 OmicHub AI 助手。'
+    props.streamingContent = '你好！我是 CygnusX AI 助手。'
     await nextTick()
     expect(el.textContent).toContain('你好')
 
     // 2. 结束（store.onDone 的等效动作）：写回 message，复位 streaming 态
-    message.content = '你好！我是 OmicHub AI 助手。'
+    message.content = '你好！我是 CygnusX AI 助手。'
     message.thought = '用户打招呼，应友好回应'
     message.status = 'complete'
     message.tokens = { input: 4208, output: 321, total: 4529 }
@@ -81,7 +81,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     await nextTick()
 
     // 刷新前就应可见正文与 token
-    expect(el.textContent).toContain('你好！我是 OmicHub AI 助手。')
+    expect(el.textContent).toContain('你好！我是 CygnusX AI 助手。')
     expect(el.textContent).toContain('Tokens:')
   })
 

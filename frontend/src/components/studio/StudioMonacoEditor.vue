@@ -54,7 +54,7 @@ defineExpose({
 
 onMounted(() => {
   if (!host.value) return
-  monaco.editor.defineTheme('omichub-studio-light', {
+  monaco.editor.defineTheme('cygnusx-studio-light', {
     base: 'vs',
     inherit: true,
     rules: [
@@ -79,7 +79,7 @@ onMounted(() => {
   editor = monaco.editor.create(host.value, {
     value: props.modelValue,
     language: props.language,
-    theme: 'omichub-studio-light',
+    theme: 'cygnusx-studio-light',
     readOnly: props.readonly,
     automaticLayout: true,
     minimap: { enabled: true, scale: 0.8 },

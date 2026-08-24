@@ -8,14 +8,14 @@ from uuid import UUID
 
 import pytest
 
-from omichub.api.v1.chat import download_chat_sandbox_artifact
-from omichub.application.services import chat_sandbox_tools
-from omichub.core.exceptions import ValidationError
-from omichub.domain.file.value_objects import FileSource
-from omichub.infrastructure.config.storage_config import StorageConfig
-from omichub.infrastructure.storage.backend import LocalStorageBackend
-from omichub.infrastructure.storage.file_registry import FileRegistry
-from omichub.infrastructure.storage.path_factory import StoragePathFactory
+from cygnusx.api.v1.chat import download_chat_sandbox_artifact
+from cygnusx.application.services import chat_sandbox_tools
+from cygnusx.core.exceptions import ValidationError
+from cygnusx.domain.file.value_objects import FileSource
+from cygnusx.infrastructure.config.storage_config import StorageConfig
+from cygnusx.infrastructure.storage.backend import LocalStorageBackend
+from cygnusx.infrastructure.storage.file_registry import FileRegistry
+from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 
 
 def _tmp_path_factory(tmp_path: Path):
@@ -92,10 +92,10 @@ def _patch_execute_deps(
             yield {"type": "done"}
 
     monkeypatch.setattr(
-        "omichub.application.services.sandbox_service.SandboxService", FakeService
+        "cygnusx.application.services.sandbox_service.SandboxService", FakeService
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.database.session.get_session_factory",
+        "cygnusx.infrastructure.database.session.get_session_factory",
         lambda: _FakeDBCtx,
     )
     monkeypatch.setattr(
@@ -172,13 +172,13 @@ def test_collect_artifacts_dedupes_unchanged_files_within_session(
         )
     )
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(storage_path=str(tmp_path)),
     )
     monkeypatch.setattr(
         chat_sandbox_tools, "get_path_factory", _tmp_path_factory(tmp_path)
     )
-    monkeypatch.setattr("omichub.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
+    monkeypatch.setattr("cygnusx.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
 
     first = asyncio.run(
         chat_sandbox_tools._collect_artifacts("container-1", "user-1", "sandbox-1")
@@ -224,13 +224,13 @@ def test_collect_artifacts_persists_files_and_builds_download_url(
         )
     )
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(storage_path=str(tmp_path)),
     )
     monkeypatch.setattr(
         chat_sandbox_tools, "get_path_factory", _tmp_path_factory(tmp_path)
     )
-    monkeypatch.setattr("omichub.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
+    monkeypatch.setattr("cygnusx.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
 
     artifacts = asyncio.run(
         chat_sandbox_tools._collect_artifacts("container-1", "user-1", "sandbox-1")
@@ -285,14 +285,14 @@ def test_download_chat_sandbox_artifact_resolves_current_user_file(
     target.parent.mkdir(parents=True)
     target.write_bytes(b"xlsx")
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(storage_path=str(tmp_path)),
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.storage.get_path_factory", _tmp_path_factory(tmp_path)
+        "cygnusx.infrastructure.storage.get_path_factory", _tmp_path_factory(tmp_path)
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.storage.get_storage_backend",
+        "cygnusx.infrastructure.storage.get_storage_backend",
         _tmp_storage_backend(tmp_path),
     )
 
@@ -309,14 +309,14 @@ def test_download_chat_sandbox_artifact_blocks_path_traversal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(storage_path=str(tmp_path)),
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.storage.get_path_factory", _tmp_path_factory(tmp_path)
+        "cygnusx.infrastructure.storage.get_path_factory", _tmp_path_factory(tmp_path)
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.storage.get_storage_backend",
+        "cygnusx.infrastructure.storage.get_storage_backend",
         _tmp_storage_backend(tmp_path),
     )
 
@@ -356,7 +356,7 @@ async def test_collect_artifacts_registers_files_with_file_registry(
             return_value=[{"path": "result.xlsx", "size": 10, "mtime": 1.0}]
         )
     )
-    monkeypatch.setattr("omichub.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
+    monkeypatch.setattr("cygnusx.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
 
     fake_file_id = UUID("22222222-2222-2222-2222-222222222222")
     calls: list[tuple[object, ...], dict[str, object]] = []

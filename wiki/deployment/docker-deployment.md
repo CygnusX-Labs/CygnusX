@@ -1,6 +1,6 @@
 # Docker 部署
 
-OmicHub 将控制面与计算面拆分部署：主栈承载 Web、数据库、缓存和入口服务；Worker 栈独立承载
+CygnusX 将控制面与计算面拆分部署：主栈承载 Web、数据库、缓存和入口服务；Worker 栈独立承载
 分析任务。日常部署优先使用 Makefile，不要绕过项目封装直接拼接 Compose 命令。
 
 ## 部署前准备
@@ -8,7 +8,7 @@ OmicHub 将控制面与计算面拆分部署：主栈承载 Web、数据库、�
 1. 复制 `.env.example` 为私有 `.env`，限制其读取权限。
 2. 设置 `JWT_SECRET_KEY`、`APP_SECRET_KEY`、`REDIS_PASSWORD`、`POSTGRES_PASSWORD`、
    `AI_PROVIDER_KEY_ENCRYPTION_KEY`、`OMICHBUB_INIT_ADMIN_PASSWORD` 和实际 AI Provider 密钥。
-3. 按需设置 `OMICHUB_DATA_ROOT`；默认运行数据目录为 `/data/omichub`。
+3. 按需设置 `CYGNUSX_DATA_ROOT`；默认运行数据目录为 `/data/cygnusx`。
 4. 安装 Docker Compose、Node.js 和项目要求的运行环境。
 
 请始终从仓库根目录运行 `make` 命令。主应用会通过 Compose 的 `env_file` 读取根 `.env`，而 Makefile

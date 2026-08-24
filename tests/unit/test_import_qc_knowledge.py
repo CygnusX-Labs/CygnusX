@@ -17,7 +17,7 @@ from scripts.import_qc_knowledge import (
     validate_sources,
 )
 
-from omichub.application.services.knowledge_asset_service import KnowledgeAssetService
+from cygnusx.application.services.knowledge_asset_service import KnowledgeAssetService
 
 
 def test_qc_source_lives_under_shared_knowledge_root() -> None:

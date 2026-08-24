@@ -1,4 +1,4 @@
-# OmicHub CI：lint + 单测 + 契约测试（tests/unit 内含 test_dual_registry_contract.py）
+# CygnusX CI：lint + 单测 + 契约测试（tests/unit 内含 test_dual_registry_contract.py）
 # + e2e 套件（tests/e2e 默认可跑用例）+ Bridge 独立测试工程 + 前端测试/类型检查。
 # 存量失败用例打 @pytest.mark.quarantine 隔离（-m "not quarantine"），
 # 逐条归因见 docs/info/26.8.21/协作室测试quarantine-burn-down-2026-08-21.md。

@@ -9,14 +9,14 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.api.v1.agentteams import require_integration_token
-from omichub.application.services.agent_consultation_service import (
+from cygnusx.api.v1.agentteams import require_integration_token
+from cygnusx.application.services.agent_consultation_service import (
     AgentConsultationService,
     ConsultationEnvelope,
 )
-from omichub.application.services.parallel_subagent_service import ParallelSubAgentService
-from omichub.core.exceptions import NotFoundError
-from omichub.middleware.auth import SELF_AUTHENTICATED_PREFIXES
+from cygnusx.application.services.parallel_subagent_service import ParallelSubAgentService
+from cygnusx.core.exceptions import NotFoundError
+from cygnusx.middleware.auth import SELF_AUTHENTICATED_PREFIXES
 
 
 class _Session(AsyncSession):
@@ -150,7 +150,7 @@ async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monk
         )
     )
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.PipelineResultService.get_task_summary",
+        "cygnusx.application.services.agent_consultation_service.PipelineResultService.get_task_summary",
         AsyncMock(
             return_value={
                 "flow_id": "rna_seq",
@@ -213,7 +213,7 @@ async def _test_workspace_consultation_uses_scoped_workdir() -> None:
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is False
     assert call["tasks"][0]["workspace_access"] is True
-    assert str(call["workdir_root"]) == "/data/omichub/output/agentteams/case-1/code-write-01"
+    assert str(call["workdir_root"]) == "/data/cygnusx/output/agentteams/case-1/code-write-01"
     task = call["tasks"][0]
     assert "## AgentTeams 工作区执行协议" in task["task"]
     assert "plan_hash 已确认" in task["task"]
@@ -251,7 +251,7 @@ async def _test_workspace_consultation_allowed_for_declared_expert() -> None:
 
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is False
-    assert str(call["workdir_root"]) == "/data/omichub/output/agentteams/case-1/rna-exec-01"
+    assert str(call["workdir_root"]) == "/data/cygnusx/output/agentteams/case-1/rna-exec-01"
 
 
 def test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch) -> None:
@@ -299,14 +299,14 @@ async def _test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypa
             return []
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.get_path_factory",
+        "cygnusx.application.services.agent_consultation_service.get_path_factory",
         lambda: Factory(),
     )
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.FileRepositoryImpl", Repository
+        "cygnusx.application.services.agent_consultation_service.FileRepositoryImpl", Repository
     )
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.AgentTeamsArtifactLineageService",
+        "cygnusx.application.services.agent_consultation_service.AgentTeamsArtifactLineageService",
         Lineage,
     )
     service = AgentConsultationService(SimpleNamespace())
@@ -348,7 +348,7 @@ async def _test_run_consultation_rejects_missing_agent() -> None:
 
 def test_integration_token_missing_or_wrong_is_unauthorized(monkeypatch) -> None:
     monkeypatch.setattr(
-        "omichub.api.v1.agentteams.get_settings",
+        "cygnusx.api.v1.agentteams.get_settings",
         lambda: SimpleNamespace(agentteams_integration_token="expected-token"),
     )
     with pytest.raises(HTTPException) as missing:
@@ -383,7 +383,7 @@ def test_safe_only_filters_writable_and_confirmation_tools(monkeypatch) -> None:
         ),
     }
     monkeypatch.setattr(
-        "omichub.application.services.parallel_subagent_service.schema_loader.get_tool",
+        "cygnusx.application.services.parallel_subagent_service.schema_loader.get_tool",
         schemas.get,
     )
     context = SimpleNamespace(
@@ -727,7 +727,7 @@ async def test_evidence_projection_skipped_without_work_item_or_service() -> Non
 def test_build_instruction_includes_l4_memory_write_discipline_when_v2_on(monkeypatch) -> None:
     """v2 开启时会诊 prompt 追加 L4 版三条写入纪律（解释 why 风格）。"""
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.get_settings",
+        "cygnusx.application.services.agent_consultation_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
 
@@ -744,13 +744,13 @@ def test_build_instruction_includes_l4_memory_write_discipline_when_v2_on(monkey
     # 三条纪律：持久偏好与纠错 / Case 事实禁写（血缘与 case_facts_query）/ 写前查重
     assert "持久偏好与纠错" in instruction
     assert "case_facts_query" in instruction
-    assert "omichub_search_memory" in instruction
+    assert "cygnusx_search_memory" in instruction
 
 
 def test_build_instruction_omits_memory_discipline_when_v2_off(monkeypatch) -> None:
     """v2 off 时不追加纪律，装配产物与现状一致。"""
     monkeypatch.setattr(
-        "omichub.application.services.agent_consultation_service.get_settings",
+        "cygnusx.application.services.agent_consultation_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=False),
     )
 

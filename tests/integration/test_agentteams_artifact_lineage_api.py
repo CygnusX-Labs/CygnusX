@@ -17,16 +17,16 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import omichub.api.v1.agentteams as agentteams_api
-from omichub.api.deps import get_current_user_id, get_db
-from omichub.core.exceptions import BusinessError
-from omichub.core.security import create_access_token
-from omichub.infrastructure.database.models.chat import (
+import cygnusx.api.v1.agentteams as agentteams_api
+from cygnusx.api.deps import get_current_user_id, get_db
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.core.security import create_access_token
+from cygnusx.infrastructure.database.models.chat import (
     CaseArtifactDependencyModel,
     CaseArtifactVersionModel,
     QcVerificationCheckModel,
 )
-from omichub.main import app
+from cygnusx.main import app
 
 _LINEAGE_URL = "/api/v1/agent-teams/cases/case-1/artifact-lineage"
 # AuthMiddleware 在依赖注入前校验 Bearer token 形态；用户身份仍由

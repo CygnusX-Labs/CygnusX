@@ -6,16 +6,16 @@ from typing import Any
 import httpx
 import pytest
 
-from omichub.application.services import studio_tools
-from omichub.application.services.studio_tools import (
+from cygnusx.application.services import studio_tools
+from cygnusx.application.services.studio_tools import (
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
     STUDIO_TOOL_SCHEMAS,
     execute_studio_tool,
     stream_studio_tool,
 )
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
-from omichub.infrastructure.studio.manager import StudioSandboxUnavailableError
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.studio.manager import StudioSandboxUnavailableError
 
 # ===== 假 manager：记录调用参数，按脚本产出事件 =====
 
@@ -193,7 +193,7 @@ async def test_sandbox_execute_happy_path(fake_manager: _FakeManager):
         "sandbox_execute",
         {"language": "python", "code": "print(1)"},
         "sess-1",
-        image="omichub-sandbox:bio",
+        image="cygnusx-sandbox:bio",
         on_output=on_output,
     )
 
@@ -210,7 +210,7 @@ async def test_sandbox_execute_happy_path(fake_manager: _FakeManager):
 
     assert deltas == [("stdout", "hello"), ("stderr", "warn")]
     assert fake_manager.exec_calls[0]["session_id"] == "sess-1"
-    assert fake_manager.exec_calls[0]["image"] == "omichub-sandbox:bio"
+    assert fake_manager.exec_calls[0]["image"] == "cygnusx-sandbox:bio"
 
 
 @pytest.mark.unit
@@ -309,14 +309,14 @@ async def test_sandbox_execute_over_ten_minutes_queues_background_task(
         }
 
     monkeypatch.setattr(
-        "omichub.application.services.studio_task_service.submit_studio_sandbox_task",
+        "cygnusx.application.services.studio_task_service.submit_studio_sandbox_task",
         fake_submit,
     )
     result = await execute_studio_tool(
         "sandbox_execute",
         {"language": "python", "code": "run()", "timeout": 601},
         "sess-1",
-        image="omichub-sandbox:bio",
+        image="cygnusx-sandbox:bio",
         user_id="11111111-1111-1111-1111-111111111111",
     )
 
@@ -324,7 +324,7 @@ async def test_sandbox_execute_over_ten_minutes_queues_background_task(
     assert result["result"]["ui_payload"]["task_id"] == "task-1"
     assert result["result"]["ui_payload"]["task_url"] == "/api/v1/tasks/task-1"
     assert submitted["timeout_sec"] == 601
-    assert submitted["image"] == "omichub-sandbox:bio"
+    assert submitted["image"] == "cygnusx-sandbox:bio"
     assert fake_manager.exec_calls == []
 
 
@@ -347,7 +347,7 @@ async def test_sandbox_execute_long_task_timeout_is_clamped(
         }
 
     monkeypatch.setattr(
-        "omichub.application.services.studio_task_service.submit_studio_sandbox_task",
+        "cygnusx.application.services.studio_task_service.submit_studio_sandbox_task",
         fake_submit,
     )
     await execute_studio_tool(
@@ -583,7 +583,7 @@ async def test_stream_studio_tool_non_exec_has_no_output_events(fake_manager: _F
 @pytest.mark.unit
 def test_normalize_ask_questions_multi():
     """questions[] 多问题原样保留，过滤空问题与非字符串选项"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     result = _normalize_ask_questions(
         {
@@ -604,7 +604,7 @@ def test_normalize_ask_questions_multi():
 @pytest.mark.unit
 def test_normalize_ask_questions_json_string():
     """模型把 questions 数组序列化成 JSON 字符串传来时，解析还原为问题列表"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     result = _normalize_ask_questions(
         {
@@ -622,7 +622,7 @@ def test_normalize_ask_questions_json_string_with_trailing_junk():
     """回归（2026-08-09）：模型在字符串化 JSON 尾部多塞引号/换行时，raw_decode
     取第一个完整 JSON 值、忽略尾部垃圾；此前 json.loads 直接失败，问题与选项
     全部丢失，前端降级成没有选项的自由输入卡。"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     # 生产实录载荷：前导 \n + 合法 JSON 数组 + 尾部多余 " 与 \n\n
     result = _normalize_ask_questions(
@@ -645,7 +645,7 @@ def test_normalize_ask_questions_json_string_with_trailing_junk():
 @pytest.mark.unit
 def test_normalize_ask_questions_legacy_single():
     """兼容旧单问题 question+options"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     result = _normalize_ask_questions({"question": "物种？", "options": ["人", "小鼠"]})
     assert result == [{"question": "物种？", "options": ["人", "小鼠"]}]
@@ -654,7 +654,7 @@ def test_normalize_ask_questions_legacy_single():
 @pytest.mark.unit
 def test_normalize_ask_questions_empty_fallback():
     """模型未给出有效问题时兜底一个空问题（前端渲染自由输入，保证用户可回复）"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     assert _normalize_ask_questions({}) == [{"question": "", "options": []}]
     assert _normalize_ask_questions({"question": "  "}) == [{"question": "", "options": []}]
@@ -666,7 +666,7 @@ def test_normalize_ask_questions_empty_fallback():
 @pytest.mark.unit
 def test_normalize_ask_questions_capped_at_five():
     """问题数量上限 5 个"""
-    from omichub.application.services.chat_service import _normalize_ask_questions
+    from cygnusx.application.services.chat_service import _normalize_ask_questions
 
     result = _normalize_ask_questions(
         {"questions": [{"question": f"q{i}"} for i in range(8)]}

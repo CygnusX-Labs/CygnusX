@@ -7,9 +7,9 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.chat.runtimes.base import ChatRuntimeRequest
-from omichub.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.runtimes.base import ChatRuntimeRequest
+from cygnusx.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 class _Service:

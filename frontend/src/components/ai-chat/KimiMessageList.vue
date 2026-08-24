@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<Props>(), {
   modelName: 'AI 助手',
   userName: '我',
   userAvatar: '',
-  agentName: 'OmicHub AI',
+  agentName: 'CygnusX AI',
   agentAvatar: '🤖',
   agentColor: '#4f8ef7',
   sessionId: '',

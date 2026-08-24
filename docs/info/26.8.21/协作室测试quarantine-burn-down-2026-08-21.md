@@ -91,7 +91,7 @@
 - `test_collect_runs_experts_and_ignores_failed_opinion` — assemble_context 调用新增 user_id 关键字，AgentServiceStub 签名未跟上
 
 ### tests/unit/test_overdrive_persona_config.py（1）
-- `test_enabled_agent_personas_are_complete_deterministic_and_permission_neutral` — 启用的 agent persona 集合与断言不一致，OmicHub.yaml 配置已变更
+- `test_enabled_agent_personas_are_complete_deterministic_and_permission_neutral` — 启用的 agent persona 集合与断言不一致，CygnusX.yaml 配置已变更
 
 ### tests/unit/test_provider_retry_policy.py（1）
 - `test_deepseek_v4_explicitly_disables_thinking` — deepseek v4 请求 payload 未写入 enable_thinking 键，触发 KeyError

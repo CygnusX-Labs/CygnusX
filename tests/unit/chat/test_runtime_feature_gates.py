@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omichub.application.services.chat.runtime_feature_gates import ChatRuntimeFeatureGates
+from cygnusx.application.services.chat.runtime_feature_gates import ChatRuntimeFeatureGates
 
 
 class _Gates(ChatRuntimeFeatureGates):
@@ -17,7 +17,7 @@ class _Gates(ChatRuntimeFeatureGates):
 @pytest.mark.asyncio
 async def test_memory_gate_short_circuits_when_feature_disabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=False),
     )
 
@@ -27,7 +27,7 @@ async def test_memory_gate_short_circuits_when_feature_disabled(monkeypatch) -> 
 @pytest.mark.asyncio
 async def test_memory_gate_allows_database_free_runtime(monkeypatch) -> None:
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
 
@@ -37,7 +37,7 @@ async def test_memory_gate_allows_database_free_runtime(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_subagent_gate_uses_environment_flag_before_site_settings(monkeypatch) -> None:
     monkeypatch.setattr(
-        "omichub.core.config.get_settings",
+        "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(subagent_fanout_enabled=True),
     )
 

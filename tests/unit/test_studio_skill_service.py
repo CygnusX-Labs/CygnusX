@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.schemas.studio import ExtractStudioSkillRequest
-from omichub.application.services.studio_skill_service import extract_skill_from_workspace
-from omichub.core.exceptions import BusinessError
-from omichub.infrastructure.database.models.chat import ChatSessionModel
-from omichub.infrastructure.studio import manager as manager_module
+from cygnusx.application.schemas.studio import ExtractStudioSkillRequest
+from cygnusx.application.services.studio_skill_service import extract_skill_from_workspace
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.infrastructure.studio import manager as manager_module
 
 
 def _session() -> ChatSessionModel:

@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.core.security import create_access_token
-from omichub.main import app
-from omichub.middleware.rbac import require_admin
+from cygnusx.core.security import create_access_token
+from cygnusx.main import app
+from cygnusx.middleware.rbac import require_admin
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ async def test_list_agents_contract(client, auth_headers, admin_override):
         }
     ]
     with patch(
-        "omichub.api.v1.admin.agents.AgentService.list_agents",
+        "cygnusx.api.v1.admin.agents.AgentService.list_agents",
         new=AsyncMock(return_value=payload),
     ):
         resp = await client.get("/api/v1/admin/agents", headers=auth_headers)
@@ -112,7 +112,7 @@ async def test_create_agent_with_valid_model_id(client, auth_headers, admin_over
         "updated_at": None,
     }
     with patch(
-        "omichub.api.v1.admin.agents.AgentService.create_agent",
+        "cygnusx.api.v1.admin.agents.AgentService.create_agent",
         new=AsyncMock(return_value=created),
     ) as mocked:
         resp = await client.post(
@@ -166,7 +166,7 @@ async def test_update_agent_with_empty_model_id(client, auth_headers, admin_over
         "updated_at": None,
     }
     with patch(
-        "omichub.api.v1.admin.agents.AgentService.update_agent",
+        "cygnusx.api.v1.admin.agents.AgentService.update_agent",
         new=AsyncMock(return_value=updated),
     ) as mocked:
         resp = await client.put(

@@ -2,14 +2,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from omichub.core.config import get_settings
-from omichub.domain.ai_provider.entities import AIProviderConfig
-from omichub.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
-from omichub.infrastructure.ai_provider.openai_compatible import (
+from cygnusx.core.config import get_settings
+from cygnusx.domain.ai_provider.entities import AIProviderConfig
+from cygnusx.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
+from cygnusx.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
     OpenAICompatibleProvider,
 )
-from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
 
 
 class _FakeStreamResponse:
@@ -82,7 +82,7 @@ async def test_provider_5xx_is_marked_retryable(monkeypatch: pytest.MonkeyPatch)
         AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")
     )
     monkeypatch.setattr(
-        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
         lambda **_kwargs: _FakeAsyncClient([], status_code=500, body=b'{"detail":"temporary"}'),
     )
 
@@ -206,7 +206,7 @@ async def test_openai_sse_accepts_compact_data_and_message_payload(
         "data:[DONE]\n",
     ]
     monkeypatch.setattr(
-        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
         lambda **_kwargs: _FakeAsyncClient(chunks),
     )
 
@@ -234,7 +234,7 @@ async def test_deepseek_chat_keeps_enable_thinking(monkeypatch: pytest.MonkeyPat
     )
     payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
         lambda **_kwargs: _FakeAsyncClient(
             ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
             payloads,
@@ -264,7 +264,7 @@ async def test_deepseek_v4_explicitly_disables_thinking(monkeypatch: pytest.Monk
     )
     payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
         lambda **_kwargs: _FakeAsyncClient(
             ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
             payloads,
@@ -294,7 +294,7 @@ async def test_non_volc_qwen_keeps_enable_thinking(monkeypatch: pytest.MonkeyPat
     )
     payloads: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "omichub.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
         lambda **_kwargs: _FakeAsyncClient(
             ['data:{"choices":[{"delta":{"content":"ok"}}]}\n', "data:[DONE]\n"],
             payloads,

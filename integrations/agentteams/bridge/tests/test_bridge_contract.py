@@ -8,16 +8,16 @@ from typing import Any
 
 import httpx
 import pytest
-from omichub_agentteams_bridge.app import create_app
-from omichub_agentteams_bridge.audit import AuditStore
-from omichub_agentteams_bridge.case_store import CaseStore
-from omichub_agentteams_bridge.client import OmicHubClient
-from omichub_agentteams_bridge.config import BridgeSettings
-from omichub_agentteams_bridge.models import CaseRecord
+from cygnusx_agentteams_bridge.app import create_app
+from cygnusx_agentteams_bridge.audit import AuditStore
+from cygnusx_agentteams_bridge.case_store import CaseStore
+from cygnusx_agentteams_bridge.client import CygnusXClient
+from cygnusx_agentteams_bridge.config import BridgeSettings
+from cygnusx_agentteams_bridge.models import CaseRecord
 
 
-class FixtureOmicHubClient:
-    """Loop-neutral OmicHub fake used by ASGI contract tests."""
+class FixtureCygnusXClient:
+    """Loop-neutral CygnusX fake used by ASGI contract tests."""
 
     def __init__(self, settings: BridgeSettings, calls: list[httpx.Request]) -> None:
         self._settings = settings
@@ -74,7 +74,7 @@ class FixtureOmicHubClient:
         return {"id": task_id, "status": "cancelled"}
 
     def _record(self, method: str, path: str, payload: dict | None = None) -> None:
-        headers = {"Authorization": f"Bearer {self._settings.omichub_service_token}"}
+        headers = {"Authorization": f"Bearer {self._settings.cygnusx_service_token}"}
         self._calls.append(
             httpx.Request(method, f"http://omic.test{path}", headers=headers, json=payload)
         )
@@ -90,7 +90,7 @@ async def test_healthz_exposes_build_metadata(tmp_path: Path) -> None:
         build_sha="abc123",
         build_time="2026-08-19T00:00:00Z",
     )
-    app = create_app(settings, FixtureOmicHubClient(settings, []))
+    app = create_app(settings, FixtureCygnusXClient(settings, []))
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://bridge.test"
     ) as client:
@@ -117,7 +117,7 @@ class LoopLocalASGIClient:
     def _client(self) -> httpx.AsyncClient:
         loop = asyncio.get_running_loop()
         if loop not in self._clients:
-            bridge = create_app(self._settings, FixtureOmicHubClient(self._settings, self._calls))
+            bridge = create_app(self._settings, FixtureCygnusXClient(self._settings, self._calls))
             self._clients[loop] = httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=bridge), base_url="http://bridge.test"
             )
@@ -133,8 +133,8 @@ class LoopLocalASGIClient:
 @pytest.fixture
 def settings(tmp_path):
     return BridgeSettings(
-        omichub_base_url="http://omic.test",
-        omichub_service_token="service-token",
+        cygnusx_base_url="http://omic.test",
+        cygnusx_service_token="service-token",
         approval_signing_secret="test-signing-secret",
         identities=(
             "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
@@ -164,17 +164,17 @@ def test_production_settings_reject_default_bridge_secrets() -> None:
     with pytest.raises(ValueError, match="审批签名密钥"):
         BridgeSettings(
             environment="production",
-            omichub_service_token="restricted-token",
+            cygnusx_service_token="restricted-token",
             identities="approval-authority:approval,bioops-manager:manager",
             allowed_flow_ids="rna_seq",
         )
 
 
 def test_production_settings_reject_template_bridge_secrets() -> None:
-    with pytest.raises(ValueError, match="OmicHub 受限服务令牌或 API Key"):
+    with pytest.raises(ValueError, match="CygnusX 受限服务令牌或 API Key"):
         BridgeSettings(
             environment="production",
-            omichub_service_token="replace-with-restricted-service-user-token",
+            cygnusx_service_token="replace-with-restricted-service-user-token",
             approval_signing_secret="replace-with-32-byte-random-secret",
             identities="approval-authority:replace-human-approval-gateway",
             allowed_flow_ids="rna_seq",
@@ -185,8 +185,8 @@ def test_production_settings_rejects_multiple_upstream_credentials() -> None:
     with pytest.raises(ValueError, match="只能配置一种"):
         BridgeSettings(
             environment="production",
-            omichub_service_token="restricted-token",
-            omichub_api_key="omh_restricted_key",
+            cygnusx_service_token="restricted-token",
+            cygnusx_api_key="omh_restricted_key",
             approval_signing_secret="test-signing-secret",
             identities="approval-authority:approval,bioops-manager:manager,data-steward:steward,workflow-operator:operator,quality-auditor:auditor,delivery-reporter:reporter",
             allowed_flow_ids="rna_seq",
@@ -408,12 +408,12 @@ async def test_upstream_uses_api_key_when_configured(settings) -> None:
         return httpx.Response(200, json={"items": [], "total": 0})
 
     api_key_settings = settings.model_copy(
-        update={"omichub_service_token": "", "omichub_api_key": "omh_restricted_key"}
+        update={"cygnusx_service_token": "", "cygnusx_api_key": "omh_restricted_key"}
     )
     upstream = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://omic.test"
     )
-    client = OmicHubClient(api_key_settings, upstream)
+    client = CygnusXClient(api_key_settings, upstream)
     await client.list_flows()
     await upstream.aclose()
 
@@ -440,15 +440,15 @@ async def test_capability_snapshot_uses_only_integration_token(settings) -> None
 
     api_key_settings = settings.model_copy(
         update={
-            "omichub_service_token": "",
-            "omichub_api_key": "omh_restricted_key",
-            "omichub_integration_token": "integration-secret",
+            "cygnusx_service_token": "",
+            "cygnusx_api_key": "omh_restricted_key",
+            "cygnusx_integration_token": "integration-secret",
         }
     )
     upstream = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://omic.test"
     )
-    client = OmicHubClient(api_key_settings, upstream)
+    client = CygnusXClient(api_key_settings, upstream)
     await client.get_agentteams_capabilities()
     await upstream.aclose()
 
@@ -1189,7 +1189,7 @@ async def test_case_and_event_queries_support_scoped_cursor_pagination(client) -
 async def test_bridge_rejects_oversized_request_before_route_execution(settings, tmp_path) -> None:
     limited_settings = settings.model_copy(update={"max_request_bytes": 1_024})
     upstream = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(404)))
-    bridge = create_app(limited_settings, OmicHubClient(limited_settings, upstream))
+    bridge = create_app(limited_settings, CygnusXClient(limited_settings, upstream))
     transport = httpx.ASGITransport(app=bridge)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://bridge.test"
@@ -1213,7 +1213,7 @@ async def test_bridge_rejects_oversized_request_before_route_execution(settings,
 async def test_bridge_rejects_oversized_response(settings) -> None:
     limited_settings = settings.model_copy(update={"max_response_bytes": 1_024})
     upstream = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(404)))
-    bridge = create_app(limited_settings, OmicHubClient(limited_settings, upstream))
+    bridge = create_app(limited_settings, CygnusXClient(limited_settings, upstream))
     transport = httpx.ASGITransport(app=bridge)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://bridge.test"
@@ -1906,15 +1906,15 @@ async def test_query_case_facts_uses_integration_token_and_forwards_payload(sett
 
     token_settings = settings.model_copy(
         update={
-            "omichub_service_token": "",
-            "omichub_api_key": "omh_restricted_key",
-            "omichub_integration_token": "integration-secret",
+            "cygnusx_service_token": "",
+            "cygnusx_api_key": "omh_restricted_key",
+            "cygnusx_integration_token": "integration-secret",
         }
     )
     upstream = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://omic.test"
     )
-    client = OmicHubClient(token_settings, upstream)
+    client = CygnusXClient(token_settings, upstream)
     result = await client.query_case_facts(
         case_id="bioops_case1",
         caller="manager",

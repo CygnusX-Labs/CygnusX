@@ -7,12 +7,12 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.agent_service import AgentService
-from omichub.infrastructure.config import agent_loader
-from omichub.infrastructure.config.agent_loader import _load_single_agent
-from omichub.infrastructure.mcp.presets import (
-    OMICHUB_PLATFORM_SERVER_ID,
-    OMICHUB_TOOLS_SERVER_ID,
+from cygnusx.application.services.agent_service import AgentService
+from cygnusx.infrastructure.config import agent_loader
+from cygnusx.infrastructure.config.agent_loader import _load_single_agent
+from cygnusx.infrastructure.mcp.presets import (
+    CYGNUSX_PLATFORM_SERVER_ID,
+    CYGNUSX_TOOLS_SERVER_ID,
 )
 
 
@@ -27,11 +27,11 @@ def test_studio_section_parsed(tmp_path: Path):
     """studio: {enabled, image} 原样解析并规整类型"""
     path = _write_yaml(
         tmp_path,
-        "agent_id: a1\nname: 测试\nstudio:\n  enabled: true\n  image: omichub-sandbox:bio\n",
+        "agent_id: a1\nname: 测试\nstudio:\n  enabled: true\n  image: cygnusx-sandbox:bio\n",
     )
     data = _load_single_agent(path)
     assert data is not None
-    assert data["studio"] == {"enabled": True, "image": "omichub-sandbox:bio"}
+    assert data["studio"] == {"enabled": True, "image": "cygnusx-sandbox:bio"}
 
 
 @pytest.mark.unit
@@ -93,10 +93,10 @@ def test_studio_section_non_dict_dropped(tmp_path: Path):
 @pytest.mark.unit
 def test_studio_section_partial_fields(tmp_path: Path):
     """只写 image 时保留 image；enabled 缺省不补"""
-    path = _write_yaml(tmp_path, "agent_id: a1\nstudio:\n  image: omichub-sandbox:base\n")
+    path = _write_yaml(tmp_path, "agent_id: a1\nstudio:\n  image: cygnusx-sandbox:base\n")
     data = _load_single_agent(path)
     assert data is not None
-    assert data["studio"] == {"image": "omichub-sandbox:base"}
+    assert data["studio"] == {"image": "cygnusx-sandbox:base"}
 
 
 @pytest.mark.unit
@@ -129,7 +129,7 @@ def test_local_prompt_and_tool_pack_are_loaded(tmp_path: Path):
     tools_dir = tmp_path / "tools"
     tools_dir.mkdir()
     (tools_dir / "research.yaml").write_text(
-        "id: research\nbuiltin_tools: [omichub_run_kegg_enrichment]\n"
+        "id: research\nbuiltin_tools: [cygnusx_run_kegg_enrichment]\n"
         "platform_tools: [list_workspace_files]\n",
         encoding="utf-8",
     )
@@ -142,15 +142,15 @@ def test_local_prompt_and_tool_pack_are_loaded(tmp_path: Path):
 
     assert data is not None
     assert data["system_prompt"] == "详细系统提示词"
-    assert str(OMICHUB_TOOLS_SERVER_ID) in data["mcp_ids"]
-    assert str(OMICHUB_PLATFORM_SERVER_ID) in data["mcp_ids"]
+    assert str(CYGNUSX_TOOLS_SERVER_ID) in data["mcp_ids"]
+    assert str(CYGNUSX_PLATFORM_SERVER_ID) in data["mcp_ids"]
     assert data["features"]["tool_packs"] == [
         {
             "id": "research",
             "description": "",
-            "builtin_tools": ["omichub_run_kegg_enrichment"],
+            "builtin_tools": ["cygnusx_run_kegg_enrichment"],
             "mcp_tools": {
-                str(OMICHUB_PLATFORM_SERVER_ID): ["list_workspace_files"],
+                str(CYGNUSX_PLATFORM_SERVER_ID): ["list_workspace_files"],
             },
         }
     ]
@@ -170,7 +170,7 @@ def test_agent_level_mcp_tools_whitelist_is_merged(tmp_path: Path):
         "agent_id: a1\n"
         "tool_packs: [research]\n"
         "mcp_tools:\n"
-        f"  {OMICHUB_PLATFORM_SERVER_ID}:\n"
+        f"  {CYGNUSX_PLATFORM_SERVER_ID}:\n"
         "    - ability_catalog_query\n",
     )
 
@@ -179,9 +179,9 @@ def test_agent_level_mcp_tools_whitelist_is_merged(tmp_path: Path):
     assert data is not None
     packs = data["features"]["tool_packs"]
     inline = next(p for p in packs if p["id"] == "a1:inline")
-    assert inline["mcp_tools"] == {str(OMICHUB_PLATFORM_SERVER_ID): ["ability_catalog_query"]}
+    assert inline["mcp_tools"] == {str(CYGNUSX_PLATFORM_SERVER_ID): ["ability_catalog_query"]}
     # 工具包自带的白名单不受影响
-    assert packs[0]["mcp_tools"] == {str(OMICHUB_PLATFORM_SERVER_ID): ["list_workspace_files"]}
+    assert packs[0]["mcp_tools"] == {str(CYGNUSX_PLATFORM_SERVER_ID): ["list_workspace_files"]}
 
 
 @pytest.mark.unit
@@ -191,7 +191,7 @@ def test_agent_level_mcp_tools_without_tool_packs(tmp_path: Path):
         tmp_path,
         "agent_id: a2\n"
         "mcp_tools:\n"
-        f"  {OMICHUB_PLATFORM_SERVER_ID}: [room_state_query]\n",
+        f"  {CYGNUSX_PLATFORM_SERVER_ID}: [room_state_query]\n",
     )
 
     data = _load_single_agent(path)
@@ -203,7 +203,7 @@ def test_agent_level_mcp_tools_without_tool_packs(tmp_path: Path):
             "id": "a2:inline",
             "description": "Agent 级 mcp_tools 白名单（YAML 顶层声明）",
             "builtin_tools": [],
-            "mcp_tools": {str(OMICHUB_PLATFORM_SERVER_ID): ["room_state_query"]},
+            "mcp_tools": {str(CYGNUSX_PLATFORM_SERVER_ID): ["room_state_query"]},
         }
     ]
 
@@ -238,7 +238,7 @@ def test_local_prompt_path_cannot_escape_agent_directory(tmp_path: Path):
 
 @pytest.mark.unit
 def test_mas_enabled_does_not_implicitly_register_orchestrator(tmp_path: Path, monkeypatch):
-    site_yaml = tmp_path / "OmicHub.yaml"
+    site_yaml = tmp_path / "CygnusX.yaml"
     site_yaml.write_text("agents:\n  enabled: [general]\n", encoding="utf-8")
     agents_dir = tmp_path / "ai"
     agents_dir.mkdir()
@@ -312,8 +312,8 @@ async def test_unbound_builtin_agent_resolves_default_model_for_studio():
 async def test_existing_builtin_agent_resyncs_studio_features(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
-    from omichub.application.services.agent_service import AgentService
-    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+    from cygnusx.application.services.agent_service import AgentService
+    from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
 
     existing = AgentTemplateModel(
         agent_id="a1",
@@ -328,12 +328,12 @@ async def test_existing_builtin_agent_resyncs_studio_features(monkeypatch):
     service = AgentService(db)
     service.get_agent = AsyncMock(return_value=existing)
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.load_agent_configs",
+        "cygnusx.application.services.agent_service.load_agent_configs",
         lambda: [
             {
                 "agent_id": "a1",
                 "features": {"enable_file_upload": True},
-                "studio": {"enabled": True, "image": "omichub-sandbox:bio"},
+                "studio": {"enabled": True, "image": "cygnusx-sandbox:bio"},
             }
         ],
     )
@@ -343,7 +343,7 @@ async def test_existing_builtin_agent_resyncs_studio_features(monkeypatch):
     assert existing.features == {
         "enable_web_search": True,
         "enable_file_upload": True,
-        "studio": {"enabled": True, "image": "omichub-sandbox:bio"},
+        "studio": {"enabled": True, "image": "cygnusx-sandbox:bio"},
     }
     db.add.assert_not_called()
     db.flush.assert_awaited_once()
@@ -353,8 +353,8 @@ async def test_existing_builtin_agent_resyncs_studio_features(monkeypatch):
 async def test_existing_custom_agent_is_not_overwritten(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
-    from omichub.application.services.agent_service import AgentService
-    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+    from cygnusx.application.services.agent_service import AgentService
+    from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
 
     existing = AgentTemplateModel(
         agent_id="a1",
@@ -369,7 +369,7 @@ async def test_existing_custom_agent_is_not_overwritten(monkeypatch):
     service = AgentService(db)
     service.get_agent = AsyncMock(return_value=existing)
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.load_agent_configs",
+        "cygnusx.application.services.agent_service.load_agent_configs",
         lambda: [{"agent_id": "a1", "studio": {"enabled": True}}],
     )
 
@@ -383,8 +383,8 @@ async def test_existing_custom_agent_is_not_overwritten(monkeypatch):
 async def test_existing_builtin_agent_merges_declared_skill_ids(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
-    from omichub.application.services.agent_service import AgentService
-    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+    from cygnusx.application.services.agent_service import AgentService
+    from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
 
     existing = AgentTemplateModel(
         agent_id="a1",
@@ -400,7 +400,7 @@ async def test_existing_builtin_agent_merges_declared_skill_ids(monkeypatch):
     service.get_agent = AsyncMock(return_value=existing)
     service._ensure_configured_marketplace_skills = AsyncMock()
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.load_agent_configs",
+        "cygnusx.application.services.agent_service.load_agent_configs",
         lambda: [{"agent_id": "a1", "skill_ids": ["existing-skill", "annotation-skill"]}],
     )
 
@@ -416,8 +416,8 @@ async def test_existing_builtin_agent_merges_declared_skill_ids(monkeypatch):
 async def test_existing_managed_builtin_agent_syncs_prompt_and_declared_mcps(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
-    from omichub.application.services.agent_service import AgentService
-    from omichub.infrastructure.database.models.agent import AgentTemplateModel
+    from cygnusx.application.services.agent_service import AgentService
+    from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
 
     existing = AgentTemplateModel(
         agent_id="agent-rnaseq",
@@ -427,7 +427,7 @@ async def test_existing_managed_builtin_agent_syncs_prompt_and_declared_mcps(mon
         description="旧描述",
         temperature=0.7,
         is_active=False,
-        mcp_ids=[str(OMICHUB_TOOLS_SERVER_ID)],
+        mcp_ids=[str(CYGNUSX_TOOLS_SERVER_ID)],
         features={},
     )
     declared_mcp = "7375dd58-4c5f-59f9-ab27-a407bb961ee8"
@@ -439,7 +439,7 @@ async def test_existing_managed_builtin_agent_syncs_prompt_and_declared_mcps(mon
     service.get_agent = AsyncMock(return_value=existing)
     service._ensure_configured_marketplace_skills = AsyncMock()
     monkeypatch.setattr(
-        "omichub.application.services.agent_service.load_agent_configs",
+        "cygnusx.application.services.agent_service.load_agent_configs",
         lambda: [
             {
                 "agent_id": "agent-rnaseq",
@@ -460,12 +460,12 @@ async def test_existing_managed_builtin_agent_syncs_prompt_and_declared_mcps(mon
     assert existing.temperature == 0.4
     assert existing.is_active is True
     assert declared_mcp in existing.mcp_ids
-    assert str(OMICHUB_TOOLS_SERVER_ID) in existing.mcp_ids
+    assert str(CYGNUSX_TOOLS_SERVER_ID) in existing.mcp_ids
 
 
 @pytest.mark.unit
 def test_rnaseq_agent_loads_domain_pack_and_rnaflow_skill() -> None:
-    from omichub.infrastructure.config.agent_loader import load_agent_configs
+    from cygnusx.infrastructure.config.agent_loader import load_agent_configs
 
     config = next(item for item in load_agent_configs() if item["agent_id"] == "agent-rnaseq")
 
@@ -479,7 +479,7 @@ def test_rnaseq_agent_loads_domain_pack_and_rnaflow_skill() -> None:
 
 @pytest.mark.unit
 def test_atacseq_agent_loads_domain_pack_and_atacflow_skill() -> None:
-    from omichub.infrastructure.config.agent_loader import load_agent_configs
+    from cygnusx.infrastructure.config.agent_loader import load_agent_configs
 
     config = next(item for item in load_agent_configs() if item["agent_id"] == "agent-atacseq")
 
@@ -502,14 +502,14 @@ def test_atacseq_agent_loads_domain_pack_and_atacflow_skill() -> None:
 async def test_configured_marketplace_skill_is_installed(monkeypatch, tmp_path: Path):
     from unittest.mock import AsyncMock, MagicMock
 
-    from omichub.application.services.agent_service import AgentService
-    from omichub.application.services.skill_import_service import SkillImportService
+    from cygnusx.application.services.agent_service import AgentService
+    from cygnusx.application.services.skill_import_service import SkillImportService
 
     skill_dir = tmp_path / "annotation-skill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("---\nname: 注释\ndescription: 测试\n---\n正文", encoding="utf-8")
     settings = type("SettingsStub", (), {"skill_marketplace_dir": str(tmp_path)})()
-    monkeypatch.setattr("omichub.core.config.get_settings", lambda: settings)
+    monkeypatch.setattr("cygnusx.core.config.get_settings", lambda: settings)
 
     db = AsyncMock()
     result = MagicMock()

@@ -1,17 +1,17 @@
 studio:
   enabled: true
-  default_image: omichub-analysis:core-2026.07
+  default_image: cygnusx-analysis:core-2026.07
   images:
     base:
-      image: omichub-analysis:core-2026.07
+      image: cygnusx-analysis:core-2026.07
       dockerfile: deploy/studio/base.Dockerfile
       capabilities: [code]
     bio:
-      image: omichub-sandbox-bio:v0.0.2dev
+      image: cygnusx-sandbox-bio:v0.0.2dev
       dockerfile: deploy/studio/bio.Dockerfile
       capabilities: [code]
     browser-office:
-      image: omichub-sandbox-browser-office:v0.0.2dev
+      image: cygnusx-sandbox-browser-office:v0.0.2dev
       dockerfile: deploy/studio/browser-office.Dockerfile
       capabilities: [code, browser, document]
   session:
@@ -47,8 +47,8 @@ studio:
     workspace_quota_check_interval_seconds: 30
     network:
       mode: whitelist
-      docker_network: omichub-studio-egress
-      proxy_container: omichub-studio-egress-proxy
+      docker_network: cygnusx-studio-egress
+      proxy_container: cygnusx-studio-egress-proxy
       proxy_host: studio-egress-proxy
       proxy_port: 3128
       # 包源白名单：允许沙盒内 uv/micromamba 现场安装依赖；仅放行包源域名，保持其余断网

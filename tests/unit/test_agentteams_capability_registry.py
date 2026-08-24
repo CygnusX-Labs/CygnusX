@@ -4,11 +4,11 @@ from pathlib import Path
 
 import yaml
 
-from omichub.application.services.agentteams_capability_registry import (
+from cygnusx.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
-from omichub.application.services.flow_registry import FlowRegistry
-from omichub.infrastructure.config.agent_loader import load_agent_configs
+from cygnusx.application.services.flow_registry import FlowRegistry
+from cygnusx.infrastructure.config.agent_loader import load_agent_configs
 
 
 class _Abilities:

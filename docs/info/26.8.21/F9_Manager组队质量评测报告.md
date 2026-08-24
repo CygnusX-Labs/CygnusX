@@ -27,12 +27,12 @@
 | S06 | 我想分析小鼠 ATAC-seq 数据 | agent-atacseq | 是 | flows/atac_seq.yaml example_dialogue |
 | S07 | 帮我做 KEGG 富集分析 | agent-rnaseq | 是 | docs/update_info/26.7.25/星尘AI对话页前端美化实现计划.md |
 | S08 | 帮我做一个UMAP可视化 | agent-viz | 是 | docs/modules/09_sandbox_architecture.md |
-| S09 | 帮我做单细胞质控，然后做差异表达和富集分析 | agent-scrna | 是 | docs/update_info/26.7.26/ai_agent/OmicHub平台Agent能力优化方案-记忆与多Agent协作.md |
+| S09 | 帮我做单细胞质控，然后做差异表达和富集分析 | agent-scrna | 是 | docs/update_info/26.7.26/ai_agent/CygnusX平台Agent能力优化方案-记忆与多Agent协作.md |
 | S10 | 帮我写一个 VCF 过滤脚本 | agent-code | 否 | docs/update_info/26.7.29/studio/AI工作台分屏面板自动关闭排查与布局优化实现计划.md（同见 data/ai/mcp/workspace_files_prompt.md） |
 | S11 | 帮我建一棵进化树 | agent-viz | 是 | docs/update_info/26.8.18/agent双架构汇总.md |
 | S12 | 帮我找一下cluster 5的marker基因 | agent-scrna-advanced | 否 | docs/modules/10_workflow_example.md |
-| S13 | 帮我画个火山图 | agent-viz | 是 | docs/update_info/26.8.18/OmicHub记忆系统优化实施计划.md（同见 docs/update_info/26.7.21/mcp_ai_assistant_integration.md） |
-| S14 | 帮我看看这批样本的聚类情况，顺便找找离群样本 | agent-code, agent-viz | 是 | docs/update_info/26.7.17/OmicHub_AI分析工作台_架构设计.md |
+| S13 | 帮我画个火山图 | agent-viz | 是 | docs/update_info/26.8.18/CygnusX记忆系统优化实施计划.md（同见 docs/update_info/26.7.21/mcp_ai_assistant_integration.md） |
+| S14 | 帮我看看这批样本的聚类情况，顺便找找离群样本 | agent-code, agent-viz | 是 | docs/update_info/26.7.17/CygnusX_AI分析工作台_架构设计.md |
 | S15 | 帮我设计一个 TP53 突变 vs 野生型的 RNA-seq 实验 | agent-rnaseq | 否 | docs/update_info/26.8.7/prompt/01_提示词框架现状与DomainPack设计.md |
 | S16 | 帮我调试这段 python 报错 | agent-code | 否 | docs/update_info/26.7.27/星尘AI统一入口_agent路由测试报告.md |
 | S17 | 帮我跑 fastq QC | agent-code | 否 | docs/update_info/26.7.21/ai_driven_transformation_report.md |

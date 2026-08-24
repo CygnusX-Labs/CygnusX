@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_list_reports(flow_id: str = "", keyword: str = "") -> dict:
+    async def cygnusx_list_reports(flow_id: str = "", keyword: str = "") -> dict:
         """列出用户的分析报告。可按流程 ID 或关键词过滤。"""
         try:
             filters = {}
@@ -29,11 +29,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"报告列表:\n" + "\n".join(lines) if lines else "暂无报告",
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取报告列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_report(report_id: str) -> dict:
+    async def cygnusx_get_report(report_id: str) -> dict:
         """获取报告详情：标题、流程、文件列表、创建时间。"""
         try:
             data = await api.get_report(report_id)
@@ -46,11 +46,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 f"文件: {', '.join(file_names)}\n"
             )
             return {"success": True, "summary": summary, "data": data}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取报告失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_report_content(report_id: str) -> dict:
+    async def cygnusx_get_report_content(report_id: str) -> dict:
         """获取报告的 HTML 内容（主文件）。"""
         try:
             content = await api.get_report_content(report_id)
@@ -62,5 +62,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                     "data": {"length": len(content), "preview": preview},
                 }
             return {"success": True, "summary": "报告内容已获取", "data": content}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取报告内容失败: {e.detail}"}

@@ -7,12 +7,12 @@ import pytest
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.schemas.agent import CreateAgentRequest, UpdateAgentRequest
-from omichub.application.services.agent_service import AgentService
-from omichub.core.exceptions import BusinessError
-from omichub.infrastructure.database.models.agent import AgentTemplateModel
-from omichub.infrastructure.database.models.ai_provider import AIProviderConfigModel
-from omichub.infrastructure.database.session import get_session_factory
+from cygnusx.application.schemas.agent import CreateAgentRequest, UpdateAgentRequest
+from cygnusx.application.services.agent_service import AgentService
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
+from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from cygnusx.infrastructure.database.session import get_session_factory
 
 pytestmark = pytest.mark.integration
 

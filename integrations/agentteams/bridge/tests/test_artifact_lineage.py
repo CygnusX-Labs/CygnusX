@@ -7,27 +7,27 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
-from omichub_agentteams_bridge.audit import AuditStore
-from omichub_agentteams_bridge.case_store import CaseStore
-from omichub_agentteams_bridge.config import BridgeSettings
-from omichub_agentteams_bridge.models import (
+from cygnusx_agentteams_bridge.audit import AuditStore
+from cygnusx_agentteams_bridge.case_store import CaseStore
+from cygnusx_agentteams_bridge.config import BridgeSettings
+from cygnusx_agentteams_bridge.models import (
     CaseCloseRequest,
     CaseRecord,
     ContextRef,
     QualityGateRequest,
     WorkItemRecord,
 )
-from omichub_agentteams_bridge.service import BridgeService
+from cygnusx_agentteams_bridge.service import BridgeService
 
 
-class FakeOmicHubClient:
+class FakeCygnusXClient:
     async def aclose(self) -> None:
         return None
 
 
 def make_service(tmp_path) -> BridgeService:
     settings = BridgeSettings(
-        omichub_service_token="service-token",
+        cygnusx_service_token="service-token",
         approval_signing_secret="test-signing-secret",
         identities=(
             "approval-authority:approval,bioops-manager:manager,data-steward:steward,"
@@ -40,7 +40,7 @@ def make_service(tmp_path) -> BridgeService:
     )
     return BridgeService(
         settings,
-        FakeOmicHubClient(),
+        FakeCygnusXClient(),
         AuditStore(settings.audit_log_path),
         CaseStore(settings.case_store_path),
         None,

@@ -690,7 +690,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                 {{ totpPolicyOptions.find(o => o.key === platformConfig.totp_policy)?.desc }}
               </p>
               <div class="platform-setting-card__control">
-                <div class="omichub-segmented-toggle" role="group" aria-label="二次验证 TOTP 策略">
+                <div class="cygnusx-segmented-toggle" role="group" aria-label="二次验证 TOTP 策略">
                   <button
                     v-for="opt in totpPolicyOptions"
                     :key="opt.key"
@@ -932,7 +932,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
   flex: 0 0 auto;
 }
 
-.platform-setting-card :deep(.omichub-segmented-toggle button:disabled) {
+.platform-setting-card :deep(.cygnusx-segmented-toggle button:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
 }

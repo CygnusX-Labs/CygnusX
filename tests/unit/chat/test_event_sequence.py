@@ -2,13 +2,13 @@
 
 import pytest
 
-from omichub.application.services.chat.chat_event_service import ChatEventService
-from omichub.application.services.execution_events import (
+from cygnusx.application.services.chat.chat_event_service import ChatEventService
+from cygnusx.application.services.execution_events import (
     EventSequenceError,
     must_precede_done,
     validate_event_sequence,
 )
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 def test_execution_event_sequence_accepts_tool_reinjection_loop() -> None:

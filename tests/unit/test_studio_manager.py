@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from omichub.infrastructure.config.storage_config import StorageConfig
-from omichub.infrastructure.config.studio_loader import StudioConfigManager
-from omichub.infrastructure.storage.path_factory import StoragePathFactory
-from omichub.infrastructure.studio import manager as manager_module
-from omichub.infrastructure.studio.manager import (
+from cygnusx.infrastructure.config.storage_config import StorageConfig
+from cygnusx.infrastructure.config.studio_loader import StudioConfigManager
+from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
+from cygnusx.infrastructure.studio import manager as manager_module
+from cygnusx.infrastructure.studio.manager import (
     StudioSandboxManager,
     StudioSandboxUnavailableError,
 )

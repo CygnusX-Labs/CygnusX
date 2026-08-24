@@ -3,7 +3,7 @@
 
 **版本**: v2.0 审计修订版  
 **文档日期**: 2026-08-22  
-**审计范围**: 当前 OmicHub 工作树  
+**审计范围**: 当前 CygnusX 工作树  
 **状态**: 已完成代码级审计；浏览器、Office 和桌面可视化仍未实现
 
 > 文件位于 `docs/info/26.8.23/`，但当前基准日期为 2026-08-22；目录名属于未来日期，建议在提交前改为 `docs/info/26.8.22/`，或明确这是预创建文档。
@@ -26,7 +26,7 @@
 | 审计项 | 当前状态 | 备注 |
 |--------|---------|------|
 | 前端技术栈 | [x] Vue 3 + TypeScript | `frontend/package.json` 使用 Vue 3.4；沙箱/Studio 页面位于 `frontend/src/views/` |
-| 后端技术栈 | [x] Python + FastAPI | API 路由位于 `src/omichub/api/v1/` |
+| 后端技术栈 | [x] Python + FastAPI | API 路由位于 `src/cygnusx/api/v1/` |
 | 部署架构 | [x] Docker Compose；[ ] Kubernetes 主路径 | `deploy/docker/docker-compose.yml` 是主部署方式，Kubernetes 目录主要用于 AgentTeams |
 | 通信协议 | [x] REST + WebSocket + SSE | 旧沙箱执行使用 WebSocket/REST；Studio Agent 使用宿主工作区 Unix Socket；聊天/工具流使用 SSE |
 | 数据库 | [x] PostgreSQL（含 pgvector 镜像） | 配置和 Compose 均指向 PostgreSQL |
@@ -101,7 +101,7 @@
 
 ### 2.1 兼容性分析框架
 
-根据仓库实现，OmicHub 同时落在以下两种模式：旧版沙箱接近模式 A，Studio 接近模式 B；平台另有独立 MCP 管理能力。下面的模式仅用于比较，不是当前架构的待填写问卷。
+根据仓库实现，CygnusX 同时落在以下两种模式：旧版沙箱接近模式 A，Studio 接近模式 B；平台另有独立 MCP 管理能力。下面的模式仅用于比较，不是当前架构的待填写问卷。
 
 #### 模式 A：轻量代码执行平台（如早期 Replit-like）
 
@@ -141,7 +141,7 @@
 | **长期维护成本** | 中（需要维护复合镜像） | 高（维护多套沙箱体系） | 低（使用社区方案） |
 | **扩展性** | 中 | 高 | 高 |
 
-**仓库修订后的推荐**：不要在现有 `omichub-sandbox-base` / `omichub-sandbox-bio` 镜像中直接叠加 OnlyOffice、VNC 和浏览器服务。应采用“Studio 编排复用 + 独立受限能力镜像”的渐进方案。
+**仓库修订后的推荐**：不要在现有 `cygnusx-sandbox-base` / `cygnusx-sandbox-bio` 镜像中直接叠加 OnlyOffice、VNC 和浏览器服务。应采用“Studio 编排复用 + 独立受限能力镜像”的渐进方案。
 
 1. 先加固既有 Studio 容器创建参数并补回归测试；这是浏览器能力上线的前置门槛。
 2. 以新 image id / session capability 区分浏览器和文档能力，保留普通数据分析镜像，避免所有会话承担 Chromium/Office 的体积和攻击面。

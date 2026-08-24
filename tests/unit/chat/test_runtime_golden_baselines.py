@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services.chat.chat_router_service import ChatRouterService
-from omichub.application.services.chat.dual_run import (
+from cygnusx.application.services.chat.chat_router_service import ChatRouterService
+from cygnusx.application.services.chat.dual_run import (
     assert_equivalent,
     compare_golden_record,
     compare_streams,
 )
-from omichub.application.services.chat.runtimes.base import ChatRuntimeRequest
-from omichub.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
-from omichub.application.services.execution_events import validate_event_sequence
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.chat.runtimes.base import ChatRuntimeRequest
+from cygnusx.application.services.chat.runtimes.direct_chat_runtime import DirectChatRuntime
+from cygnusx.application.services.execution_events import validate_event_sequence
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 _GOLDEN_ROOT = Path(__file__).parents[2] / "e2e" / "chat_golden"

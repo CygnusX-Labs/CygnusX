@@ -1,5 +1,5 @@
 # ============================================
-# OmicHub 后端 Dockerfile
+# CygnusX 后端 Dockerfile
 # 多阶段构建：uv 安装依赖 + slim 运行
 # ============================================
 
@@ -130,10 +130,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV APP_ENV=production
 
 # 部署版本可观测：构建时经 --build-arg 注入，/health 的 git_sha/build_time 由此取值。
-ARG OMICHUB_BUILD_SHA=unknown
-ARG OMICHUB_BUILD_TIME=unknown
-ENV APP_GIT_SHA=${OMICHUB_BUILD_SHA} \
-    APP_BUILD_TIME=${OMICHUB_BUILD_TIME}
+ARG CYGNUSX_BUILD_SHA=unknown
+ARG CYGNUSX_BUILD_TIME=unknown
+ENV APP_GIT_SHA=${CYGNUSX_BUILD_SHA} \
+    APP_BUILD_TIME=${CYGNUSX_BUILD_TIME}
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
@@ -142,4 +142,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 EXPOSE 8000
 
 # 默认启动命令（可被 docker-compose 覆盖）
-CMD ["uvicorn", "omichub.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "cygnusx.main:app", "--host", "0.0.0.0", "--port", "8000"]

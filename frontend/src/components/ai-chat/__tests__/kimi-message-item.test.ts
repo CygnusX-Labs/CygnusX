@@ -305,11 +305,11 @@ describe('KimiMessageItem 渲染分支', () => {
 
   it('有 thought + 有 content：思考面板与正文都应渲染', () => {
     const { el } = mountItem({
-      message: { ...baseMsg, content: '你好！我是 OmicHub AI 助手。', thought: '用户打招呼' },
+      message: { ...baseMsg, content: '你好！我是 CygnusX AI 助手。', thought: '用户打招呼' },
       isStreaming: false,
     })
     expect(el.textContent).toContain('思考过程')
-    expect(el.textContent).toContain('你好！我是 OmicHub AI 助手。')
+    expect(el.textContent).toContain('你好！我是 CygnusX AI 助手。')
   })
 
   it('只有 thought、content 为空：显示空态兜底而非空白', () => {

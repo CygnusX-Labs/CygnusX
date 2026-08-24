@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from omichub.application.services.unified_intent_router import (
+from cygnusx.application.services.unified_intent_router import (
     capability_notice,
     execution_routing_record,
     normalize_decision,

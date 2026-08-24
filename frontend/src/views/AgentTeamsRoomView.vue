@@ -92,7 +92,7 @@ const POLLING_INTERVAL_MS = 20_000
 const SSE_RETRY_INITIAL_MS = 1_000
 const SSE_RETRY_MAX_MS = 30_000
 const LOCAL_TYPING_TTL_MS = 60_000
-const ROOM_SIDEBAR_COLLAPSED_KEY = 'omichub:agentteams-room-sidebar-collapsed'
+const ROOM_SIDEBAR_COLLAPSED_KEY = 'cygnusx:agentteams-room-sidebar-collapsed'
 
 const message = useMessage()
 const loading = ref(false)
@@ -489,7 +489,7 @@ const elementSessionRoomId = computed(
     '',
 )
 
-/** 免登录跳板地址：omichub-login.html + fragment 凭据；无房间实体（旧 Case）时为空，退回原始深链。 */
+/** 免登录跳板地址：cygnusx-login.html + fragment 凭据；无房间实体（旧 Case）时为空，退回原始深链。 */
 const elementShimUrl = computed(() => {
   const session = elementSession.value
   const base = session?.element_base_url?.replace(/\/+$/, '')
@@ -500,7 +500,7 @@ const elementShimUrl = computed(() => {
     `&token=${encodeURIComponent(session.access_token)}` +
     `&device_id=${encodeURIComponent(session.device_id)}` +
     `&room=${encodeURIComponent(session.matrix_room_id)}`
-  return `${base}/omichub-login.html#${fragment}`
+  return `${base}/cygnusx-login.html#${fragment}`
 })
 
 async function ensureElementSession(force = false) {
@@ -1493,7 +1493,7 @@ async function confirmSubmit() {
   try {
     await agentTeamsApi.submitCase(detail.value.case_id, { task_name: taskName })
     submitVisible.value = false
-    message.success('已通过 Workflow Operator 提交 OmicHub 任务。')
+    message.success('已通过 Workflow Operator 提交 CygnusX 任务。')
     // 审批操作后同时刷新详情与列表：审批卡片终态与左栏待审批计数同源派生（§13）
     await Promise.all([refreshDetail({ resetEvents: true }), loadCases()])
   } catch (cause: any) {
@@ -1828,7 +1828,7 @@ onBeforeUnmount(() => {
           <NInput v-model:value="searchQuery" size="small" clearable placeholder="搜索 Case 目标">
             <template #prefix><NIcon><SearchOutline /></NIcon></template>
           </NInput>
-          <div class="omichub-segmented-toggle room-filter-chips" role="group" aria-label="按状态筛选 Case">
+          <div class="cygnusx-segmented-toggle room-filter-chips" role="group" aria-label="按状态筛选 Case">
             <button
               v-for="chip in filterChips"
               :key="chip.key"
@@ -1861,7 +1861,7 @@ onBeforeUnmount(() => {
               v-for="entry in filteredEntries"
               :key="entry.key"
               type="button"
-              class="case-entry omichub-selectable-card"
+              class="case-entry cygnusx-selectable-card"
               :class="{ active: isEntryActive(entry) }"
               role="option"
               :aria-selected="isEntryActive(entry)"
@@ -2429,7 +2429,7 @@ onBeforeUnmount(() => {
 .room-sidebar__heading { color: var(--neutral-text-1); font-size: var(--font-section-size); font-weight: var(--font-section-weight); line-height: var(--font-section-height); letter-spacing: var(--font-section-spacing); }
 .room-sidebar__actions { display: flex; align-items: center; gap: var(--space-xs); }
 .room-sidebar__tools { display: grid; gap: var(--space-sm); }
-/* 复用全局 .omichub-segmented-toggle 胶囊分段切换器；本处仅做容器级布局覆盖：禁止折行，
+/* 复用全局 .cygnusx-segmented-toggle 胶囊分段切换器；本处仅做容器级布局覆盖：禁止折行，
    溢出时容器自身横向滚动（隐藏滚动条但保持可滚），每枚胶囊不收缩、计数永不被截断（§5.4/§7.1） */
 .room-filter-chips { display: flex; max-width: 100%; min-width: 0; flex-wrap: nowrap; align-self: stretch; overflow: hidden auto; scrollbar-width: none; }
 .room-filter-chips::-webkit-scrollbar { display: none; }
@@ -2449,7 +2449,7 @@ onBeforeUnmount(() => {
 .room-sidebar__list::-webkit-scrollbar-thumb, .room-messages::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--scrollbar-thumb); }
 .room-sidebar__list::-webkit-scrollbar-thumb:hover, .room-messages::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
-/* Case 列表项：可选择卡片协议（§5.2）——左缘 4px 状态线由全局 .omichub-selectable-card::before 提供，
+/* Case 列表项：可选择卡片协议（§5.2）——左缘 4px 状态线由全局 .cygnusx-selectable-card::before 提供，
    hover 低强调预览 / 选中连续主色内描边在此以本地规则落齐，避免注入顺序导致被基础背景覆盖 */
 .case-entry { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-md) var(--space-md) var(--space-xl); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); text-align: left; cursor: pointer; transition: border-color var(--motion-quick) ease-out, box-shadow var(--motion-quick) ease-out, background-color var(--motion-quick) ease-out; }
 .case-entry:not(.active):hover { border-color: color-mix(in srgb, var(--arco-primary) 14%, var(--neutral-border)); background-color: color-mix(in srgb, var(--arco-primary) 4%, var(--neutral-card)); }
@@ -2700,7 +2700,7 @@ onBeforeUnmount(() => {
 .room-typing__dots i:nth-child(2) { animation-delay: 0.2s; }
 .room-typing__dots i:nth-child(3) { animation-delay: 0.4s; }
 
-/* 消息流 / Element 视图切换：胶囊分段样式，与全局 .omichub-segmented-toggle 同语言 */
+/* 消息流 / Element 视图切换：胶囊分段样式，与全局 .cygnusx-segmented-toggle 同语言 */
 .room-view-switch { display: inline-flex; gap: 2px; margin-left: var(--space-md); padding: 2px; border: 1px solid var(--neutral-border); border-radius: 999px; background: var(--neutral-fill-2); }
 .room-view-switch__btn { padding: var(--space-xs) var(--space-md); border: none; border-radius: 999px; background: transparent; color: var(--neutral-text-2); font-size: var(--font-caption-size); line-height: 1.7; cursor: pointer; transition: background-color var(--motion-quick) ease-out, color var(--motion-quick) ease-out; }
 .room-view-switch__btn:hover { color: var(--neutral-text-1); }

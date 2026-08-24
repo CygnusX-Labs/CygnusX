@@ -98,7 +98,7 @@ const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
 const rightSections = reactive({ artifacts: true, sandbox: true })
 const leftWidth = ref(260)
-const RIGHT_WIDTH_KEY = 'omichub:studio:right-width-v2'
+const RIGHT_WIDTH_KEY = 'cygnusx:studio:right-width-v2'
 function loadRightWidth(): number {
   const saved = Number(localStorage.getItem(RIGHT_WIDTH_KEY))
   return Number.isFinite(saved) && saved >= 200 && saved <= 320 ? saved : 232
@@ -163,7 +163,7 @@ function persistUiState() {
   }).catch(() => {})
 }
 
-function modeStorageKey(id = sessionId.value) { return `omichub:studio:${id}:view-mode` }
+function modeStorageKey(id = sessionId.value) { return `cygnusx:studio:${id}:view-mode` }
 function handleTerminalCollapsedChanged(collapsed: boolean) {
   terminalCollapsed.value = collapsed
   persistUiState()
@@ -360,7 +360,7 @@ onMounted(async () => {
   if (!store.availableModels.length) await store.fetchAvailableModels()
   statusTimer = setInterval(refreshStatus, 10_000)
   longRunTimer = setInterval(() => { if (store.isStreaming) longRunSeconds.value += 1; else longRunSeconds.value = 0 }, 1000)
-  window.addEventListener('omichub:studio-file-changed', handleStudioFileChanged)
+  window.addEventListener('cygnusx:studio-file-changed', handleStudioFileChanged)
 })
 
 async function hibernateCurrentSandbox(showFeedback = false) {
@@ -386,7 +386,7 @@ onUnmounted(() => {
   statusTimer = null
   if (longRunTimer) clearInterval(longRunTimer)
   longRunTimer = null
-  window.removeEventListener('omichub:studio-file-changed', handleStudioFileChanged)
+  window.removeEventListener('cygnusx:studio-file-changed', handleStudioFileChanged)
   void hibernateCurrentSandbox(false)
 })
 
@@ -617,7 +617,7 @@ function handleDeleteMessage(messageId: string) {
 }
 
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
-  window.dispatchEvent(new CustomEvent('omichub:agentteams-create', {
+  window.dispatchEvent(new CustomEvent('cygnusx:agentteams-create', {
     detail: { summary, consultationId },
   }))
 }

@@ -1,4 +1,4 @@
-"""OmicHub 平台 REST API 客户端"""
+"""CygnusX 平台 REST API 客户端"""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ import httpx
 from core.config import settings
 
 
-class OmicHubAPIError(Exception):
+class CygnusXAPIError(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"[{status_code}] {detail}")
 
 
-class OmicHubAPIClient:
-    """通过 HTTP 调用 OmicHub 平台 REST API，使用 API Key 认证。"""
+class CygnusXAPIClient:
+    """通过 HTTP 调用 CygnusX 平台 REST API，使用 API Key 认证。"""
 
     def __init__(self) -> None:
         self._base_url = f"{settings.base_url.rstrip('/')}/api/v1"
@@ -30,16 +30,16 @@ class OmicHubAPIClient:
         try:
             resp = await self._client.request(method, path, **kwargs)
         except httpx.ConnectError as e:
-            raise OmicHubAPIError(0, f"无法连接到平台: {settings.base_url} ({e})") from e
+            raise CygnusXAPIError(0, f"无法连接到平台: {settings.base_url} ({e})") from e
         except httpx.TimeoutException as e:
-            raise OmicHubAPIError(0, f"请求超时 ({settings.request_timeout}s)") from e
+            raise CygnusXAPIError(0, f"请求超时 ({settings.request_timeout}s)") from e
 
         if resp.status_code >= 400:
             try:
                 detail = resp.json().get("detail", resp.text)
             except Exception:
                 detail = resp.text
-            raise OmicHubAPIError(resp.status_code, str(detail))
+            raise CygnusXAPIError(resp.status_code, str(detail))
 
         if resp.status_code == 204:
             return None
@@ -192,4 +192,4 @@ class OmicHubAPIClient:
         return await self.get("/stats/overview")
 
 
-api = OmicHubAPIClient()
+api = CygnusXAPIClient()

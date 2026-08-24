@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # 导入模型包以注册全部表到 metadata（autogenerate 依赖）；
 # 不要改成挑选子模块导入——清单会过期，遗漏的表会被 autogenerate 误判为待删除。
-import omichub.infrastructure.database.models  # noqa: F401
-from omichub.core.config import get_settings
-from omichub.infrastructure.database.base import Base
+import cygnusx.infrastructure.database.models  # noqa: F401
+from cygnusx.core.config import get_settings
+from cygnusx.infrastructure.database.base import Base
 
 config = context.config
 if config.config_file_name is not None:

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from omichub.application.services.agentteams_mention_resolver import resolve_room_mentions
+from cygnusx.application.services.agentteams_mention_resolver import resolve_room_mentions
 
 
 class Registry:

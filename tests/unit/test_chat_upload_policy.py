@@ -1,7 +1,7 @@
 import pytest
 
-from omichub.api.v1.files import _validate_chat_upload_filename
-from omichub.core.exceptions import ValidationError
+from cygnusx.api.v1.files import _validate_chat_upload_filename
+from cygnusx.core.exceptions import ValidationError
 
 
 @pytest.mark.parametrize("filename", ["sample.bam", "sample.cram", "cells.h5ad", "object.rds", "bundle.zip"])

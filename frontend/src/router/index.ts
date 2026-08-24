@@ -496,9 +496,9 @@ router.beforeEach(async (to, from, next) => {
     }
     // 设置页面标题
     if (to.meta.title) {
-      document.title = `${to.meta.title} - OmicHub`
+      document.title = `${to.meta.title} - CygnusX`
     } else {
-      document.title = 'OmicHub'
+      document.title = 'CygnusX'
     }
     next()
   }

@@ -15,10 +15,10 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services.ai_provider_yaml_shared import provider_env_key
-from omichub.application.services.ai_provider_yaml_writer import AIProviderYamlWriter
-from omichub.domain.ai_provider.entities import AIProviderConfig
-from omichub.domain.ai_provider.value_objects import ProviderType
+from cygnusx.application.services.ai_provider_yaml_shared import provider_env_key
+from cygnusx.application.services.ai_provider_yaml_writer import AIProviderYamlWriter
+from cygnusx.domain.ai_provider.entities import AIProviderConfig
+from cygnusx.domain.ai_provider.value_objects import ProviderType
 
 
 def _config(name: str, *, api_key: str = "sk-secret-real-value", is_active: bool = True, is_default: bool = False, model: str = "m") -> AIProviderConfig:
@@ -53,7 +53,7 @@ def test_write_never_persists_real_api_key(tmp_path: Path):
     yaml_path = tmp_path / "providers.yaml"
     # 带头部注释的初始文件
     yaml_path.write_text(
-        "# OmicHub AI Provider 外置配置\n# 真实 Key 不落盘\n\nproviders: []\n",
+        "# CygnusX AI Provider 外置配置\n# 真实 Key 不落盘\n\nproviders: []\n",
         encoding="utf-8",
     )
 
@@ -66,7 +66,7 @@ def test_write_never_persists_real_api_key(tmp_path: Path):
     assert "${DEEPSEEK_V4_FLASH_API_KEY}" in content
     assert "${OLD_API_KEY}" in content
     # 头部注释保留
-    assert "# OmicHub AI Provider 外置配置" in content
+    assert "# CygnusX AI Provider 外置配置" in content
     # 停用项也回写
     assert "is_active: false" in content
 

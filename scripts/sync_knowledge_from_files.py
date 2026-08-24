@@ -14,7 +14,7 @@
         --admin-user-id 00000000-0000-0000-0000-000000000001
 
 Docker 部署环境：
-    docker exec omichub-web python scripts/sync_knowledge_from_files.py \
+    docker exec cygnusx-web python scripts/sync_knowledge_from_files.py \
         --meta-yaml docs/knowledge/meta.yaml \
         --auto-admin
 """
@@ -31,12 +31,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from omichub.application.services.knowledge_index_service import KnowledgeIndexService
-from omichub.infrastructure.database.models.knowledge_document import KbDocumentModel
-from omichub.infrastructure.database.models.knowledge_editor import DocEditorModel
-from omichub.infrastructure.database.models.knowledge_revision import DocRevisionModel
-from omichub.infrastructure.database.models.user import UserModel
-from omichub.infrastructure.database.session import get_engine, get_session_factory
+from cygnusx.application.services.knowledge_index_service import KnowledgeIndexService
+from cygnusx.infrastructure.database.models.knowledge_document import KbDocumentModel
+from cygnusx.infrastructure.database.models.knowledge_editor import DocEditorModel
+from cygnusx.infrastructure.database.models.knowledge_revision import DocRevisionModel
+from cygnusx.infrastructure.database.models.user import UserModel
+from cygnusx.infrastructure.database.session import get_engine, get_session_factory
 from rich.console import Console
 from rich.table import Table
 from rich.theme import Theme

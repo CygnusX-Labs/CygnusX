@@ -54,7 +54,7 @@
 Vue3: RoomView ──────── CaseView（时间线 + 步骤详情 + 流程报告导出）
    │ /api/v1/agent-teams/*                  │ /users/lookup
    ▼                                         ▼
-┌──────────────────────────── omichub-web ─────────────────────────────┐
+┌──────────────────────────── cygnusx-web ─────────────────────────────┐
 │ 房间服务 / 成员与邀请 / 通知 / 意图路由 / Case 服务 / 会诊              │
 │ 过程记录器 / turns 查询与脱敏 / 流程报告 / 血缘、QC、自省 / OTel ContextVar │
 │ PostgreSQL: rooms、members、turn-record 索引、血缘、判决、通知          │
@@ -80,7 +80,7 @@ Redis：Bridge 共享状态与热流；不得承载过程记录正文，也必�
 ```
 
 现有运行组件继续使用 `deploy/agentteams/docker-compose.agentteams.yml` 所定义的 Gateway、
-Bridge、state、Worker、`omichub-web`、PostgreSQL、MinIO、Redis 和开发态 Matrix。无需引入
+Bridge、state、Worker、`cygnusx-web`、PostgreSQL、MinIO、Redis 和开发态 Matrix。无需引入
 Langfuse 等外部观测产品；本架构复用平台已有 ContextVar、OTel、MinIO 和 PostgreSQL 能力。
 
 ## 3. 房间与 Case 的职责划分
@@ -380,20 +380,20 @@ span 允许保留 `gen_ai.request.model`、`gen_ai.usage.*`（或兼容的既有
 
 | 责任 | 主要位置 |
 |---|---|
-| 房间授权、成员与事件流 | `src/omichub/application/services/agentteams_room_service.py` |
-| 房间响应与会诊发起 | `src/omichub/application/services/agentteams_room_response_service.py` |
-| 会诊与产物环境快照 | `src/omichub/application/services/agent_consultation_service.py` |
-| LLM 汇合点与轮次 | `src/omichub/application/services/parallel_subagent_service.py` |
-| 过程记录器（新增） | `src/omichub/application/services/agentteams_turn_recorder.py` |
-| 流程报告渲染与登记 | `src/omichub/application/services/agentteams_flow_report_service.py` |
-| ContextVar 与 span 导出 | `src/omichub/core/span_store.py`（或同级新增上下文模块） |
-| MinIO 读写先例 | `src/omichub/infrastructure/storage/minio_store.py` |
-| 房间/turns/邀请/流程报告 API | `src/omichub/api/v1/agentteams.py` |
-| 最小用户目录 API | `src/omichub/api/v1/users.py` |
-| 房间与过程记录模型 | `src/omichub/infrastructure/database/models/chat.py` |
-| 通知 | `src/omichub/infrastructure/database/models/notification.py`、`src/omichub/api/v1/notification.py` |
-| Bridge trace 与 requester | `integrations/agentteams/bridge/omichub_agentteams_bridge/service.py` |
-| Gateway 透传与 Matrix 原语 | `integrations/agentteams/gateway/omichub_agent_gateway/` |
+| 房间授权、成员与事件流 | `src/cygnusx/application/services/agentteams_room_service.py` |
+| 房间响应与会诊发起 | `src/cygnusx/application/services/agentteams_room_response_service.py` |
+| 会诊与产物环境快照 | `src/cygnusx/application/services/agent_consultation_service.py` |
+| LLM 汇合点与轮次 | `src/cygnusx/application/services/parallel_subagent_service.py` |
+| 过程记录器（新增） | `src/cygnusx/application/services/agentteams_turn_recorder.py` |
+| 流程报告渲染与登记 | `src/cygnusx/application/services/agentteams_flow_report_service.py` |
+| ContextVar 与 span 导出 | `src/cygnusx/core/span_store.py`（或同级新增上下文模块） |
+| MinIO 读写先例 | `src/cygnusx/infrastructure/storage/minio_store.py` |
+| 房间/turns/邀请/流程报告 API | `src/cygnusx/api/v1/agentteams.py` |
+| 最小用户目录 API | `src/cygnusx/api/v1/users.py` |
+| 房间与过程记录模型 | `src/cygnusx/infrastructure/database/models/chat.py` |
+| 通知 | `src/cygnusx/infrastructure/database/models/notification.py`、`src/cygnusx/api/v1/notification.py` |
+| Bridge trace 与 requester | `integrations/agentteams/bridge/cygnusx_agentteams_bridge/service.py` |
+| Gateway 透传与 Matrix 原语 | `integrations/agentteams/gateway/cygnusx_agent_gateway/` |
 | 房间、Case 与通知 UI | `frontend/src/views/AgentTeamsRoomView.vue`、`frontend/src/views/AgentTeamsCaseView.vue`、`frontend/src/components/NotificationDrawer.vue` |
 | 数据库迁移 | `alembic/versions/*agentteams*` |
 
@@ -412,7 +412,7 @@ span 允许保留 `gen_ai.request.model`、`gen_ai.usage.*`（或兼容的既有
 | 7 | 字段与操作授权 | B 能读摘要、工具原文与输出，但详情没有 messages/reasoning；B 删除房间和消费立项确认均被拒绝 |
 | 8 | 回归 | 既有房间 SSE、虚拟列表、事件游标、Bridge 事件重放及独立 turns 回看均正常；Bridge 重启不丢 turns |
 | 9 | 流程报告 | owner 导出并离线打开 HTML；随机 3 个 TRN 短码可反查 turns/MinIO，事件/产物都有完整 ID 和复制按钮；member 导出不含 prompt/reasoning 且有裁剪标注；环境快照可见；血缘中存在报告 `ART` 行，其 `checksum_sha256` 与下载文件字节哈希一致 |
-| 10 | 可选真实栈自动验收 | 在可用 JWT、Bridge、PostgreSQL 和 MinIO 环境执行 `AGENTTEAMS_LIVE_E2E=1 OMICHUB_E2E_BASE_URL=http://localhost:8000 OMICHUB_E2E_TOKEN=<JWT> uv run pytest tests/e2e/agentteams/test_live_foundation_e2e.py -k e2e10 -v`；用例创建 Case、生成报告、经 JWT 下载并检查 HTML，随后取消 Case |
+| 10 | 可选真实栈自动验收 | 在可用 JWT、Bridge、PostgreSQL 和 MinIO 环境执行 `AGENTTEAMS_LIVE_E2E=1 CYGNUSX_E2E_BASE_URL=http://localhost:8000 CYGNUSX_E2E_TOKEN=<JWT> uv run pytest tests/e2e/agentteams/test_live_foundation_e2e.py -k e2e10 -v`；用例创建 Case、生成报告、经 JWT 下载并检查 HTML，随后取消 Case |
 
 ## 13. 已知边界与后续路线
 

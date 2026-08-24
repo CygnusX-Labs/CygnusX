@@ -10,17 +10,17 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services import studio_context_service, studio_tools
-from omichub.application.services.studio_tools import (
+from cygnusx.application.services import studio_context_service, studio_tools
+from cygnusx.application.services.studio_tools import (
     execute_studio_tool,
     normalize_plan_steps,
 )
-from omichub.core.config import get_settings
-from omichub.infrastructure.config.storage_config import StorageConfig
-from omichub.infrastructure.database.models.chat import ChatSessionModel
-from omichub.infrastructure.database.models.file import FileRecordModel
-from omichub.infrastructure.database.models.report import ReportFileModel, ReportModel
-from omichub.infrastructure.storage.path_factory import StoragePathFactory
+from cygnusx.core.config import get_settings
+from cygnusx.infrastructure.config.storage_config import StorageConfig
+from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.infrastructure.database.models.file import FileRecordModel
+from cygnusx.infrastructure.database.models.report import ReportFileModel, ReportModel
+from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 
 
 def _lexists(path: Path) -> bool:
@@ -241,9 +241,9 @@ async def test_datahub_import_requires_db_and_user(platform_env):
 @pytest.mark.quarantine(reason="上下文文件在磁盘上不存在，导入端点抛 BusinessError")
 async def test_import_endpoint_happy_path(platform_env):
     """REST 引入：与工具同一服务路径，响应含沙盒路径与 input 清单"""
-    from omichub.api.v1.studio import import_data_file
-    from omichub.application.schemas.studio import ImportStudioDataFileRequest
-    from omichub.application.services.chat_service import ChatService
+    from cygnusx.api.v1.studio import import_data_file
+    from cygnusx.application.schemas.studio import ImportStudioDataFileRequest
+    from cygnusx.application.services.chat_service import ChatService
 
     storage, uid, workspace = platform_env
     (storage / "users" / uid / "raw" / "a.csv").write_text("x,y\n1,2\n", encoding="utf-8")
@@ -270,10 +270,10 @@ async def test_import_endpoint_happy_path(platform_env):
 @pytest.mark.unit
 async def test_import_endpoint_wrong_user_rejected(platform_env):
     """他人文件 → NotFoundError（与工具一致，不泄露存在性）"""
-    from omichub.api.v1.studio import import_data_file
-    from omichub.application.schemas.studio import ImportStudioDataFileRequest
-    from omichub.application.services.chat_service import ChatService
-    from omichub.core.exceptions import NotFoundError
+    from cygnusx.api.v1.studio import import_data_file
+    from cygnusx.application.schemas.studio import ImportStudioDataFileRequest
+    from cygnusx.application.services.chat_service import ChatService
+    from cygnusx.core.exceptions import NotFoundError
 
     _, uid, _ = platform_env
     session = _make_studio_session(uid, None)
@@ -292,10 +292,10 @@ async def test_import_endpoint_wrong_user_rejected(platform_env):
 @pytest.mark.unit
 async def test_import_endpoint_rejects_non_studio_session(platform_env):
     """非 studio 会话 → 404（不泄露会话存在性）"""
-    from omichub.api.v1.studio import import_data_file
-    from omichub.application.schemas.studio import ImportStudioDataFileRequest
-    from omichub.application.services.chat_service import ChatService
-    from omichub.core.exceptions import NotFoundError
+    from cygnusx.api.v1.studio import import_data_file
+    from cygnusx.application.schemas.studio import ImportStudioDataFileRequest
+    from cygnusx.application.services.chat_service import ChatService
+    from cygnusx.core.exceptions import NotFoundError
 
     _, uid, _ = platform_env
     session = _make_studio_session(uid, None)
@@ -372,7 +372,7 @@ async def test_platform_result_import_wrong_user_rejected(platform_env):
 
 
 def _make_studio_session(uid: str, parent_id: uuid.UUID | None) -> ChatSessionModel:
-    sandbox_meta: dict[str, Any] = {"image": "omichub-sandbox:bio"}
+    sandbox_meta: dict[str, Any] = {"image": "cygnusx-sandbox:bio"}
     if parent_id is not None:
         sandbox_meta["context_pack"] = {"source": {"report_id": str(parent_id)}}
     return ChatSessionModel(
@@ -536,8 +536,8 @@ async def test_pipeline_query_keyword_filter():
 
 @pytest.mark.unit
 async def test_edit_endpoint_forwards_exact_replacement(monkeypatch):
-    from omichub.api.v1.studio import edit_workspace_file
-    from omichub.application.schemas.studio import EditStudioFileRequest
+    from cygnusx.api.v1.studio import edit_workspace_file
+    from cygnusx.application.schemas.studio import EditStudioFileRequest
 
     uid = str(uuid.uuid4())
     session = _make_studio_session(uid, None)
@@ -558,7 +558,7 @@ async def test_edit_endpoint_forwards_exact_replacement(monkeypatch):
             return {"path": "scripts/a.py", "diff": "--- a\n+++ b\n", "size": 3}
 
     manager = _Manager()
-    monkeypatch.setattr("omichub.api.v1.studio.studio_sandbox_manager", manager)
+    monkeypatch.setattr("cygnusx.api.v1.studio.studio_sandbox_manager", manager)
 
     response = await edit_workspace_file(
         uid,
@@ -575,9 +575,9 @@ async def test_edit_endpoint_forwards_exact_replacement(monkeypatch):
 
 @pytest.mark.unit
 async def test_edit_endpoint_rejects_non_studio_session(monkeypatch):
-    from omichub.api.v1.studio import edit_workspace_file
-    from omichub.application.schemas.studio import EditStudioFileRequest
-    from omichub.core.exceptions import NotFoundError
+    from cygnusx.api.v1.studio import edit_workspace_file
+    from cygnusx.application.schemas.studio import EditStudioFileRequest
+    from cygnusx.core.exceptions import NotFoundError
 
     uid = str(uuid.uuid4())
     session = _make_studio_session(uid, None)
@@ -601,8 +601,8 @@ async def test_edit_endpoint_rejects_non_studio_session(monkeypatch):
 
 @pytest.mark.unit
 async def test_save_endpoint_writes_complete_script(monkeypatch):
-    from omichub.api.v1.studio import save_workspace_file
-    from omichub.application.schemas.studio import SaveStudioFileRequest
+    from cygnusx.api.v1.studio import save_workspace_file
+    from cygnusx.application.schemas.studio import SaveStudioFileRequest
 
     uid = str(uuid.uuid4())
     session = _make_studio_session(uid, None)
@@ -623,7 +623,7 @@ async def test_save_endpoint_writes_complete_script(monkeypatch):
             return {"path": "scripts/hello.py", "size": 15}
 
     manager = _Manager()
-    monkeypatch.setattr("omichub.api.v1.studio.studio_sandbox_manager", manager)
+    monkeypatch.setattr("cygnusx.api.v1.studio.studio_sandbox_manager", manager)
 
     response = await save_workspace_file(
         uid,
@@ -640,9 +640,9 @@ async def test_save_endpoint_writes_complete_script(monkeypatch):
 
 @pytest.mark.unit
 async def test_save_endpoint_rejects_non_studio_session(monkeypatch):
-    from omichub.api.v1.studio import save_workspace_file
-    from omichub.application.schemas.studio import SaveStudioFileRequest
-    from omichub.core.exceptions import NotFoundError
+    from cygnusx.api.v1.studio import save_workspace_file
+    from cygnusx.application.schemas.studio import SaveStudioFileRequest
+    from cygnusx.core.exceptions import NotFoundError
 
     uid = str(uuid.uuid4())
     session = _make_studio_session(uid, None)

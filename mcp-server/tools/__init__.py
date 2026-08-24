@@ -2,7 +2,7 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient
+from client.api_client import CygnusXAPIClient
 from core.config import settings
 from core.logger import logger
 
@@ -19,7 +19,7 @@ _GROUP_REGISTRY: dict[str, str] = {
 }
 
 
-def register_all_tools(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register_all_tools(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     import importlib
 
     for group_id, module_path in _GROUP_REGISTRY.items():

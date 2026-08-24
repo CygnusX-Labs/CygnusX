@@ -54,12 +54,12 @@
 
 关键实现位置：
 
-- `src/omichub/application/services/execution_events.py`
-- `src/omichub/application/services/chat_service.py`
-- `src/omichub/infrastructure/execution/langgraph_nodes.py`
-- `src/omichub/application/services/parallel_subagent_service.py`
-- `src/omichub/application/services/agent_consultation_service.py`
-- `src/omichub/application/services/agentteams_room_response_service.py`
+- `src/cygnusx/application/services/execution_events.py`
+- `src/cygnusx/application/services/chat_service.py`
+- `src/cygnusx/infrastructure/execution/langgraph_nodes.py`
+- `src/cygnusx/application/services/parallel_subagent_service.py`
+- `src/cygnusx/application/services/agent_consultation_service.py`
+- `src/cygnusx/application/services/agentteams_room_response_service.py`
 - `frontend/src/utils/agentTeamsRoom.ts`
 - `frontend/src/views/AgentTeamsRoomView.vue`
 

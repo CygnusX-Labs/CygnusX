@@ -10,15 +10,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services.agentteams_introspection_service import (
+from cygnusx.application.services.agentteams_introspection_service import (
     DENIED_AUDIT_EVENT_TYPE,
     QUERY_AUDIT_EVENT_TYPE,
     AgentTeamsIntrospectionService,
     IntrospectionDeniedError,
     scan_denied,
 )
-from omichub.core.exceptions import BusinessError, ValidationError
-from omichub.infrastructure.database.models.chat import (
+from cygnusx.core.exceptions import BusinessError, ValidationError
+from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsRoomModel,
     CaseArtifactDependencyModel,
     CaseArtifactVersionModel,

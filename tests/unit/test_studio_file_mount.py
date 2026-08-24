@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from omichub.application.services.chat_service import ChatService
+from cygnusx.application.services.chat_service import ChatService
 
 
 @pytest.fixture

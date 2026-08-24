@@ -2,7 +2,7 @@
 
 > **调查依据**: `docs/info/26.8.22/pdf_inspect.md`  
 > **排查日期**: 2026-08-22  
-> **排查范围**: `src/omichub` 中所有 PDF 处理相关代码  
+> **排查范围**: `src/cygnusx` 中所有 PDF 处理相关代码  
 > **当前解析库**: `pypdf>=5.0.0`
 
 ---
@@ -34,9 +34,9 @@
 
 | # | 文件路径 | 行号 | 用途 | 输出格式 | 字符限制 |
 |---|---------|------|------|---------|---------|
-| 1 | `src/omichub/application/services/chat_service.py` | 9369 | 聊天附件 PDF 文本读取 | `[第 N 页]\n文本` | 50,000 |
-| 2 | `src/omichub/application/services/knowledge_asset_service.py` | 152 | 知识库 Markdown 引用 PDF 索引 | `[第 N 页]\n文本` | 40,000/资产 |
-| 3 | `src/omichub/infrastructure/mcp/presets.py` | 553 | 工作区 `workspace_read_file` PDF 读取 | JSON `{content, truncated, pages_read}` | 50,000 |
+| 1 | `src/cygnusx/application/services/chat_service.py` | 9369 | 聊天附件 PDF 文本读取 | `[第 N 页]\n文本` | 50,000 |
+| 2 | `src/cygnusx/application/services/knowledge_asset_service.py` | 152 | 知识库 Markdown 引用 PDF 索引 | `[第 N 页]\n文本` | 40,000/资产 |
+| 3 | `src/cygnusx/infrastructure/mcp/presets.py` | 553 | 工作区 `workspace_read_file` PDF 读取 | JSON `{content, truncated, pages_read}` | 50,000 |
 
 ### 2.2 共同特征
 
@@ -101,9 +101,9 @@
 三处代码重复了几乎相同的 `pypdf` 提取循环，输出格式和限制还不一致。这直接违反了 `pdf_inspect.md` 推荐的 `PDFProcessor` 统一入口设计。
 
 **位置**：
-- `src/omichub/application/services/chat_service.py:9369`
-- `src/omichub/application/services/knowledge_asset_service.py:152`
-- `src/omichub/infrastructure/mcp/presets.py:553`
+- `src/cygnusx/application/services/chat_service.py:9369`
+- `src/cygnusx/application/services/knowledge_asset_service.py:152`
+- `src/cygnusx/infrastructure/mcp/presets.py:553`
 
 **建议**：按文档 §5.2 实现统一的 `PDFProcessor` 类。
 
@@ -115,7 +115,7 @@
 - `fallback_triggered` 标记
 - 结构化日志标记（如 `WARN: empty_output`）
 
-**位置**：`src/omichub/infrastructure/mcp/presets.py:580`
+**位置**：`src/cygnusx/infrastructure/mcp/presets.py:580`
 
 **建议**：按文档 §3.2 实现明确的降级触发条件。
 
@@ -136,7 +136,7 @@ You need to install a suitable plugin for your async framework
 
 `ChatService._resolve_attachment_path` 使用 `Path(filename).name` 并检查 `path.is_file()`，但不像 `_resolve_workspace_file` 那样用 `relative_to` 校验解析后的路径确实落在用户上传目录内。
 
-**位置**：`src/omichub/application/services/chat_service.py:9265`
+**位置**：`src/cygnusx/application/services/chat_service.py:9265`
 
 **建议**：增加 `resolved.relative_to(upload_dir.resolve())` 校验，与 workspace 文件解析保持一致。
 
@@ -189,7 +189,7 @@ python -m pytest tests/unit/test_chat_attachment_reading.py \
 
 ### Phase 1: 统一重构（1 周）
 
-- [ ] 新建 `src/omichub/application/services/pdf_processor.py`
+- [ ] 新建 `src/cygnusx/application/services/pdf_processor.py`
 - [ ] 实现 `PDFProcessor` 统一入口（参考 `pdf_inspect.md` §5.2）
 - [ ] 实现 `PDFOutputNormalizer`（参考 `pdf_inspect.md` §3.3）
 - [ ] 迁移 chat_service、knowledge_asset_service、presets 三处调用
@@ -220,13 +220,13 @@ python -m pytest tests/unit/test_chat_attachment_reading.py \
 
 ### 8.1 PDF 处理代码
 
-- `src/omichub/application/services/chat_service.py:9265` — `_resolve_attachment_path`
-- `src/omichub/application/services/chat_service.py:9284` — `_is_internal_url`
-- `src/omichub/application/services/chat_service.py:9336` — `_read_attachment_text`
-- `src/omichub/application/services/chat_service.py:9369` — `_extract_pdf_text`
-- `src/omichub/application/services/knowledge_asset_service.py:152` — `_extract_pdf`
-- `src/omichub/infrastructure/mcp/presets.py:553` — `_extract_workspace_pdf_text`
-- `src/omichub/infrastructure/mcp/presets.py:597` — `_resolve_workspace_file`
+- `src/cygnusx/application/services/chat_service.py:9265` — `_resolve_attachment_path`
+- `src/cygnusx/application/services/chat_service.py:9284` — `_is_internal_url`
+- `src/cygnusx/application/services/chat_service.py:9336` — `_read_attachment_text`
+- `src/cygnusx/application/services/chat_service.py:9369` — `_extract_pdf_text`
+- `src/cygnusx/application/services/knowledge_asset_service.py:152` — `_extract_pdf`
+- `src/cygnusx/infrastructure/mcp/presets.py:553` — `_extract_workspace_pdf_text`
+- `src/cygnusx/infrastructure/mcp/presets.py:597` — `_resolve_workspace_file`
 
 ### 8.2 测试文件
 

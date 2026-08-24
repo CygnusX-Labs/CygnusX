@@ -10,8 +10,8 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.application.services import agentteams_flow_report_service as report_module
-from omichub.application.services.agentteams_flow_report_service import (
+from cygnusx.application.services import agentteams_flow_report_service as report_module
+from cygnusx.application.services.agentteams_flow_report_service import (
     AgentTeamsFlowReportService,
 )
 

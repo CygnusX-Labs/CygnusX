@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.celery_app.tasks import studio as studio_tasks
-from omichub.infrastructure.database import session as database_session
-from omichub.infrastructure.studio import manager as manager_module
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.celery_app.tasks import studio as studio_tasks
+from cygnusx.infrastructure.database import session as database_session
+from cygnusx.infrastructure.studio import manager as manager_module
 
 
 class _ScalarResult:

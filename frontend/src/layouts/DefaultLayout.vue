@@ -58,7 +58,7 @@ const notificationDrawerOpen = ref(false)
 // 首次登录迎新弹窗：由 authStore.consumeOnboarding() 触发
 const onboardingVisible = ref(false)
 function loadExpandedKeys(): string[] {
-  const saved = localStorage.getItem('omichub:sidebar-expanded')
+  const saved = localStorage.getItem('cygnusx:sidebar-expanded')
   if (!saved) return ['analysis-center']
 
   try {
@@ -78,7 +78,7 @@ watch(
   (path) => {
     if (!path.startsWith('/admin/') || expandedKeys.value.includes('admin-center')) return
     expandedKeys.value.push('admin-center')
-    localStorage.setItem('omichub:sidebar-expanded', JSON.stringify(expandedKeys.value))
+    localStorage.setItem('cygnusx:sidebar-expanded', JSON.stringify(expandedKeys.value))
   },
   { immediate: true },
 )
@@ -284,7 +284,7 @@ const systemNavItems = computed<NavItem[]>(() => [
   { key: 'cookies', label: '用量统计', to: '/cookies', icon: BarChartOutline },
   { key: 'agent-capabilities', label: '我的 Agent 能力', to: '/agent-capabilities', icon: SparklesOutline },
   { key: 'settings', label: '系统设置', to: '/settings', icon: SettingsOutline },
-  { key: 'about', label: '关于 OmicHub', to: '/about', icon: InformationCircleOutline },
+  { key: 'about', label: '关于 CygnusX', to: '/about', icon: InformationCircleOutline },
 ])
 
 const adminNavItems = computed<NavItem[]>(() => [
@@ -354,7 +354,7 @@ function toggleExpanded(key: string) {
   } else {
     expandedKeys.value.push(key)
   }
-  localStorage.setItem('omichub:sidebar-expanded', JSON.stringify(expandedKeys.value))
+  localStorage.setItem('cygnusx:sidebar-expanded', JSON.stringify(expandedKeys.value))
 }
 
 function isExpanded(key: string): boolean {
@@ -464,7 +464,7 @@ const UserAvatar = () => {
               <Planet />
             </NIcon>
           </div>
-          <span class="logo-text">OmicHub</span>
+          <span class="logo-text">CygnusX</span>
         </div>
         <div class="top-nav-divider" />
         <nav class="top-nav-menu">
@@ -829,7 +829,7 @@ const UserAvatar = () => {
               <NIcon :size="26" class="mobile-logo-icon">
                 <Planet />
               </NIcon>
-              <span class="mobile-logo-text">OmicHub</span>
+              <span class="mobile-logo-text">CygnusX</span>
             </div>
             <nav class="mobile-nav-group">
               <RouterLink

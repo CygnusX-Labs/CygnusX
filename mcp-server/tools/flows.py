@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_list_flows(category: str = "") -> dict:
+    async def cygnusx_list_flows(category: str = "") -> dict:
         """列出平台可用的分析流程。可按类别过滤: rna_seq/atac_seq/scrna 等。"""
         try:
             data = await api.list_flows(category=category or None)
@@ -23,13 +23,13 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "success": True,
                 "summary": f"可用流程:\n" + "\n".join(lines),
                 "data": data,
-                "next_steps": ["使用 omichub_get_flow_detail 查看具体流程的参数配置"],
+                "next_steps": ["使用 cygnusx_get_flow_detail 查看具体流程的参数配置"],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取流程列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_flow_detail(flow_id: str) -> dict:
+    async def cygnusx_get_flow_detail(flow_id: str) -> dict:
         """获取分析流程详情：描述、参数列表、样本表定义、执行配置。"""
         try:
             data = await api.get_flow(flow_id)
@@ -50,13 +50,13 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "success": True,
                 "summary": summary,
                 "data": data,
-                "next_steps": ["使用 omichub_submit_analysis 提交分析任务"],
+                "next_steps": ["使用 cygnusx_submit_analysis 提交分析任务"],
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取流程详情失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_get_flow_parameters(flow_id: str) -> dict:
+    async def cygnusx_get_flow_parameters(flow_id: str) -> dict:
         """获取流程的参数 JSON Schema，用于了解每个参数的类型、默认值和约束。"""
         try:
             data = await api.get_flow_schema(flow_id)
@@ -72,5 +72,5 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": f"参数 schema ({len(props)} 个):\n" + "\n".join(lines),
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取参数 schema 失败: {e.detail}"}

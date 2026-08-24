@@ -349,7 +349,7 @@ onMounted(() => { void loadCases() })
         </NButton>
       </div>
 
-      <div class="case-table-card omichub-card">
+      <div class="case-table-card cygnusx-card">
         <NSpin :show="loading">
           <NDataTable
             v-if="cases.length"
@@ -463,7 +463,7 @@ onMounted(() => { void loadCases() })
 .create-case-note { margin-bottom: 16px; }
 .create-case-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
-/* 表格卡片：复用 omichub-card 表面（global.css「卡片内数据表格」规则自动接管表头/分隔线/悬停） */
+/* 表格卡片：复用 cygnusx-card 表面（global.css「卡片内数据表格」规则自动接管表头/分隔线/悬停） */
 .case-table-card {
   overflow: hidden;
   border: 1px solid var(--neutral-border);

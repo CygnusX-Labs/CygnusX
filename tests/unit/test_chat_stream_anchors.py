@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from omichub.application.services.chat import persistence_support
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.database.models.chat import ChatMessageModel
+from cygnusx.application.services.chat import persistence_support
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.database.models.chat import ChatMessageModel
 
 
 @pytest.mark.asyncio

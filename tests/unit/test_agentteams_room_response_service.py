@@ -8,21 +8,21 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services.agent_consultation_service import (
+from cygnusx.application.services.agent_consultation_service import (
     AgentConsultationService,
     ConsultationEnvelope,
 )
-from omichub.application.services.agentteams_capability_registry import (
+from cygnusx.application.services.agentteams_capability_registry import (
     AgentTeamsCapabilityRegistry,
 )
-from omichub.application.services.agentteams_room_response_service import (
+from cygnusx.application.services.agentteams_room_response_service import (
     ROOM_RESPONSE_LOCK_KEY_PREFIX,
     AgentTeamsRoomResponseService,
 )
-from omichub.application.services.agentteams_service import room_namespace_case_id
-from omichub.application.services.flow_registry import FlowRegistry
-from omichub.core.config import get_settings
-from omichub.infrastructure.database.models.chat import AgentTeamsRoomModel
+from cygnusx.application.services.agentteams_service import room_namespace_case_id
+from cygnusx.application.services.flow_registry import FlowRegistry
+from cygnusx.core.config import get_settings
+from cygnusx.infrastructure.database.models.chat import AgentTeamsRoomModel
 
 _STATUS_LINES = {
     key: [key]
@@ -710,7 +710,7 @@ async def test_manager_persona_fallback_to_general_keeps_manager_voice(monkeypat
 @pytest.mark.asyncio
 async def test_manager_agent_id_config_failure_is_not_silent(monkeypatch) -> None:
     """配置加载失败必须显式报错（响应失败 + 日志），禁止静默回退到任何 agent。"""
-    import omichub.application.services.agentteams_room_response_service as room_module
+    import cygnusx.application.services.agentteams_room_response_service as room_module
 
     def broken_settings():
         raise RuntimeError("agentteams.manager_agent_id 配置加载失败")
@@ -736,7 +736,7 @@ async def test_manager_agent_id_config_failure_is_not_silent(monkeypatch) -> Non
 def test_manager_agent_id_setting_rejects_blank() -> None:
     from pydantic import ValidationError
 
-    from omichub.core.config import Settings
+    from cygnusx.core.config import Settings
 
     with pytest.raises(ValidationError):
         Settings(agentteams_manager_agent_id="  ")
@@ -1292,7 +1292,7 @@ async def test_non_execution_ask_user_card_does_not_arm_pending_clarify(monkeypa
 
 
 def test_celery_task_delegates_to_async_impl(monkeypatch) -> None:
-    import omichub.infrastructure.celery_app.tasks.agentteams as task_module
+    import cygnusx.infrastructure.celery_app.tasks.agentteams as task_module
 
     calls: list[tuple[str, str, str]] = []
 
@@ -1670,7 +1670,7 @@ def test_build_question_without_memory_context_has_no_user_memory() -> None:
 async def test_memory_context_empty_when_v2_off(monkeypatch) -> None:
     """v2 off 时行为与接入前完全一致：不装配、不触碰记忆服务。"""
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_response_service.get_settings",
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=False),
     )
 
@@ -1679,7 +1679,7 @@ async def test_memory_context_empty_when_v2_off(monkeypatch) -> None:
             raise AssertionError("v2 off 不应装配记忆服务")
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        "cygnusx.application.services.agent_memory_service.AgentMemoryService",
         _ForbiddenMemoryService,
     )
     service = _service(
@@ -1699,7 +1699,7 @@ async def test_memory_context_empty_when_v2_off(monkeypatch) -> None:
 async def test_memory_context_uses_shared_plus_manager_partition(monkeypatch) -> None:
     """v2 开启时按 requester + manager agent 分区装配，结果原样透传。"""
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_response_service.get_settings",
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
     captured: dict = {}
@@ -1715,7 +1715,7 @@ async def test_memory_context_uses_shared_plus_manager_partition(monkeypatch) ->
             return _MEMORY_BLOCK
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        "cygnusx.application.services.agent_memory_service.AgentMemoryService",
         _FakeMemoryService,
     )
     service = _service(
@@ -1740,7 +1740,7 @@ async def test_memory_context_uses_shared_plus_manager_partition(monkeypatch) ->
 async def test_memory_context_failure_does_not_break_room_reply(monkeypatch) -> None:
     """记忆装配异常降级为空注入，不得阻断房间回复主流程。"""
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_response_service.get_settings",
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
 
@@ -1752,7 +1752,7 @@ async def test_memory_context_failure_does_not_break_room_reply(monkeypatch) -> 
             raise RuntimeError("memory backend down")
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.AgentMemoryService",
+        "cygnusx.application.services.agent_memory_service.AgentMemoryService",
         _BrokenMemoryService,
     )
     service = _service(
@@ -1773,14 +1773,14 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
     """M2+M1 装配点贯通证据：注入含共享偏好与 Manager 分区事实，不含其他 agent 分区。"""
     from datetime import UTC, datetime
 
-    from omichub.application.services.agent_memory_service import AgentMemoryService
+    from cygnusx.application.services.agent_memory_service import AgentMemoryService
 
     monkeypatch.setattr(
-        "omichub.application.services.agentteams_room_response_service.get_settings",
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.get_settings",
+        "cygnusx.application.services.agent_memory_service.get_settings",
         lambda: SimpleNamespace(
             memory_v2_enabled=True,
             memory_fact_time_decay_lambda=0.02,
@@ -1813,7 +1813,7 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
             return list(partitions.get(agent_id, []))[:limit]
 
     monkeypatch.setattr(
-        "omichub.application.services.agent_memory_service.PostgresFactStore", _FakeStore
+        "cygnusx.application.services.agent_memory_service.PostgresFactStore", _FakeStore
     )
 
     blocks = [

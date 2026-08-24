@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.services import studio_checkpoints
+from cygnusx.application.services import studio_checkpoints
 
 
 @pytest.mark.unit

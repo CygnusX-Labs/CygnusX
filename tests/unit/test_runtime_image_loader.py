@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from omichub.infrastructure.config.runtime_image_loader import (
+from cygnusx.infrastructure.config.runtime_image_loader import (
     RuntimeImageRegistryManager,
     render_runtime_manifest,
 )
@@ -13,7 +13,7 @@ def test_real_runtime_registry_resolves_profiles():
     core = config.resolved_profile("analysis-core")
     plot = config.resolved_profile("analysis-plot")
     scrna = config.resolved_profile("analysis-scrna")
-    assert core.image == "omichub-analysis:core-2026.07"
+    assert core.image == "cygnusx-analysis:core-2026.07"
     assert core.runtime_uid == 10001
     assert {"python", "r"} <= core.capabilities
     assert {"plotting", "r"} <= plot.capabilities
@@ -49,11 +49,11 @@ def test_registered_dockerfiles_exist():
 
 def test_runtime_manifest_uses_resolved_software_and_actual_image():
     config = RuntimeImageRegistryManager("data/ai/runtime_images.yaml").get_config()
-    profile_id, profile = config.profile_for_image("omichub-analysis:plot-2026.07") or ("", None)
+    profile_id, profile = config.profile_for_image("cygnusx-analysis:plot-2026.07") or ("", None)
 
     assert profile_id == "analysis-plot"
     assert profile is not None
     manifest = render_runtime_manifest(profile_id, profile)
-    assert "omichub-analysis:plot-2026.07" in manifest
+    assert "cygnusx-analysis:plot-2026.07" in manifest
     assert "bioconductor-ggtree" in manifest
     assert "r-ggrepel" in manifest

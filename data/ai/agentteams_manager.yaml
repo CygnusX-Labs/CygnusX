@@ -19,7 +19,7 @@ welcome_message: "你好，我是生物信息部门经理。描述你的分析�
 temperature: 0.4
 max_tokens: 32768
 mcp_ids:
-  # omichub-platform builtin server（uuid5(DNS, "omichub-platform.builtin")），
+  # cygnusx-platform builtin server（uuid5(DNS, "cygnusx-platform.builtin")），
   # 经 mcp_tools 白名单只暴露两个只读工具：能力目录与当前房间状态查询。
   - 3e353945-c631-5ba6-a63d-0e5e6e0c1f03
 mcp_tools:

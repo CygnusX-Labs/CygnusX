@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from omichub.application.services.agent_handoff_service import (
+from cygnusx.application.services.agent_handoff_service import (
     MAX_HANDOFF_PACKET_BYTES,
     AgentHandoffService,
     extract_handoff_directive,
 )
-from omichub.application.services.agent_service import AgentService, render_persona_system_prompt
-from omichub.core.exceptions import BusinessError
-from omichub.infrastructure.database.models.agent import AgentTemplateModel
-from omichub.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.application.services.agent_service import AgentService, render_persona_system_prompt
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
+from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 
 
 def test_runtime_communication_contract_applies_to_every_standard_agent() -> None:
@@ -312,7 +312,7 @@ async def test_dynamic_handoff_catalog_exposes_chat_entry_from_ability_yaml() ->
 
 @pytest.mark.asyncio
 async def test_record_handoff_anchor_commits_in_independent_session(monkeypatch) -> None:
-    import omichub.application.services.agent_handoff_service as handoff_module
+    import cygnusx.application.services.agent_handoff_service as handoff_module
 
     class FakeDb:
         def __init__(self) -> None:

@@ -2,7 +2,7 @@
 
 import pytest
 
-from omichub.application.services.chat.dual_run import (
+from cygnusx.application.services.chat.dual_run import (
     DualRunResult,
     assert_equivalent,
     capture_golden_record,
@@ -10,9 +10,9 @@ from omichub.application.services.chat.dual_run import (
     compare_streams,
     write_report,
 )
-from omichub.application.services.execution_events import EventSequenceError
-from omichub.application.services.chat.golden_records import save_events
-from omichub.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.application.services.execution_events import EventSequenceError
+from cygnusx.application.services.chat.golden_records import save_events
+from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 
 
 async def _stream(*chunks: ChatChunk):

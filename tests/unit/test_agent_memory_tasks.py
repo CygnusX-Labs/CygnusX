@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omichub.application.services.chat_service import ChatService
-from omichub.infrastructure.celery_app.tasks.memory import (
+from cygnusx.application.services.chat_service import ChatService
+from cygnusx.infrastructure.celery_app.tasks.memory import (
     _conversation_text,
     _settle_session_memory_v2,
     _summary_content,
@@ -47,9 +47,9 @@ def _settings(**overrides) -> SimpleNamespace:
 
 def _capture_enqueue(monkeypatch, settings) -> list:
     calls: list = []
-    monkeypatch.setattr("omichub.core.config.get_settings", lambda: settings)
+    monkeypatch.setattr("cygnusx.core.config.get_settings", lambda: settings)
     monkeypatch.setattr(
-        "omichub.infrastructure.task_queue.dispatcher.enqueue_task",
+        "cygnusx.infrastructure.task_queue.dispatcher.enqueue_task",
         lambda task, *args, **kwargs: calls.append(task),
     )
     return calls
@@ -103,7 +103,7 @@ async def test_settle_task_body_skips_agentteams_synthetic(monkeypatch) -> None:
             return False
 
     monkeypatch.setattr(
-        "omichub.infrastructure.database.session.get_session_factory",
+        "cygnusx.infrastructure.database.session.get_session_factory",
         lambda: (lambda: _Ctx()),
     )
 

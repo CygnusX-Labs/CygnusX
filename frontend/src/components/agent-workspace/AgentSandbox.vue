@@ -216,7 +216,7 @@ const userDisplayName = computed(() => displayName(authStore.user) || '我')
 const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
 /** 首次调用某技能的轻提示（localStorage 去重，全生命周期只弹一次，可关=不再提示同技能） */
-const SKILL_NOTICE_KEY = 'omichub-notified-skills'
+const SKILL_NOTICE_KEY = 'cygnusx-notified-skills'
 function handleSkillInvokedNotice(e: Event) {
   const detail = (e as CustomEvent<{ skill_id: string; name: string; version?: string }>).detail
   if (!detail?.skill_id) return
@@ -234,11 +234,11 @@ function handleSkillInvokedNotice(e: Event) {
 }
 
 onMounted(() => {
-  window.addEventListener('omichub:skill-invoked', handleSkillInvokedNotice)
+  window.addEventListener('cygnusx:skill-invoked', handleSkillInvokedNotice)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('omichub:skill-invoked', handleSkillInvokedNotice)
+  window.removeEventListener('cygnusx:skill-invoked', handleSkillInvokedNotice)
 })
 
 const modelOptions = computed(() =>
@@ -358,7 +358,7 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
 }
 
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {
-  window.dispatchEvent(new CustomEvent('omichub:agentteams-create', {
+  window.dispatchEvent(new CustomEvent('cygnusx:agentteams-create', {
     detail: { summary, consultationId },
   }))
 }

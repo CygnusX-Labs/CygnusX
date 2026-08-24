@@ -4,10 +4,10 @@ from uuid import uuid4
 
 import pytest
 
-from omichub.domain.mcp.entities import MCPServer, MCPToolRegistry
-from omichub.domain.mcp.value_objects import Transport
-from omichub.infrastructure.mcp.client import MCPClient
-from omichub.infrastructure.mcp.reliability import MCPHealthRegistry
+from cygnusx.domain.mcp.entities import MCPServer, MCPToolRegistry
+from cygnusx.domain.mcp.value_objects import Transport
+from cygnusx.infrastructure.mcp.client import MCPClient
+from cygnusx.infrastructure.mcp.reliability import MCPHealthRegistry
 
 
 def make_server(name: str, transport: Transport) -> MCPServer:
@@ -34,7 +34,7 @@ async def test_external_tool_retries_and_recovers(monkeypatch: pytest.MonkeyPatc
         return None
 
     monkeypatch.setattr(client, "_call_tool_inner", fake_call)
-    monkeypatch.setattr("omichub.infrastructure.mcp.client.asyncio.sleep", no_wait)
+    monkeypatch.setattr("cygnusx.infrastructure.mcp.client.asyncio.sleep", no_wait)
 
     result = await client.call_tool(server, "translate_sequence", {})
 

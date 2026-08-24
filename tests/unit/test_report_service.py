@@ -6,13 +6,13 @@ from uuid import UUID
 
 import pytest
 
-from omichub.application.services import report_service as report_service_module
-from omichub.application.services.report_service import ReportService
-from omichub.domain.file.value_objects import FileSource
-from omichub.infrastructure.config.storage_config import StorageConfig
-from omichub.infrastructure.storage import LocalStorageBackend
-from omichub.infrastructure.storage.file_registry import FileRegistry
-from omichub.infrastructure.storage.path_factory import StoragePathFactory
+from cygnusx.application.services import report_service as report_service_module
+from cygnusx.application.services.report_service import ReportService
+from cygnusx.domain.file.value_objects import FileSource
+from cygnusx.infrastructure.config.storage_config import StorageConfig
+from cygnusx.infrastructure.storage import LocalStorageBackend
+from cygnusx.infrastructure.storage.file_registry import FileRegistry
+from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 
 
 def _tmp_path_factory(tmp_path: Path):

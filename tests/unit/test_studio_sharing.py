@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from omichub.application.schemas.studio import (
+from cygnusx.application.schemas.studio import (
     SharedStudioMessageDTO,
     SharedStudioSessionDTO,
 )
-from omichub.application.services.studio_sharing import (
+from cygnusx.application.services.studio_sharing import (
     create_share,
     render_printable_report,
     resolve_shared_artifact,
@@ -18,9 +18,9 @@ from omichub.application.services.studio_sharing import (
     share_is_active,
     share_token_hash,
 )
-from omichub.core.exceptions import NotFoundError
-from omichub.infrastructure.database.models.chat import ChatSessionModel
-from omichub.infrastructure.studio import manager as manager_module
+from cygnusx.core.exceptions import NotFoundError
+from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.infrastructure.studio import manager as manager_module
 
 
 def _session() -> ChatSessionModel:

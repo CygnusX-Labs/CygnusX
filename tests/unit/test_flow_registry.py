@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omichub.application.services.flow_registry import FlowRegistry
-from omichub.application.services.mas_plan_validator import MASPlanValidator
-from omichub.core.exceptions import BusinessError, ValidationError
-from omichub.domain.mas.models import ExecutionPlan
+from cygnusx.application.services.flow_registry import FlowRegistry
+from cygnusx.application.services.mas_plan_validator import MASPlanValidator
+from cygnusx.core.exceptions import BusinessError, ValidationError
+from cygnusx.domain.mas.models import ExecutionPlan
 
 ROOT = Path(__file__).parents[2]
 FLOWS_DIR = ROOT / "data" / "ai" / "flows"
-SITE_CONFIG = ROOT / "data" / "OmicHub.yaml"
+SITE_CONFIG = ROOT / "data" / "CygnusX.yaml"
 
 
 def _scrna_payload() -> dict:

@@ -2,13 +2,13 @@
 
 from fastmcp import FastMCP
 
-from client.api_client import OmicHubAPIClient, OmicHubAPIError
+from client.api_client import CygnusXAPIClient, CygnusXAPIError
 
 
-def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
+def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def omichub_sandbox_create(language: str = "python") -> dict:
+    async def cygnusx_sandbox_create(language: str = "python") -> dict:
         """创建或复用沙箱会话。沙箱环境: mambaforge + Python 3.11 + scanpy/anndata/R/Seurat。
 
         Args:
@@ -23,15 +23,15 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                     f"沙箱会话就绪: {session_id}\n"
                     f"语言: {language} | 状态: {data.get('status', '?')}\n"
                     f"环境: mambaforge (scanpy, anndata, Seurat, DESeq2 等已安装)\n"
-                    f"使用 omichub_sandbox_execute 执行代码。"
+                    f"使用 cygnusx_sandbox_execute 执行代码。"
                 ),
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"创建沙箱失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_sandbox_execute(code: str, session_id: str = "", timeout: int = 300) -> dict:
+    async def cygnusx_sandbox_execute(code: str, session_id: str = "", timeout: int = 300) -> dict:
         """在沙箱中执行代码。沙箱已预装生物信息学依赖 (scanpy, anndata, DESeq2, Seurat 等)。
 
         适用场景:
@@ -86,11 +86,11 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                     "session_id": session_id,
                 },
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"沙箱执行失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_sandbox_list() -> dict:
+    async def cygnusx_sandbox_list() -> dict:
         """列出当前活跃的沙箱会话。"""
         try:
             data = await api.sandbox_list_sessions()
@@ -104,14 +104,14 @@ def register(mcp: FastMCP, api: OmicHubAPIClient) -> None:
                 "summary": "沙箱会话:\n" + "\n".join(lines) if lines else "无活跃会话",
                 "data": data,
             }
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取会话列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def omichub_sandbox_destroy(session_id: str) -> dict:
+    async def cygnusx_sandbox_destroy(session_id: str) -> dict:
         """销毁沙箱会话，释放容器资源。"""
         try:
             await api.sandbox_delete_session(session_id)
             return {"success": True, "summary": f"会话 {session_id} 已销毁"}
-        except OmicHubAPIError as e:
+        except CygnusXAPIError as e:
             return {"success": False, "summary": f"销毁失败: {e.detail}"}

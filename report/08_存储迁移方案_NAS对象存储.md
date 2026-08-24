@@ -1,6 +1,6 @@
 # 08 · 存储迁移方案（NAS + 对象存储）
 
-> 目标：从单机 bind mount `/data/omichub` 迁移到高速 NAS + 对象存储，支撑万人级与集群部署
+> 目标：从单机 bind mount `/data/cygnusx` 迁移到高速 NAS + 对象存储，支撑万人级与集群部署
 > 原则：分层存储、热温冷分级、应用层无感切换
 
 ## 一、当前存储架构问题
@@ -8,7 +8,7 @@
 ### 1.1 现状
 
 ```
-宿主机 /data/omichub (bind mount)
+宿主机 /data/cygnusx (bind mount)
 ├── users/{user_id}/raw/           # 用户原始上传（FASTQ 等）
 ├── users/{user_id}/results/{task_id}/  # 分析结果
 ├── .tmp/{upload_id}/              # 分片上传临时
@@ -17,7 +17,7 @@
 └── bin/                           # EBIDownload 二进制
 ```
 
-web 与 worker 通过共享同一宿主 `/data/omichub` 实现数据交换。
+web 与 worker 通过共享同一宿主 `/data/cygnusx` 实现数据交换。
 
 ### 1.2 问题
 
@@ -196,7 +196,7 @@ provisioner: nasplugin.csi.alibabacloud.com
 parameters:
   volumeAs: subpath
   server: xxx.nas.aliyuncs.com
-  path: /omichub-hot
+  path: /cygnusx-hot
   archiveOnDelete: "false"
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
@@ -210,13 +210,13 @@ provisioner: nasplugin.csi.alibabacloud.com
 parameters:
   volumeAs: subpath
   server: xxx.nas.aliyuncs.com
-  path: /omichub-warm
+  path: /cygnusx-warm
 ---
 # PVC
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: omichub-hot
+  name: cygnusx-hot
 spec:
   accessModes: [ReadWriteMany]   # 关键：多 Pod 同时读写
   storageClassName: nas-ssd
@@ -232,13 +232,13 @@ NAS 的核心价值是 `ReadWriteMany` —— 多个 Web Pod + 多个 Worker Pod
 ### 5.1 OSS Bucket 规划
 
 ```
-omichub-data/                      # 主 bucket
+cygnusx-data/                      # 主 bucket
 ├── archive/{user_id}/{file_id}    # 归档文件
 ├── backup/                        # 数据库/配置备份
 ├── reports/{task_id}/             # 长期报告归档
 └── logs/                          # 审计/任务日志归档
 
-omichub-static/                    # 静态资源 bucket
+cygnusx-static/                    # 静态资源 bucket
 ├── uploads/avatar/                # 头像
 ├── uploads/chat-attachments/      # 聊天附件
 └── assets/                        # 公共资源
@@ -262,9 +262,9 @@ async def presign_upload(req: PresignUploadRequest, user: CurrentUser):
 
 ```bash
 # OSS 生命周期：30 天未访问转低频，90 天转归档
-ossutil lifecycle --id omichub-lifecycle \
+ossutil lifecycle --id cygnusx-lifecycle \
   --rule "archive/ 30 Days IA, 90 Days Archive" \
-  oss://omichub-data
+  oss://cygnusx-data
 ```
 
 ## 六、路径硬编码修复
@@ -279,7 +279,7 @@ ossutil lifecycle --id omichub-lifecycle \
 execution:
   snakefile: "flows/rna_seq/Snakefile"   # 相对项目根
   # 或容器化后：
-  container_image: "omichub/flow-rnaseq:v1.0"
+  container_image: "cygnusx/flow-rnaseq:v1.0"
   snakefile: "/workflow/Snakefile"       # 容器内绝对路径
 ```
 
@@ -287,7 +287,7 @@ execution:
 
 ### 6.2 config.py 路径配置
 
-**当前**：`welcome_yaml`、`snakemake_conda_prefix`、`sandbox_data_dir`、`ebi_download_binary` 全硬编码 `/data/omichub`。
+**当前**：`welcome_yaml`、`snakemake_conda_prefix`、`sandbox_data_dir`、`ebi_download_binary` 全硬编码 `/data/cygnusx`。
 
 **修复**：全部改为基于 `storage_path` 派生：
 ```python

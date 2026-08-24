@@ -12,11 +12,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from omichub.application.schemas.task import TaskResponse
-from omichub.application.schemas.tool_invocation import ToolInvocationContext
-from omichub.application.services.tool_bridge_service import ToolBridgeService
-from omichub.domain.task.value_objects import ExecutionMode
-from omichub.tools.schema_loader import ToolSchema, ToolsSchemaLoader
+from cygnusx.application.schemas.task import TaskResponse
+from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+from cygnusx.application.services.tool_bridge_service import ToolBridgeService
+from cygnusx.domain.task.value_objects import ExecutionMode
+from cygnusx.tools.schema_loader import ToolSchema, ToolsSchemaLoader
 
 
 class _FakeAsyncSession(AsyncSession):
@@ -34,7 +34,7 @@ class _FakeLoader(ToolsSchemaLoader):
         self._flow_tools: list[ToolSchema] = []
 
     def get_config(self):
-        from omichub.tools.schema_loader import ToolsSchemaRegistry
+        from cygnusx.tools.schema_loader import ToolsSchemaRegistry
 
         return ToolsSchemaRegistry(tools=[])
 
@@ -60,7 +60,7 @@ def _make_context() -> ToolInvocationContext:
 def _rna_tool_schema() -> ToolSchema:
     return ToolSchema(
         key="flow-rna_seq",
-        name="omichub_prepare_rna_seq_submission",
+        name="cygnusx_prepare_rna_seq_submission",
         description="RNA-seq prepare",
         category="workflow",
         invocation_mode="analysis_flow",
@@ -109,7 +109,7 @@ async def test_analysis_flow_prepare_returns_confirmation_card(bridge: ToolBridg
         "comparisons": [{"name": "TvsC", "Control": "ctrl", "Treat": "treat"}],
     }
 
-    result = await bridge.execute("test-user", "omichub_prepare_rna_seq_submission", arguments, context=context)
+    result = await bridge.execute("test-user", "cygnusx_prepare_rna_seq_submission", arguments, context=context)
 
     assert result["success"] is True
     assert result["is_error"] is False
@@ -128,7 +128,7 @@ async def test_analysis_flow_prepare_validation_error(bridge: ToolBridgeService)
         "sample_sheet": [],
     }
 
-    result = await bridge.execute("test-user", "omichub_prepare_rna_seq_submission", arguments, context=context)
+    result = await bridge.execute("test-user", "cygnusx_prepare_rna_seq_submission", arguments, context=context)
 
     assert result["success"] is True  # 校验失败以正常 tool_result 返回
     assert result["llm_payload"]["valid"] is False
@@ -143,7 +143,7 @@ async def test_analysis_flow_requires_context(bridge: ToolBridgeService) -> None
         "sample_sheet": [{"sample": "S1", "sample_name": "Sample1", "group": "ctrl"}],
     }
 
-    result = await bridge.execute("test-user", "omichub_prepare_rna_seq_submission", arguments)
+    result = await bridge.execute("test-user", "cygnusx_prepare_rna_seq_submission", arguments)
 
     assert result["success"] is False
     assert "需要 ToolInvocationContext" in result["llm_payload"]["error"]
@@ -172,7 +172,7 @@ async def test_analysis_flow_confirm_and_submit(bridge: ToolBridgeService) -> No
     }
 
     # 先 prepare
-    result = await bridge.execute("test-user", "omichub_prepare_rna_seq_submission", arguments, context=context)
+    result = await bridge.execute("test-user", "cygnusx_prepare_rna_seq_submission", arguments, context=context)
     confirmation_id = result["llm_payload"]["confirmation_id"]
 
     from datetime import datetime
@@ -196,11 +196,11 @@ async def test_analysis_flow_confirm_and_submit(bridge: ToolBridgeService) -> No
     )
 
     with patch(
-        "omichub.application.services.tool_confirmation_service.TaskService.submit",
+        "cygnusx.application.services.tool_confirmation_service.TaskService.submit",
         new_callable=AsyncMock,
         return_value=fake_response,
     ):
-        from omichub.application.services.analysis_flow_tool_service import (
+        from cygnusx.application.services.analysis_flow_tool_service import (
             AnalysisFlowToolService,
         )
 

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from omichub.infrastructure.skills.skillmd import parse_skill_folder
-from omichub.application.services.skill_import_service import _builtin_category_map
+from cygnusx.infrastructure.skills.skillmd import parse_skill_folder
+from cygnusx.application.services.skill_import_service import _builtin_category_map
 
 
 @pytest.mark.unit

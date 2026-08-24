@@ -11,7 +11,7 @@
 
 #### C-01 无 `acks_late`，Worker 崩溃任务静默丢失
 
-- **位置**：`src/omichub/infrastructure/celery_app/celery.py` 全局配置
+- **位置**：`src/cygnusx/infrastructure/celery_app/celery.py` 全局配置
 - **现象**：所有任务使用默认的 `acks_late=False`，消息在 Worker 取到后立即确认。若 Worker 在执行过程中崩溃（OOM、Docker 重启），任务消息已从 Broker 中移除，无法重新投递。
 - **影响**：Snakemake 分析任务最长运行 6 小时，期间任何 Worker 异常都会导致任务永久丢失，用户侧表现为"任务永远 running"。
 - **建议**：
@@ -65,7 +65,7 @@
 
 #### C-04 优先级常量定义但从未使用
 
-- **位置**：`src/omichub/infrastructure/celery_app/config.py`
+- **位置**：`src/cygnusx/infrastructure/celery_app/config.py`
 - **现象**：定义了 `PRIORITY_HIGH=10`、`PRIORITY_NORMAL=5`、`PRIORITY_LOW=1`，但无任何任务调度或路由代码引用。
 - **影响**：死代码，且 Redis Broker 对 priority 支持有限（仅 0-9 范围，需配置 `priority_steps`）。
 - **建议**：要么删除死代码，要么在拆分队列后对 `analysis_long` 队列启用优先级：
@@ -129,14 +129,14 @@
 
 #### C-09 download.py 进度回调竞态条件
 
-- **位置**：`src/omichub/infrastructure/celery_app/tasks/download.py`
+- **位置**：`src/cygnusx/infrastructure/celery_app/tasks/download.py`
 - **现象**：`_on_progress` 回调和 `_progress_loop` 采样器使用不同的 session 实例并发写 `task.progress`。虽有 `poller_active` 标志位缓解，但非完全互斥。
 - **影响**：极端情况下进度值回退或数据库唯一约束冲突。
 - **建议**：统一为单一写入点，使用 `asyncio.Lock` 保护同一 session 的写入。
 
 #### C-10 `cleanup_expired` 兼容 shim 绕过 Celery
 
-- **位置**：`src/omichub/infrastructure/celery_app/tasks/analysis.py`
+- **位置**：`src/cygnusx/infrastructure/celery_app/tasks/analysis.py`
 - **现象**：`cleanup_expired` 任务内部直接调用 `_real()` 函数而非 `.delay()`，若 Beat 调度到此任务，实际在 Beat 进程内同步执行。
 - **影响**：Beat 进程被阻塞期间无法调度其他定时任务。
 - **建议**：删除 shim，Beat 直接调度 `tasks.storage.cleanup_expired`。
@@ -181,7 +181,7 @@
 
 #### D-01 NullPool 导致无连接复用
 
-- **位置**：`src/omichub/infrastructure/database/session.py:31`
+- **位置**：`src/cygnusx/infrastructure/database/session.py:31`
 - **现象**：引擎使用 `poolclass=NullPool`，每次获取 Session 都新建 TCP 连接，用完即关。
 - **原因**：Celery 任务的 `asyncio.run()` 每次创建新事件循环，`QueuePool` 会跨循环复用连接导致 "Future attached to a different loop" 错误。
 - **影响**：
@@ -201,7 +201,7 @@
 
 #### D-02 无数据库连接重试 / 降级启动
 
-- **位置**：`src/omichub/main.py:94-98`
+- **位置**：`src/cygnusx/main.py:94-98`
 - **现象**：`init_db()` 失败时仅打印警告"数据库未就绪，降级运行"，应用继续启动并接受请求。
 - **影响**：所有 DB 操作返回 500，用户看到全面报错但服务显示"健康"。
 - **建议**：
@@ -221,21 +221,21 @@
     image: prodrigestivill/postgres-backup-local:14
     environment:
       POSTGRES_HOST: db
-      POSTGRES_DB: omichub
-      POSTGRES_USER: omichub
+      POSTGRES_DB: cygnusx
+      POSTGRES_USER: cygnusx
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       SCHEDULE: "@daily"
       BACKUP_KEEP_DAYS: 7
       BACKUP_KEEP_WEEKS: 4
       BACKUP_KEEP_MONTHS: 6
     volumes:
-      - /data/omichub/backups:/backups
+      - /data/cygnusx/backups:/backups
   ```
   生产环境建议启用 WAL 归档 + pgBackRest 实现 PITR。
 
 #### D-04 数据库连接无 SSL/TLS 加密
 
-- **位置**：`src/omichub/core/config.py`、`session.py`
+- **位置**：`src/cygnusx/core/config.py`、`session.py`
 - **现象**：连接字符串无 `sslmode` 参数，无证书配置。容器间通信明文传输。
 - **影响**：开发环境暴露 5432 端口时凭据和数据可被嗅探。生产环境虽不暴露端口，但容器网络内仍可被同网络容器截获。
 - **建议**：
@@ -248,7 +248,7 @@
 
 #### D-05 Cookie 事务原子性缺陷
 
-- **位置**：`src/omichub/services/cookie_service.py:506-575`
+- **位置**：`src/cygnusx/services/cookie_service.py:506-575`
 - **现象**：`_record_transaction` 方法中：
   1. `account.apply_transaction(...)` — Python 侧修改余额
   2. `await self._account_repo.save(account)` — flush 到 DB
@@ -311,7 +311,7 @@
 
 #### D-08 `workspaces.storage_quota` 整数溢出
 
-- **位置**：`src/omichub/models/user.py:60`、初始迁移 `08ab25316cc1`
+- **位置**：`src/cygnusx/models/user.py:60`、初始迁移 `08ab25316cc1`
 - **现象**：`storage_quota` 使用 `sa.Integer()`（最大 ~2.1×10⁹），但默认值为 `10 * 1024 * 1024 * 1024`（10 GiB = 10,737,418,240），超出 Integer 范围。
 - **影响**：插入默认值时 PostgreSQL 报 `integer out of range` 错误。
 - **建议**：改为 `BigInteger`，并添加迁移：
@@ -355,14 +355,14 @@
 
 #### D-12 `get_current_user_id` 额外开启独立 Session
 
-- **位置**：`src/omichub/api/deps.py:51-58`
+- **位置**：`src/cygnusx/api/deps.py:51-58`
 - **现象**：每个认证请求在 `get_current_user_id` 中 `async with factory() as db` 开启独立 Session 验证用户，与请求本身的 `DbSession` 无关。
 - **影响**：每个认证请求产生 2 个 DB 连接（NullPool 下 = 2 次 TCP 握手）。
 - **建议**：复用请求的 `DbSession`，或将用户验证结果缓存到 JWT claims / Redis。
 
 #### D-13 `ChatSessionModel.messages` 默认懒加载
 
-- **位置**：`src/omichub/models/chat.py:59-64`
+- **位置**：`src/cygnusx/models/chat.py:59-64`
 - **现象**：`messages` 关系使用默认 `lazy="select"`（逐条加载）。任何循环访问 `session.messages` 的代码触发 N+1 查询。
 - **影响**：聊天历史列表页若未显式 `selectinload`，每条消息一次额外查询。
 - **建议**：改为 `lazy="selectin"` 或在查询处显式 `options(selectinload(ChatSessionModel.messages))`。
@@ -379,7 +379,7 @@
 | D-19 | `WorkspaceModel` 疑似未使用 | `models/user.py:52-61` | 确认后删除或标记 deprecated |
 | D-20 | Redis Pub/Sub 消息不可重放 | `cookie_pubsub.py` | WebSocket 断线重连后主动拉取最新余额 |
 | D-21 | Redis 密码在命令行可见 | `docker-compose.yml` `--requirepass` | 改用 `REDIS_PASSWORD` 环境变量 + `redis.conf` 文件 |
-| D-22 | 生产环境 `postgres_password` 无默认值校验 | `config.py` `validate_production_secrets` | 添加 `postgres_password != "omichub"` 校验 |
+| D-22 | 生产环境 `postgres_password` 无默认值校验 | `config.py` `validate_production_secrets` | 添加 `postgres_password != "cygnusx"` 校验 |
 
 ---
 
@@ -428,14 +428,14 @@
 
 | 组件 | 关键文件 |
 |------|----------|
-| Celery App | `src/omichub/infrastructure/celery_app/celery.py` |
-| Celery 配置常量 | `src/omichub/infrastructure/celery_app/config.py` |
-| Celery 日志 | `src/omichub/infrastructure/celery_app/logging.py` |
-| 任务定义 | `src/omichub/infrastructure/celery_app/tasks/*.py` |
-| 工具任务 | `src/omichub/tools/{jbrowse,blast,phylogenetic_tree,enrichments}/tasks.py` |
-| DB 引擎/Session | `src/omichub/infrastructure/database/session.py` |
-| DB 配置 | `src/omichub/core/config.py` |
-| 模型定义 | `src/omichub/models/*.py` |
+| Celery App | `src/cygnusx/infrastructure/celery_app/celery.py` |
+| Celery 配置常量 | `src/cygnusx/infrastructure/celery_app/config.py` |
+| Celery 日志 | `src/cygnusx/infrastructure/celery_app/logging.py` |
+| 任务定义 | `src/cygnusx/infrastructure/celery_app/tasks/*.py` |
+| 工具任务 | `src/cygnusx/tools/{jbrowse,blast,phylogenetic_tree,enrichments}/tasks.py` |
+| DB 引擎/Session | `src/cygnusx/infrastructure/database/session.py` |
+| DB 配置 | `src/cygnusx/core/config.py` |
+| 模型定义 | `src/cygnusx/models/*.py` |
 | 迁移文件 | `alembic/versions/` (38 个) |
 | Docker 部署 | `deploy/docker/docker-compose*.yml` |
 | Worker 入口 | `deploy/docker/worker-entrypoint.sh` |

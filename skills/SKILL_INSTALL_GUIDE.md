@@ -3,7 +3,7 @@
 本仓库存在**两套相互独立的 Skill 体系**，请不要混淆：
 
 1. **Kimi Code CLI Agent Skills** —— 给本仓库里的 AI 编码助手（Kimi Code CLI）使用的技能。
-2. **OmicHub 平台内部 Skill** —— 给 OmicHub 产品里的业务 Agent（如「单细胞分析师」`agent-scrna`）使用的技能。
+2. **CygnusX 平台内部 Skill** —— 给 CygnusX 产品里的业务 Agent（如「单细胞分析师」`agent-scrna`）使用的技能。
 
 ---
 
@@ -58,7 +58,7 @@
 
 ---
 
-## 二、OmicHub 平台内部 Skill
+## 二、CygnusX 平台内部 Skill
 
 ### 1. 目录与机制
 
@@ -71,7 +71,7 @@
 
 挂载流程：在 Agent 的 YAML（如 `data/ai/scrna.yaml`）的 `skill_ids` 中声明技能 id；服务启动时 `AgentService._ensure_configured_marketplace_skills()` 会检查 `skill_marketplace/<skill_id>/SKILL.md` 是否存在，存在且未入库则自动安装（`SkillImportService.install_marketplace`），无需手工入库。
 
-SKILL.md 解析要求（`src/omichub/infrastructure/skills/skillmd.py`）：frontmatter 必填 `name`、`description`；单技能文件夹总量上限 1 MiB，单文件 512 KiB。
+SKILL.md 解析要求（`src/cygnusx/infrastructure/skills/skillmd.py`）：frontmatter 必填 `name`、`description`；单技能文件夹总量上限 1 MiB，单文件 512 KiB。
 
 `skills/bio_skills/` 的 561 个技能已全量发布到内置市场，市场 id 统一为 `bio-<分类>-<技能>`。发布到 `skill_marketplace` 只表示技能可在平台市场中安装；只有被 Agent 的 `skill_ids` 引用或由管理员执行市场安装后，才会写入 `data/ai/skills/` 和 DB `SkillModel`。不要为了“全量安装”把 561 个技能同时挂到单个 Agent，这会显著增加提示词上下文。
 
@@ -98,5 +98,5 @@ bio_skills 已全量发布到市场；其中以下 17 个单细胞技能已挂�
 ## 参考
 
 - Kimi Code CLI 官方文档：https://www.kimi.com/code/docs/en/kimi-code-cli/customization/skills.html
-- OmicHub Skill 设计规范：`Protocol/Skill_design.md`
+- CygnusX Skill 设计规范：`Protocol/Skill_design.md`
 - bio_skills 合集说明：`skills/bio_skills/README.md`
