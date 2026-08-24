@@ -57,6 +57,9 @@ def test_registry_loads_builtin_flows_and_derives_contracts() -> None:
         "test_general",
         "treeplot",
     }
+    assert registry.resolve_bridge_workflow("rnaseq") == "rna_seq"
+    assert registry.resolve_bridge_workflow("rna_seq") == "rna_seq"
+    assert registry.resolve_bridge_workflow("unknown_flow") is None
     treeplot = registry.get("treeplot").definition
     assert treeplot.stages[0].executors[0].execution_mode == "workspace_execution"
     assert registry.get("sales_report").definition.stages[0].executors[0].execution_mode == "workspace_execution"

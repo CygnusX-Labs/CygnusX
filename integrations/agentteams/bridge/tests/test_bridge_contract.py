@@ -36,9 +36,17 @@ class FixtureOmicHubClient:
     async def get_agentteams_capabilities(self) -> dict:
         self._record("GET", "/api/v1/agent-teams/capabilities")
         return {
-            "allowed_flow_ids": ["rna_seq", "test_general"],
-            "flow_agent_map": {"rna_seq": "agent-rnaseq", "test_general": "agent-code"},
-            "flow_quality_gate_map": {"rna_seq": True, "test_general": False},
+            "allowed_flow_ids": ["rna_seq", "scrna_seq", "test_general"],
+            "flow_agent_map": {
+                "rna_seq": "agent-rnaseq",
+                "scrna_seq": "agent-scrna",
+                "test_general": "agent-code",
+            },
+            "flow_quality_gate_map": {
+                "rna_seq": True,
+                "scrna_seq": True,
+                "test_general": False,
+            },
             "role_agent_map": {"test-specialist": "agent-code"},
             "worker_profiles": {
                 "test-specialist": {
@@ -248,7 +256,7 @@ async def test_capability_reload_discovers_new_flow_without_restart(client) -> N
     flows = await request_client.get("/v1/flows", headers=headers("bioops-manager", "manager"))
 
     assert snapshot.status_code == 200
-    assert snapshot.json()["allowed_flow_ids"] == ["rna_seq", "test_general"]
+    assert snapshot.json()["allowed_flow_ids"] == ["rna_seq", "scrna_seq", "test_general"]
     assert snapshot.json()["flow_agent_map"]["test_general"] == "agent-code"
     assert snapshot.json()["worker_profiles"]["test-specialist"]["agent_id"] == "agent-code"
     assert flows.json()["items"] == [{"id": "rna_seq"}, {"id": "test_general"}]
@@ -582,6 +590,70 @@ async def test_approved_submission_is_queued_without_exposing_approval_to_analys
     )
     assert repeated.status_code == 409
     assert [call.url.path for call in calls].count("/api/v1/tasks") == 1
+
+
+@pytest.mark.asyncio
+async def test_queued_scrna_submission_refreshes_a_stale_flow_allowlist(client, settings) -> None:
+    request_client, calls = client
+    await create_case(request_client, "bioops_scrna_refresh")
+    preflight = await request_client.post(
+        "/v1/projects/project-1/preflight",
+        headers=headers("data-steward", "steward"),
+        json={
+            "case_id": "bioops_scrna_refresh",
+            "flow_id": "scrna_seq",
+            "sample_sheet": [{"sample": "S01", "group": "control"}],
+        },
+    )
+    assert preflight.status_code == 200
+    assigned = await request_client.post(
+        "/v1/cases/bioops_scrna_refresh/work-items",
+        headers=headers("bioops-manager", "manager"),
+        json={
+            "work_item_id": "submit-01",
+            "target": "analysis-worker",
+            "objective": "Submit approved scRNA analysis",
+            "skill_name": "workflow-submit",
+            "read_only": False,
+            "approval_required": True,
+        },
+    )
+    assert assigned.status_code == 201
+    approval = await request_client.post(
+        "/v1/approvals",
+        headers=headers("approval-authority", "approval"),
+        json={
+            "case_id": "bioops_scrna_refresh",
+            "work_item_id": "submit-01",
+            "action": "submit_task",
+            "flow_id": "scrna_seq",
+        },
+    )
+    assert approval.status_code == 201
+
+    settings.allowed_flow_ids = "rna_seq"
+    queued = await request_client.post(
+        "/v1/approved-submissions",
+        headers=headers("approval-authority", "approval"),
+        json={
+            "case_id": "bioops_scrna_refresh",
+            "work_item_id": "submit-01",
+            "idempotency_key": "bioops-scrna-refresh-v1",
+            "approval_token": approval.json()["token"],
+            "task": {
+                "flow_id": "scrna_seq",
+                "name": "scRNA cluster delivery",
+                "sample_sheet": [{"sample": "S01", "group": "control"}],
+                "execution_mode": "cluster",
+            },
+        },
+    )
+
+    assert queued.status_code == 201
+    assert queued.json()["status"] == "queued"
+    assert sum(
+        request.url.path == "/api/v1/agent-teams/capabilities" for request in calls
+    ) >= 2
 
 
 @pytest.mark.asyncio

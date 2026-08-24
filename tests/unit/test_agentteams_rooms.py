@@ -991,6 +991,38 @@ def _owner_pending_room(**overrides) -> AgentTeamsRoomModel:
     return make_room(owner_id=_OWNER_UUID, proposal=proposal, **overrides)
 
 
+def test_room_proposal_uses_bridge_workflow_id_for_registered_flow() -> None:
+    proposal = build_room_proposal(
+        proposal_kind="new_case",
+        content="运行 RNA-seq 差异分析",
+        route_decision={"flow_id": "rnaseq", "flow_label": "bulk RNA-seq 差异分析"},
+        context_refs=[],
+        source_case_id=None,
+    )
+
+    assert proposal["flow_id"] == "rna_seq"
+    assert proposal["flow_label"] == "bulk RNA-seq 差异分析"
+
+
+@pytest.mark.asyncio
+async def test_confirm_proposal_normalizes_legacy_registry_flow_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    room = _owner_pending_room()
+    room.proposal["flow_id"] = "rnaseq"
+    agentteams = make_agentteams()
+    service = AgentTeamsRoomService(make_db(), agentteams)
+    allowed_flow = MagicMock()
+    _RecordingProjectService.calls = []
+    monkeypatch.setattr(room_service_module, "_assert_flow_allowed_for_room_case", allowed_flow)
+    monkeypatch.setattr(room_service_module, "ProjectService", _RecordingProjectService)
+
+    await service.confirm_proposal(room, _OWNER_UUID, decision="confirm")
+
+    allowed_flow.assert_called_once_with("rna_seq")
+    assert agentteams.create_case.await_args.kwargs["flow_id"] == "rna_seq"
+
+
 def test_proposal_project_name_matches_legacy_naming() -> None:
     """与旧直建路径前端 buildCaseProjectName 同口径：需求前 30 字符、剥非法字符。"""
     assert proposal_project_name("运行分析 matrix.csv 并生成图表", "房间") == (

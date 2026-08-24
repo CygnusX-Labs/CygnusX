@@ -185,6 +185,16 @@ class BridgeService:
             "worker_profiles": self._settings.discovered_worker_profiles,
         }
 
+    async def _flow_allowed_after_refresh(self, flow_id: str) -> bool:
+        """Refresh a stale capability snapshot before rejecting a flow."""
+        if flow_id in self._settings.allowed_flows():
+            return True
+        try:
+            await self.refresh_capabilities()
+        except Exception:
+            logger.warning("capability refresh failed while validating flow=%s", flow_id, exc_info=True)
+        return flow_id in self._settings.allowed_flows()
+
     def _external_workers(self) -> set[str]:
         return {*self._settings.role_agent_mapping(), "analysis-worker"}
 
@@ -1771,7 +1781,7 @@ class BridgeService:
                 self._settings.quality_gate_for_flow(case.flow_id or ""),
             )
             task = TaskSpec.model_validate(planned_submission)
-            if task.flow_id not in self._settings.allowed_flows():
+            if not await self._flow_allowed_after_refresh(task.flow_id):
                 raise ValueError("planned flow is not allowed")
             if case.flow_id and task.flow_id != case.flow_id:
                 raise ValueError("planned flow differs from Case flow")
@@ -2366,7 +2376,7 @@ class BridgeService:
                     f"预检已引用会诊纪要：{consultation_summary[:300]}",
                 )
             )
-        if request.flow_id not in self._settings.allowed_flows():
+        if not await self._flow_allowed_after_refresh(request.flow_id):
             findings.append(("FLOW_NOT_ALLOWED", "error", "请求的流程不在 Bridge 白名单中。"))
         if not request.sample_sheet:
             findings.append(("MISSING_SAMPLE_SHEET", "error", "提交前必须提供样本表引用或内容。"))
@@ -2736,7 +2746,7 @@ class BridgeService:
             expanded.update(dependents)
 
     async def submit_task(self, request: SubmitTaskRequest, actor: str) -> TaskReceipt:
-        if request.task.flow_id not in self._settings.allowed_flows():
+        if not await self._flow_allowed_after_refresh(request.task.flow_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Flow is not allowed")
         case = await self._cases.get(request.case_id)
         self._approval_signer.verify(
@@ -2772,7 +2782,7 @@ class BridgeService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Queued analysis submissions must use cluster execution mode",
             )
-        if request.task.flow_id not in self._settings.allowed_flows():
+        if not await self._flow_allowed_after_refresh(request.task.flow_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Flow is not allowed")
         case = await self._cases.get(request.case_id)
         claims = self._approval_signer.verify(

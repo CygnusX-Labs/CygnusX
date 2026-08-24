@@ -1855,6 +1855,11 @@ class AgentTeamsService:
                     "协作事件查询范围无效，请缩小查询范围",
                     code="LIMIT_EXCEEDED",
                 ) from exc
+            if bridge_code == "FLOW_NOT_ALLOWED" or detail_message == "Flow is not allowed":
+                raise BusinessError(
+                    "当前分析流程未在 AgentTeams Bridge 中启用，请联系管理员启用该流程后重试",
+                    code="FLOW_NOT_ALLOWED",
+                ) from exc
             if isinstance(detail_message, str) and detail_message:
                 logger.debug("AgentTeams Bridge error detail: {}", detail_message)
             raise BusinessError("Agent 协作中心暂时不可用", code=bridge_code) from exc

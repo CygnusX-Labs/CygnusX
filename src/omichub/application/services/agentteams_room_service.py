@@ -64,6 +64,13 @@ PROPOSAL_OPTIONS_NEW_CASE = ["confirm", "modify", "cancel"]
 PROPOSAL_OPTIONS_FOLLOWUP = ["continue", "new", "cancel"]
 
 
+def _resolve_case_flow_id(flow_id: Any) -> str | None:
+    raw_flow_id = str(flow_id or "").strip()
+    if not raw_flow_id:
+        return None
+    return get_flow_registry().resolve_bridge_workflow(raw_flow_id) or raw_flow_id
+
+
 def build_room_proposal(
     *,
     proposal_kind: str,
@@ -78,12 +85,13 @@ def build_room_proposal(
     重复/并发确认不会重复建 Case。
     """
     objective = content.strip()[:600]
+    flow_id = _resolve_case_flow_id(route_decision.get("flow_id"))
     return {
         "proposal_kind": proposal_kind,  # new_case | followup
         "token": secrets.token_urlsafe(24),
         "status": "pending",  # pending | consumed | cancelled
         "objective": objective,
-        "flow_id": route_decision.get("flow_id"),
+        "flow_id": flow_id,
         "flow_label": route_decision.get("flow_label"),
         "lead_planner": route_decision.get("lead_planner"),
         "route_path": route_decision.get("path"),
@@ -737,6 +745,7 @@ class AgentTeamsRoomService:
                 ),
             )
             return {"status": "modify_requested" if decision == "modify" else "cancelled"}
+        proposal["flow_id"] = _resolve_case_flow_id(proposal.get("flow_id"))
         # confirm：followup 卡需确认是"基于上一 Case 继续"还是"新建工单"。
         source_case_id: str | None = None
         if proposal.get("proposal_kind") == "followup":
@@ -861,7 +870,7 @@ class AgentTeamsRoomService:
         proposal: dict[str, Any],
         source_case_id: str | None,
     ) -> dict[str, Any]:
-        flow_id = str(proposal.get("flow_id") or "").strip() or None
+        flow_id = _resolve_case_flow_id(proposal.get("flow_id"))
         if flow_id:
             _assert_flow_allowed_for_room_case(flow_id)
         context_refs = [

@@ -355,6 +355,15 @@ class FlowRegistry:
     def bridge_flow_ids(self) -> set[str]:
         return {item.definition.flow.bridge_workflow for item in self.flows.values()}
 
+    def resolve_bridge_workflow(self, flow_id: str) -> str | None:
+        """将 registry 键或 Bridge workflow ID 解析为 Bridge workflow ID。"""
+        registered = self.flows.get(flow_id)
+        if registered is not None:
+            return registered.definition.flow.bridge_workflow
+        if flow_id in self.bridge_flow_ids():
+            return flow_id
+        return None
+
     def standard_work_item_targets(self, flow_id: str) -> dict[str, str]:
         """O5:返回该流程显式声明的标准工作项 target(flow 级覆盖 _shared 默认)。
 

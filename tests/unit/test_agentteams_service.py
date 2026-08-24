@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from omichub.api.v1.agentteams import (
@@ -33,6 +34,30 @@ def service() -> AgentTeamsService:
             agentteams_bridge_workflow_operator_token="operator-token",
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_request_as_surfaces_bridge_flow_allowlist_rejection(
+    service: AgentTeamsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = httpx.Request("POST", "http://bridge.test/v1/approved-submissions")
+
+    class FakeBridgeClient:
+        async def request(self, *_args, **_kwargs):
+            return httpx.Response(403, json={"detail": "Flow is not allowed"}, request=request)
+
+    monkeypatch.setattr(service, "_bridge_client", lambda: FakeBridgeClient())
+
+    with pytest.raises(BusinessError, match="流程未在 AgentTeams Bridge 中启用") as exc_info:
+        await service._request_as(
+            "approval-authority",
+            "approval-token",
+            "/v1/approved-submissions",
+            method="POST",
+            json={},
+        )
+
+    assert exc_info.value.code == "FLOW_NOT_ALLOWED"
 
 
 def test_direct_case_api_flow_guard_uses_configured_and_registry_flows(monkeypatch) -> None:
