@@ -320,6 +320,7 @@ class AgentConsultationService:
         source_refs: list[dict[str, Any]] | None = None,
         execution_summary: str = "",
         trace_id: str | None = None,
+        model_id: UUID | None = None,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
@@ -337,9 +338,19 @@ class AgentConsultationService:
             raise ValueError(
                 f"Workspace execution requires a work item and a workspace_execution declaration for {agent_id}"
             )
-        context = await self._agent_service.assemble_context(agent_id, user_id=requester_ref)
+        assemble_kwargs: dict[str, Any] = {"user_id": requester_ref}
+        if model_id is not None:
+            assemble_kwargs["model_id"] = model_id
+        context = await self._agent_service.assemble_context(agent_id, **assemble_kwargs)
         if context is None or context.model_config is None:
             raise NotFoundError(f"Agent {agent_id} 不存在或未启用")
+
+        # 协作室领域会诊沿用 Agent 自身的深度思考开关；此前这里固定关闭，
+        # 导致 Manager 之外的所有 Agent 都没有 reasoning 流。
+        features = getattr(context, "features", None) or {}
+        deep_thinking = bool(
+            features.get("enable_deep_thinking", features.get("deep_thinking", True))
+        )
 
         hard_gate = await self._evaluate_hard_gate(
             capability=capability,
@@ -396,12 +407,14 @@ class AgentConsultationService:
                 parent_agent_id="agent-general",
                 parent_session_id=f"agentteams:{case_id}",
                 context_summary=f"AgentTeams Case {case_id} 的受控专业会诊",
-                tasks=[
+                    tasks=[
                     {
                         "task_id": f"consultation:{case_id}:{work_item_id or agent_id}",
                         "agent_id": agent_id,
                         "task": instruction,
                         "workspace_access": execution_mode == "workspace_execution",
+                        "model_id": model_id,
+                        "deep_thinking": deep_thinking,
                     }
                 ],
                 db=self._db,
@@ -483,8 +496,8 @@ class AgentConsultationService:
                 environment_snapshot={
                     "provider": str(getattr(context.model_config, "name", "") or ""),
                     "model": str(getattr(context.model_config, "model", "") or ""),
-                    "temperature": context.temperature,
-                    "deep_thinking": False,
+                    "temperature": getattr(context, "temperature", None),
+                    "deep_thinking": deep_thinking,
                 },
             )
             envelope.artifacts = artifacts
@@ -526,6 +539,7 @@ class AgentConsultationService:
                 '{"conclusion":"非空结论","recommendations":[],"evidence_refs":[],"risks":[],'
                 '"token_usage":0,"proposed_submission":null,"artifacts":[],"hard_gate":null,'
                 '"ask_user":[]}。'
+                "recommendations、evidence_refs、risks 必须是字符串数组；代码块外不得输出任何文字。"
                 "evidence_refs 只允许填写本回合工具成功读取后产生的已核验引用。规划能力调用时 "
                 "proposed_submission 按 Case 类型输出：流程型 Case 必须输出完整 TaskSpec 对象 "
                 '{"flow_id": "流程ID", "name": "任务名", "parameters": {...}, '
@@ -566,7 +580,9 @@ class AgentConsultationService:
             + mode_clause
             + f"\n能力：{capability}\n问题：{question}\n"
             f"待核验引用：{json.dumps(evidence_refs, ensure_ascii=False)}\n"
-            f"获准请求的只读工具：{json.dumps(requested_tools, ensure_ascii=False)}\n"
+            f"本轮请求的只读工具（不等于运行时完整工具列表）：{json.dumps(requested_tools, ensure_ascii=False)}\n"
+            "运行时可调用工具以平台实际绑定为准；需要最新外部事实时调用 web_search，"
+            "只有收到成功的工具结果后才能声称已联网检索；工具调用与结果会进入审计事件。\n"
             "凡在结论中引用 task: 或 file:，必须先调用对应只读工具读取；禁止仅凭引用字符串猜测内容。\n"
             + hard_gate_clause
             + envelope_clause
@@ -936,12 +952,31 @@ class AgentConsultationService:
             payload = json.loads(AgentConsultationService._strip_json_trailing_commas(candidate))
             if not isinstance(payload, dict):
                 raise ValueError("consultation envelope must be an object")
+            payload = AgentConsultationService._normalize_envelope_payload(payload)
             return ConsultationEnvelope.model_validate(payload), True
         except (json.JSONDecodeError, ValueError):
             return ConsultationEnvelope(
                 conclusion=raw_answer[:8_000],
                 risks=["信封解析降级：专家答复未满足结构化 JSON 契约。"],
             ), False
+
+    @staticmethod
+    def _normalize_envelope_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """修复模型常见的一层数组嵌套，不改变其余 schema 校验语义。"""
+        normalized = dict(payload)
+        for field in ("recommendations", "evidence_refs", "risks"):
+            value = normalized.get(field)
+            if isinstance(value, str):
+                normalized[field] = [value]
+            elif isinstance(value, list):
+                flattened: list[Any] = []
+                for item in value:
+                    if isinstance(item, list):
+                        flattened.extend(item)
+                    else:
+                        flattened.append(item)
+                normalized[field] = flattened
+        return normalized
 
     @staticmethod
     def _strip_json_trailing_commas(value: str) -> str:

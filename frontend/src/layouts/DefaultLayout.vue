@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   NLayout, NLayoutSider, NLayoutContent, NIcon, NButton, NTooltip, NDropdown, NPopover,
-  NDrawer, NDrawerContent, NAvatar, NBadge, NModal, NAlert,
+  NDrawer, NDrawerContent, NAvatar, NBadge, NModal,
 } from 'naive-ui'
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -13,6 +13,7 @@ import {
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
   TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline, BulbOutline,
+  WarningOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotAuthorized from '@/components/NotAuthorized.vue'
@@ -193,11 +194,11 @@ function toggleCollapsed() {
 async function loadCurrentUser() {
   if (!authStore.isLoggedIn || userLoadRetrying.value) return
   userLoadRetrying.value = true
-  userLoadFailed.value = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await authStore.fetchUser()
       currentUser.value = authStore.user
+      userLoadFailed.value = false
       notificationStore.fetchNotifications()
       if (authStore.consumeOnboarding()) {
         siteConfig.fetchSiteConfig().catch(() => {})
@@ -213,6 +214,10 @@ async function loadCurrentUser() {
   }
   userLoadFailed.value = true
   userLoadRetrying.value = false
+}
+
+function retryCurrentUser() {
+  void loadCurrentUser()
 }
 
 onMounted(() => {
@@ -440,16 +445,6 @@ const UserAvatar = () => {
 
 <template>
   <div class="app-shell">
-    <NAlert
-      v-if="userLoadFailed"
-      type="warning"
-      title="用户信息暂时无法刷新"
-      :show-icon="true"
-      closable
-      class="user-refresh-alert"
-    >
-      当前页面保留已有登录信息；服务恢复后会自动重试，也可以点击账户区“重试”。
-    </NAlert>
     <!-- 顶部导航栏 -->
     <header class="top-nav">
       <div class="top-nav-left">
@@ -484,6 +479,28 @@ const UserAvatar = () => {
         </nav>
       </div>
       <div class="top-nav-right">
+        <NTooltip v-if="userLoadFailed" placement="bottom-end" :delay="300">
+          <template #trigger>
+            <NButton
+              tertiary
+              type="warning"
+              size="small"
+              class="user-refresh-trigger focus-ring"
+              :loading="userLoadRetrying"
+              aria-label="账户信息同步失败，点击重试"
+              @click="retryCurrentUser"
+            >
+              <template #icon>
+                <NIcon :size="15">
+                  <WarningOutline />
+                </NIcon>
+              </template>
+              <span class="user-refresh-trigger__label">账户同步异常</span>
+              <span class="user-refresh-trigger__action">重试</span>
+            </NButton>
+          </template>
+          当前页面保留已有登录信息；服务恢复后会自动重试。
+        </NTooltip>
         <CookieBalanceBadge />
         <NTooltip placement="bottom" :delay="300">
           <template #trigger>
@@ -807,7 +824,7 @@ const UserAvatar = () => {
                     size="tiny"
                     class="user-retry-button"
                     :loading="userLoadRetrying"
-                    @click.stop="loadCurrentUser"
+                    @click.stop="retryCurrentUser"
                   >
                     重试
                   </NButton>
@@ -903,7 +920,7 @@ const UserAvatar = () => {
                   size="tiny"
                   class="user-retry-button"
                   :loading="userLoadRetrying"
-                  @click.stop="loadCurrentUser"
+                  @click.stop="retryCurrentUser"
                 >
                   重试
                 </NButton>
@@ -1090,6 +1107,27 @@ const UserAvatar = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.user-refresh-trigger {
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+.user-refresh-trigger :deep(.n-button__content) {
+  gap: 5px;
+}
+
+.user-refresh-trigger__label {
+  font-size: 12px;
+}
+
+.user-refresh-trigger__action {
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .top-icon-btn {
@@ -1613,6 +1651,18 @@ const UserAvatar = () => {
   min-height: 18px;
   margin-top: 2px;
   color: var(--arco-primary);
+}
+
+@media (max-width: 640px) {
+  .user-refresh-trigger {
+    width: 32px;
+    padding: 0;
+  }
+
+  .user-refresh-trigger__label,
+  .user-refresh-trigger__action {
+    display: none;
+  }
 }
 
 .user-chevron {

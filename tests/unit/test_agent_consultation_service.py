@@ -124,6 +124,17 @@ def test_parse_envelope_recovers_trailing_commas_from_manager_response() -> None
     assert result.ask_user[1].question == "来自什么组织？"
 
 
+def test_parse_envelope_flattens_nested_string_lists() -> None:
+    result = AgentConsultationService.parse_envelope(
+        '{"conclusion":"今天武汉天气为晴到多云。",'
+        '"recommendations":[["注意高温"],["携带雨具"]],'
+        '"evidence_refs":[["https://example.test/weather"]],"risks":[]}'
+    )
+
+    assert result.recommendations == ["注意高温", "携带雨具"]
+    assert result.evidence_refs == ["https://example.test/weather"]
+
+
 @pytest.mark.asyncio
 async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monkeypatch) -> None:
     task_id = "00000000-0000-0000-0000-000000000002"

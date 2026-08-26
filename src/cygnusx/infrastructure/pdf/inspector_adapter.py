@@ -62,14 +62,7 @@ class PDFInspectorAdapter:
 
         try:
             detection = self._inspector.detect_pdf(file_path)
-            result = self._inspector.process_pdf(
-                file_path,
-                options={
-                    "extract_markdown": True,
-                    "extract_metadata": True,
-                    "enable_ocr": self.config.get("enable_ocr", False),
-                },
-            )
+            result = self._inspector.process_pdf(file_path)
 
             return {
                 "success": True,

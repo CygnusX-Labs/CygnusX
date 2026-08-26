@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-rocketmq-worker test test-bridge test-frontend test-all lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions docker-up docker-up-pgvector pgvector-acceptance polardb-verify knowledge-reindex docker-up-rocketmq docker-up-rocketmq-worker docker-up-matrix-dev docker-build-enrichment docker-build-deg docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge
+.PHONY: help dev dev-worker dev-rocketmq-worker test test-bridge test-frontend test-all lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions verify-persistent-data docker-up docker-up-pgvector pgvector-acceptance polardb-verify knowledge-reindex docker-up-rocketmq docker-up-rocketmq-worker docker-up-matrix-dev docker-build-enrichment docker-build-deg docker-build-studio-sandboxes docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -127,12 +127,15 @@ docker-up-matrix-dev: ## 启动本机开发用 Matrix(Synapse)+Element 栈（协
 
 docker-runtime-dirs: ## 准备关键运行目录与非 root 容器写入权限（docker-up/reload 自动执行）
 	@echo "=> 准备运行目录权限..."
-	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/cygnusx_data/_pgdata /data-root/cygnusx_data/_redis /data-root/cygnusx_data/_minio && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/uploads /data-root/.tmp /data-root/.conda_envs && chown $(PUID):$(PGID) /data-root/users'
+	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/cygnusx_data/_pgdata /data-root/cygnusx_data/_redis /data-root/cygnusx_data/_minio /data-root/onlyoffice-data /data-root/onlyoffice-logs && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/uploads /data-root/.tmp /data-root/.conda_envs && chown $(PUID):$(PGID) /data-root/users'
 
 docker-fix-permissions: ## 手动修复 /data/cygnusx 权限事故（登录 500 / PermissionError 时使用）
 	@echo "=> 修复 /data/cygnusx 非 root 服务写入权限..."
 	@docker run --rm -v $(DATA_ROOT):/data-root python:3.11-slim sh -c 'mkdir -p /data-root/logs/app /data-root/logs/celery/tasks /data-root/logs/nginx /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs /data-root/cygnusx_data/_pgdata /data-root/cygnusx_data/_redis && chown -R $(PUID):$(PGID) /data-root/logs/app /data-root/logs/celery /data-root/logs/snakemake /data-root/users /data-root/uploads /data-root/.tmp /data-root/.conda_envs'
 	@echo "=> 权限修复完成。建议执行: docker restart cygnusx-web cygnusx-worker cygnusx-beat"
+
+verify-persistent-data: ## 验证数据库挂载及用户、Agent、知识库记录数（恢复后可加 ARGS=--require-existing-data）
+	./scripts/verify_persistent_data.sh $(ARGS)
 
 docker-up: docker-network ## 启动主栈 (web/db/redis/nginx/beat/flower)
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -229,7 +232,7 @@ docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime �
 	@echo "📋 镜像清单核对："
 	@ok=0; miss=0; \
 	for img in cygnusx-analysis:core-2026.07 cygnusx-analysis:plot-2026.07 cygnusx-analysis:scrna-2026.07 \
-		cygnusx/sandbox-base:latest cygnusx-sandbox:base cygnusx-sandbox:bio cygnusx/sandbox-terminal:latest \
+		cygnusx/sandbox-base:latest cygnusx-sandbox-base:v0.0.2dev cygnusx-sandbox-bio:v0.0.2dev cygnusx-sandbox-browser-office:v0.0.2dev cygnusx/sandbox-terminal:latest \
 		cygnusx/sandbox-rnaseq:latest cygnusx/sandbox-scrna:latest cygnusx/sandbox-gatk:latest \
 		cygnusx/sandbox-ggplot2:latest cygnusx/sandbox-assembly:latest cygnusx/sandbox-metagenomics:latest; do \
 		if docker image inspect $$img >/dev/null 2>&1; then \
@@ -239,7 +242,7 @@ docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime �
 		fi; \
 	done; \
 	echo ""; \
-	echo "=> 共 13 个镜像：就位 $$ok 个，缺失 $$miss 个"; \
+	echo "=> 共 14 个镜像：就位 $$ok 个，缺失 $$miss 个"; \
 	if [ $$miss -gt 0 ]; then echo "=> ⚠️  有镜像缺失，请检查上方构建日志"; exit 1; fi
 	@echo "=> ✅ 全部沙盒/分析运行时镜像构建完成"
 
@@ -294,7 +297,7 @@ docker-stop-all: ## 停止全平台（主栈 + Worker + AgentTeams），可用 d
 	-@$(COMPOSE_WORKER) down --remove-orphans 2>/dev/null || true
 	@echo "=> 停止主栈（web / beat / nginx / db / cache / studio）..."
 	-@$(COMPOSE_MAIN) down --remove-orphans 2>/dev/null || true
-	-@docker ps -a --format '{{.Names}}' | grep '^cygnusx-' | grep -v 'matrix-dev' | xargs -r docker rm -f 2>/dev/null
+	-@docker ps -a --format '{{.Names}}' | grep -E '^(cygnusx|omichub)-' | grep -v 'matrix-dev' | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo "✅ 全平台已停止，执行 make docker-reload 可重新拉起"
 
@@ -354,6 +357,9 @@ frontend-build: ## 构建前端生产版本
 runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna）
 	deploy/runtime-images/build.sh
 
+docker-build-studio-sandboxes: ## 构建 Studio base/bio/browser-office 三个沙箱镜像
+	CYGNUSX_IMAGE_TAG=$${CYGNUSX_IMAGE_TAG:-v0.0.2dev} deploy/studio/build.sh
+
 docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + RocketMQ + AgentTeams Bridge + Worker (开发用)
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
@@ -363,7 +369,7 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
 	@echo "📦 步骤 1/11：清理残留容器，避免旧容器占用端口或挂载..."
-	-@docker ps -a --format '{{.Names}}' | grep '^cygnusx-' | grep -v 'matrix-dev' | xargs -r docker rm -f 2>/dev/null
+	-@docker ps -a --format '{{.Names}}' | grep -E '^(cygnusx|omichub)-' | grep -v 'matrix-dev' | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	-@$(COMPOSE_AGENTTEAMS) down --remove-orphans 2>/dev/null || true
 	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
@@ -382,34 +388,37 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 		deploy/runtime-images/build.sh; \
 	fi
 	@echo ""
-	@echo "🧬 步骤 4/11：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@echo "🖥️  步骤 4/12：构建 Studio browser-office 沙箱镜像（含 Chromium/Playwright/LibreOffice）..."
+	@$(MAKE) --no-print-directory docker-build-studio-sandboxes
+	@echo ""
+	@echo "🧬 步骤 5/12：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
 	@echo ""
-	@echo "📊 步骤 5/11：构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
+	@echo "📊 步骤 6/12：构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(DEG_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
-	@echo "🚀 步骤 6/11：拉取 RocketMQ NameServer/Broker 官方镜像..."
+	@echo "🚀 步骤 7/12：拉取 RocketMQ NameServer/Broker 官方镜像..."
 	@docker pull $(ROCKETMQ_IMAGE)
 	@echo ""
-	@echo "⚡ 步骤 7/11：重新构建前端生产包（vite build）..."
+	@echo "⚡ 步骤 8/12：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🌐 步骤 8/11：重新构建并启动 pgvector 主栈服务与 RocketMQ..."
+	@echo "🌐 步骤 9/12：重新构建并启动 pgvector 主栈服务与 RocketMQ..."
 	$(COMPOSE_PGVECTOR_AGENTTEAMS) --profile rocketmq up -d --build
 	@$(MAKE) --no-print-directory wait-web
 	@echo ""
-	@echo "🔗 步骤 9/11：构建并启动 AgentTeams Bridge、Gateway 与生产 Worker..."
+	@echo "🔗 步骤 10/12：构建并启动 AgentTeams Bridge、Gateway 与生产 Worker..."
 	@$(MAKE) --no-print-directory docker-up-agentteams
 	@$(MAKE) --no-print-directory docker-up-matrix-dev
 	@echo ""
-	@echo "🔧 步骤 10/11：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
+	@echo "🔧 步骤 11/12：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
 	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker phylo-worker rocketmq-worker
 	@echo ""
-	@echo "🗄️  步骤 11/11：检查数据库迁移状态、同步知识库并清理悬空镜像..."
+	@echo "🗄️  步骤 12/12：检查数据库迁移状态、同步知识库并清理悬空镜像..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""

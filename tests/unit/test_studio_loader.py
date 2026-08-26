@@ -21,7 +21,7 @@ def test_loads_defaults_when_file_missing(tmp_path: Path):
     manager = StudioConfigManager(config_path=tmp_path / "not-exist.yaml")
     config = manager.get_config()
     assert config.enabled is True
-    assert config.default_image == "cygnusx-analysis:core-2026.07"
+    assert config.default_image == "cygnusx-sandbox-browser-office:v0.0.2dev"
     assert config.session.idle_ttl_minutes == 30
     assert config.session.workspace_retention_days == 7
     assert config.session.prewarm_on_create is True
@@ -120,6 +120,26 @@ studio:
     )
     config = StudioConfigManager(config_path=yaml_path).get_config()
     assert config == StudioConfig()
+
+
+@pytest.mark.unit
+def test_real_studio_config_registers_all_runtime_images():
+    config = StudioConfigManager("data/ai/studio.yaml").get_config()
+    assert {
+        "analysis-core",
+        "analysis-plot",
+        "analysis-scrna",
+        "base",
+        "bio",
+        "browser-office",
+    } <= set(config.images)
+    assert config.images["analysis-core"].runtime_profile == "analysis-core"
+    assert config.images["analysis-plot"].runtime_profile == "analysis-plot"
+    assert config.images["analysis-scrna"].runtime_profile == "analysis-scrna"
+    assert config.images["base"].image == "cygnusx-sandbox-base:v0.0.2dev"
+    assert config.capabilities_for_image(
+        "cygnusx-sandbox-browser-office:v0.0.2dev"
+    ) == ["code", "browser", "document"]
 
 
 @pytest.mark.unit

@@ -98,6 +98,13 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     }))
 
     const store = useAgentHubStore()
+    store.availableModels = [{
+      id: 'deepseek-model',
+      name: 'deepseek-v4-flash',
+      model: 'deepseek-v4-flash-ga-260731',
+      provider_type: 'openai_compatible',
+      is_default: false,
+    }]
     store.agents = [{
       id: 'agent-general',
       agent_id: 'agent-general',
@@ -106,7 +113,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
       avatar: '🤖',
       color: '#4f8ef7',
       model_engine: 'qwen3.7-max',
-      model_id: 'model-id',
+      model_id: 'deepseek-model',
       is_active: true,
       features: {},
     } as unknown as AgentTemplate]
@@ -114,6 +121,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     session.title_locked = true
     const sending = store.sendMessage('测试流式正文')
     await nextTick()
+    expect(session.messages.at(-1)?.modelName).toBe('deepseek-v4-flash')
 
     const el = document.createElement('div')
     document.body.appendChild(el)

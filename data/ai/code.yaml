@@ -10,6 +10,7 @@ prompt_file: prompts/code.md
 welcome_message: "你好！我是代码助手，挂载了 Code Sandbox 与数据预处理、图表绘制技能。需要写或跑哪段代码？"
 temperature: 0.7
 max_tokens: 32768
+package_catalogs: [all]
 mcp_ids: []
 skill_ids:
   # 工程类工具技能（来源：pipelines/tools/skills/）

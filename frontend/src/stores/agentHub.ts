@@ -1950,6 +1950,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     session.messages.push(userMsg)
 
     const effectiveOverdrive = options.overdrive ?? session.overdrive ?? false
+    const selectedModelName = session.model_id
+      ? availableModels.value.find((model) => model.id === session.model_id)?.name
+      : undefined
     // 助手占位消息（流式填充；超频发言由 room_speech 逐条创建）
     const aiId = `msg-ai-${Date.now()}`
     const aiMsgSeed: ChatMessage = {
@@ -1957,7 +1960,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       role: 'assistant',
       content: '',
       status: 'streaming',
-      modelName: agent.model_engine || agent.name,
+      modelName: selectedModelName || agent.model_engine || agent.name,
       toolCalls: [],
       timeline: [],
       createdAt: new Date().toISOString(),

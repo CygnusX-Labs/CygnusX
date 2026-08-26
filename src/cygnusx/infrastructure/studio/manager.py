@@ -219,7 +219,11 @@ class StudioSandboxManager:
                 raise StudioSandboxUnavailableError(
                     f"Studio 出站代理未运行: {network_config.proxy_container}"
                 )
-            allowed_names = {network_config.proxy_container, cls.container_name(session_id)}
+            allowed_names = {
+                network_config.proxy_container,
+                "onlyoffice-documentserver",
+                cls.container_name(session_id),
+            }
             attached_names = {
                 str(item.get("Name", ""))
                 for item in network.attrs.get("Containers", {}).values()
@@ -237,6 +241,19 @@ class StudioSandboxManager:
                     network.disconnect(proxy, force=True)
                 network.connect(proxy, aliases=[network_config.proxy_host])
                 network.reload()
+            # OnlyOffice is an optional, explicitly named internal peer. It is never
+            # exposed to the host and is connected only to this session network.
+            with contextlib.suppress(Exception):
+                onlyoffice = client.containers.get("onlyoffice-documentserver")
+                onlyoffice.reload()
+                if onlyoffice.status == "running":
+                    office_networks = onlyoffice.attrs.get("NetworkSettings", {}).get("Networks", {})
+                    office_aliases = office_networks.get(network_name, {}).get("Aliases") or []
+                    if network_name not in office_networks or "onlyoffice-documentserver" not in office_aliases:
+                        if network_name in office_networks:
+                            network.disconnect(onlyoffice, force=True)
+                        network.connect(onlyoffice, aliases=["onlyoffice-documentserver"])
+                        network.reload()
             return network_name
         except Exception:
             if created:
@@ -427,6 +444,20 @@ class StudioSandboxManager:
                     container = client.containers.get(name)
                 except Exception:  # noqa: BLE001 - NotFound 时走创建分支
                     container = None
+                if container is not None:
+                    configured_image = str(
+                        ((getattr(container, "attrs", {}) or {}).get("Config") or {}).get("Image") or ""
+                    )
+                    if configured_image and configured_image != image:
+                        logger.info(
+                            "[Studio] 会话 {} 镜像从 {} 切换到 {}，重建沙箱",
+                            session_id[:8], configured_image, image,
+                        )
+                        with contextlib.suppress(Exception):
+                            container.stop(timeout=5)
+                        with contextlib.suppress(Exception):
+                            container.remove(force=True)
+                        container = None
                 if container is not None:
                     if container.status != "running":
                         container.start()
@@ -938,6 +969,79 @@ class StudioSandboxManager:
             json={"path": path, "old_string": old_string, "new_string": new_string},
             image=image,
             user_id=user_id,
+        )
+
+    async def browser_navigate(
+        self, session_id: str, url: str, wait_until: str = "domcontentloaded",
+        timeout: int = 30, image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/navigate",
+            json={"url": url, "wait_until": wait_until, "timeout": timeout},
+            image=image, user_id=user_id,
+        )
+
+    async def browser_screenshot(
+        self, session_id: str, path: str = "output/browser-screenshot.png",
+        selector: str = "", full_page: bool = False, timeout: int = 30,
+        image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/screenshot",
+            json={"path": path, "selector": selector, "full_page": full_page, "timeout": timeout},
+            image=image, user_id=user_id,
+        )
+
+    async def browser_click(
+        self, session_id: str, selector: str, button: str = "left", click_count: int = 1,
+        timeout: int = 30, image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/click",
+            json={"selector": selector, "button": button, "click_count": click_count, "timeout": timeout},
+            image=image, user_id=user_id,
+        )
+
+    async def browser_type(
+        self, session_id: str, selector: str, text: str, clear: bool = True,
+        timeout: int = 30, image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/type",
+            json={"selector": selector, "text": text, "clear": clear, "timeout": timeout},
+            image=image, user_id=user_id,
+        )
+
+    async def browser_press(
+        self, session_id: str, selector: str, key: str, timeout: int = 30,
+        image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/press",
+            json={"selector": selector, "key": key, "timeout": timeout},
+            image=image, user_id=user_id,
+        )
+
+    async def browser_close(
+        self, session_id: str, image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", "/browser/close", image=image, user_id=user_id
+        )
+
+    async def document_call(
+        self, session_id: str, endpoint: str, payload: dict[str, Any],
+        image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "POST", endpoint, json=payload, image=image, user_id=user_id
+        )
+
+    async def onlyoffice_status(
+        self, session_id: str, image: str | None = None, user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._agent_call(
+            session_id, "GET", "/onlyoffice/status", image=image, user_id=user_id
         )
 
     # ------------------------------------------------------------------

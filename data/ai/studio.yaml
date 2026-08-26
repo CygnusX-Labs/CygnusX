@@ -1,17 +1,34 @@
 studio:
   enabled: true
-  default_image: cygnusx-analysis:core-2026.07
+  default_image: cygnusx-sandbox-browser-office:v0.0.2dev
   images:
-    base:
+    analysis-core:
       image: cygnusx-analysis:core-2026.07
+      runtime_profile: analysis-core
+      dockerfile: deploy/runtime-images/core.Dockerfile
+      capabilities: [code]
+    analysis-plot:
+      image: cygnusx-analysis:plot-2026.07
+      runtime_profile: analysis-plot
+      dockerfile: deploy/runtime-images/plot.Dockerfile
+      capabilities: [code]
+    analysis-scrna:
+      image: cygnusx-analysis:scrna-2026.07
+      runtime_profile: analysis-scrna
+      dockerfile: deploy/runtime-images/scrna.Dockerfile
+      capabilities: [code]
+    base:
+      image: cygnusx-sandbox-base:v0.0.2dev
       dockerfile: deploy/studio/base.Dockerfile
       capabilities: [code]
     bio:
       image: cygnusx-sandbox-bio:v0.0.2dev
+      runtime_profile: bio
       dockerfile: deploy/studio/bio.Dockerfile
       capabilities: [code]
     browser-office:
       image: cygnusx-sandbox-browser-office:v0.0.2dev
+      runtime_profile: browser-office
       dockerfile: deploy/studio/browser-office.Dockerfile
       capabilities: [code, browser, document]
   session:
@@ -68,3 +85,15 @@ studio:
     - update_plan
     - pipeline_query
     - ask_user
+    - browser_navigate
+    - browser_screenshot
+    - browser_click
+    - browser_type
+    - browser_press
+    - browser_close
+    - document_inspect
+    - document_create
+    - document_edit
+    - document_convert
+    - onlyoffice_status
+    - onlyoffice_convert

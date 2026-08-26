@@ -43,6 +43,22 @@ def persona_snapshot(agent_features: dict[str, Any] | None) -> dict[str, Any]:
     return {key: deepcopy(value) for key, value in raw.items() if key in allowed}
 
 
+def persona_routing_summary(agent_features: dict[str, Any] | None) -> dict[str, Any]:
+    """Return Persona prose needed by routing and handoff directories."""
+    raw = (agent_features or {}).get("persona")
+    if not isinstance(raw, dict):
+        return {}
+    allowed = {
+        "archetype",
+        "traits",
+        "working_style",
+        "communication_style",
+        "challenge_style",
+        "version",
+    }
+    return {key: deepcopy(value) for key, value in raw.items() if key in allowed}
+
+
 def persona_status_line(persona: dict[str, Any] | None, phase: str) -> str | None:
     """按状态阶段取 persona.status_lines 的第一条文案;未配置时返回 None。"""
     lines = (persona or {}).get("status_lines")
@@ -339,6 +355,7 @@ class AgentTeamsCapabilityRegistry:
                     "routing_notes": domain_registry.router_notes_for(
                         agent_id, features.get("domain")
                     ),
+                    "persona": persona_routing_summary(features),
                     "avatar": str(config.get("avatar") or "💬"),
                     "color": str(config.get("color") or "#64748b"),
                 }
@@ -352,11 +369,31 @@ class AgentTeamsCapabilityRegistry:
         ``description``），选中候选后才由会诊分支调用本方法补全四段契约
         与输入示例；未登记或无 detail 的 agent_id 自动跳过。
         """
-        blocks = [
-            block
-            for agent_id in dict.fromkeys(str(item) for item in agent_ids)
-            if (block := self._ability_catalog.render_detail(agent_id))
-        ]
+        active_agents = self._active_agents()
+        blocks: list[str] = []
+        for agent_id in dict.fromkeys(str(item) for item in agent_ids):
+            block = self._ability_catalog.render_detail(agent_id)
+            persona = persona_routing_summary(
+                (active_agents.get(agent_id) or {}).get("features")
+            )
+            if persona:
+                persona_lines = ["Persona："]
+                for key, label in (
+                    ("archetype", "角色原型"),
+                    ("traits", "稳定特质"),
+                    ("working_style", "工作方式"),
+                    ("communication_style", "表达风格"),
+                    ("challenge_style", "质疑方式"),
+                ):
+                    value = persona.get(key)
+                    if isinstance(value, list):
+                        value = "、".join(str(item) for item in value)
+                    if value:
+                        persona_lines.append(f"{label}：{value}")
+                persona_text = "\n".join(persona_lines)
+                block = f"{block}\n{persona_text}" if block else persona_text
+            if block:
+                blocks.append(block)
         if not blocks:
             return ""
         return (

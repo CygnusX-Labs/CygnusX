@@ -18,6 +18,12 @@ ENV PYTHONUNBUFFERED=1 \
     MAMBA_NO_BANNER=1 \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
 
 # 预置中科大镜像源，加速容器内 mamba/conda 环境安装
 RUN printf '%s\n' \

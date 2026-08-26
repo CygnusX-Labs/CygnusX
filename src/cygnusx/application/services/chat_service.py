@@ -363,7 +363,7 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 7. “我想了解方案”“我想找出差异”“这个结果怎么解释”“帮我设计分析”这类需求，默认是 `chat` 或 `consult`；先由专家完成 intake 和方案沟通，不代表已经授权真实计算。
 8. 领域词只用于选择合适的专家，不用于直接决定协作模式。比如“我有 6 个样本的小鼠单细胞数据，想比较两个 group 的细胞类型和差异基因”应优先路由到单细胞/通用专家，但 collaboration_intent 应为 `chat` 或 `consult`，不能仅因“单细胞”创建流程型 Case。
 9. 信息不足且缺失项会改变数据模态、分析路线或专家选择时，必须选择运行时目录中的通用入口 Agent，由通用助手先通过 ask_user 补全上下文；禁止直接猜测具体领域或专家。若用户消息明确包含图片附件，应优先让通用助手先理解图片并直接回答用户当前问题；只有图片本身无法回答、且确实缺少会改变结论的关键信息时才追问。
-10. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界。
+10. 选择专家时只依据候选目录中声明的 routing_notes、capability_scope 与 default_role，不得超出专家能力边界；若用户询问候选 Agent 的性格、工作方式或表达风格，依据目录中的 `persona` 字段回答或选择，不要从职责摘要臆测。
 11. confidence < 0.6 表示需要向用户澄清协作方式；仍填写最可能的 collaboration_intent，禁止用 chat 掩盖不确定性。
 12. overdrive_intent 只表示用户对超频协作会话的意图：仅当用户明确希望由多个专家/团队/并行协作处理，且本轮任务确实需要 fanout、consult、case 或 dag 时填 enable；用户明确要求普通回答、停止团队协作或关闭超频时填 disable；仅询问“超频模式是什么/如何开启”、普通问答、任务虽复杂但用户未要求协作时一律填 none。不得因为文本出现“超频”一词就填 enable。
 
@@ -391,7 +391,7 @@ ROUTED_SPECIALIST_EXECUTION_CONFIRMED_PROMPT = """[Router 执行确认]
 3. 如仍发现关键输入缺失，停止执行并调用 ask_user，不得带假设继续；
 4. 完成后交付真实结果、产物路径、关键参数与未完成事项。"""
 
-# F5 渐进暴露：路由/派单 prompt 只注入 summary 层键（触发分类器摘要 + 路由提示）。
+# F5 渐进暴露：路由/派单 prompt 注入 summary 层键（含紧凑 Persona 摘要）。
 # 四段契约（capabilities/not_suitable_for/handoff_when/preferred_inputs）不得加入——
 # 它们属于 detail 层，由会诊阶段 capability_detail_context 按需加载。
 ROUTER_CATALOG_SUMMARY_KEYS = (
@@ -403,6 +403,7 @@ ROUTER_CATALOG_SUMMARY_KEYS = (
     "routing_hints",
     "capability_tags",
     "routing_notes",
+    "persona",
 )
 
 
@@ -655,7 +656,7 @@ class ChatService(
                     snapshot.get("flow_router_catalog") or [],
                     ensure_ascii=False,
                 )
-                # F5 渐进暴露：路由/派单上下文只注入 summary 层（触发分类器），
+                # F5 渐进暴露：路由/派单上下文注入 summary 层（含紧凑 Persona 摘要），
                 # 四段契约（capabilities/not_suitable_for/handoff_when/
                 # preferred_inputs）下沉 detail 层，选中候选后会诊阶段再加载。
                 # 依据: 实测 — 改造前 4131 tokens → 改造后 2801 tokens
@@ -664,7 +665,7 @@ class ChatService(
                 # 目录 2801 + flow 目录 446 = 完整路由 system prompt 4743 tokens。
                 catalog = json.dumps(
                     [
-                        {key: entry[key] for key in ROUTER_CATALOG_SUMMARY_KEYS}
+                        {key: entry.get(key) for key in ROUTER_CATALOG_SUMMARY_KEYS}
                         for entry in candidates
                     ],
                     ensure_ascii=False,
@@ -2902,6 +2903,14 @@ class ChatService(
             )
             if target_ctx is not None and route_info is not None:
                 ctx = target_ctx
+                # The router may hand the request to another Agent. Keep the
+                # model explicitly selected for this session across that
+                # second context assembly; otherwise the target Agent's YAML
+                # default (often Qwen) silently replaces the UI selection.
+                if model_id is not None:
+                    selected_model = await self._resolve_model(model_id)
+                    if selected_model is not None and selected_model.api_key:
+                        ctx.model_config = selected_model
                 if ctx.model_config is not None:
                     model_config = ctx.model_config
                 bound_skills = list(getattr(ctx, "skills", []) or [])

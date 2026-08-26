@@ -26,6 +26,7 @@ import os
 import pty
 import signal
 import struct
+import subprocess
 import termios
 import time
 import uuid
@@ -35,8 +36,8 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 from loguru import logger
+from pydantic import BaseModel, Field
 
 # ===== 常量 =====
 WORKSPACE_ROOT = Path(os.environ.get("SANDBOX_WORKSPACE", "/workspace"))
@@ -64,6 +65,20 @@ QUOTA_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("SANDBOX_WORKSPACE_QUOTA_CHECK_INTERVAL_SECONDS", "30") or 30
 )
 _quota_exceeded = False
+
+_BROWSER_LOCK: asyncio.Lock | None = None
+_PLAYWRIGHT_MANAGER: Any | None = None
+_BROWSER: Any | None = None
+_BROWSER_CONTEXT: Any | None = None
+_PAGE: Any | None = None
+_ONLYOFFICE_URL = os.environ.get("ONLYOFFICE_DOCUMENT_SERVER_URL", "").strip().rstrip("/")
+
+
+def _browser_lock() -> asyncio.Lock:
+    global _BROWSER_LOCK
+    if _BROWSER_LOCK is None:
+        _BROWSER_LOCK = asyncio.Lock()
+    return _BROWSER_LOCK
 
 
 def _workspace_usage_bytes() -> int:
@@ -117,7 +132,7 @@ async def _lifespan(_: FastAPI):
     """启动后放宽共享 UDS 权限，退出时不保留额外状态。"""
     socket_path = Path(os.environ.get("SANDBOX_AGENT_SOCKET", "/workspace/.agent.sock"))
     with contextlib.suppress(OSError):
-        await asyncio.to_thread(socket_path.chmod, 0o666)
+        socket_path.chmod(0o666)
     watcher = asyncio.create_task(_quota_watcher())
     try:
         yield
@@ -269,6 +284,64 @@ class PathRequest(BaseModel):
 class RenameRequest(BaseModel):
     path: str
     new_path: str
+
+
+class BrowserNavigateRequest(BaseModel):
+    url: str
+    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "domcontentloaded"
+    timeout: int = Field(default=30, ge=1, le=120)
+
+
+class BrowserScreenshotRequest(BaseModel):
+    path: str = "output/browser-screenshot.png"
+    selector: str = ""
+    full_page: bool = False
+    timeout: int = Field(default=30, ge=1, le=120)
+
+
+class BrowserClickRequest(BaseModel):
+    selector: str
+    button: Literal["left", "right", "middle"] = "left"
+    click_count: int = Field(default=1, ge=1, le=3)
+    timeout: int = Field(default=30, ge=1, le=120)
+
+
+class BrowserTypeRequest(BaseModel):
+    selector: str
+    text: str
+    clear: bool = True
+    timeout: int = Field(default=30, ge=1, le=120)
+
+
+class BrowserPressRequest(BaseModel):
+    selector: str
+    key: str
+    timeout: int = Field(default=30, ge=1, le=120)
+
+
+class DocumentInspectRequest(BaseModel):
+    path: str
+
+
+class DocumentEditRequest(BaseModel):
+    path: str
+    operations: list[dict[str, str]] = Field(default_factory=list)
+
+
+class DocumentCreateRequest(BaseModel):
+    path: str
+    content: str = ""
+    title: str = ""
+
+
+class DocumentConvertRequest(BaseModel):
+    path: str
+    output_format: str
+    output_path: str = ""
+
+
+class OnlyOfficeConvertRequest(DocumentConvertRequest):
+    async_mode: bool = False
 
 
 # ===== 健康检查 =====
@@ -811,6 +884,388 @@ async def edit_file(req: EditRequest) -> dict[str, Any]:
         "size": target.stat().st_size,
         "reverse_edit": reverse_edit,
     }
+
+
+# ===== Browser / Document tools =====
+
+
+def _browser_unavailable(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=f"浏览器能力不可用：{detail}。请使用 browser-office 镜像。",
+    )
+
+
+async def _get_browser_page() -> Any:
+    global _PLAYWRIGHT_MANAGER, _BROWSER, _BROWSER_CONTEXT, _PAGE
+    async with _browser_lock():
+        if _PAGE is not None:
+            return _PAGE
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError as exc:
+            raise _browser_unavailable("Playwright 未安装") from exc
+        _PLAYWRIGHT_MANAGER = await async_playwright().start()
+        try:
+            _BROWSER = await _PLAYWRIGHT_MANAGER.chromium.launch(
+                headless=True,
+                executable_path=os.environ.get("CHROME_BIN") or None,
+                args=["--disable-dev-shm-usage"],
+            )
+            _BROWSER_CONTEXT = await _BROWSER.new_context()
+            _PAGE = await _BROWSER_CONTEXT.new_page()
+        except Exception:
+            with contextlib.suppress(Exception):
+                await _PLAYWRIGHT_MANAGER.stop()
+            _PLAYWRIGHT_MANAGER = None
+            raise
+        return _PAGE
+
+
+async def _close_browser() -> None:
+    global _PLAYWRIGHT_MANAGER, _BROWSER, _BROWSER_CONTEXT, _PAGE
+    async with _browser_lock():
+        for resource in (_BROWSER_CONTEXT, _BROWSER, _PLAYWRIGHT_MANAGER):
+            if resource is not None:
+                with contextlib.suppress(Exception):
+                    if resource is _PLAYWRIGHT_MANAGER:
+                        await resource.stop()
+                    else:
+                        await resource.close()
+        _PLAYWRIGHT_MANAGER = None
+        _BROWSER = None
+        _BROWSER_CONTEXT = None
+        _PAGE = None
+
+
+def _document_target(path: str, writable: bool = False) -> Path:
+    return _resolve_writable_or_403(path) if writable else _resolve_or_400(path)
+
+
+def _document_summary(target: Path) -> dict[str, Any]:
+    suffix = target.suffix.lower()
+    result: dict[str, Any] = {
+        "path": _relative(target),
+        "format": suffix.removeprefix("."),
+        "size": target.stat().st_size,
+        "modified_at": target.stat().st_mtime,
+    }
+    try:
+        if suffix in {".txt", ".md", ".csv", ".tsv", ".json", ".yaml", ".yml"}:
+            text = target.read_text(encoding="utf-8", errors="replace")
+            result.update({"lines": len(text.splitlines()), "characters": len(text), "preview": text[:4000]})
+        elif suffix == ".docx":
+            from docx import Document
+
+            document = Document(str(target))
+            paragraphs = [p.text for p in document.paragraphs if p.text]
+            result.update({"paragraphs": len(paragraphs), "preview": "\n".join(paragraphs)[:4000]})
+        elif suffix == ".pptx":
+            from pptx import Presentation
+
+            presentation = Presentation(str(target))
+            texts = [
+                shape.text
+                for slide in presentation.slides
+                for shape in slide.shapes
+                if getattr(shape, "has_text_frame", False) and shape.text
+            ]
+            result.update({"slides": len(presentation.slides), "preview": "\n".join(texts)[:4000]})
+        elif suffix in {".xlsx", ".xlsm"}:
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(str(target), read_only=True, data_only=False)
+            result["sheets"] = workbook.sheetnames
+            result["dimensions"] = {
+                sheet.title: sheet.calculate_dimension() for sheet in workbook.worksheets
+            }
+            workbook.close()
+        else:
+            result["preview"] = "二进制文档；可使用 document_convert 转换或使用 workspace_read 读取元数据。"
+    except Exception as exc:
+        result["inspection_error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+@app.post("/browser/navigate")
+async def browser_navigate(req: BrowserNavigateRequest) -> dict[str, Any]:
+    if not req.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="url 必须使用 http:// 或 https://")
+    try:
+        page = await _get_browser_page()
+        response = await page.goto(req.url, wait_until=req.wait_until, timeout=req.timeout * 1000)
+        text = await page.locator("body").inner_text(timeout=req.timeout * 1000)
+        links = await page.locator("a").evaluate_all(
+            "els => els.slice(0, 100).map(a => ({text: (a.innerText || '').trim(), href: a.href}))"
+        )
+        return {
+            "url": page.url,
+            "title": await page.title(),
+            "status": response.status if response else None,
+            "text": text[:12000],
+            "links": links,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"导航失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/browser/screenshot")
+async def browser_screenshot(req: BrowserScreenshotRequest) -> dict[str, Any]:
+    target = _document_target(req.path, writable=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        page = await _get_browser_page()
+        locator = page.locator(req.selector) if req.selector else page
+        await locator.screenshot(path=str(target), full_page=req.full_page, timeout=req.timeout * 1000)
+        return {"path": _relative(target), "size": target.stat().st_size, "url": page.url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"截图失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/browser/click")
+async def browser_click(req: BrowserClickRequest) -> dict[str, Any]:
+    try:
+        page = await _get_browser_page()
+        await page.locator(req.selector).click(
+            button=req.button, click_count=req.click_count, timeout=req.timeout * 1000
+        )
+        return {"selector": req.selector, "url": page.url, "title": await page.title()}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"点击失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/browser/type")
+async def browser_type(req: BrowserTypeRequest) -> dict[str, Any]:
+    try:
+        page = await _get_browser_page()
+        locator = page.locator(req.selector)
+        if req.clear:
+            await locator.fill(req.text, timeout=req.timeout * 1000)
+        else:
+            await locator.press_sequentially(req.text, timeout=req.timeout * 1000)
+        return {"selector": req.selector, "url": page.url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"输入失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/browser/press")
+async def browser_press(req: BrowserPressRequest) -> dict[str, Any]:
+    try:
+        page = await _get_browser_page()
+        await page.locator(req.selector).press(req.key, timeout=req.timeout * 1000)
+        return {"selector": req.selector, "key": req.key, "url": page.url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"按键失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/browser/close")
+async def browser_close() -> dict[str, bool]:
+    await _close_browser()
+    return {"closed": True}
+
+
+@app.post("/document/inspect")
+async def document_inspect(req: DocumentInspectRequest) -> dict[str, Any]:
+    target = _document_target(req.path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"文档不存在: {req.path}")
+    return _document_summary(target)
+
+
+@app.post("/document/create")
+async def document_create(req: DocumentCreateRequest) -> dict[str, Any]:
+    target = _document_target(req.path, writable=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    suffix = target.suffix.lower()
+    try:
+        if suffix == ".docx":
+            from docx import Document
+
+            document = Document()
+            if req.title:
+                document.add_heading(req.title, level=1)
+            for paragraph in req.content.splitlines() or [""]:
+                document.add_paragraph(paragraph)
+            document.save(str(target))
+        elif suffix == ".pptx":
+            from pptx import Presentation
+
+            presentation = Presentation()
+            slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+            if req.title:
+                title_box = slide.shapes.add_textbox(
+                    914400, 457200, 8229600, 609600
+                )
+                title_box.text = req.title
+            for index, line in enumerate(req.content.splitlines() or [""]):
+                text_box = slide.shapes.add_textbox(
+                    914400, 1219200 + index * 457200, 8229600, 381000
+                )
+                text_box.text = line
+            presentation.save(str(target))
+        elif suffix in {".xlsx", ".xlsm"}:
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            sheet = workbook.active
+            if req.title:
+                sheet.title = req.title[:31]
+            for row_index, line in enumerate(req.content.splitlines(), start=1):
+                for column_index, value in enumerate(line.split("\t"), start=1):
+                    sheet.cell(row=row_index, column=column_index, value=value)
+            workbook.save(str(target))
+        else:
+            target.write_text(req.content, encoding="utf-8")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"文档创建失败: {type(exc).__name__}: {exc}") from exc
+    return _document_summary(target)
+
+
+@app.post("/document/edit")
+async def document_edit(req: DocumentEditRequest) -> dict[str, Any]:
+    target = _document_target(req.path, writable=True)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"文档不存在: {req.path}")
+    suffix = target.suffix.lower()
+    try:
+        if suffix == ".docx":
+            from docx import Document
+
+            document = Document(str(target))
+            containers = [*document.paragraphs]
+            for table in document.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        containers.extend(cell.paragraphs)
+            changed = 0
+            for operation in req.operations:
+                old = operation.get("old", "")
+                new = operation.get("new", "")
+                if not old:
+                    continue
+                for paragraph in containers:
+                    if old in paragraph.text:
+                        for run in paragraph.runs:
+                            run.text = run.text.replace(old, new)
+                        changed += 1
+            document.save(str(target))
+        elif suffix == ".pptx":
+            from pptx import Presentation
+
+            presentation = Presentation(str(target))
+            changed = 0
+            for slide in presentation.slides:
+                for shape in slide.shapes:
+                    if not getattr(shape, "has_text_frame", False):
+                        continue
+                    for paragraph in shape.text_frame.paragraphs:
+                        for run in paragraph.runs:
+                            value = run.text
+                            for operation in req.operations:
+                                old = operation.get("old", "")
+                                new = operation.get("new", "")
+                                if old and old in value:
+                                    value = value.replace(old, new)
+                                    changed += 1
+                            run.text = value
+            presentation.save(str(target))
+        elif suffix in {".xlsx", ".xlsm"}:
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(str(target))
+            changed = 0
+            for sheet in workbook.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if isinstance(cell.value, str):
+                            value = cell.value
+                            for operation in req.operations:
+                                old = operation.get("old", "")
+                                new = operation.get("new", "")
+                                if old and old in value:
+                                    value = value.replace(old, new)
+                                    changed += 1
+                            cell.value = value
+            workbook.save(str(target))
+        else:
+            old_content = target.read_text(encoding="utf-8", errors="replace")
+            new_content = old_content
+            changed = 0
+            for operation in req.operations:
+                old = operation.get("old", "")
+                new = operation.get("new", "")
+                if old and old in new_content:
+                    new_content = new_content.replace(old, new)
+                    changed += 1
+            _check_workspace_quota(len(new_content.encode()) - len(old_content.encode()))
+            target.write_text(new_content, encoding="utf-8")
+        return {"path": _relative(target), "changed": changed, "document": _document_summary(target)}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"文档编辑失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/document/convert")
+async def document_convert(req: DocumentConvertRequest) -> dict[str, Any]:
+    source = _document_target(req.path)
+    if not source.is_file():
+        raise HTTPException(status_code=404, detail=f"文档不存在: {req.path}")
+    output_format = req.output_format.lower().lstrip(".")
+    output = _document_target(
+        req.output_path or f"output/{source.stem}.{output_format}", writable=True
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            ["libreoffice", "--headless", "--convert-to", output_format, "--outdir", str(output.parent), str(source)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        generated = output.parent / f"{source.stem}.{output_format}"
+        if completed.returncode != 0 or not generated.exists():
+            raise RuntimeError((completed.stderr or completed.stdout or "LibreOffice 转换失败").strip())
+        if generated != output:
+            generated.replace(output)
+        return {"path": _relative(output), "format": output_format, "size": output.stat().st_size}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"文档转换失败: {type(exc).__name__}: {exc}") from exc
+
+
+@app.get("/onlyoffice/status")
+async def onlyoffice_status() -> dict[str, Any]:
+    if not _ONLYOFFICE_URL:
+        return {"configured": False, "reachable": False, "message": "ONLYOFFICE_DOCUMENT_SERVER_URL 未配置"}
+    import urllib.request
+
+    def _probe() -> tuple[bool, str]:
+        try:
+            with urllib.request.urlopen(f"{_ONLYOFFICE_URL}/healthcheck", timeout=5) as response:
+                return response.status == 200, response.read(256).decode("utf-8", "replace")
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+
+    reachable, detail = await asyncio.to_thread(_probe)
+    return {"configured": True, "url": _ONLYOFFICE_URL, "reachable": reachable, "detail": detail}
+
+
+@app.post("/onlyoffice/convert")
+async def onlyoffice_convert(req: OnlyOfficeConvertRequest) -> dict[str, Any]:
+    status = await onlyoffice_status()
+    if not status.get("reachable"):
+        raise HTTPException(status_code=503, detail="OnlyOffice Document Server 未配置或不可达；可使用 document_convert 的 LibreOffice 路径")
+    raise HTTPException(status_code=501, detail="OnlyOffice 远程转换需要可公开访问的文档 URL；当前沙箱仅提供本地文档转换")
 
 
 # ===== MCP Builder：容器内实验 MCP Server 生命周期管理 =====

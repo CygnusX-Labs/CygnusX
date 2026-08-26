@@ -75,11 +75,33 @@ def respond_to_room_message(
     requester_ref: str,
     content: str,
     dispatch: dict[str, object] | None = None,
+    model_id: str | None = None,
 ) -> dict[str, str]:
+    selected_model_id = _parse_model_id(model_id)
     if dispatch is None:
-        result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content))
+        if selected_model_id is None:
+            result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content))
+        else:
+            result = asyncio.run(
+                _respond_to_room_message(
+                    case_id, requester_ref, content, model_id=selected_model_id
+                )
+            )
     else:
-        result = asyncio.run(_respond_to_room_message(case_id, requester_ref, content, dispatch))
+        if selected_model_id is None:
+            result = asyncio.run(
+                _respond_to_room_message(case_id, requester_ref, content, dispatch)
+            )
+        else:
+            result = asyncio.run(
+                _respond_to_room_message(
+                    case_id,
+                    requester_ref,
+                    content,
+                    dispatch,
+                    model_id=selected_model_id,
+                )
+            )
     if result.get("status") == "skipped_locked":
         raise self.retry(countdown=2)
     return result
@@ -102,11 +124,17 @@ def respond_to_room_namespace_message(
     content: str,
     dispatch: dict[str, object] | None = None,
     actor_user_id: str | None = None,
+    model_id: str | None = None,
 ) -> dict[str, str]:
     """协作室房间（含未立项房间）发言的 Manager 响应任务。"""
     result = asyncio.run(
         _respond_to_room_namespace_message(
-            room_id, requester_ref, content, dispatch, actor_user_id=actor_user_id
+            room_id,
+            requester_ref,
+            content,
+            dispatch,
+            actor_user_id=actor_user_id,
+            model_id=_parse_model_id(model_id),
         )
     )
     if result.get("status") == "skipped_locked":
@@ -120,6 +148,7 @@ async def _respond_to_room_namespace_message(
     content: str,
     dispatch: dict[str, object] | None = None,
     actor_user_id: str | None = None,
+    model_id: uuid.UUID | None = None,
 ) -> dict[str, str]:
     try:
         settings = get_settings()
@@ -138,8 +167,12 @@ async def _respond_to_room_namespace_message(
                 requester_ref,
                 content,
                 actor_user_id=actor_user_id or requester_ref,
+                model_id=model_id,
                 target_agent_id=str(dispatch.get("target_agent_id") or "") or None
                 if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
+                else None,
+                target_agent_ids=[str(item) for item in (dispatch.get("target_agent_ids") or [])]
+                if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "multi_direct"
                 else None,
             )
             # BUG-E2E-02：立项卡等房间行写入此前只 flush 不 commit，会话关闭即回滚，
@@ -198,6 +231,7 @@ async def _respond_to_room_message(
     requester_ref: str,
     content: str,
     dispatch: dict[str, object] | None = None,
+    model_id: uuid.UUID | None = None,
 ) -> dict[str, str]:
     try:
         settings = get_settings()
@@ -210,13 +244,27 @@ async def _respond_to_room_message(
                 case_id,
                 requester_ref,
                 content,
+                model_id=model_id,
                 target_agent_id=str(dispatch.get("target_agent_id") or "") or None
                 if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "direct"
+                else None,
+                target_agent_ids=[str(item) for item in (dispatch.get("target_agent_ids") or [])]
+                if isinstance(dispatch, dict) and dispatch.get("dispatch_mode") == "multi_direct"
                 else None,
             )
     except Exception as exc:  # noqa: BLE001
         logger.exception("AgentTeams room response task failed: %s", exc)
         return {"status": "failed"}
+
+
+def _parse_model_id(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        logger.warning("Ignoring invalid AgentTeams model override: %s", value)
+        return None
 
 
 async def _cleanup_evidence() -> dict[str, object]:

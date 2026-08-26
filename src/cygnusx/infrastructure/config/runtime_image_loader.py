@@ -139,6 +139,22 @@ def render_runtime_manifest(profile_id: str, profile: RuntimeProfile) -> str:
     )
 
 
+def render_runtime_catalog(config: RuntimeImageRegistryConfig) -> str:
+    """渲染可注入 Agent 提示词的动态运行时目录。"""
+    lines = [
+        "## 可用 Studio 运行时（由注册表动态注入）",
+        "镜像选择以 `data/ai/runtime_images.yaml` 为准；新增 profile 后无需修改 Agent 提示词。",
+    ]
+    for profile_id in sorted(config.profiles):
+        profile = config.resolved_profile(profile_id)
+        capabilities = ", ".join(sorted(profile.capabilities)) or "未声明"
+        lines.append(
+            f"- `{profile_id}`：镜像 `{profile.image}`；能力：{capabilities}；"
+            f"执行器：{', '.join(sorted(profile.executor_compatibility)) or '未声明'}"
+        )
+    return "\n".join(lines)
+
+
 class RuntimeImageRegistryManager:
     def __init__(self, config_path: str | Path | None = None) -> None:
         self.config_path = Path(config_path or get_settings().runtime_images_yaml)

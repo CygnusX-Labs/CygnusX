@@ -10,6 +10,7 @@ import {
   NIcon,
   NInput,
   NModal,
+  NDropdown,
   NPopconfirm,
   NProgress,
   NSpin,
@@ -28,6 +29,7 @@ import {
   CloseOutline,
   FileTrayOutline,
   MenuOutline,
+  PencilOutline,
   RefreshOutline,
   SearchOutline,
   SettingsOutline,
@@ -57,6 +59,7 @@ import AgentTeamsSettingsDrawer from '@/components/agent-teams/AgentTeamsSetting
 import RoomMcpToolCard from '@/components/agent-teams/RoomMcpToolCard.vue'
 import type { AskUserObjectReference, FileAttachment } from '@/components/ai-chat/types'
 import type { AgentTemplate } from '@/types/agent'
+import { useAgentHubStore } from '@/stores/agentHub'
 import { useAgentTeamsOnboardingStore } from '@/stores/agentTeamsOnboarding'
 import { useAgentTeamsPreferencesStore } from '@/stores/agentTeamsPreferences'
 import { mergeAgentTeamsEvents, shouldPollAgentTeamsCase } from '@/utils/agentTeamsState'
@@ -93,8 +96,10 @@ const SSE_RETRY_INITIAL_MS = 1_000
 const SSE_RETRY_MAX_MS = 30_000
 const LOCAL_TYPING_TTL_MS = 60_000
 const ROOM_SIDEBAR_COLLAPSED_KEY = 'cygnusx:agentteams-room-sidebar-collapsed'
+const ROOM_MODEL_KEY = 'cygnusx:agentteams-room-model'
 
 const message = useMessage()
+const agentHubStore = useAgentHubStore()
 const loading = ref(false)
 const available = ref(true)
 const cases = ref<AgentTeamsCase[]>([])
@@ -135,6 +140,7 @@ const selectedProjectId = ref('')
 const newProjectName = ref('')
 const pendingProjectCreate = ref<{ content: string; contextRefs: AgentTeamsContextRef[] } | null>(null)
 const sendingMessage = ref(false)
+const selectedModelId = ref('')
 const changeDecisionPending = ref('')
 const roomViewMode = ref<'stream' | 'element'>('stream')
 const inviteVisible = ref(false)
@@ -145,6 +151,9 @@ const invitingUserId = ref('')
 const roomMembers = ref<AgentTeamsRoomMember[]>([])
 const memberActionUserId = ref('')
 const settingsVisible = ref(false)
+const renameVisible = ref(false)
+const renameTitle = ref('')
+const renamingRoom = ref(false)
 const localTypingUntil = ref<number>(0)
 let localTypingTimer: number | null = null
 const seenEventIds = ref<Set<string>>(new Set())
@@ -156,6 +165,38 @@ let eventStreamAbort: AbortController | null = null
 let eventStreamRetryTimer: number | null = null
 /** 连续异常中断次数：仅用于告警门控；正常到期重连不计入。 */
 const eventStreamFailures = ref(0)
+
+const modelOptions = computed(() => agentHubStore.availableModels.map((model) => ({
+  label: model.name,
+  value: model.id,
+})))
+const modelMenuOptions = computed(() => modelOptions.value.map((option) => ({
+  label: option.label,
+  key: option.value,
+})))
+const selectedModelName = computed(() => {
+  const model = agentHubStore.availableModels.find((item) => item.id === selectedModelId.value)
+  return model?.name || '默认模型'
+})
+
+async function loadRoomModels() {
+  if (!agentHubStore.availableModels.length) await agentHubStore.fetchAvailableModels()
+  const saved = localStorage.getItem(ROOM_MODEL_KEY) || ''
+  const available = agentHubStore.availableModels
+  const preferred = available.find((model) => model.id === saved)
+    || available.find((model) => model.is_default)
+    || available[0]
+  if (preferred) selectedModelId.value = preferred.id
+}
+
+function handleRoomModelSwitch(modelId: string | number) {
+  const nextModelId = String(modelId)
+  if (!nextModelId || nextModelId === selectedModelId.value) return
+  selectedModelId.value = nextModelId
+  localStorage.setItem(ROOM_MODEL_KEY, nextModelId)
+  const model = agentHubStore.availableModels.find((item) => item.id === nextModelId)
+  message.success(`已切换至 ${model?.name || nextModelId}，后续协作室回复将使用该模型`)
+}
 
 const sortedCases = computed(() => [...cases.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
 const effectiveRoleMetadata = computed<RoomRoleMetadata>(() => {
@@ -1017,7 +1058,7 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
       },
     }])
     draftMessage.value = ''
-    const result = await agentTeamsApi.postCaseMessage(caseId, content, contextRefs, clientMessageId)
+    const result = await agentTeamsApi.postCaseMessage(caseId, content, contextRefs, clientMessageId, selectedModelId.value)
     const serverEventId = typeof result.event_id === 'string' ? result.event_id : ''
     if (selectedCaseId.value === caseId && serverEventId) {
       const serverEventArrived = events.value.some((event) => event.event_id === serverEventId)
@@ -1077,7 +1118,7 @@ async function sendRoomNamespaceMessage(content: string, contextRefs: AgentTeams
   }])
   draftMessage.value = ''
   try {
-    const result = await agentTeamsApi.postRoomMessage(roomId, content, contextRefs, clientMessageId)
+    const result = await agentTeamsApi.postRoomMessage(roomId, content, contextRefs, clientMessageId, selectedModelId.value)
     const serverEventId = typeof result.event_id === 'string' ? result.event_id : ''
     if (selectedRoomId.value === roomId && serverEventId) {
       const serverEventArrived = events.value.some((event) => event.event_id === serverEventId)
@@ -1206,7 +1247,10 @@ async function submitRoomAskAnswers(
         const path = objectReference.path.trim()
         if (path) contextRefs.push({ kind: 'workspace', id: path, location: path })
       }
-      if (!contextRefs.length) return
+      const discussionOnly = answers.some((answer) => (
+        answer.includes('先讨论') || answer.includes('暂不执行')
+      ))
+      if (!contextRefs.length && !discussionOnly) return
     }
     const accepted = await sendRoomMessage(formatRoomAskReply(ask.questions, answers), contextRefs)
     if (accepted) {
@@ -1444,7 +1488,7 @@ async function startNewRoom() {
   if (creatingRoom.value) return
   creatingRoom.value = true
   try {
-    const room = await agentTeamsApi.createRoom({ origin: 'manual' })
+    const room = await agentTeamsApi.createRoom({ title: '和你的生物信息团队聊聊', origin: 'manual' })
     upsertRoom(room)
     selectedRoomId.value = ''
     await selectRoom(room.room_id)
@@ -1466,6 +1510,30 @@ async function startNewRoom() {
     creatingRoom.value = false
     await nextTick()
     composerRef.value?.focus()
+  }
+}
+
+function openRenameRoom() {
+  if (!roomDetail.value || roomDetail.value.role === 'invited') return
+  renameTitle.value = roomDetail.value.title
+  renameVisible.value = true
+}
+
+async function renameCurrentRoom() {
+  const roomId = selectedRoomId.value
+  const title = renameTitle.value.trim()
+  if (!roomId || !title || renamingRoom.value) return
+  renamingRoom.value = true
+  try {
+    const room = await agentTeamsApi.renameRoom(roomId, title)
+    roomDetail.value = room
+    upsertRoom(room)
+    renameVisible.value = false
+    message.success('协作室名称已更新')
+  } catch (cause: any) {
+    message.error(cause?.response?.data?.detail || '重命名失败，请稍后重试。')
+  } finally {
+    renamingRoom.value = false
   }
 }
 
@@ -1664,6 +1732,7 @@ watch(visibleMessages, async () => {
 
 onMounted(() => {
   roomPreferences.hydrateFromUser()
+  void loadRoomModels()
   // 首屏骨架立即渲染；角色元数据与 Case 列表并行加载、各自填充，互不阻塞
   void agentTeamsApi
     .getRoleLabels()
@@ -1917,8 +1986,8 @@ onBeforeUnmount(() => {
       <section class="room-main">
         <div v-if="!hasActiveRoom" class="room-guide">
           <span class="room-guide__logo" aria-hidden="true"><NIcon :size="34"><SparklesOutline /></NIcon></span>
-          <h1 class="room-guide__title">和你的 AI 管家聊聊</h1>
-          <p class="room-guide__lead">描述你的分析问题，Manager 会分解任务、组建 Worker 团队协作完成，关键步骤由你审批把关；也可以从左侧选择已有房间继续协作。</p>
+          <h1 class="room-guide__title">和你的生物信息团队聊聊</h1>
+          <p class="room-guide__lead">描述你的生物信息分析问题，生物信息部门经理会分解任务，安排合适的专业成员协作完成；关键步骤由你审批把关，也可以从左侧选择已有房间继续协作。</p>
           <p class="room-guide__note">协作室支持流程调用、结果分析与多轮协作；涉及真实计算时，关键步骤需人工审批。</p>
           <div class="room-guide__actions" role="group" aria-label="快捷操作">
             <button
@@ -1968,28 +2037,66 @@ onBeforeUnmount(() => {
                 {{ formatAgentTeamsStatus(detail.status) }}
               </NTag>
             </div>
-            <div v-if="elementRoomUrl" class="room-view-switch" role="group" aria-label="房间视图切换">
-              <button
-                type="button"
-                class="room-view-switch__btn"
-                :class="{ 'is-active': roomViewMode === 'stream' }"
-                :aria-pressed="roomViewMode === 'stream'"
-                @click="roomViewMode = 'stream'"
-              >消息流</button>
-              <button
-                type="button"
-                class="room-view-switch__btn"
-                :class="{ 'is-active': roomViewMode === 'element' }"
-                :aria-pressed="roomViewMode === 'element'"
-                @click="roomViewMode = 'element'"
-              >Element 视图</button>
+            <div class="case-header__actions">
+              <NButton
+                v-if="selectedRoomId && roomDetail?.role !== 'invited'"
+                size="small"
+                secondary
+                aria-label="重命名协作室"
+                @click="openRenameRoom"
+              >
+                <template #icon><NIcon><PencilOutline /></NIcon></template>
+                重命名
+              </NButton>
+              <div class="room-model-control">
+                <span class="room-model-control__label">模型</span>
+                <NTooltip trigger="hover">
+                  <template #trigger>
+                    <NDropdown
+                      v-if="modelOptions.length"
+                      :options="modelMenuOptions"
+                      trigger="click"
+                      @select="handleRoomModelSwitch"
+                    >
+                      <NButton
+                        size="small"
+                        secondary
+                        class="room-model-trigger"
+                        aria-label="选择协作室模型"
+                        :disabled="sendingMessage"
+                      >
+                        <span class="room-model-trigger__name">{{ selectedModelName }}</span>
+                        <NIcon size="14" aria-hidden="true"><CaretDownOutline /></NIcon>
+                      </NButton>
+                    </NDropdown>
+                    <NTag v-else size="small" round :bordered="false" type="info">{{ selectedModelName }}</NTag>
+                  </template>
+                  当前模型：{{ selectedModelName }}；切换后仅影响后续回复
+                </NTooltip>
+              </div>
+              <div v-if="elementRoomUrl" class="room-view-switch" role="group" aria-label="房间视图切换">
+                <button
+                  type="button"
+                  class="room-view-switch__btn"
+                  :class="{ 'is-active': roomViewMode === 'stream' }"
+                  :aria-pressed="roomViewMode === 'stream'"
+                  @click="roomViewMode = 'stream'"
+                >消息流</button>
+                <button
+                  type="button"
+                  class="room-view-switch__btn"
+                  :class="{ 'is-active': roomViewMode === 'element' }"
+                  :aria-pressed="roomViewMode === 'element'"
+                  @click="roomViewMode = 'element'"
+                >Element 视图</button>
+              </div>
+              <NButton v-if="roomDetail?.role === 'mine' && selectedRoomId" size="small" secondary @click="inviteVisible = true">
+                邀请成员
+              </NButton>
+              <NButton v-else-if="roomDetail?.role === 'invited' && selectedRoomId" size="small" secondary @click="leaveCurrentRoom">
+                离开协作室
+              </NButton>
             </div>
-            <NButton v-if="roomDetail?.role === 'mine' && selectedRoomId" size="small" secondary @click="inviteVisible = true">
-              邀请成员
-            </NButton>
-            <NButton v-else-if="roomDetail?.role === 'invited' && selectedRoomId" size="small" secondary @click="leaveCurrentRoom">
-              离开协作室
-            </NButton>
           </header>
 
           <div v-if="roomViewMode === 'element' && elementRoomUrl" class="room-element">
@@ -2144,24 +2251,24 @@ onBeforeUnmount(() => {
                       <div v-if="block.message.managerReport.conclusion" class="manager-report__conclusion">
                         <MarkdownRenderer :content="block.message.managerReport.conclusion" />
                       </div>
-                      <div v-if="block.message.managerReport.recommendations.length" class="manager-report__section">
-                        <span class="manager-report__label">建议</span>
+                      <details v-if="block.message.managerReport.recommendations.length" class="manager-report__section manager-report__section--collapsible">
+                        <summary class="manager-report__label">建议 <span class="manager-report__count">{{ block.message.managerReport.recommendations.length }}</span></summary>
                         <ul class="manager-report__list">
                           <li v-for="(item, index) in block.message.managerReport.recommendations" :key="`rec-${index}`">{{ item }}</li>
                         </ul>
-                      </div>
-                      <div v-if="block.message.managerReport.risks.length" class="manager-report__section">
-                        <span class="manager-report__label manager-report__label--risk">风险</span>
+                      </details>
+                      <details v-if="block.message.managerReport.risks.length" class="manager-report__section manager-report__section--collapsible">
+                        <summary class="manager-report__label manager-report__label--risk">风险 <span class="manager-report__count">{{ block.message.managerReport.risks.length }}</span></summary>
                         <ul class="manager-report__list">
                           <li v-for="(item, index) in block.message.managerReport.risks" :key="`risk-${index}`">{{ item }}</li>
                         </ul>
-                      </div>
-                      <div v-if="block.message.managerReport.evidenceRefs.length" class="manager-report__section">
-                        <span class="manager-report__label manager-report__label--evidence">证据</span>
+                      </details>
+                      <details v-if="block.message.managerReport.evidenceRefs.length" class="manager-report__section manager-report__section--collapsible">
+                        <summary class="manager-report__label manager-report__label--evidence">证据 <span class="manager-report__count">{{ block.message.managerReport.evidenceRefs.length }}</span></summary>
                         <ul class="manager-report__list manager-report__list--evidence">
                           <li v-for="(item, index) in block.message.managerReport.evidenceRefs" :key="`ev-${index}`">{{ item }}</li>
                         </ul>
-                      </div>
+                      </details>
                       <details v-if="block.message.managerReport.proposedSubmission" class="manager-report__submission">
                         <summary class="manager-report__label manager-report__label--submission">执行工单</summary>
                         <pre class="manager-report__json">{{ JSON.stringify(block.message.managerReport.proposedSubmission, null, 2) }}</pre>
@@ -2311,6 +2418,26 @@ onBeforeUnmount(() => {
           />
         </div>
       </section>
+      <NModal
+        v-model:show="renameVisible"
+        preset="card"
+        title="重命名协作室"
+        :style="{ width: 'min(92vw, 440px)' }"
+        :mask-closable="!renamingRoom"
+      >
+        <NInput
+          v-model:value="renameTitle"
+          maxlength="200"
+          show-count
+          autofocus
+          placeholder="例如：小鼠单细胞质量控制"
+          @keyup.enter="renameCurrentRoom"
+        />
+        <div class="room-modal-actions">
+          <NButton secondary :disabled="renamingRoom" @click="renameVisible = false">取消</NButton>
+          <NButton type="primary" :loading="renamingRoom" :disabled="!renameTitle.trim()" @click="renameCurrentRoom">保存名称</NButton>
+        </div>
+      </NModal>
       <NModal v-model:show="inviteVisible" preset="card" title="邀请协作室成员" style="width: min(440px, 92vw)">
         <NInput v-model:value="inviteQuery" clearable placeholder="输入用户名或昵称" @update:value="searchInviteUsers" />
         <NSpin :show="inviteLoading">
@@ -2629,6 +2756,12 @@ onBeforeUnmount(() => {
 .manager-report__hardgate { padding: var(--space-sm) var(--space-md); border-left: 3px solid var(--arco-warning); border-radius: var(--radius-sm); background: var(--arco-warning-light); color: var(--arco-warning); font-weight: 600; font-size: var(--font-caption-size); }
 .manager-report__conclusion { margin: 0; white-space: pre-wrap; }
 .manager-report__section { display: grid; gap: var(--space-xs); }
+.manager-report__section--collapsible { gap: var(--space-sm); }
+.manager-report__section--collapsible > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.manager-report__section--collapsible > summary::-webkit-details-marker { display: none; }
+.manager-report__section--collapsible > summary::before { content: '▸'; color: currentColor; transition: transform var(--motion-quick) ease-out; }
+.manager-report__section--collapsible[open] > summary::before { transform: rotate(90deg); }
+.manager-report__count { opacity: .7; font-size: 11px; font-weight: 500; }
 .manager-report__label { display: inline-flex; align-items: center; align-self: start; padding: 1px 8px; border-radius: 9999px; background: var(--arco-primary-light); color: var(--arco-primary); font-size: 11px; font-weight: 600; }
 .manager-report__label--risk { background: var(--arco-danger-light); color: var(--arco-danger); }
 .manager-report__label--evidence { background: var(--neutral-border); color: var(--neutral-text-3); }
@@ -2692,6 +2825,11 @@ onBeforeUnmount(() => {
    表面、蓝色高亮边框、工具行与发送按钮由 KimiChatInput 的 roomMode 样式提供。 */
 .room-composer { flex-shrink: 0; width: min(calc(100% - var(--space-3xl)), 1500px); margin: var(--space-lg) auto var(--space-2xl); }
 .room-composer__input { width: 100%; }
+.case-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-sm); min-width: 0; margin-left: auto; }
+.room-model-control { display: inline-flex; align-items: center; gap: var(--space-xs); min-width: 0; padding: 2px 4px 2px var(--space-sm); border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); background: var(--neutral-fill-2); }
+.room-model-control__label { flex: 0 0 auto; color: var(--neutral-text-3); font-size: var(--font-caption-size); }
+.room-model-trigger { max-width: min(220px, 24vw); min-width: 150px; justify-content: space-between; }
+.room-model-trigger__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Manager 正在输入指示 */
 .room-typing { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); color: var(--neutral-text-3); font-size: var(--font-caption-size); }
@@ -2701,7 +2839,7 @@ onBeforeUnmount(() => {
 .room-typing__dots i:nth-child(3) { animation-delay: 0.4s; }
 
 /* 消息流 / Element 视图切换：胶囊分段样式，与全局 .cygnusx-segmented-toggle 同语言 */
-.room-view-switch { display: inline-flex; gap: 2px; margin-left: var(--space-md); padding: 2px; border: 1px solid var(--neutral-border); border-radius: 999px; background: var(--neutral-fill-2); }
+.room-view-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--neutral-border); border-radius: 999px; background: var(--neutral-fill-2); }
 .room-view-switch__btn { padding: var(--space-xs) var(--space-md); border: none; border-radius: 999px; background: transparent; color: var(--neutral-text-2); font-size: var(--font-caption-size); line-height: 1.7; cursor: pointer; transition: background-color var(--motion-quick) ease-out, color var(--motion-quick) ease-out; }
 .room-view-switch__btn:hover { color: var(--neutral-text-1); }
 .room-view-switch__btn:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: -2px; }
@@ -2747,10 +2885,14 @@ onBeforeUnmount(() => {
   .room-page { padding: var(--space-lg); }
   .room-messages { padding: var(--space-lg) var(--space-lg) var(--space-xl); }
   .case-header { padding: var(--space-md) var(--space-lg); }
+  .case-header__actions { width: 100%; justify-content: flex-start; margin-left: 0; }
 }
 
 /* ≤640px：左栏头部操作区允许换行；快捷胶囊组换行由 .room-guide__actions 的 flex-wrap 承担 */
 @media (max-width: 640px) {
   .room-sidebar__toolbar { flex-wrap: wrap; }
+  .case-header__actions { align-items: stretch; flex-wrap: wrap; }
+  .room-model-control { flex: 1 1 180px; justify-content: space-between; }
+  .room-model-trigger { max-width: min(220px, 58vw); }
 }
 </style>

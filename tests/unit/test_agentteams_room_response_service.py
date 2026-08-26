@@ -18,6 +18,8 @@ from cygnusx.application.services.agentteams_capability_registry import (
 from cygnusx.application.services.agentteams_room_response_service import (
     ROOM_RESPONSE_LOCK_KEY_PREFIX,
     AgentTeamsRoomResponseService,
+    _sanitize_manager_reply,
+    _visible_manager_risks,
 )
 from cygnusx.application.services.agentteams_service import room_namespace_case_id
 from cygnusx.application.services.flow_registry import FlowRegistry
@@ -36,6 +38,22 @@ _STATUS_LINES = {
         "awaiting_input",
     )
 }
+
+
+def test_internal_capability_risk_boilerplate_is_removed_from_reply() -> None:
+    reply = (
+        "这是正常的分析说明。\n\n风险\n"
+        "本轮未获准调用能力目录类只读工具，本回复仅描述部门经理的固定职责边界，"
+        "未枚举平台各 Agent 的实时能力清单；具体领域能力以平台能力目录实况为准。"
+    )
+
+    assert _sanitize_manager_reply(reply) == "这是正常的分析说明。"
+
+
+def test_real_manager_risks_are_preserved() -> None:
+    risks = ["样本量较小，统计效能有限", "未获准调用能力目录类只读工具：内部元数据"]
+
+    assert _visible_manager_risks(risks) == ["样本量较小，统计效能有限"]
 
 
 def _agent_config(agent_id: str, *, planner_eligible: bool = False) -> dict:
@@ -690,8 +708,9 @@ async def test_manager_persona_fallback_to_general_keeps_manager_voice(monkeypat
     assert run.await_args.kwargs["agent_id"] == "agent-general"
     question = run.await_args.kwargs["question"]
     # Manager 话术层继续生效，称呼注入不降级为通用助手。
-    assert "扮演 Manager" in question
+    assert "代表「生物信息部门经理」履行生物信息部门经理职责" in question
     assert "称呼自己为「生物信息部门经理」" in question
+    assert "禁止以英文 Manager、协作室 Manager 或系统 Manager 自称" in question
     audit = next(
         call for call in agentteams.post_case_evidence.await_args_list
         if call.kwargs["event_type"] == "room.manager_persona_fallback"
@@ -751,6 +770,8 @@ def test_build_question_display_name_prefers_agent_yaml_over_platform_default() 
         manager_display_name="生物信息部门经理",
     )
     assert "称呼自己为「生物信息部门经理」" in question
+    assert "只能自称「生物信息部门经理」或「我」" in question
+    assert "禁止以英文 Manager、协作室 Manager 或系统 Manager 自称" in question
 
     fallback_question = AgentTeamsRoomResponseService._build_question(
         {"intent": "数据质控", "status": "planning_running"},
@@ -759,6 +780,7 @@ def test_build_question_display_name_prefers_agent_yaml_over_platform_default() 
         {},
     )
     assert "称呼自己为「生物信息部门经理」" in fallback_question
+    assert "只能自称「生物信息部门经理」或「我」" in fallback_question
 
 
 def test_lock_key_namespaced_per_case() -> None:
@@ -810,6 +832,40 @@ def test_build_question_instructs_structured_ask_user() -> None:
     )
 
     assert "ask_user" in question
+
+
+def test_manager_question_can_be_forced_into_multi_expert_summary() -> None:
+    question = AgentTeamsRoomResponseService._build_question(
+        {"intent": "", "status": "received"},
+        [
+            {
+                "event_type": "room.agent_message",
+                "payload": {
+                    "payload": {
+                        "agent_id": "agent-scrna",
+                        "content": "单细胞分析师负责上游分析和 RDS 交接。",
+                    }
+                },
+            },
+            {
+                "event_type": "room.agent_message",
+                "payload": {
+                    "payload": {
+                        "agent_id": "agent-viz",
+                        "content": "可视化助手负责出版级图表和下游展示。",
+                    }
+                },
+            },
+        ],
+        "@单细胞分析师 @可视化助手 你们两个可以搭配干活吗",
+        system_note=(
+            "请先阅读最近动态中各领域 Agent 的真实回复，明确标注各自姓名并用一段简洁内容汇总；"
+        ),
+    )
+
+    assert "agent-scrna：单细胞分析师负责上游分析和 RDS 交接。" in question
+    assert "agent-viz：可视化助手负责出版级图表和下游展示。" in question
+    assert "请先阅读最近动态中各领域 Agent 的真实回复" in question
     assert "禁止只在 conclusion 正文里罗列编号问题" in question
 
 
@@ -860,7 +916,7 @@ async def test_execution_intent_without_route_hit_emits_domain_clarify(monkeypat
     assert payload["origin_content"] == "对这个 treefile 进行可视化并解释"
     options = payload["questions"][0]["options"]
     assert "rnaseq 流程" in options
-    assert options[-1] == "以上都不是，先和 Manager 讨论方案"
+    assert options[-1] == "以上都不是，先和生物信息部门经理讨论方案"
 
 
 @pytest.mark.asyncio
@@ -1083,7 +1139,7 @@ def test_handoff_failure_reason_is_read_from_persisted_event() -> None:
 
 @pytest.mark.asyncio
 async def test_clarify_intent_emits_option_card_without_route_decision(monkeypatch) -> None:
-    """“帮我做差异分析”（无附件）→ 选项式澄清卡；不触发规划、不推 route_decision、不跑 LLM。"""
+    """“帮我做差异分析”（无附件）→ 数据来源澄清卡；不触发规划、不推 route_decision、不跑 LLM。"""
     events = [_user_message_event("帮我做差异分析")]
     agentteams = _agentteams(status="received", events=events)
     run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的。"))
@@ -1103,7 +1159,27 @@ async def test_clarify_intent_emits_option_card_without_route_decision(monkeypat
     assert payload["round"] == 1
     assert payload["origin_content"] == "帮我做差异分析"
     assert "差异分析" in payload["questions"][0]["question"]
-    assert len(payload["questions"][0]["options"]) >= 3
+    assert payload["questions"][0]["options"] == []
+    assert "上传文件或填写工作区路径" in payload["questions"][0]["question"]
+
+
+@pytest.mark.asyncio
+async def test_rnaseq_workflow_consultation_does_not_ask_for_data(monkeypatch) -> None:
+    """询问 RNA-seq 分析流程属于咨询，不应弹出数据来源澄清卡。"""
+    content = "rna-seq分析要如何进行呀"
+    events = [_user_message_event(content)]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="可以先从实验设计开始讨论。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    run.assert_awaited_once()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.ask_user" not in event_types
 
 
 @pytest.mark.asyncio
@@ -1306,6 +1382,24 @@ def test_celery_task_delegates_to_async_impl(monkeypatch) -> None:
 
     assert result == {"status": "responded"}
     assert calls == [("bioops_1", "user-a", "hello")]
+
+
+def test_celery_task_passes_model_override(monkeypatch) -> None:
+    import cygnusx.infrastructure.celery_app.tasks.agentteams as task_module
+
+    model_id = "11111111-1111-1111-1111-111111111111"
+    captured: list[object] = []
+
+    async def fake_impl(case_id, requester_ref, content, dispatch=None, model_id=None):
+        captured.append(model_id)
+        return {"status": "responded"}
+
+    monkeypatch.setattr(task_module, "_respond_to_room_message", fake_impl)
+
+    result = task_module.respond_to_room_message("bioops_1", "user-a", "hello", None, model_id)
+
+    assert result == {"status": "responded"}
+    assert captured == [task_module.uuid.UUID(model_id)]
 
 
 class _ReadFailRedis(FakeRedis):
@@ -1551,6 +1645,88 @@ async def test_direct_mention_success_has_no_fallback(monkeypatch) -> None:
     assert len(messages) == 1
     assert messages[0].kwargs["payload"]["direct_mention"] is True
     assert messages[0].kwargs["payload"]["content"] == "领域直答：质控已通过。"
+
+
+@pytest.mark.asyncio
+async def test_multi_direct_mentions_are_summarized_by_manager_before_execution_gate(
+    monkeypatch,
+) -> None:
+    """多专家都完成只读直答后，必须先由 Manager 汇总而不是追问执行对象。"""
+    content = "@单细胞分析师 @可视化助手 你们两个可以搭配干活吗"
+    events = _direct_message_events(content)
+    agentteams = _agentteams(events=events)
+    event_counter = 0
+
+    async def post_case_evidence(case_id, **kwargs):
+        nonlocal event_counter
+        if kwargs["event_type"] == "room.agent_message":
+            payload = kwargs.get("payload") or {}
+            if payload.get("role") == "worker":
+                event_counter += 1
+                events.append(
+                    {
+                        "event_id": f"evt-worker-{event_counter}",
+                        "event_type": "room.agent_message",
+                        "payload": {
+                            "summary": payload.get("content", "")[:200],
+                            "payload": payload,
+                        },
+                    }
+                )
+        return {"event_id": f"evt-evidence-{event_counter}"}
+
+    agentteams.post_case_evidence = AsyncMock(side_effect=post_case_evidence)
+    consultation_calls: list[dict] = []
+
+    async def run(self, **kwargs):
+        consultation_calls.append(kwargs)
+        if kwargs["agent_id"] == "agent-scrna":
+            return ConsultationEnvelope(conclusion="单细胞分析师：负责上游质控与细胞注释。")
+        if kwargs["agent_id"] == "agent-viz":
+            return ConsultationEnvelope(conclusion="可视化助手：负责图表设计与结果呈现。")
+        return ConsultationEnvelope(
+            conclusion=(
+                "收到你的执行请求「@单细胞分析师 @可视化助手 你们两个可以搭配干活吗」。"
+                "如需立即执行，请上传文件或填写工作区路径；也可以先讨论分析方案。"
+            )
+        )
+
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams,
+        registry=_registry("agent-scrna", "agent-viz", with_manager=True),
+        redis=FakeRedis(),
+    ).respond(
+        "bioops_1",
+        "user-a",
+        content,
+        target_agent_ids=["agent-scrna", "agent-viz"],
+    )
+
+    assert result == {"status": "responded"}
+    assert [call["agent_id"] for call in consultation_calls] == [
+        "agent-scrna",
+        "agent-viz",
+        "agentteams-manager",
+    ]
+    message_calls = _evidence_calls(agentteams, "room.agent_message")
+    assert [call.kwargs["payload"]["role"] for call in message_calls] == [
+        "worker",
+        "worker",
+        "bioops-manager",
+    ]
+    manager_question = consultation_calls[-1]["question"]
+    assert "单细胞分析师：负责上游质控与细胞注释。" in manager_question
+    assert "可视化助手：负责图表设计与结果呈现。" in manager_question
+    assert "请先阅读最近动态中各领域 Agent 的真实回复" in manager_question
+    manager_reply = message_calls[-1].kwargs["payload"]["content"]
+    assert "两位专家已完成初步协作判断" in manager_reply
+    assert "单细胞分析师：负责上游质控与细胞注释。" in manager_reply
+    assert "可视化助手：负责图表设计与结果呈现。" in manager_reply
+    assert "是否需要进行实际的数据分析？如果需要" in manager_reply
+    assert "收到你的执行请求" not in manager_reply
+    assert _evidence_calls(agentteams, "room.ask_user") == []
 
 
 @pytest.mark.asyncio

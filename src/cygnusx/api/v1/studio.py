@@ -22,7 +22,8 @@ import httpx
 from fastapi import APIRouter, Depends, Header, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from loguru import logger
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import select
+from sqlalchemy import text as sql_text
 
 from cygnusx.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
 from cygnusx.application.schemas.chat import ChatSessionDTO
@@ -59,16 +60,16 @@ from cygnusx.application.services.chat_service import ChatService
 from cygnusx.application.services.project_scope import resolve_agent_project_scope
 from cygnusx.application.services.skill_service import SkillService
 from cygnusx.application.services.studio_approval_service import get_studio_approval_service
+from cygnusx.application.services.studio_checkpoints import (
+    ensure_checkpoint_repository,
+    list_checkpoints,
+    restore_checkpoint,
+)
 from cygnusx.application.services.studio_context_service import (
     create_session_from_report,
     import_datahub_file,
     register_artifact_report,
     user_platform_root,
-)
-from cygnusx.application.services.studio_checkpoints import (
-    ensure_checkpoint_repository,
-    list_checkpoints,
-    restore_checkpoint,
 )
 from cygnusx.application.services.studio_sharing import (
     build_shared_snapshot,
@@ -80,7 +81,6 @@ from cygnusx.application.services.studio_sharing import (
     share_is_active,
 )
 from cygnusx.application.services.studio_skill_service import extract_skill_from_workspace
-from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.application.services.studio_tools import stream_studio_tool
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import (
@@ -93,14 +93,15 @@ from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 from cygnusx.infrastructure.config.studio_loader import get_studio_config
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.infrastructure.database.session import get_session_factory
 from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
+from cygnusx.infrastructure.studio.audit import emit as emit_audit
 from cygnusx.infrastructure.studio.control_client import resolve_studio_control_token
 from cygnusx.infrastructure.studio.manager import (
     StudioSandboxUnavailableError,
     studio_sandbox_manager,
 )
-from cygnusx.infrastructure.studio.audit import emit as emit_audit
 from cygnusx.infrastructure.studio.paths import PathEscapeError, resolve_workspace_read_path
 from cygnusx.infrastructure.studio.workspace import (
     DEFAULT_READ_LIMIT,
@@ -372,7 +373,7 @@ async def create_studio_session(
 
     requested_capabilities = _normalize_sandbox_capabilities(req.sandbox_capabilities)
     allowed_capabilities = _normalize_sandbox_capabilities(
-        studio_cfg.get("sandbox_capabilities") or ["code"]
+        studio_cfg.get("sandbox_capabilities") or ["code", "browser", "document"]
     )
     if not set(requested_capabilities).issubset(set(allowed_capabilities)):
         emit_audit(

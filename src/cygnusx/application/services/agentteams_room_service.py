@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import re
 import secrets
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -129,6 +130,13 @@ def proposal_project_name(objective: str, room_title: str) -> str:
     return fallback or "agentteams-case"
 
 
+def room_title_from_message(content: str) -> str:
+    """从首条发言生成可读的默认房间名称。"""
+    cleaned = re.sub(r"@[^\s@，。！？：:；;,、()（）\[\]{}]+", "", content or "")
+    cleaned = " ".join(cleaned.split()).strip(" ，。！？；：:,.!?、")
+    return (cleaned[:38].rstrip() or "生物信息分析讨论")
+
+
 def _project_ref_from(context_refs: list[dict[str, Any]]) -> tuple[str, str | None] | None:
     """从 context_refs 提取首个合法 kind=project 引用的 (project_id, project_name)。"""
     for ref in context_refs:
@@ -175,7 +183,7 @@ class AgentTeamsRoomService:
         room = AgentTeamsRoomModel(
             room_id=uuid4().hex,
             owner_id=owner_id,
-            title=(title or "").strip()[:200] or "协作室会话",
+            title=(title or "").strip()[:200] or "和你的生物信息团队聊聊",
             origin=origin.strip()[:20] or "manual",
         )
         self._db.add(room)
@@ -195,6 +203,18 @@ class AgentTeamsRoomService:
             # 后被 expire；端点 _room_payload 在 async 上下文同步读列会触发懒加载
             # IO（MissingGreenlet → 500）。显式 refresh 把所有列重新加载为已加载态。
             await self._db.refresh(room)
+        return room
+
+    async def rename_room(
+        self, room: AgentTeamsRoomModel, requester_ref: str, title: str
+    ) -> AgentTeamsRoomModel:
+        if room.owner_id != requester_ref:
+            raise AuthorizationError("只有房间所有者可以重命名协作室")
+        normalized = " ".join(title.split()).strip()
+        if not normalized:
+            raise BusinessError("房间名称不能为空")
+        room.title = normalized[:200]
+        await self._db.flush()
         return room
 
     async def list_rooms(self, user_id: str) -> list[AgentTeamsRoomModel]:
@@ -533,6 +553,9 @@ class AgentTeamsRoomService:
         client_message_id: str | None = None,
     ) -> dict[str, Any]:
         """记录一条用户发言：未立项落房间命名空间流，已绑定落 Case 事件流。"""
+        if room.title.strip() in {"协作室会话", "和你的生物信息团队聊聊"}:
+            room.title = room_title_from_message(content)
+            await self._db.flush()
         stream_case_id = room.case_id or room_namespace_case_id(room.room_id)
         return await self._agentteams.post_room_message(
             stream_case_id,

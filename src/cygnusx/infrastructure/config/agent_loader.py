@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,10 @@ import yaml
 
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.config.prompt_loader import get_prompt
-from cygnusx.infrastructure.config.runtime_image_loader import get_runtime_images
+from cygnusx.infrastructure.config.runtime_image_loader import (
+    get_runtime_images,
+    render_runtime_catalog,
+)
 from cygnusx.infrastructure.mcp.presets import (
     CYGNUSX_PLATFORM_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_ID,
@@ -160,7 +164,78 @@ def _load_single_agent(yaml_path: Path) -> dict[str, Any] | None:
                 cleaned["default_mode"] = default_mode
             data["studio"] = cleaned
 
+    _inject_prompt_context(data, yaml_path)
+
     return data
+
+
+def _inject_prompt_context(data: dict[str, Any], yaml_path: Path) -> None:
+    """注入动态运行时目录与按角色筛选的软件包目录。"""
+    prompt = str(data.get("system_prompt") or "")
+    if not prompt:
+        return
+    try:
+        registry = get_runtime_images()
+        runtime_catalog = render_runtime_catalog(registry)
+        runtime_context = runtime_catalog
+    except (KeyError, RuntimeError, ValueError) as exc:
+        logging.getLogger(__name__).warning("Agent 运行时上下文注入失败: %s", exc)
+        runtime_context = "## 运行时目录\n当前运行时注册表不可用，请以工具真实返回为准。"
+    raw_catalogs = data.pop("package_catalogs", [])
+    package_context = _render_bio_package_catalog(yaml_path, raw_catalogs)
+    data["system_prompt"] = (
+        prompt.replace("{{runtime_images}}", runtime_context)
+        .replace("{{bio_packages}}", package_context)
+        .strip()
+    )
+
+
+_PACKAGE_CATALOG_MARKER_RE = re.compile(
+    r"<!-- package-catalog: (?P<catalog>[a-z0-9-]+) -->\s*"
+    r"(?P<section>.*?)(?=<!-- package-catalog:|\Z)",
+    re.DOTALL,
+)
+
+
+def _render_bio_package_catalog(yaml_path: Path, raw_catalogs: Any) -> str:
+    """从集中 Markdown 目录提取当前 Agent 声明的软件包章节。"""
+    if not isinstance(raw_catalogs, list):
+        logging.getLogger(__name__).warning("package_catalogs 必须为列表: %s", yaml_path)
+        return ""
+    selected = [str(value).strip() for value in raw_catalogs if str(value).strip()]
+    if not selected:
+        return ""
+
+    catalog_path = yaml_path.parent / "bio_packages.md"
+    try:
+        source = catalog_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logging.getLogger(__name__).warning("生信软件包目录无法读取 %s: %s", catalog_path, exc)
+        return "## 生信软件包目录\n集中目录当前不可用；安装前使用 `conda-meta-mcp` 查询。"
+
+    sections = {
+        match.group("catalog"): match.group("section").strip()
+        for match in _PACKAGE_CATALOG_MARKER_RE.finditer(source)
+    }
+    if not sections:
+        logging.getLogger(__name__).warning("生信软件包目录缺少章节标记: %s", catalog_path)
+        return "## 生信软件包目录\n集中目录格式无效；安装前使用 `conda-meta-mcp` 查询。"
+
+    selected_ids = list(sections) if "all" in selected else list(dict.fromkeys(selected))
+    missing = [catalog for catalog in selected_ids if catalog not in sections]
+    if missing:
+        logging.getLogger(__name__).warning(
+            "Agent 请求了不存在的软件包目录 %s: %s", yaml_path, missing
+        )
+    rendered = [sections[catalog] for catalog in selected_ids if catalog in sections]
+    if not rendered:
+        return ""
+    return (
+        "## 生物信息软件包目录（按角色自动加载）\n"
+        "以下仅是候选包与用途索引。安装前必须用 `conda-meta-mcp` 确认当前可用的 "
+        "conda 包名、channel 和版本；只可使用共享协议允许的 `micromamba` 安装方式。\n\n"
+        + "\n\n".join(rendered)
+    )
 
 
 def _load_local_prompt(yaml_path: Path, prompt_file: str) -> str:

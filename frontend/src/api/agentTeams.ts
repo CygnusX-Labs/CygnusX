@@ -403,11 +403,13 @@ export const agentTeamsApi = {
     content: string,
     contextRefs: AgentTeamsContextRef[] = [],
     clientMessageId?: string,
+    modelId?: string,
   ): Promise<Record<string, unknown>> {
     return (await apiClient.post(`/agent-teams/cases/${caseId}/messages`, {
       content,
       context_refs: contextRefs,
       client_message_id: clientMessageId,
+      model_id: modelId || undefined,
     })).data
   },
   async applyChangeDecision(
@@ -443,6 +445,9 @@ export const agentTeamsApi = {
   async getRoom(roomId: string): Promise<AgentTeamsRoom> {
     return (await apiClient.get<AgentTeamsRoom>(`/agent-teams/rooms/${roomId}`)).data
   },
+  async renameRoom(roomId: string, title: string): Promise<AgentTeamsRoom> {
+    return (await apiClient.patch<AgentTeamsRoom>(`/agent-teams/rooms/${roomId}`, { title })).data
+  },
   async deleteRoom(roomId: string): Promise<Record<string, unknown>> {
     // 房间删除可能串联「已绑定 Case 删除 + 房间命名空间删除」两次 Bridge 调用，超时给足两倍余量
     return (await apiClient.delete(`/agent-teams/rooms/${roomId}`, { timeout: 130000 })).data
@@ -455,11 +460,13 @@ export const agentTeamsApi = {
     content: string,
     contextRefs: AgentTeamsContextRef[] = [],
     clientMessageId?: string,
+    modelId?: string,
   ): Promise<Record<string, unknown>> {
     return (await apiClient.post(`/agent-teams/rooms/${roomId}/messages`, {
       content,
       context_refs: contextRefs,
       client_message_id: clientMessageId,
+      model_id: modelId || undefined,
     })).data
   },
   async confirmRoomProposal(

@@ -69,6 +69,18 @@ _CONTROL_TOOL_NAMES = frozenset(
     }
 )
 
+# Manager 的会诊仍禁止分析写入，但允许用户明确要求的记忆管理操作。
+# 这些工具只修改当前用户自己的记忆，并由 Manager 提示词约束触发条件；
+# 子 Agent 仍完全禁止写记忆。
+_MANAGER_MEMORY_WRITE_TOOL_NAMES = frozenset(
+    {
+        "cygnusx_save_memory",
+        "cygnusx_update_memory",
+        "cygnusx_forget_memory",
+        "cygnusx_update_memory_block",
+    }
+)
+
 # 超频专家的工作台工具集合（对齐 AI 工作台）：沙盒/工作区读写 + 平台联动工具。
 # datahub_import / platform_result_import / artifact_register / pipeline_query 均可由
 # execute_studio_tool(name, args, session_id, user_id, db) 直接执行；
@@ -229,10 +241,13 @@ class ParallelSubAgentService:
         prepared: list[tuple[dict[str, Any], Any, list[dict[str, Any]]]] = []
         for index, item in enumerate(normalized, start=1):
             assemble = agent_service.assemble_context
-            if "user_id" in inspect.signature(assemble).parameters:
-                ctx = await assemble(item["agent_id"], user_id=user_id)
-            else:
-                ctx = await assemble(item["agent_id"])
+            parameters = inspect.signature(assemble).parameters
+            assemble_kwargs: dict[str, Any] = {}
+            if "user_id" in parameters:
+                assemble_kwargs["user_id"] = user_id
+            if "model_id" in parameters and item.get("model_id"):
+                assemble_kwargs["model_id"] = item["model_id"]
+            ctx = await assemble(item["agent_id"], **assemble_kwargs)
             if ctx is None or ctx.model_config is None:
                 return self._error(
                     f"子任务 #{index} 的目标 Agent {item['agent_id']} 不存在或未绑定可用模型"
@@ -288,6 +303,7 @@ class ParallelSubAgentService:
                     retry=item.get("retry") or {},
                     # 缺省保持普通聊天 fan-out 的轮数上限；超频专家经 max_rounds 显式放宽
                     max_rounds=max_rounds or settings.subagent_max_rounds_per_child,
+                    deep_thinking=bool(item.get("deep_thinking")),
                     semaphore=semaphore,
                     on_event=on_event,
                     approved_tool_calls=approved_tool_calls or [],
@@ -379,6 +395,10 @@ class ParallelSubAgentService:
                     f"子任务 #{index} 的指令超过 {_TASK_INSTRUCTION_MAX_CHARS} 字"
                 )
             normalized_item: dict[str, Any] = {"agent_id": agent_id, "task": task}
+            if item.get("model_id"):
+                normalized_item["model_id"] = item["model_id"]
+            if item.get("deep_thinking") is not None:
+                normalized_item["deep_thinking"] = bool(item["deep_thinking"])
             if item.get("task_id"):
                 normalized_item["task_id"] = str(item["task_id"]).strip()
             if item.get("timeout_seconds"):
@@ -397,6 +417,9 @@ class ParallelSubAgentService:
         ctx: Any, *, workspace_access: bool = False, safe_only: bool = False
     ) -> list[dict[str, Any]]:
         """透传 Agent 已绑定能力，同时剥离递归与长任务控制工具。"""
+        context_agent_id = str(
+            getattr(getattr(ctx, "agent", None), "agent_id", "") or ""
+        )
         tools = list(getattr(ctx, "tools", []) or [])
         names = {
             str((tool.get("function") or {}).get("name") or "")
@@ -434,7 +457,11 @@ class ParallelSubAgentService:
         kept: list[dict[str, Any]] = []
         for tool in tools:
             name = str((tool.get("function") or {}).get("name") or "")
-            if not name or name in _CONTROL_TOOL_NAMES:
+            manager_memory_write = (
+                context_agent_id == "agentteams-manager"
+                and name in _MANAGER_MEMORY_WRITE_TOOL_NAMES
+            )
+            if not name or (name in _CONTROL_TOOL_NAMES and not manager_memory_write):
                 continue
             schema = schema_loader.get_tool(name)
             if schema is not None and schema.invocation_mode != "backend_sync":
@@ -450,6 +477,7 @@ class ParallelSubAgentService:
                 safe_only
                 and name not in {"ask_user", "knowledge_search", "web_search", *SKILL_TOOL_NAMES}
                 and name not in readonly_mcp_tool_names
+                and not manager_memory_write
                 and (
                     schema is None
                     or not schema.annotations.read_only_hint
@@ -497,6 +525,7 @@ class ParallelSubAgentService:
         timeout_seconds: int,
         retry: dict[str, Any],
         max_rounds: int,
+        deep_thinking: bool,
         semaphore: asyncio.Semaphore,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
         control_check: Callable[[], Awaitable[str | None] | str | None] | None,
@@ -540,6 +569,7 @@ class ParallelSubAgentService:
                             on_event=on_event,
                             control_check=control_check,
                             approved_tool_calls=approved_tool_calls,
+                            deep_thinking=deep_thinking,
                         )
                     await self._check_control(control_check)
                 except SubagentControlError as exc:
@@ -617,6 +647,7 @@ class ParallelSubAgentService:
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
         control_check: Callable[[], Awaitable[str | None] | str | None] | None,
         approved_tool_calls: list[dict[str, Any]],
+        deep_thinking: bool = False,
     ) -> dict[str, Any]:
         """受限 ReAct 循环：chat_service legacy 工具循环的最小克隆。"""
         instruction = f"{context_summary}\n\n{task}".strip() if context_summary else task
@@ -675,6 +706,7 @@ class ParallelSubAgentService:
                         temperature=0.3,
                         max_tokens=min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
                         tools=child_tools or None,
+                        deep_thinking=deep_thinking,
                     ):
                         yield stream_chunk
                 except Exception as exc:
@@ -691,6 +723,7 @@ class ParallelSubAgentService:
                         finish_reason=finish_reason,
                         status="error",
                         error=str(exc)[:500],
+                        deep_thinking=deep_thinking,
                     )
                     if agentteams_token is not None:
                         agentteams_ctx_var.reset(agentteams_token)
@@ -802,6 +835,7 @@ class ParallelSubAgentService:
                 finish_reason=finish_reason,
                 status="ok",
                 error=None,
+                deep_thinking=deep_thinking,
             )
             if agentteams_token is not None:
                 agentteams_ctx_var.reset(agentteams_token)
@@ -1012,6 +1046,24 @@ class ParallelSubAgentService:
                     tool_envelope, ensure_ascii=False, sort_keys=True, default=str
                 )
                 result_signatures.append(result_signature)
+                await self._emit_event(
+                    on_event,
+                    execution_metadata(
+                        "agent_tool_result",
+                        session_id=child_session_id,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                        round_number=round_number,
+                        execution_path="agentteams_worker_react",
+                        index=index,
+                        tool_call_id=tool_call_id,
+                        tool_name=tool_name,
+                        success=tool_envelope.get("success") is True,
+                        duration_ms=round((time.monotonic() - tool_started) * 1000),
+                        result_summary=self._tool_result_summary(tool_envelope),
+                    )
+                    | {"type": "worker_tool_result", "index": index},
+                )
                 if len(result_signatures) >= _MAX_REPEATED_TOOL_RESULTS and all(
                     signature == result_signatures[-1]
                     for signature in result_signatures[-_MAX_REPEATED_TOOL_RESULTS :]
@@ -1039,8 +1091,19 @@ class ParallelSubAgentService:
                         "partial": True,
                         "guard_triggered": True,
                         "answer": (
-                            "\n\n".join(answer_parts).strip()[:_ANSWER_CAP_CHARS]
-                            or f"已获得 {tool_name} 的重复结果，结果未继续变化；已停止重复调用，建议基于已有结果继续分析。"
+                            json.dumps(
+                                {
+                                    "conclusion": (
+                                        "\n\n".join(answer_parts).strip()[:_ANSWER_CAP_CHARS]
+                                        or f"已获得 {tool_name} 的重复结果，结果未继续变化；"
+                                        "已停止重复调用，以下结论基于最近一次工具结果。"
+                                    ),
+                                    "recommendations": ["基于最近一次工具结果继续分析，不再重复调用。"],
+                                    "evidence_refs": [],
+                                    "risks": ["工具连续返回相同结果，未继续执行重复调用。"],
+                                },
+                                ensure_ascii=False,
+                            )
                         ),
                         "thought": reasoning_text.strip() or None,
                         "error": None,
@@ -1048,24 +1111,6 @@ class ParallelSubAgentService:
                         "tool_call_count": successful_tool_calls,
                         "usage": usage,
                     }
-                await self._emit_event(
-                    on_event,
-                    execution_metadata(
-                        "agent_tool_result",
-                        session_id=child_session_id,
-                        run_id=run_id,
-                        agent_id=agent_id,
-                        round_number=round_number,
-                        execution_path="agentteams_worker_react",
-                        index=index,
-                        tool_call_id=tool_call_id,
-                        tool_name=tool_name,
-                        success=tool_envelope.get("success") is True,
-                        duration_ms=round((time.monotonic() - tool_started) * 1000),
-                        result_summary=self._tool_result_summary(tool_envelope),
-                    )
-                    | {"type": "worker_tool_result", "index": index},
-                )
                 if tool_envelope.get("success") is True:
                     successful_tool_calls += 1
                     verified_evidence_refs.extend(self._tool_evidence_refs(tool_name, args))
@@ -1150,6 +1195,7 @@ class ParallelSubAgentService:
         finish_reason: str,
         status: str,
         error: str | None,
+        deep_thinking: bool = False,
     ) -> None:
         """Queue AgentTeams-only audit capture; storage errors stay off the model path."""
         uri = AgentTeamsTurnRecorder.schedule(
@@ -1168,7 +1214,7 @@ class ParallelSubAgentService:
             sampling={
                 "temperature": 0.3,
                 "max_tokens": min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
-                "deep_thinking": False,
+                "deep_thinking": deep_thinking,
             },
         )
         if not uri:

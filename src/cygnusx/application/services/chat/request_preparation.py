@@ -64,7 +64,11 @@ async def prepare_agent_request(
     if context is None:
         return AgentRequestPreparationFailure("Agent 不存在或已停用")
 
-    if model_id is not None and not context.user_capabilities_customized:
+    # A model selected for the current request/session is an explicit runtime
+    # override. It must win over the Agent default and over a persisted
+    # per-user capability profile; otherwise the UI can report one model while
+    # the request silently falls back to the profile's model.
+    if model_id is not None:
         override = await resolve_model(model_id)
         if override is None:
             return AgentRequestPreparationFailure("指定的模型不存在或未启用")

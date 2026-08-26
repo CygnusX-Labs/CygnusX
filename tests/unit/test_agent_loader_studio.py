@@ -45,9 +45,47 @@ def test_agent_prompt_appends_shared_sandbox_protocol_once() -> None:
     assert prompt.count("## 共享沙盒协议") == 1
     assert "## 转介、交接与协作" in prompt
     assert "output/results/" in prompt
+    assert "{{runtime_images}}" not in prompt
+    assert "analysis-core" in prompt
+    assert "output/environment.yml" in prompt
+    assert "output/software-versions.txt" in prompt
     assert "## 依赖现场安装规范" not in (data_dir / "prompts" / "rnaseq.md").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.unit
+def test_agent_package_catalogs_are_injected_by_yaml_selection() -> None:
+    """包目录由 YAML 选择，加载后不保留内部配置字段。"""
+    data_dir = Path(__file__).parents[2] / "data" / "ai"
+    code = _load_single_agent(data_dir / "code.yaml")
+    scrna = _load_single_agent(data_dir / "scrna.yaml")
+
+    assert code is not None
+    assert scrna is not None
+    assert "package_catalogs" not in code
+    assert "{{bio_packages}}" not in code["system_prompt"]
+    assert "## 生物信息软件包目录（按角色自动加载）" in code["system_prompt"]
+    assert "##### 1 基因组学 / 序列分析" in code["system_prompt"]
+    assert "##### 14 化学信息学（Cheminformatics）" in code["system_prompt"]
+    assert "##### 3 单细胞分析" in scrna["system_prompt"]
+    assert "##### R / Bioconductor 统计与单细胞" in scrna["system_prompt"]
+    assert "##### 1 基因组学 / 序列分析" not in scrna["system_prompt"]
+
+
+@pytest.mark.unit
+def test_agentteams_manager_identity_is_collaboration_scoped() -> None:
+    data_dir = Path(__file__).parents[2] / "data" / "ai"
+    manager = _load_single_agent(data_dir / "agentteams_manager.yaml")
+    general = _load_single_agent(data_dir / "general.yaml")
+
+    assert manager is not None
+    assert general is not None
+    assert manager["name"] == "生物信息部门经理"
+    assert manager["features"]["managed_prompt"] is True
+    assert manager["features"]["managed_profile"] is True
+    assert "禁止使用英文“Manager”" in manager["system_prompt"]
+    assert "生物信息部门经理" not in general["system_prompt"]
 
 
 @pytest.mark.unit
@@ -79,6 +117,8 @@ def test_all_agent_prompts_receive_shared_protocol(agent_name: str) -> None:
 
     assert config is not None
     assert config["system_prompt"].count("## 共享沙盒协议") == 1
+    assert "output/environment.yml" in config["system_prompt"]
+    assert "{{runtime_images}}" not in config["system_prompt"]
 
 
 @pytest.mark.unit
@@ -377,6 +417,58 @@ async def test_existing_custom_agent_is_not_overwritten(monkeypatch):
 
     assert existing.features == {"studio": {"enabled": False}}
     db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_empty_database_creates_builtin_agents_from_yaml(monkeypatch):
+    """新部署的空库应直接由 data/ai 声明创建可见的内置 Agent。"""
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    provider_result = MagicMock()
+    provider_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=provider_result)
+    db.flush = AsyncMock()
+
+    service = AgentService(db)
+    service.get_agent = AsyncMock(return_value=None)
+    service._ensure_configured_marketplace_skills = AsyncMock()
+    monkeypatch.setattr(
+        "cygnusx.application.services.agent_service.load_agent_configs",
+        lambda: [
+            {
+                "agent_id": "agent-general",
+                "name": "通用助手",
+                "description": "内置通用 Agent",
+                "category": "general",
+                "mcp_ids": [str(CYGNUSX_TOOLS_SERVER_ID)],
+                "skill_ids": ["general-skill"],
+                "features": {"managed_profile": True},
+            },
+            {
+                "agent_id": "agent-rnaseq",
+                "name": "RNA-seq 分析师",
+                "mcp_ids": [str(CYGNUSX_PLATFORM_SERVER_ID)],
+                "features": {"managed_prompt": True},
+            },
+        ],
+    )
+
+    await service.ensure_builtin_agents()
+
+    created_agents = [call.args[0] for call in db.add.call_args_list]
+    assert [agent.agent_id for agent in created_agents] == [
+        "agent-general",
+        "agent-rnaseq",
+    ]
+    assert all(agent.is_builtin and agent.is_active for agent in created_agents)
+    assert created_agents[0].name == "通用助手"
+    assert created_agents[0].skill_ids == ["general-skill"]
+    assert created_agents[1].model_id is None
+    service._ensure_configured_marketplace_skills.assert_awaited_once_with(
+        {"general-skill"}
+    )
+    db.flush.assert_awaited_once()
 
 
 @pytest.mark.asyncio

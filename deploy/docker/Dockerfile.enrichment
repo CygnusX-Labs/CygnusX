@@ -16,6 +16,15 @@ LABEL org.opencontainers.image.title="cygnusx-r-enrichment" \
 
 ENV PATH="${MAMBA_ROOT_PREFIX}/bin:${PATH}"
 
+USER root
+
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 # 预置中科大镜像源，加速 bioconda 包下载（见 Protocol/镜像构建国内加速规范_v1.md §4）；
 # 安装以 mambauser 执行，condarc 必须落在其 HOME。
 RUN printf '%s\n' \

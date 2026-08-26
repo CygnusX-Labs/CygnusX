@@ -42,6 +42,42 @@ async def test_ability_catalog_query_summary_matches_catalog() -> None:
     assert set(by_id) == set(expected)
     for agent_id, item in by_id.items():
         assert item["summary"] == (expected[agent_id].get("summary") or "")
+        assert "name" in item
+        assert "enabled" in item
+        assert "internal_case_role" in item
+        assert "recruitable" in item
+        assert "planner_eligible" in item
+        assert "skill_ids" in item
+        assert "mcp_ids" in item
+        assert "mcp_tools" in item
+
+
+@pytest.mark.asyncio
+async def test_ability_catalog_query_includes_all_enabled_agent_entries() -> None:
+    result = await PLATFORM_HANDLERS["ability_catalog_query"]({})
+
+    assert result["success"] is True
+    agents = result["agents"]
+    enabled = [item for item in agents if item["enabled"]]
+    assert len(enabled) == len(agents)
+    assert {item["agent_id"] for item in enabled} >= {
+        "agent-atacseq",
+        "agent-rnaseq",
+        "agent-scrna",
+        "agent-viz",
+        "agent-code",
+        "agent-qc",
+    }
+    assert any(
+        item["agent_id"] == "agent-qc" and item["chat_entry"] is False
+        for item in enabled
+    )
+    assert any(
+        item["agent_id"] == "agent-scrna-advanced"
+        and item["name"] == "单细胞注释与高级分析专家"
+        and item["recruitable"] is True
+        for item in enabled
+    )
 
 
 @pytest.mark.asyncio
@@ -56,6 +92,25 @@ async def test_ability_catalog_query_detail_by_agent_id() -> None:
     detail = result["detail"]
     for key in ("capabilities", "not_suitable_for", "handoff_when", "preferred_inputs"):
         assert detail[key] == expected[agent_id][key]
+    assert "bindings" in result
+
+
+@pytest.mark.asyncio
+async def test_ability_catalog_query_reports_manager_mcp_whitelist() -> None:
+    result = await PLATFORM_HANDLERS["ability_catalog_query"](
+        {"agent_id": "agentteams-manager"}
+    )
+
+    assert result["success"] is True
+    assert result["bindings"]["skill_ids"] == []
+    assert result["bindings"]["mcp_ids"] == [
+        "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+        "dda1f524-339b-5131-8ca3-46caedeeeb29",
+    ]
+    assert result["bindings"]["mcp_tools"]["4197a87e-1c04-5680-b89f-06d0d85cb84c"][-2:] == [
+        "ability_catalog_query",
+        "room_state_query",
+    ]
 
 
 @pytest.mark.asyncio

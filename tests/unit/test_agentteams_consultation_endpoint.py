@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
 import pytest
 
@@ -55,6 +56,13 @@ def test_scientific_interpretation_request_accepts_gateway_payload() -> None:
     assert request.requester_ref == "user-1"
     assert request.work_item_id == "plan-01"
     assert request.execution_mode == "readonly_consultation"
+
+
+def test_room_message_request_accepts_model_override() -> None:
+    model_id = uuid4()
+    request = AgentTeamsRoomMessageRequest(content="切换模型后继续", model_id=model_id)
+
+    assert request.model_id == model_id
 
 
 @pytest.mark.asyncio
@@ -171,3 +179,27 @@ async def test_duplicate_room_message_does_not_dispatch_manager_task(
 
     assert result["response_dispatch"] == "deduplicated"
     delay.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_room_message_dispatches_selected_model_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cygnusx.infrastructure.celery_app.tasks import agentteams as task_module
+
+    delay = Mock()
+    monkeypatch.setattr(task_module.respond_to_room_message, "delay", delay)
+    service = SimpleNamespace(
+        post_room_message=AsyncMock(return_value={"event_id": "evt-1"})
+    )
+    model_id = uuid4()
+
+    result = await post_case_message(
+        "bioops_1",
+        AgentTeamsRoomMessageRequest(content="使用备用模型继续", model_id=model_id),
+        "user-1",
+        service,
+    )
+
+    assert result["response_dispatch"] == "queued"
+    delay.assert_called_once_with("bioops_1", "user-1", "使用备用模型继续", None, str(model_id))

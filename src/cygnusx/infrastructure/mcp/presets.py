@@ -1223,22 +1223,80 @@ async def _platform_ability_catalog_query(
     清单；传 ``agent_id`` 返回该 Agent 的 detail（四段契约 + 输入示例）。
     """
     from cygnusx.infrastructure.config.agent_ability_catalog import agent_ability_catalog
+    from cygnusx.infrastructure.config.agent_loader import load_agent_configs
 
     agent_id = str(arguments.get("agent_id") or "").strip()
+    configs = {
+        str(config.get("agent_id")): config
+        for config in load_agent_configs()
+        if config.get("agent_id")
+    }
+
+    def bindings(config: dict[str, Any]) -> dict[str, Any]:
+        features = config.get("features") or {}
+        packs = features.get("tool_packs") or []
+        mcp_tools: dict[str, list[str]] = {}
+        for pack in packs:
+            if not isinstance(pack, dict):
+                continue
+            for server_id, names in (pack.get("mcp_tools") or {}).items():
+                if not isinstance(names, list):
+                    continue
+                values = [str(name).strip() for name in names if str(name).strip()]
+                if values:
+                    mcp_tools.setdefault(str(server_id), []).extend(values)
+        return {
+            "skill_ids": [
+                str(value).strip()
+                for value in (config.get("skill_ids") or [])
+                if str(value).strip()
+            ],
+            "mcp_ids": [
+                str(value).strip()
+                for value in (config.get("mcp_ids") or [])
+                if str(value).strip()
+            ],
+            "mcp_tools": {
+                server_id: list(dict.fromkeys(names))
+                for server_id, names in mcp_tools.items()
+            },
+        }
+
     if agent_id:
         entry = agent_ability_catalog.get(agent_id)
-        if not entry:
+        config = configs.get(agent_id) or {}
+        if not entry and not config:
             return {"success": False, "error": f"Agent '{agent_id}' 未在能力目录登记"}
-        return {"success": True, "agent_id": agent_id, "detail": entry}
-    agents = [
-        {
-            "agent_id": aid,
-            "summary": entry.get("summary") or "",
-            "chat_entry": bool(entry.get("chat_entry", True)),
-            "requires_formal_delivery": bool(entry.get("requires_formal_delivery", False)),
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "detail": entry,
+            "bindings": bindings(config),
         }
-        for aid, entry in sorted(agent_ability_catalog.all().items())
-    ]
+
+    agents = []
+    catalog = agent_ability_catalog.all()
+    for aid in sorted(set(catalog) | set(configs)):
+        entry = catalog.get(aid) or {}
+        config = configs.get(aid) or {}
+        features = config.get("features") or {}
+        agentteams = features.get("agentteams") or {}
+        asset_bindings = bindings(config)
+        agents.append(
+            {
+                "agent_id": aid,
+                "name": str(config.get("name") or aid),
+                "summary": entry.get("summary") or "",
+                "enabled": bool(config) and config.get("is_active", True) is not False,
+                "internal_case_role": str(features.get("internal_case_role") or ""),
+                "category": str(agentteams.get("category") or config.get("category") or "general"),
+                "recruitable": bool(agentteams.get("recruitable", False)),
+                "planner_eligible": bool(agentteams.get("planner_eligible", False)),
+                "chat_entry": bool(entry.get("chat_entry", True)),
+                "requires_formal_delivery": bool(entry.get("requires_formal_delivery", False)),
+                **asset_bindings,
+            }
+        )
     return {"success": True, "agents": agents}
 
 
@@ -1682,9 +1740,12 @@ PLATFORM_PRESET_TOOLS = [
         "name": "ability_catalog_query",
         "description": (
             "查询平台内置 Agent 能力目录（唯一权威数据源，只读）。默认返回全部 Agent 的"
-            " summary 层清单（agent_id / 触发摘要 / 是否聊天入口）；传 agent_id 返回该 Agent"
-            " 的 detail（能力、不适用场景、转交时机、偏好输入、输入示例）。被问「平台上有哪些"
-            " Agent / 某 Agent 会什么 / 谁适合接这个需求」时必须调用本工具，禁止凭记忆背诵。"
+            " summary 层清单（agent_id / 名称 / 是否启用 / 协作室角色 / 招募资格 / 是否聊天入口 /"
+            " Skill 绑定 / MCP 绑定及工具白名单）；"
+            "传 agent_id 返回该 Agent"
+            " 的 detail（能力、不适用场景、转交时机、偏好输入、输入示例及绑定资产）。被问「平台上有哪些"
+            " Agent / 某 Agent 会什么 / 谁适合接这个需求」时必须调用本工具，禁止凭记忆背诵；"
+            "询问全部 Agent 或当前 Skill/MCP 时不得只返回当前任务相关的子集。"
         ),
         "inputSchema": {
             "type": "object",

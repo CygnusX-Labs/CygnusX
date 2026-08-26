@@ -70,6 +70,30 @@ class _FakeManager:
             "entries": [{"name": "a.csv", "type": "file", "size": 3, "mtime": 1.0}],
         }
 
+    async def browser_navigate(self, *args, **kwargs):
+        return {"url": args[1], "title": "Example", "status": 200, "text": "ok", "links": []}
+
+    async def browser_screenshot(self, *args, **kwargs):
+        return {"path": "output/page.png", "size": 10}
+
+    async def browser_click(self, *args, **kwargs):
+        return {"selector": args[1], "url": "https://example.test"}
+
+    async def browser_type(self, *args, **kwargs):
+        return {"selector": args[1], "url": "https://example.test"}
+
+    async def browser_press(self, *args, **kwargs):
+        return {"selector": args[1], "key": args[2], "url": "https://example.test"}
+
+    async def browser_close(self, *args, **kwargs):
+        return {"closed": True}
+
+    async def document_call(self, session_id, endpoint, payload, image=None, user_id=None):
+        return {"endpoint": endpoint, **payload}
+
+    async def onlyoffice_status(self, *args, **kwargs):
+        return {"configured": False, "reachable": False}
+
 
 @pytest.fixture
 def fake_manager(monkeypatch) -> _FakeManager:
@@ -82,12 +106,11 @@ def fake_manager(monkeypatch) -> _FakeManager:
 
 
 @pytest.mark.unit
-@pytest.mark.quarantine(reason="Studio 工具数量已变为 13 个，断言仍期望 12 个")
-def test_tool_schemas_cover_exactly_twelve_tools():
-    """12 个内置工具（含只读知识库检索与 ask_user 澄清），名称与 STUDIO_TOOL_NAMES 一致。"""
+def test_tool_schemas_cover_all_tools():
+    """全部 Studio 内置工具均提供 OpenAI schema。"""
     names = {t["function"]["name"] for t in STUDIO_TOOL_SCHEMAS}
     assert names == set(STUDIO_TOOL_NAMES)
-    assert len(STUDIO_TOOL_SCHEMAS) == 12
+    assert len(STUDIO_TOOL_SCHEMAS) == len(STUDIO_TOOL_NAMES)
     assert {
         "datahub_import",
         "platform_result_import",
@@ -95,6 +118,18 @@ def test_tool_schemas_cover_exactly_twelve_tools():
         "update_plan",
         "pipeline_query",
         "knowledge_search",
+        "browser_navigate",
+        "browser_screenshot",
+        "browser_click",
+        "browser_type",
+        "browser_press",
+        "browser_close",
+        "document_inspect",
+        "document_create",
+        "document_edit",
+        "document_convert",
+        "onlyoffice_status",
+        "onlyoffice_convert",
         "ask_user",
     } <= names
 
@@ -376,6 +411,23 @@ async def test_sandbox_execute_ten_minutes_stays_inline(fake_manager: _FakeManag
 
     assert result["success"] is True
     assert fake_manager.exec_calls[0]["timeout_sec"] == 600
+
+
+@pytest.mark.unit
+async def test_browser_and_document_tools_dispatch(fake_manager: _FakeManager):
+    browser = await execute_studio_tool(
+        "browser_navigate", {"url": "https://example.test"}, "sess-1", user_id="user-1"
+    )
+    document = await execute_studio_tool(
+        "document_edit",
+        {"path": "output/report.md", "operations": [{"old": "a", "new": "b"}]},
+        "sess-1",
+        user_id="user-1",
+    )
+    assert browser["success"] is True
+    assert browser["result"]["llm_payload"]["status"] == 200
+    assert document["success"] is True
+    assert document["result"]["llm_payload"]["endpoint"] == "/document/edit"
 
 
 # ===== workspace_edit / read / write =====

@@ -167,6 +167,7 @@ class StudioImageDef(BaseModel):
 
     dockerfile: str = ""
     image: str = ""
+    runtime_profile: str | None = None
     needs_r: bool = False
     capabilities: list[str] = Field(default_factory=lambda: ["code"])
 
@@ -188,7 +189,7 @@ class StudioConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    default_image: str = "cygnusx-analysis:core-2026.07"
+    default_image: str = "cygnusx-sandbox-browser-office:v0.0.2dev"
     session: StudioSessionConfig = Field(default_factory=StudioSessionConfig)
     sandbox: StudioSandboxConfig = Field(default_factory=StudioSandboxConfig)
     ui: StudioUiConfig = Field(default_factory=StudioUiConfig)

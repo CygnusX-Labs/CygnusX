@@ -76,6 +76,43 @@ def _wait_manager_reply(client: httpx.Client, room_id: str, since: float, timeou
     pytest.fail(f"Manager did not reply within {timeout_s}s in room {room_id}")
 
 
+def _wait_multi_expert_summary(
+    client: httpx.Client, room_id: str, timeout_s: float = 120
+) -> list[dict]:
+    """Wait for two worker replies followed by one Manager terminal reply."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        events = _fetch_all_room_events(client, room_id)
+        worker_replies = [
+            event
+            for event in events
+            if event.get("event_type") == "room.agent_message"
+            and (event.get("payload") or {}).get("payload", {}).get("role") == "worker"
+        ]
+        manager_replies = [
+            event
+            for event in events
+            if event.get("event_type") == "room.agent_message"
+            and (event.get("payload") or {}).get("payload", {}).get("role")
+            in {"bioops-manager", "manager"}
+        ]
+        if len(worker_replies) >= 2 and manager_replies:
+            return events
+        time.sleep(3)
+    pytest.fail(
+        f"two expert replies and a Manager summary were not observed within {timeout_s}s "
+        f"in room {room_id}"
+    )
+
+
+def _event_content(event: dict) -> str:
+    payload = event.get("payload") or {}
+    nested = payload.get("payload") if isinstance(payload, dict) else {}
+    if isinstance(nested, dict):
+        return str(nested.get("content") or "")
+    return ""
+
+
 def _fetch_all_room_events(client: httpx.Client, room_id: str, page_limit: int = 100) -> list[dict]:
     """按游标翻页拉取全量房间事件；空页视为终止（防御分页死循环：最多 50 页）。"""
     events: list[dict] = []
@@ -122,6 +159,40 @@ def test_live_e2e7_hi_creates_no_case() -> None:
             e for e in events if e.get("event_type") in {"room.ask_user", "room.agent_message"}
         ]
         assert len(manager_replies) == 1, f"应仅一条 Manager 回复，实际 {len(manager_replies)}"
+
+
+def test_live_multi_expert_consultation_is_summarized_by_manager() -> None:
+    """真实栈回放用户原话：两位专家先答，Manager 再汇总且不发执行澄清卡。"""
+    content = "@单细胞分析师 @可视化助手 你们两个可以搭配干活吗"
+    with _client() as client:
+        room_id = _create_room(client, f"live-multi-expert-{uuid.uuid4().hex[:8]}")
+        sent = client.post(f"{API}/rooms/{room_id}/messages", json={"content": content})
+        sent.raise_for_status()
+
+        events = _wait_multi_expert_summary(client, room_id)
+        worker_replies = [
+            event
+            for event in events
+            if event.get("event_type") == "room.agent_message"
+            and (event.get("payload") or {}).get("payload", {}).get("role") == "worker"
+        ]
+        manager_replies = [
+            event
+            for event in events
+            if event.get("event_type") == "room.agent_message"
+            and (event.get("payload") or {}).get("payload", {}).get("role")
+            in {"bioops-manager", "manager"}
+        ]
+        manager_reply = _event_content(manager_replies[-1])
+
+        print("\n=== Manager replay ===\n" + manager_reply)
+        assert len(worker_replies) >= 2
+        assert manager_reply
+        assert not [event for event in events if event.get("event_type") == "room.ask_user"]
+        assert "收到你的执行请求" not in manager_reply
+        assert "请上传文件或填写工作区路径" not in manager_reply
+        assert "单细胞" in manager_reply
+        assert "可视化" in manager_reply
 
 
 def test_live_e2e2_events_limit_boundary() -> None:

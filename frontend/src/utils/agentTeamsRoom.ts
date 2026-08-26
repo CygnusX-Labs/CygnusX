@@ -211,12 +211,17 @@ export interface RoomRoleMetadata {
 }
 
 const SYSTEM_SENDER: RoomSender = { name: '系统', avatar: '⚙️', color: '#64748b', role: 'worker' }
-const MANAGER_FALLBACK: RoomSender = { name: 'Manager', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
+const MANAGER_FALLBACK: RoomSender = { name: '生物信息部门经理', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
 const QC_FALLBACK: RoomSender = { name: '质量审计员', avatar: '🛡️', color: '#d97706', role: 'worker' }
 const USER_SENDER: RoomSender = { name: '我', avatar: '🧑‍💻', color: '#4f8ef7', role: 'manager' }
 
 /** 工具 display name 映射：命中时展示中文，未命中时保留原始工具名。 */
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  cygnusx_search_memory: '检索长期记忆',
+  cygnusx_save_memory: '保存长期记忆',
+  cygnusx_update_memory: '更新长期记忆',
+  cygnusx_forget_memory: '遗忘长期记忆',
+  cygnusx_update_memory_block: '更新记忆块',
   workspace_file_preview: '读取文件',
   workspace_read_file: '读取文件',
   sandbox_execute: '沙箱执行',
@@ -353,20 +358,37 @@ function displayStreamingContent(raw: string): string {
 function normalizeManagerReport(value: unknown): ManagerReport | null {
   if (!value || typeof value !== 'object') return null
   const payload = value as Record<string, unknown>
-  const conclusion = pickString(payload, ['conclusion'])
+  const conclusion = sanitizeManagerText(pickString(payload, ['conclusion']))
   if (!conclusion) return null
   const hardGate = payload.hard_gate || payload.hardGate
   const proposedSubmission = payload.proposed_submission || payload.proposedSubmission
   return {
     conclusion,
     recommendations: toStringList(payload.recommendations),
-    risks: toStringList(payload.risks),
+    risks: visibleManagerRisks(payload.risks),
     evidenceRefs: toStringList(payload.evidence_refs || payload.evidenceRefs),
     ...(hardGate && typeof hardGate === 'object' ? { hardGate: hardGate as Record<string, unknown> } : {}),
     ...(proposedSubmission && typeof proposedSubmission === 'object'
       ? { proposedSubmission: proposedSubmission as Record<string, unknown> }
       : {}),
   }
+}
+
+const INTERNAL_CAPABILITY_RISK_MARKER = '未获准调用能力目录类只读工具'
+
+function sanitizeManagerText(value: string): string {
+  if (!value.includes(INTERNAL_CAPABILITY_RISK_MARKER)) return value
+  return value
+    .replace(
+      /(?:^|\n)\s*(?:#{1,6}\s*)?风险\s*[:：]?\s*本轮未获准调用能力目录类只读工具，.*?平台能力目录实况为准。?\s*(?=\n|$)/is,
+      '\n',
+    )
+    .replace(/\s*本轮未获准调用能力目录类只读工具，.*?平台能力目录实况为准。?/is, '')
+    .trim()
+}
+
+function visibleManagerRisks(value: unknown): string[] {
+  return toStringList(value).filter((item) => !item.includes(INTERNAL_CAPABILITY_RISK_MARKER))
 }
 
 function toStringList(value: unknown): string[] {
@@ -591,9 +613,9 @@ function extractJsonEnvelope(content: string): Record<string, unknown> | null {
 export function parseManagerReport(content: string): ManagerReport | null {
   const envelope = extractJsonEnvelope(content)
   if (!envelope) return null
-  const conclusion = pickString(envelope, ['conclusion'])
+  const conclusion = sanitizeManagerText(pickString(envelope, ['conclusion']))
   const recommendations = toStringList(envelope.recommendations)
-  const risks = toStringList(envelope.risks)
+  const risks = visibleManagerRisks(envelope.risks)
   const evidenceRefs = toStringList(envelope.evidence_refs)
   const hardGate =
     envelope.hard_gate && typeof envelope.hard_gate === 'object' && !Array.isArray(envelope.hard_gate)
@@ -688,22 +710,25 @@ export function projectCaseEvent(
   }
 
   if (event_type === 'room.agent_message') {
-    // Manager 回复：audit actor 是 bioops-manager，经 role_labels/兜底渲染为协作经理气泡。
+    // Bridge 的 audit actor 可能固定为内部 Manager 身份；worker 回复必须优先
+    // 使用事件载荷里的 agent_id，否则所有领域 Agent 都会显示成 Manager。
     const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
     const content = pickString(inner, ['content']) || pickString(body, ['summary'])
     if (!content || isPastedTextNotice(content)) return null
-    const sender = resolveRoomSender(actor || 'bioops-manager', metadata)
+    const role = pickString(inner, ['role'])
+    const senderActor = role === 'worker'
+      ? pickString(inner, ['agent_id']) || actor || 'unknown-agent'
+      : actor || 'bioops-manager'
+    const sender = resolveRoomSender(senderActor, metadata)
     const streamId = pickString(inner, ['stream_id'])
     // Manager 回复链路可能把整段 JSON 信封塞进 content；能解析出结构化字段时
     // 交给前端做结论/建议/风险/硬门禁的结构化展示，解析失败回退纯文本气泡。
-    const managerReport = sender.role === 'manager'
-      ? normalizeManagerReport(inner.manager_report) || parseManagerReport(content)
-      : null
+    const managerReport = normalizeManagerReport(inner.manager_report) || parseManagerReport(content)
     return {
       id: event_id,
       sender,
       kind: 'speech',
-      content: truncate(content, 2_000),
+      content: truncate(sender.role === 'manager' ? sanitizeManagerText(content) : content, 2_000),
       ...(streamId ? { streamId } : {}),
       ...(managerReport ? { managerReport } : {}),
     }
@@ -1352,7 +1377,11 @@ export function projectCaseEvents(
       if (!streamId || !delta || (channel !== 'reasoning' && channel !== 'content')) continue
       let stream = streams.get(streamId)
       if (!stream) {
-        const sender = resolveRoomSender(event.actor || pickString(inner, ['agent_id']) || 'bioops-manager', metadata)
+        const streamRole = pickString(inner, ['role'])
+        const streamActor = streamRole === 'worker'
+          ? pickString(inner, ['agent_id']) || event.actor || 'unknown-agent'
+          : event.actor || pickString(inner, ['agent_id']) || 'bioops-manager'
+        const sender = resolveRoomSender(streamActor, metadata)
         stream = {
           id: `stream:${streamId}`,
           sender,

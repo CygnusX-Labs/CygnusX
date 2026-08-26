@@ -761,7 +761,11 @@ class AgentService:
     # --- 调度上下文组装 ---
 
     async def assemble_context(
-        self, agent_id: str, user_id: str | None = None, tool_query: str | None = None
+        self,
+        agent_id: str,
+        user_id: str | None = None,
+        tool_query: str | None = None,
+        model_id: uuid.UUID | None = None,
     ) -> AgentContext | None:
         """供调度中枢调用：组装一次 LLM 请求所需的全部拼装件。
 
@@ -772,7 +776,7 @@ class AgentService:
         if agent is None or not agent.is_active:
             return None
 
-        runtime_model_id = agent.model_id
+        runtime_model_id = model_id or agent.model_id
         runtime_mcp_ids = list(agent.mcp_ids or [])
         runtime_skill_ids = list(agent.skill_ids or [])
         runtime_features = dict(agent.features or {})
@@ -781,7 +785,7 @@ class AgentService:
             capability = await self._get_user_capability(user_id, agent_id)
             if capability is not None:
                 user_capabilities_customized = True
-                runtime_model_id = capability.model_id or agent.model_id
+                runtime_model_id = model_id or capability.model_id or agent.model_id
                 runtime_mcp_ids = list(capability.mcp_ids or [])
                 runtime_skill_ids = list(capability.skill_ids or [])
                 runtime_features.update(
@@ -1063,6 +1067,10 @@ class AgentService:
             ):
                 continue
             ability = agent_ability_catalog.get(candidate.agent_id)
+            from cygnusx.application.services.agentteams_capability_registry import (
+                persona_routing_summary,
+            )
+
             # F5 渐进暴露：转交（派单）目录只注入 summary 层触发分类器；
             # 四段契约下沉 detail 层，由会诊/派单确认阶段按需加载。
             # 依据: 实测 — 改造前 3058 tokens → 改造后 1715 tokens
@@ -1075,6 +1083,7 @@ class AgentService:
                     "description": ability.get("summary") or candidate.description,
                     "category": candidate.category,
                     "chat_entry": ability.get("chat_entry", True),
+                    "persona": persona_routing_summary(candidate.features),
                 }
             )
         if not catalog:
@@ -1082,6 +1091,7 @@ class AgentService:
         return (
             "## 当前可转交的 Agent（运行时目录）\n\n"
             f"{json.dumps(catalog, ensure_ascii=False)}\n\n"
+            "目录中的 persona 字段是目标 Agent 配置的表达风格来源；回答其他 Agent 的性格、工作方式或交付边界时优先依据该字段，不要只根据 description 推断。\n"
             "当用户任务不属于你的职责且目标明确时，必须调用 `transfer_to_agent` 转交给目录中的目标。"
             "不要让用户手动挑选 Agent，也不要编造目录外的 Agent。"
         )

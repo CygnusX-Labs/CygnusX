@@ -43,6 +43,7 @@ from cygnusx.application.services.studio_context_service import (
 from cygnusx.core.exceptions import CygnusXError
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 from cygnusx.infrastructure.config.prompt_loader import get_prompt
+from cygnusx.infrastructure.config.studio_loader import get_studio_config
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 from cygnusx.infrastructure.database.models.report import ReportModel
 from cygnusx.infrastructure.studio.manager import (
@@ -115,6 +116,18 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "update_plan",
         "pipeline_query",
         "knowledge_search",
+        "browser_navigate",
+        "browser_screenshot",
+        "browser_click",
+        "browser_type",
+        "browser_press",
+        "browser_close",
+        "document_inspect",
+        "document_create",
+        "document_edit",
+        "document_convert",
+        "onlyoffice_status",
+        "onlyoffice_convert",
         "ask_user",
     }
 )
@@ -388,6 +401,148 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     ASK_USER_TOOL_SCHEMA,
 ]
+
+
+def _studio_function_schema(
+    name: str, description: str, properties: dict[str, Any], required: list[str] | None = None
+) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required or [],
+            },
+        },
+    }
+
+
+STUDIO_TOOL_SCHEMAS.extend(
+    [
+        _studio_function_schema(
+            "browser_navigate",
+            "在会话专属 Chromium 中打开网页，返回标题、状态码、正文摘要和链接。仅允许 http/https；遵循沙箱网络白名单。",
+            {
+                "url": {"type": "string", "description": "目标 URL"},
+                "wait_until": {
+                    "type": "string",
+                    "enum": ["commit", "domcontentloaded", "load", "networkidle"],
+                    "default": "domcontentloaded",
+                },
+                "timeout": {"type": "integer", "default": 30, "maximum": 120},
+            },
+            ["url"],
+        ),
+        _studio_function_schema(
+            "browser_screenshot",
+            "截取当前 Chromium 页面或 CSS 选择器元素，图片写入工作区并返回路径。",
+            {
+                "path": {"type": "string", "default": "output/browser-screenshot.png"},
+                "selector": {"type": "string", "default": ""},
+                "full_page": {"type": "boolean", "default": False},
+                "timeout": {"type": "integer", "default": 30, "maximum": 120},
+            },
+        ),
+        _studio_function_schema(
+            "browser_click",
+            "点击当前页面中唯一明确的 CSS 选择器元素。",
+            {
+                "selector": {"type": "string"},
+                "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
+                "click_count": {"type": "integer", "default": 1, "maximum": 3},
+                "timeout": {"type": "integer", "default": 30, "maximum": 120},
+            },
+            ["selector"],
+        ),
+        _studio_function_schema(
+            "browser_type",
+            "向当前页面的输入控件填入文本；默认清空后填入，避免误拼接用户数据。",
+            {
+                "selector": {"type": "string"},
+                "text": {"type": "string"},
+                "clear": {"type": "boolean", "default": True},
+                "timeout": {"type": "integer", "default": 30, "maximum": 120},
+            },
+            ["selector", "text"],
+        ),
+        _studio_function_schema(
+            "browser_press",
+            "向当前页面的指定元素发送键盘按键。",
+            {
+                "selector": {"type": "string"},
+                "key": {"type": "string"},
+                "timeout": {"type": "integer", "default": 30, "maximum": 120},
+            },
+            ["selector", "key"],
+        ),
+        _studio_function_schema(
+            "browser_close",
+            "关闭当前会话的 Chromium 上下文并清理页面状态。",
+            {},
+        ),
+        _studio_function_schema(
+            "document_inspect",
+            "检查工作区文档的格式、大小、页/表信息和受限预览。支持文本、DOCX、XLSX 等。",
+            {"path": {"type": "string", "description": "相对 /workspace 的文档路径"}},
+            ["path"],
+        ),
+        _studio_function_schema(
+            "document_create",
+            "创建文本、DOCX 或 XLSX 文档。内容落在会话工作区，不能写入 input/ 或 ref/。",
+            {
+                "path": {"type": "string"},
+                "title": {"type": "string", "default": ""},
+                "content": {"type": "string", "default": ""},
+            },
+            ["path"],
+        ),
+        _studio_function_schema(
+            "document_edit",
+            "对文本、DOCX 或 XLSX 文档执行受限字符串替换，返回修改数量和新的文档摘要。",
+            {
+                "path": {"type": "string"},
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                        "required": ["old", "new"],
+                    },
+                },
+            },
+            ["path", "operations"],
+        ),
+        _studio_function_schema(
+            "document_convert",
+            "用沙箱内 LibreOffice headless 将文档转换为 PDF、DOCX、XLSX 等格式，产物写入 output/。",
+            {
+                "path": {"type": "string"},
+                "output_format": {"type": "string", "description": "例如 pdf、docx、xlsx"},
+                "output_path": {"type": "string", "default": ""},
+            },
+            ["path", "output_format"],
+        ),
+        _studio_function_schema(
+            "onlyoffice_status",
+            "检查当前会话是否配置并能访问 OnlyOffice Document Server；不可用时不会伪造成功。",
+            {},
+        ),
+        _studio_function_schema(
+            "onlyoffice_convert",
+            "请求 OnlyOffice Document Server 转换文档。只有配置远程 Document Server 且文档可被其访问时才执行。",
+            {
+                "path": {"type": "string"},
+                "output_format": {"type": "string"},
+                "output_path": {"type": "string", "default": ""},
+                "async_mode": {"type": "boolean", "default": False},
+            },
+            ["path", "output_format"],
+        ),
+    ]
+)
 
 # ===== Studio 系统提示词后缀（架构设计 §5.2，中文紧凑版）=====
 
@@ -996,6 +1151,78 @@ async def _pipeline_query(args: dict[str, Any]) -> dict[str, Any]:
     return _ok_result(llm_payload, dict(llm_payload))
 
 
+async def _browser_tool(
+    name: str,
+    args: dict[str, Any],
+    session_id: str,
+    image: str | None,
+    user_id: str | None,
+) -> dict[str, Any]:
+    if name == "browser_navigate":
+        data = await studio_sandbox_manager.browser_navigate(
+            session_id, str(args.get("url") or ""), str(args.get("wait_until") or "domcontentloaded"),
+            int(args.get("timeout") or 30), image=image, user_id=user_id,
+        )
+    elif name == "browser_screenshot":
+        data = await studio_sandbox_manager.browser_screenshot(
+            session_id, str(args.get("path") or "output/browser-screenshot.png"),
+            str(args.get("selector") or ""), bool(args.get("full_page", False)),
+            int(args.get("timeout") or 30), image=image, user_id=user_id,
+        )
+    elif name == "browser_click":
+        data = await studio_sandbox_manager.browser_click(
+            session_id, str(args.get("selector") or ""), str(args.get("button") or "left"),
+            int(args.get("click_count") or 1), int(args.get("timeout") or 30),
+            image=image, user_id=user_id,
+        )
+    elif name == "browser_type":
+        data = await studio_sandbox_manager.browser_type(
+            session_id, str(args.get("selector") or ""), str(args.get("text") or ""),
+            bool(args.get("clear", True)), int(args.get("timeout") or 30),
+            image=image, user_id=user_id,
+        )
+    elif name == "browser_press":
+        data = await studio_sandbox_manager.browser_press(
+            session_id, str(args.get("selector") or ""), str(args.get("key") or ""),
+            int(args.get("timeout") or 30), image=image, user_id=user_id,
+        )
+    elif name == "browser_close":
+        data = await studio_sandbox_manager.browser_close(session_id, image=image, user_id=user_id)
+    else:
+        return _error_result(f"未知浏览器工具: {name}")
+    return _ok_result(dict(data), dict(data))
+
+
+async def _document_tool(
+    name: str,
+    args: dict[str, Any],
+    session_id: str,
+    image: str | None,
+    user_id: str | None,
+) -> dict[str, Any]:
+    if name == "onlyoffice_status":
+        data = await studio_sandbox_manager.onlyoffice_status(session_id, image=image, user_id=user_id)
+    else:
+        payload: dict[str, Any] = {
+            key: args[key]
+            for key in ("path", "title", "content", "operations", "output_format", "output_path", "async_mode")
+            if key in args
+        }
+        endpoint = {
+            "document_inspect": "/document/inspect",
+            "document_create": "/document/create",
+            "document_edit": "/document/edit",
+            "document_convert": "/document/convert",
+            "onlyoffice_convert": "/onlyoffice/convert",
+        }.get(name)
+        if endpoint is None:
+            return _error_result(f"未知文档工具: {name}")
+        data = await studio_sandbox_manager.document_call(
+            session_id, endpoint, payload, image=image, user_id=user_id
+        )
+    return _ok_result(dict(data), dict(data))
+
+
 # ===== 分发器 =====
 
 
@@ -1020,6 +1247,32 @@ async def execute_studio_tool(
       success=False 的友好文案，绝不向上抛出。
     """
     try:
+        browser_tools = {
+            "browser_navigate", "browser_screenshot", "browser_click",
+            "browser_type", "browser_press", "browser_close",
+        }
+        document_tools = {
+            "document_inspect", "document_create", "document_edit", "document_convert",
+            "onlyoffice_status", "onlyoffice_convert",
+        }
+        if name in browser_tools or name in document_tools:
+            config = get_studio_config()
+            effective_image = image or config.default_image
+            granted = set(config.capabilities_for_image(effective_image))
+            required = "browser" if name in browser_tools else "document"
+            if required not in granted:
+                upgraded_image = config.image_for_capabilities(["code", required])
+                if not upgraded_image:
+                    return _error_result(
+                        f"当前 Studio 未配置 {required} 能力镜像，无法启动对应工具。"
+                    )
+                await studio_sandbox_manager.ensure_running(
+                    session_id,
+                    image=upgraded_image,
+                    user_id=user_id,
+                    capabilities_requested=["code", required],
+                )
+                image = upgraded_image
         if name == "sandbox_execute":
             return await _sandbox_execute(args, session_id, image, on_output, user_id)
         if name == "workspace_write":
@@ -1042,6 +1295,10 @@ async def execute_studio_tool(
             return await _update_plan(args)
         if name == "pipeline_query":
             return await _pipeline_query(args)
+        if name in browser_tools:
+            return await _browser_tool(name, args, session_id, image, user_id)
+        if name in document_tools:
+            return await _document_tool(name, args, session_id, image, user_id)
         if name == "knowledge_search":
             project_id = None
             if db is not None:

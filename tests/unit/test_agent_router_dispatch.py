@@ -72,6 +72,7 @@ def _catalog_entry(dto: AgentTemplateDTO) -> dict[str, Any]:
         "routing_hints": [],
         "capability_tags": [],
         "routing_notes": "",
+        "persona": {},
         "avatar": dto.avatar,
         "color": dto.color,
     }

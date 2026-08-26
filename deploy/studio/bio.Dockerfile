@@ -11,6 +11,13 @@ LABEL description="OmicStudio sandbox bio image (scanpy + NGS CLI tools)"
 
 USER root
 
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 # 生信 CLI 工具（--no-install-recommends 控制体积；seqkit 部分 Debian 版本无此包，容错跳过）
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

@@ -416,6 +416,8 @@ async def test_worker_no_progress_is_reported_as_partial_success(env, monkeypatc
     assert result["llm_payload"]["results"][0]["guard_triggered"] is True
     assert result["llm_payload"]["results"][0].get("error") is None
     assert "已停止重复调用" in result["llm_payload"]["results"][0]["answer"]
+    envelope = json.loads(result["llm_payload"]["results"][0]["answer"])
+    assert envelope["risks"] == ["工具连续返回相同结果，未继续执行重复调用。"]
 
 
 @pytest.mark.asyncio
@@ -725,6 +727,39 @@ def test_child_tools_safe_only_keeps_readonly_annotated_mcp_tools() -> None:
 
     assert "ability_catalog_query" in names
     assert {"remote_lookup", "legacy_lookup", "dangerous_mcp"}.isdisjoint(names)
+
+
+def test_manager_safe_only_keeps_explicit_memory_management_tools(monkeypatch) -> None:
+    """Manager 可按用户明确指令管理本人记忆，普通只读工具仍受 safe_only 约束。"""
+    schema = SimpleNamespace(
+        invocation_mode="backend_sync",
+        requires_confirm=False,
+        annotations=SimpleNamespace(read_only_hint=False),
+    )
+    monkeypatch.setattr(
+        pss,
+        "schema_loader",
+        SimpleNamespace(get_tool=lambda name: schema if name.startswith("cygnusx_") else None),
+    )
+    ctx = _ctx(
+        "agentteams-manager",
+        tools=[
+            {"function": {"name": "cygnusx_save_memory"}},
+            {"function": {"name": "cygnusx_update_memory"}},
+            {"function": {"name": "cygnusx_forget_memory"}},
+            {"function": {"name": "cygnusx_update_memory_block"}},
+        ],
+    )
+
+    tools = pss.ParallelSubAgentService._prepare_child_tools(ctx, safe_only=True)
+    names = {(tool.get("function") or {}).get("name") for tool in tools}
+
+    assert {
+        "cygnusx_save_memory",
+        "cygnusx_update_memory",
+        "cygnusx_forget_memory",
+        "cygnusx_update_memory_block",
+    } <= names
 
 
 @pytest.mark.asyncio

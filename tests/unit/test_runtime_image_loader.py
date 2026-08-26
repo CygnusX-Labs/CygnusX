@@ -28,6 +28,8 @@ def test_real_runtime_registry_resolves_profiles():
     } <= set(plot.software)
     assert {"single-cell", "plotting", "r"} <= scrna.capabilities
 
+    assert "base" not in config.profiles
+
 
 def test_capability_selection_prefers_smallest_profile():
     config = RuntimeImageRegistryManager("data/ai/runtime_images.yaml").get_config()

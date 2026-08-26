@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from sqlalchemy import select, update
@@ -17,6 +18,7 @@ from cygnusx.core.exceptions import BusinessError, NotFoundError
 from cygnusx.core.security import decrypt_value, encrypt_value
 from cygnusx.infrastructure.database.models.search_provider import SearchProviderConfigModel
 from cygnusx.infrastructure.web_search.service import WebSearchResult, WebSearchService
+from loguru import logger
 
 MASKED_API_KEY = "********"
 
@@ -154,6 +156,7 @@ class SearchProviderService:
         )
 
     async def search_default(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
+        started = time.monotonic()
         result = await self._db.execute(
             select(SearchProviderConfigModel).where(
                 SearchProviderConfigModel.is_enabled.is_(True),
@@ -162,7 +165,21 @@ class SearchProviderService:
         )
         model = result.scalar_one_or_none()
         if model is None:
+            logger.warning("web_search unavailable: no enabled default provider")
             raise BusinessError("未配置可用的联网搜索服务商")
         if model.provider_type == "scrape":
+            logger.warning("web_search unavailable: provider={} is scrape", model.id)
             raise BusinessError("本地搜索源暂未启用，请配置 API 搜索服务商")
-        return [item.as_dict() for item in await self._search_with(model, query, max_results)]
+        try:
+            rows = [item.as_dict() for item in await self._search_with(model, query, max_results)]
+        except Exception as exc:
+            logger.bind(provider=model.id).warning(
+                "web_search failed query={!r}: {}", query[:200], str(exc)[:500]
+            )
+            raise
+        logger.bind(provider=model.id, result_count=len(rows)).info(
+            "web_search completed query={!r} duration_ms={}",
+            query[:200],
+            round((time.monotonic() - started) * 1000),
+        )
+        return rows

@@ -204,7 +204,7 @@ class AgentTeamsCaseWatchService:
                             respond_to_room_message.delay(
                                 case_id,
                                 session.user_id,
-                                "系统交接：请 Manager 汇总刚完成的领域 Agent 交接，并说明风险与下一步。",
+                                "系统交接：请生物信息部门经理汇总刚完成的领域 Agent 交接，并说明风险与下一步。",
                             )
                             handoff_notifications[case_id] = handoff_event_id
                             changed = True

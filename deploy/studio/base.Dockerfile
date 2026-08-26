@@ -31,6 +31,13 @@ RUN printf '%s\n' \
       'retries = 10' \
       > /etc/pip.conf
 
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 # sandbox-agent 依赖（最小集）+ 数据分析栈
 COPY requirements-agent.txt /tmp/requirements-agent.txt
 RUN pip install -i https://pypi.mirrors.ustc.edu.cn/simple -r /tmp/requirements-agent.txt \

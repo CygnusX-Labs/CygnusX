@@ -274,3 +274,53 @@ def test_workspace_quota_rejects_excess_write(tmp_path, monkeypatch):
 
     assert exc_info.value.status_code == 413
     assert exc_info.value.detail["code"] == "quota_exceeded"
+
+
+@pytest.mark.unit
+async def test_document_text_create_inspect_and_edit(tmp_path: Path, monkeypatch):
+    """文档工具在无 Docker 的情况下完成文本文档的创建、检查和编辑。"""
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_ROOT", tmp_path)
+    created = await sandbox_agent.document_create(
+        sandbox_agent.DocumentCreateRequest(
+            path="output/report.md", title="Report", content="before\nvalue"
+        )
+    )
+    assert created["format"] == "md"
+
+    inspected = await sandbox_agent.document_inspect(
+        sandbox_agent.DocumentInspectRequest(path="output/report.md")
+    )
+    assert "before" in inspected["preview"]
+
+    edited = await sandbox_agent.document_edit(
+        sandbox_agent.DocumentEditRequest(
+            path="output/report.md", operations=[{"old": "before", "new": "after"}]
+        )
+    )
+    assert edited["changed"] == 1
+    assert "after" in (tmp_path / "output/report.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+async def test_document_pptx_create_inspect_and_edit(tmp_path: Path, monkeypatch):
+    pytest.importorskip("pptx")
+    monkeypatch.setattr(sandbox_agent, "WORKSPACE_ROOT", tmp_path)
+    created = await sandbox_agent.document_create(
+        sandbox_agent.DocumentCreateRequest(
+            path="output/report.pptx", title="Report", content="before"
+        )
+    )
+    assert created["format"] == "pptx"
+
+    inspected = await sandbox_agent.document_inspect(
+        sandbox_agent.DocumentInspectRequest(path="output/report.pptx")
+    )
+    assert inspected["slides"] == 1
+    assert "before" in inspected["preview"]
+
+    edited = await sandbox_agent.document_edit(
+        sandbox_agent.DocumentEditRequest(
+            path="output/report.pptx", operations=[{"old": "before", "new": "after"}]
+        )
+    )
+    assert edited["changed"] == 1

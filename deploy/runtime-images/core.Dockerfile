@@ -21,6 +21,20 @@ RUN usermod --uid 10001 "$MAMBA_USER" \
       'timeout = 60' \
       'retries = 10' \
       > /etc/pip.conf
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
+# 构建期切换中科大 apt 源，加速 apt-get（兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
+
 
 USER "$MAMBA_USER"
 # 预置中科大镜像源，加速容器内 micromamba/conda 环境安装

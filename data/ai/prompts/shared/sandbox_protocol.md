@@ -12,6 +12,8 @@
 - 不要在工作区根目录或家目录散落数据、脚本和结果文件；真正的临时文件写入 `/tmp`，任务结束即弃。
 - 文件名统一使用小写加下划线，必要时带项目名和关键参数，便于追溯与避免覆盖。
 - 交付时输出每个产物的实际路径和一句话说明；每个分析在 `output/results/` 写 `<project>_summary.md`，会话结束在 `output/README.md` 汇总分析与产物。
+- `output/README.md` 必须包含运行时 profile、实际镜像、执行日期、脚本路径、输入/参考数据标识、关键参数、随机种子、冒烟与全量验证结果、已知限制，并链接环境快照。
+- 环境快照至少包括 `output/environment.yml`（`micromamba env export -n base`）、`output/conda-explicit.txt`（`micromamba list -n base --explicit`）和 `output/software-versions.txt`（语言、工具及实际导入包版本）；命令失败时保留错误日志并在 README 标注“未生成”。
 
 ### 数值计算与表格处理
 
@@ -45,6 +47,24 @@
 - 不使用 `install.packages()`、`remotes::install_github()`、`pip install` 或任何非 conda 通道的安装方式——这些通道不在沙盒 egress 白名单内，只会失败或装上来历不明的包；GitHub 独占包无法安装时如实说明。
 - 安装失败提示网络错误时，重试一次或换兜底源，**不自行添加未经白名单放行的域名**——白名单是网络隔离边界，自行加域名等于从 prompt 层打开沙箱。
 - 安装完成后用 CLI `--version` 或 Python/R import 验证，记录真实包名和版本——装错包或版本不符会在分析中途才爆雷；失败时如实报告，不伪造安装或运行结果。
+- 每次现场安装或升级包后重新生成环境快照；即使没有现场安装，也要在交付前生成快照，不能只记录提示词中的“预装”声明。
+- 环境快照和 README 与结果一起放在 `output/` 交付目录；沙盒销毁后只保留工作区中的这些文件，不能把“本次会话安装过”作为复现依据。
+- 交付前至少执行：`micromamba env export -n base > output/environment.yml`、`micromamba list -n base --explicit > output/conda-explicit.txt`，并把 `python --version`、`R --version`、实际使用 CLI 的 `--version` 以及 Python/R 导入包版本写入 `output/software-versions.txt`；同时在 `output/README.md` 链接这三个文件和重跑命令。
 - 生成脚本先落盘，再执行；执行前先用小样本冒烟，长任务说明预期耗时。
 - 用户单独查询软件包版本、依赖或安装方式时，优先用 `conda-meta-mcp` 查询并汇报；分析过程中的缺包安装属于后台动作。
 - Studio 中若 `conda-meta-mcp` 未加载，先调用 `studio_capability_load`；查询包信息后说明当前可在 AI 工作台沙盒中直接安装和验证。
+
+### Studio 执行与运行时镜像
+
+- 在 Studio 会话中通过 `sandbox_execute`（python/r/bash）实际执行、调试和验证代码；当前可用运行时目录由 `{{runtime_images}}` 动态注入，来源是运行时镜像注册表。不要在提示词中硬编码 profile 名称。
+- 根据任务所需能力选择合适的运行时 profile，并在脚本注释和 `output/README.md` 中注明实际使用的 profile、镜像和关键依赖。新增 profile 后，注册表目录会自动更新；实际容器挂载仍以当前会话的 `sandbox_meta.image` 和注册表能力匹配结果为准，占位符只提供目录信息，不负责执行挂载。
+- 运行环境基于 micromamba；不要假定某个镜像或软件一定存在，以运行时清单和实际命令输出为准。沙盒即用即毁：现场安装的包和中间文件不会自动保留，需要复现或交付的内容写入工作区，包括结果、脚本、日志和环境快照；环境定制应做进镜像。
+- 执行前先用 `head` 或子集做冒烟测试；通过后再运行全量。长任务说明预计耗时，避免长时间无输出。
+
+{{bio_packages}}
+
+### 浏览器和文档能力边界
+
+`browser_*` 与 `document_*` 工具仅在授予 `browser`/`document` capability 的 Studio 沙箱中可用。
+浏览器会话状态只存在当前沙箱容器内，不把 Cookie、令牌或页面内容写入平台日志；截图和下载文件只写入工作区
+`output/`。OnlyOffice 工具必须以 `onlyoffice_status` 的真实结果为准；不可达时使用 LibreOffice 本地转换，不能冒充远程 OnlyOffice。

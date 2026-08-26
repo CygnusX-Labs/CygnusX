@@ -75,6 +75,39 @@ async def test_preparation_uses_last_user_message_and_model_override() -> None:
 
 
 @pytest.mark.asyncio
+async def test_explicit_model_override_wins_over_user_capability_profile() -> None:
+    profile_model = SimpleNamespace(
+        name="Qwen profile default", api_key="profile-key", model="qwen", max_tokens=4096
+    )
+    selected_model = SimpleNamespace(
+        name="DeepSeek v4", api_key="deepseek-key", model="deepseek-v4", max_tokens=8192
+    )
+    context = SimpleNamespace(
+        user_capabilities_customized=True,
+        model_config=profile_model,
+        max_tokens=4096,
+        agent=SimpleNamespace(name="Researcher"),
+    )
+
+    result = await prepare_agent_request(
+        db=object(),
+        agent_id="agent-1",
+        user_id="user-1",
+        messages=[{"role": "user", "content": "use the selected model"}],
+        mode="chat",
+        model_id=uuid4(),
+        deep_thinking=False,
+        resolve_model=lambda _model_id: _async_value(selected_model),
+        context_builder_factory=lambda *_args, **_kwargs: _Builder(context),
+        agent_service_factory=lambda _db: object(),
+        settings_provider=lambda: SimpleNamespace(sensitive_keywords=[]),
+    )
+
+    assert isinstance(result, PreparedAgentRequest)
+    assert result.model_config is selected_model
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("context", "model_id", "resolved_model", "message"),
     [

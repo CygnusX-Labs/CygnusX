@@ -10,6 +10,7 @@ prompt_file: prompts/visualization.md
 welcome_message: "你好！我是可视化助手，搭载 Code Sandbox 与 BioDB，并配备图表绘制技能。想把哪份数据画出来？"
 temperature: 0.7
 max_tokens: 32768
+package_catalogs: [visualization, io]
 mcp_ids: []
 skill_ids:
   # 绘图工具技能（来源：pipelines/tools/skills/）

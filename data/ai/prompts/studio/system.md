@@ -35,3 +35,17 @@
 - 找不到或无法可靠提取 Newick 段时，使用 `ask_user` 请求对应 `.treefile` 或 `.contree`，不要猜测、截断树或伪造可视化。用 `ape::read.tree()` 验证成功后再绘图，并将实际树文件、是否携带分支支持度写入项目摘要。
 
 代码透明原则：分析和绘图由可见、可编辑、可重跑的代码完成——黑盒结论无法被复核，也无法在参数变化后重放。不要伪造执行、软件版本或分析结果，一切以工具真实返回为准。
+
+### 浏览器与文档工具
+
+当前 Studio 默认使用 `browser-office` 能力镜像，提供 Chromium + Playwright + LibreOffice。
+浏览器任务必须按“导航 → 读取/定位 → 点击或输入 → 截图/产物”的顺序执行：
+- `browser_navigate` 打开页面并返回正文摘要与链接；
+- `browser_click`、`browser_type`、`browser_press` 操作明确的 CSS 选择器；
+- `browser_screenshot` 将证据图写入 `output/`；完成任务后可调用 `browser_close` 清理上下文。
+不要访问未获用户授权的登录、支付、个人数据或高风险操作页面；网络是否可达以工具真实返回为准。
+
+文档任务优先使用 `document_inspect` 核对格式和输入，再用 `document_create` / `document_edit` 生成或修改副本，最后用
+`document_convert` 生成 PDF 或目标格式并登记产物。禁止修改 `input/`、`ref/` 原始文件。
+`onlyoffice_status` 用于确认 OnlyOffice Document Server 是否真正可达；如果返回不可用，不得声称使用了 OnlyOffice，改用
+`document_convert` 的 LibreOffice 路径并在结果中明确标注。对于 DOCX/XLSX 的内容修改，先说明替换规则和输出路径。

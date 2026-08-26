@@ -9,6 +9,7 @@ prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3
 max_tokens: 32768
+package_catalogs: [scrna, r-bio, io, visualization, machine-learning, network]
 mcp_ids: []
 skill_ids:
   - human-mouse-cell-annotation

@@ -429,6 +429,7 @@ function handleMcpSelection(selection: { mode: McpMode; extraServers: string[] }
 
 const localValue = ref(props.modelValue)
 const highlightRef = ref<HTMLDivElement | null>(null)
+const hasMentionMarkup = computed(() => /@\S+/.test(localValue.value))
 const inputHighlightHtml = computed(() => formatMentions(localValue.value))
 
 function syncHighlightScroll() {
@@ -1315,7 +1316,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         </NTag>
 
         <NTag
-          v-if="pendingAgent"
+          v-if="pendingAgent && !roomMode"
           size="small"
           round
           closable
@@ -1373,9 +1374,13 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         </n-tooltip>
       </div>
 
-      <div ref="inputWrapperRef" class="input-wrapper" :class="{ 'is-composing': isComposing }">
+      <div
+        ref="inputWrapperRef"
+        class="input-wrapper"
+        :class="{ 'is-composing': isComposing, 'has-highlight': hasMentionMarkup }"
+      >
         <div
-          v-if="localValue"
+          v-if="hasMentionMarkup"
           ref="highlightRef"
           class="input-highlight"
           aria-hidden="true"
@@ -1689,6 +1694,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
   &.room-mode {
+    padding: var(--space-md) var(--space-lg) var(--space-sm);
     border-color: color-mix(in srgb, var(--arco-primary) 32%, var(--neutral-border));
     border-radius: 20px;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--arco-primary) 10%, transparent);
@@ -1710,6 +1716,32 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
   .input-wrapper {
     position: relative;
     min-height: 0;
+  }
+
+  &.room-mode {
+    .input-wrapper {
+      padding: 2px 4px 0;
+    }
+
+    .input-highlight,
+    .chat-textarea :deep(.n-input__textarea-el) {
+      min-height: 56px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      line-height: 24px;
+    }
+
+    .ref-bar {
+      max-height: 84px;
+      overflow-y: auto;
+      padding: 2px 0;
+      scrollbar-width: thin;
+    }
+
+    .input-toolbar {
+      margin-top: var(--space-xs);
+      padding-top: var(--space-sm);
+    }
   }
 
   .input-highlight {
@@ -1964,13 +1996,17 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
     :deep(.n-input__textarea-el) {
       max-height: 200px;
-      color: transparent;
+      color: var(--chat-text-primary, var(--neutral-text-1));
       caret-color: var(--chat-text-primary, var(--neutral-text-1));
       background: transparent;
       font-family: inherit;
       font-size: 15px;
       line-height: 24px;
       resize: none;
+    }
+
+    .input-wrapper.has-highlight .chat-textarea :deep(.n-input__textarea-el) {
+      color: transparent;
     }
 
     :deep(.n-input__textarea-el::placeholder) {

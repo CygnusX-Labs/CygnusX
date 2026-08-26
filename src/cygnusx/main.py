@@ -220,6 +220,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning(f"内置 Agent 初始化失败，降级运行: {e}")
 
+    async def _init_default_knowledge() -> None:
+        """首次部署时从 docs/knowledge/meta.yaml 初始化实验室知识库。"""
+        try:
+            from cygnusx.application.services.knowledge_bootstrap_service import (
+                ensure_default_knowledge,
+            )
+            from cygnusx.infrastructure.database.session import get_session_factory
+
+            factory = get_session_factory()
+            if factory is not None:
+                async with factory() as session:
+                    updated, created, skipped = await ensure_default_knowledge(session)
+                    await session.commit()
+                    if updated or created:
+                        logger.info(
+                            "默认知识库已从 meta.yaml 同步：更新 {} 篇，新建 {} 篇，跳过 {} 篇",
+                            updated,
+                            created,
+                            skipped,
+                        )
+        except Exception as e:
+            logger.warning(f"默认知识库初始化失败，降级运行: {e}")
+
     async def _repair_user_storage_directories() -> None:
         """启动时为所有存量用户补齐默认目录和物理目录。"""
         try:
@@ -247,6 +270,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _init_assistants(),
         _init_mcp_presets(),
         _repair_user_storage_directories(),
+        _init_default_knowledge(),
     )
     await _init_builtin_agents()
 

@@ -19,8 +19,8 @@ class CreateStudioSessionRequest(BaseModel):
     project_id: str | None = Field(None, max_length=64, description="项目边界标识")
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
     sandbox_capabilities: list[Literal["code", "browser", "document"]] = Field(
-        default_factory=lambda: ["code"],
-        description="请求的沙盒运行能力；必须被 Agent 的 studio.sandbox_capabilities 授权",
+        default_factory=lambda: ["code", "browser", "document"],
+        description="请求的沙盒运行能力；默认开放代码、浏览器和文档能力，仍受部署镜像约束",
     )
 
 

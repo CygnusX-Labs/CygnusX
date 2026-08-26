@@ -301,6 +301,7 @@ def test_chat_catalog_filters_router_and_chat_entry_false(tmp_path) -> None:
         "routing_hints",
         "capability_tags",
         "routing_notes",
+        "persona",
         "avatar",
         "color",
     ):

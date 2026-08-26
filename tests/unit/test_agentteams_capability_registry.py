@@ -15,6 +15,9 @@ class _Abilities:
     def all(self):
         return {"agent-code": {}, "agent-qc": {}}
 
+    def render_detail(self, agent_id: str) -> str:
+        return f"### {agent_id}\n能力：代码实现"
+
 
 def _features(role: str, *, recruitable: bool = True) -> dict:
     return {
@@ -109,6 +112,56 @@ delivery: {quality_gate: true, outputs: [result]}
     assert registry.flow_quality_gate_map() == {"test_general": True}
     assert registry.agent_for_flow("test_general") == "agent-code"
     assert registry.worker_profile("agent-code").capability == "planning_advice"
+
+
+def test_router_catalog_carries_configured_persona_summary(tmp_path) -> None:
+    registry = AgentTeamsCapabilityRegistry(
+        FlowRegistry.from_directory(tmp_path),
+        _Abilities(),
+        [
+            {
+                "agent_id": "agent-code",
+                "name": "Code",
+                "description": "Code",
+                "category": "code",
+                "features": {
+                    **_features("agent-code"),
+                    "persona": {
+                        "archetype": "务实的工程师",
+                        "traits": ["严谨", "可复现"],
+                        "working_style": "先复现再修改",
+                        "status_lines": _features("agent-code")["persona"]["status_lines"],
+                    },
+                },
+            }
+        ],
+    )
+
+    entry = registry.chat_router_catalog()[0]
+    assert entry["persona"]["archetype"] == "务实的工程师"
+    assert entry["persona"]["traits"] == ["严谨", "可复现"]
+    assert "status_lines" not in entry["persona"]
+
+
+def test_capability_detail_context_carries_selected_agent_persona(tmp_path) -> None:
+    features = _features("agent-code")
+    features["persona"].update(
+        {
+            "archetype": "务实的工程师",
+            "traits": ["严谨", "可复现"],
+            "working_style": "先复现再修改",
+        }
+    )
+    registry = AgentTeamsCapabilityRegistry(
+        FlowRegistry.from_directory(tmp_path),
+        _Abilities(),
+        [{"agent_id": "agent-code", "features": features}],
+    )
+
+    detail = registry.capability_detail_context(["agent-code"])
+    assert "Persona：" in detail
+    assert "角色原型：务实的工程师" in detail
+    assert "稳定特质：严谨、可复现" in detail
 
 
 def test_registry_rejects_flow_without_active_actor(tmp_path) -> None:

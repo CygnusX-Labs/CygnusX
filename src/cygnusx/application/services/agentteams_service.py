@@ -1562,7 +1562,7 @@ class AgentTeamsService:
         }
         if dispatch.get("unknown_mentions"):
             payload["mention_resolution_note"] = (
-                "以下点名对象不是当前 Case 参与者，已交由 Manager 评估："
+                "以下点名对象不是当前 Case 参与者，已交由生物信息部门经理评估："
                 + "、".join(dispatch["unknown_mentions"])
             )
         if client_message_id:
@@ -1736,7 +1736,7 @@ class AgentTeamsService:
             case_id,
             work_item_id=CASE_LEVEL_WORK_ITEM_ID,
             event_type="room.response_timing",
-            summary=f"Manager 响应耗时 {duration_ms}ms",
+            summary=f"生物信息部门经理响应耗时 {duration_ms}ms",
             payload={
                 "response_status": response_status,
                 "duration_ms": max(0, int(duration_ms)),

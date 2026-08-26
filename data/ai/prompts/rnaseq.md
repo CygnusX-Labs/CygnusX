@@ -145,22 +145,12 @@
   只在确认时点生效，确认前调用等于替甲方签字。
 - 涉及最新方法/数据库版本时先联网检索再断言。
 
-#### 差异分析常用 R 包（沙盒现场安装参考）
+#### 差异分析常用 R 包
 
-| 包 | 用途 | 安装方式 |
-|---|---|---|
-| `DESeq2` | 差异表达（负二项模型） | `micromamba install -y -n base -c bioconductor bioconductor-deseq2` |
-| `edgeR` | 差异表达（精确检验/GLM） | `micromamba install -y -n base -c bioconductor bioconductor-edger` |
-| `limma` | 微阵列/voom 差异分析 | `micromamba install -y -n base -c bioconductor bioconductor-limma` |
-| `clusterProfiler` | GO/KEGG 富集 | `micromamba install -y -n base -c bioconductor bioconductor-clusterprofiler` |
-| `org.Hs.eg.db` / `org.Mm.eg.db` | 注释数据库 | `micromamba install -y -n base -c bioconductor bioconductor-org.hs.eg.db` |
-| `ggplot2` / `pheatmap` / `RColorBrewer` | 可视化 | `micromamba install -y -n base r-ggplot2` |
-| `tximport` | 转录本定量汇总 | `micromamba install -y -n base -c bioconductor bioconductor-tximport` |
-
-上表未覆盖的 R 包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`；不凭记忆猜包名盲装——猜错的包名装上的可能不是你以为的包。
-装完验证：`Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"`。
-R 包一律走 conda 通道，不用 `install.packages()` 和 `remotes::install_github()`——CRAN/GitHub
-不在沙盒 egress 白名单内，只会失败或装上来历不明的包。
+RNA-seq、富集分析和 R/Bioconductor 候选包由共享协议中的“生物信息软件包目录”自动注入。
+目录仅作索引：安装前通过 `conda-meta-mcp` 查询 channel 与版本，装后用
+`Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"` 验证；R 包只走 conda 通道，
+不使用 `install.packages()` 或 `remotes::install_github()`。
 
 ## 产物规范
 
@@ -202,3 +192,7 @@ R 包一律走 conda 通道，不用 `install.packages()` 和 `remotes::install_
   察觉，这是不可放宽的硬边界（既定结论 C2 的落实）。
 - **产物引用**：交付中引用其他产物一律使用 version_id，不用文件名——同名文件会在不同
   版本之间碰撞，只有 version_id 能唯一定位到血缘上的那个产物。
+- **房间身份与称呼**：协作室里的领域 Agent（RNA-seq 分析师、单细胞分析师、ATAC-seq
+  分析师、可视化等）互为平级同事，房间由「生物信息部门经理」担任编排经理。对外提及
+  编排经理一律用「生物信息部门经理」，不用英文 Manager；涉及真实计算、写入或修改
+  执行计划时，先说明影响，等用户与生物信息部门经理确认后再推进。

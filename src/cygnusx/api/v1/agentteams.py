@@ -231,6 +231,7 @@ class AgentTeamsQualityGateRequest(BaseModel):
 
 class AgentTeamsRoomMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4_000)
+    model_id: UUID | None = Field(default=None, description="本次回复使用的模型配置 ID")
     # 房间 @ 引用的工作区文件，作为发言补充上下文写入审计 payload（只读引用）。
     context_refs: list[AgentTeamsContextRef] = Field(default_factory=list, max_length=20)
     client_message_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -241,6 +242,10 @@ class AgentTeamsRoomCreateRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=200)
     origin: str = Field(default="manual", min_length=1, max_length=20)
+
+
+class AgentTeamsRoomRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 class AgentTeamsRoomInvitationRequest(BaseModel):
@@ -778,12 +783,15 @@ async def post_case_message(
         try:
             from cygnusx.infrastructure.celery_app.tasks.agentteams import respond_to_room_message
 
-            respond_to_room_message.delay(
+            task_args = [
                 case_id,
                 current_user_id,
                 request.content.strip(),
                 result.get("dispatch") if isinstance(result, dict) else None,
-            )
+            ]
+            if request.model_id:
+                task_args.append(str(request.model_id))
+            respond_to_room_message.delay(*task_args)
         except Exception as exc:  # noqa: BLE001 - Manager 响应调度失败不影响发言落盘
             logger.bind(case_id=case_id).warning(
                 "AgentTeams room response dispatch failed: {}", exc
@@ -1000,6 +1008,21 @@ async def get_room(
     return _room_payload(room)
 
 
+@router.patch("/rooms/{room_id}", summary="重命名协作室房间")
+async def rename_room(
+    room_id: str,
+    request: AgentTeamsRoomRenameRequest,
+    current_user_id: CurrentUserId,
+    service: AgentTeamsServiceDep,
+    db: DbSession,
+) -> dict[str, Any]:
+    rooms = AgentTeamsRoomService(db, service)
+    room = await rooms.get_room(room_id, current_user_id)
+    room = await rooms.rename_room(room, current_user_id, request.title)
+    await db.commit()
+    return _room_payload(room)
+
+
 @router.delete(
     "/rooms/{room_id}",
     summary="删除协作室房间（清空该聊天窗口的全部内容：会话事件、已绑定 Case 与审计记录）",
@@ -1058,13 +1081,16 @@ async def post_room_message(
                 respond_to_room_namespace_message,
             )
 
-            respond_to_room_namespace_message.delay(
+            task_args = [
                 room.room_id,
                 room.owner_id,
                 request.content.strip(),
                 result.get("dispatch") if isinstance(result, dict) else None,
                 current_user_id,
-            )
+            ]
+            if request.model_id:
+                task_args.append(str(request.model_id))
+            respond_to_room_namespace_message.delay(*task_args)
         except Exception as exc:  # noqa: BLE001 - Manager 响应调度失败不影响发言落盘
             logger.bind(room_id=room.room_id).warning(
                 "AgentTeams room response dispatch failed: {}", exc

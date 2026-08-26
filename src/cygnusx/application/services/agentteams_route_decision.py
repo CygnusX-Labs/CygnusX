@@ -35,7 +35,8 @@ _OVERDRIVE_STAGES: tuple[tuple[str, str], ...] = (
     ("execution", "执行"),
     ("delivery", "交付"),
 )
-_GENERAL_OPTION_LABEL = "通用分析(由 Manager 自由规划)"
+# 用户可见的路由卡选项文案：编排经理对外统一用中文称呼，不用英文 Manager。
+_GENERAL_OPTION_LABEL = "通用分析(由生物信息部门经理自由规划)"
 _MAX_OPTIONS = 4
 
 

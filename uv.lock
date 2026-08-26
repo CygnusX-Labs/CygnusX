@@ -3263,7 +3263,7 @@ wheels = [
 ]
 
 [[package]]
-name = "omichub"
+name = "cygnusx"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

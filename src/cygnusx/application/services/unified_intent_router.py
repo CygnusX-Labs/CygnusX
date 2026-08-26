@@ -28,7 +28,9 @@ class CollaborationDecision:
 
     @property
     def needs_clarification(self) -> bool:
-        return self.confidence < 0.6
+        # 普通聊天不涉及协作能力选择；低置信度时仍应交给目标 Agent
+        # 自然回答，不能凭空弹出“请补充协作方式”。
+        return self.intent != "chat" and self.confidence < 0.6
 
 
 def normalize_decision(

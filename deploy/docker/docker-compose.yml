@@ -25,7 +25,7 @@ services:
       # 挂到独立路径 /var/www/jbrowse2，避免与只读的 dist(/usr/share/nginx/html) 子挂载冲突
       - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
       # 数据文件：经 /tracks/ 路径供 JBrowse 2 流式读取（只读）
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:/data/cygnusx:ro
+      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}:ro
       # Nginx 访问/错误日志持久化到宿主机，避免容器重建丢失
       - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/nginx:/var/log/nginx
     depends_on:
@@ -62,8 +62,8 @@ services:
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
       - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
-      - CYGNUSX_LOG_DIR=/app/logs          # 挂载到宿主机 /data/cygnusx/logs/app，保证容器重建后不丢失
-      - SKILLS_DIR=/data/cygnusx/skills    # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）
+      - CYGNUSX_LOG_DIR=/app/logs          # 挂载到宿主机共享数据目录的 logs/app，保证容器重建后不丢失
+      - SKILLS_DIR=${STORAGE_PATH:-/data/cygnusx}/skills  # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）
       - PDF_INSPECTOR_ENABLED=${PDF_INSPECTOR_ENABLED:-true}   # 启用 pdf-inspector 主路径解析 PDF；可在 .env 中覆盖
       - PDF_INSPECTOR_ROLLOUT=${PDF_INSPECTOR_ROLLOUT:-100}    # 灰度比例；生产环境建议在 .env 中先设 10/50
     depends_on:
@@ -81,7 +81,7 @@ services:
       - ../../alembic:/app/alembic:ro  # 迁移脚本热同步（容器内可见，免重建镜像）
       - ../../scripts:/app/scripts:ro  # 运维/初始化/同步脚本（热重载）
       - ./entrypoint.sh:/app/entrypoint.sh:ro  # 启动入口：先迁移后启动
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:/data/cygnusx  # 任务数据（与独立 worker 栈共享同一宿主目录）
+      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}  # 任务数据（与独立 worker 栈共享同一宿主目录）
       - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/app:/app/logs  # 应用日志持久化到宿主机
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket（沙盒/终端容器管理）
     networks:
@@ -131,6 +131,27 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  # ===== OnlyOffice Document Server（仅供 Studio 会话按需接入，不发布宿主端口） =====
+  onlyoffice-documentserver:
+    image: ${ONLYOFFICE_DOCUMENTSERVER_IMAGE:-onlyoffice/documentserver:latest}
+    container_name: onlyoffice-documentserver
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      JWT_ENABLED: "false"
+      WOPI_ENABLED: "false"
+    shm_size: 512m
+    volumes:
+      - ${CYGNUSX_ONLYOFFICE_DATA_DIR:-${CYGNUSX_DATA_ROOT:-/data/cygnusx}/onlyoffice-data}:/var/www/onlyoffice/Data
+      - ${CYGNUSX_ONLYOFFICE_LOG_DIR:-${CYGNUSX_DATA_ROOT:-/data/cygnusx}/onlyoffice-logs}:/var/log/onlyoffice
+    networks:
+      - studio_proxy_egress
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
 
   # ===== Celery Beat 定时器（留在主栈，单实例） =====
   # 注：计算型 worker 已拆分至独立编排栈 deploy/docker/docker-compose.worker.yml，
@@ -234,8 +255,8 @@ services:
     ports:
       - "${CYGNUSX_POSTGRES_BIND_HOST:-127.0.0.1}:${CYGNUSX_POSTGRES_PORT:-5432}:5432"
     volumes:
-      # bind mount：数据固化到 /data/cygnusx/cygnusx_data/_pgdata，便于跨平台迁移（rsync cygnusx_data 即可带走）
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/cygnusx_data/_pgdata:/var/lib/postgresql/data
+      # 用完整目录变量，重命名既有部署可继续挂载历史 PostgreSQL 数据目录。
+      - ${CYGNUSX_POSTGRES_DATA_DIR:-/data/cygnusx/cygnusx_data/_pgdata}:/var/lib/postgresql/data
     networks:
       - data_net
       - cygnusx_net        # 跨栈：独立 worker 经服务名 db 连库（与 cache 同款跨栈互通）
@@ -255,8 +276,8 @@ services:
     ports:
       - "${CYGNUSX_REDIS_BIND_HOST:-127.0.0.1}:${CYGNUSX_REDIS_PORT:-6379}:6379"
     volumes:
-      # bind mount：数据固化到 /data/cygnusx/cygnusx_data/_redis，便于跨平台迁移
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/cygnusx_data/_redis:/data
+      # 用完整目录变量，重命名既有部署可继续挂载历史 Redis 数据目录。
+      - ${CYGNUSX_REDIS_DATA_DIR:-/data/cygnusx/cygnusx_data/_redis}:/data
     networks:
       - data_net
       - cygnusx_net          # 关键：独立 worker 栈经服务名 cache 连 Redis
@@ -281,8 +302,8 @@ services:
       - "${CYGNUSX_MINIO_BIND_HOST:-127.0.0.1}:${CYGNUSX_MINIO_PORT:-9000}:9000"
       - "${CYGNUSX_MINIO_BIND_HOST:-127.0.0.1}:${CYGNUSX_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      # bind mount：数据固化到 /data/cygnusx/cygnusx_data/_minio，便于跨平台迁移（与 _redis 同款）
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/cygnusx_data/_minio:/data
+      # 用完整目录变量，重命名既有部署可继续挂载历史 MinIO 数据目录。
+      - ${CYGNUSX_MINIO_DATA_DIR:-/data/cygnusx/cygnusx_data/_minio}:/data
     networks:
       - data_net
       - cygnusx_net          # 跨栈：agentteams 栈加入 cygnusx_net 后经 http://minio:9000 访问
@@ -392,5 +413,5 @@ networks:
   studio_proxy_egress:       # 仅代理容器加入；不连接 Web/DB/Redis 等平台网络
     driver: bridge
 
-# 注：pg_data / redis_data 已改为 bind mount（/data/cygnusx/cygnusx_data/_pgdata、_redis），
-#     不再需要命名卷声明。旧卷 docker_pg_data / docker_redis_data 可在验证无误后删除。
+# 注：pg_data / redis_data 已改为 bind mount；新部署默认使用 /data/cygnusx/cygnusx_data。
+#     重命名既有部署可通过 .env 的 CYGNUSX_*_DATA_DIR 继续使用旧目录。

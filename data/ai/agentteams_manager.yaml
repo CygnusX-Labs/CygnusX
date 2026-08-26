@@ -21,9 +21,9 @@ max_tokens: 32768
 mcp_ids:
   # cygnusx-platform builtin server（uuid5(DNS, "cygnusx-platform.builtin")），
   # 经 mcp_tools 白名单只暴露两个只读工具：能力目录与当前房间状态查询。
-  - 3e353945-c631-5ba6-a63d-0e5e6e0c1f03
+  - 4197a87e-1c04-5680-b89f-06d0d85cb84c
 mcp_tools:
-  3e353945-c631-5ba6-a63d-0e5e6e0c1f03:
+  4197a87e-1c04-5680-b89f-06d0d85cb84c:
     - ability_catalog_query
     - room_state_query
 skill_ids: []
@@ -31,7 +31,7 @@ features:
   internal_case_role: bioops-manager
   agentteams:
     category: manager
-    # 显式声明不可招募：Manager 是编排者，不得被招募进自己的团队当 Worker。
+    # 显式声明不可招募：Manager 是编排者，不得被招募进自己的团队当员工。
     recruitable: false
     # 保持 Manager 作为通用路径规划入口的能力（Lead Planner Selector 可见）。
     planner_eligible: true
@@ -57,6 +57,8 @@ features:
       awaiting_input: ["正在等待你的确认或补充信息"]
   engine: langgraph
   managed_prompt: true
+  # 同步受管身份资料，覆盖存量数据库中旧的通用欢迎语或显示名。
+  managed_profile: true
   # Manager 是房间级编排者，不作为并行子 Agent 被 fan-out 派生。
   subagents_spawnable: false
   default_role: 协作室接单、触发理由说明、规划专家选择、计划审核、专家协调、结果点评与汇总交付
