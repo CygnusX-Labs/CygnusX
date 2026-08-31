@@ -47,7 +47,7 @@ class AgentTemplateDTO(BaseModel):
     skill_ids: list[Any] = Field(default_factory=list)
     features: dict[str, Any] = Field(default_factory=dict)
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 65536
     is_builtin: bool = False
     is_active: bool = True
     is_default: bool = False
@@ -70,7 +70,7 @@ class CreateAgentRequest(BaseModel):
     skill_ids: list[Any] = Field(default_factory=list)
     features: dict[str, Any] = Field(default_factory=dict)
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 65536
     is_active: bool = True
     is_default: bool = False
 

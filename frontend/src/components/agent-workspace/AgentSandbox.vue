@@ -85,7 +85,10 @@ watch(
       let sessionId = ''
       if (sid && !sid.startsWith('sess-')) {
         try {
-          const promoted = await studioApi.promoteSession(sid, target.agentId)
+          const promoted = await studioApi.promoteSession(sid, {
+            agent_id: target.agentId,
+            runtime_profile: store.currentSession?.runtime_profile || undefined,
+          })
           sessionId = promoted.session_id
           // 后端已把会话重绑定到工作台 Agent，本地会话同步绑定，
           // 否则下一轮请求仍按旧 Agent 发送，触发"会话绑定的 Agent 与当前请求不一致"
@@ -97,7 +100,10 @@ watch(
         }
       }
       if (!sessionId) {
-        const created = await studioApi.createSession({ agent_id: target.agentId })
+        const created = await studioApi.createSession({
+          agent_id: target.agentId,
+          runtime_profile: store.currentSession?.runtime_profile || undefined,
+        })
         sessionId = created.session_id
       }
       store.markStudioSession(sessionId)
@@ -388,7 +394,10 @@ async function handleEnterStudio() {
     let sessionId = ''
     if (sid && !sid.startsWith('sess-')) {
       try {
-        const promoted = await studioApi.promoteSession(sid, agent.value.id)
+        const promoted = await studioApi.promoteSession(sid, {
+          agent_id: agent.value.id,
+          runtime_profile: store.currentSession?.runtime_profile || undefined,
+        })
         sessionId = promoted.session_id
         if (store.currentSession && store.currentSession.id === sessionId) {
           store.currentSession.agent_id = promoted.agent_id || agent.value.id
@@ -398,7 +407,10 @@ async function handleEnterStudio() {
       }
     }
     if (!sessionId) {
-      const created = await studioApi.createSession({ agent_id: agent.value.id })
+      const created = await studioApi.createSession({
+        agent_id: agent.value.id,
+        runtime_profile: store.currentSession?.runtime_profile || undefined,
+      })
       sessionId = created.session_id
     }
     store.markStudioSession(sessionId)

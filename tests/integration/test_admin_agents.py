@@ -97,7 +97,7 @@ async def test_create_agent_with_valid_model_id(client, auth_headers, admin_over
         "category": "general",
         "model_id": model_id,
         "model_name": "测试模型",
-        "model_engine": "qwen3.7-plus",
+        "model_engine": "qdoubao-seed-evolving",
         "system_prompt": "",
         "welcome_message": "你好",
         "mcp_ids": [],
@@ -131,7 +131,7 @@ async def test_create_agent_rejects_invalid_model_id(client, auth_headers, admin
     """创建 Agent 时传入非法 model_id 应返回 422 而非 500。"""
     resp = await client.post(
         "/api/v1/admin/agents",
-        json={"name": "测试助手", "model_id": "qwen3.7-plus"},
+        json={"name": "测试助手", "model_id": "qdoubao-seed-evolving"},
         headers=auth_headers,
     )
 

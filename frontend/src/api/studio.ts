@@ -36,6 +36,17 @@ export interface StudioSessionDTO {
   overdrive?: boolean
 }
 
+/** Studio 沙箱运行时配置（GET /studio/runtime-profiles） */
+export interface StudioRuntimeProfile {
+  id: string
+  name: string
+  description?: string
+  image: string
+  capabilities?: string[]
+  executor_compatibility?: string[]
+  is_default?: boolean
+}
+
 export type SandboxStatus = 'running' | 'stopped' | 'absent' | 'unavailable'
 
 export interface WorkspaceEntry {
@@ -213,21 +224,31 @@ export function artifactDownloadUrl(sessionId: string, path: string): string {
 }
 
 export const studioApi = {
-  /** 创建 Studio 会话（mode="studio"，workspace_id = session id） */
+  /** 可用沙箱运行时列表（未登录/接口失败时由调用方降级处理） */
+  async listRuntimeProfiles(): Promise<StudioRuntimeProfile[]> {
+    const res = await apiClient.get<StudioRuntimeProfile[]>('/studio/runtime-profiles')
+    return res.data || []
+  },
+
+  /** 创建 Studio 会话（mode="studio"，workspace_id = session id）；runtime_profile 固定沙箱镜像 */
   async createSession(payload: {
     agent_id: string
     title?: string
     model_id?: string
+    runtime_profile?: string
   }): Promise<StudioSessionDTO> {
     const res = await apiClient.post<StudioSessionDTO>('/studio/sessions', payload)
     return res.data
   },
 
-  /** 将普通聊天会话升级为 Studio 工作台（保留历史消息），可选重绑定 Agent */
-  async promoteSession(sessionId: string, agentId?: string): Promise<StudioSessionDTO> {
+  /** 将普通聊天会话升级为 Studio 工作台（保留历史消息），可选重绑定 Agent、固定沙箱运行时 */
+  async promoteSession(
+    sessionId: string,
+    payload?: { agent_id?: string; runtime_profile?: string },
+  ): Promise<StudioSessionDTO> {
     const res = await apiClient.post<StudioSessionDTO>(
       `/studio/sessions/${sessionId}/promote`,
-      agentId ? { agent_id: agentId } : {},
+      payload || {},
     )
     return res.data
   },

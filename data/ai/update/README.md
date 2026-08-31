@@ -564,12 +564,12 @@ timeline 落库、handoff 事件等）是**各自独立实现**的，历史上�
 
 ### 11.3 模型与 Provider 高度单一化 ✅ 已解决（2026-08-14）
 
-**曾经的问题**：13 个 Agent YAML 的 `model` 字段全部是 `qwen3.7-plus`，没有按任务复杂度分层（例如给
+**曾经的问题**：13 个 Agent YAML 的 `model` 字段全部是 `qdoubao-seed-evolving`，没有按任务复杂度分层（例如给
 `router` 这类低延时诉求的入口用更快的模型，给 `mcp_builder` 这类需要强代码生成能力的
-用更强模型）。同时 `data/ai/providers.yaml` 里 `deepseek-v4-flash` 和 `qwen3.7-plus`
+用更强模型）。同时 `data/ai/providers.yaml` 里 `deepseek-v4-flash` 和 `qdoubao-seed-evolving`
 同时标注 `is_default: true`，虽然同步逻辑（`ai_provider_yaml_loader.py`）只会让最后
 生效的一个成为真正默认值，但 YAML 层面两条 `is_default: true` 容易误导后续维护者。
-单一 Provider 也是可用性单点故障：一旦 `qwen3.7-plus` 服务异常，全部 Agent 同时不可用。
+单一 Provider 也是可用性单点故障：一旦 `qdoubao-seed-evolving` 服务异常，全部 Agent 同时不可用。
 
 **解决方案**：按"任务认知负荷"分两档（当前 providers.yaml 只有两个可用 Provider，分档到
 现有模型上）：
@@ -577,11 +577,11 @@ timeline 落库、handoff 事件等）是**各自独立实现**的，历史上�
 | 档位 | 模型 | Agent | 依据 |
 | --- | --- | --- | --- |
 | 轻量档 | `deepseek-v4-flash` | `router`、`data`、`delivery`、`shania` | 路由分类（运行时 temp=0、max_tokens=200 输出 JSON）、清单式核验、结构化汇总、陪伴式对话，均为低温度结构化任务 |
-| 推理档 | `qwen3.7-plus` | 其余全部领域专家、`qc`、`orchestrator`、`mcp_builder` | 实验设计、证据链推理、审计结论、计划生成、代码生成，容错率低 |
+| 推理档 | `qdoubao-seed-evolving` | 其余全部领域专家、`qc`、`orchestrator`、`mcp_builder` | 实验设计、证据链推理、审计结论、计划生成、代码生成，容错率低 |
 
 `qc` 虽以结构化三态结论输出，但其审计结论会阻断交付，错误代价高，明确保留在推理档。
 同时把 `providers.yaml` 中 `deepseek-v4-flash` 的 `is_default` 改为 `false`，全局默认
-Provider 只保留 `qwen3.7-plus` 一个（与此前"最后生效"的实际行为一致，无语义变化）。
+Provider 只保留 `qdoubao-seed-evolving` 一个（与此前"最后生效"的实际行为一致，无语义变化）。
 模型选型准则沉淀为 §12.5。
 
 **尚未解决**：单一 Provider 的可用性单点故障仍在（flash 与 plus 分属火山与阿里两家，
@@ -827,10 +827,10 @@ Agent YAML 的 `model` 按**任务认知负荷**选档，不按"这个 Agent 重
 
 - **轻量档（当前 `deepseek-v4-flash`）**：输出结构化、温度 ≤0.4、错误可被下游校验或
   重试覆盖的任务——路由分类、清单核验、交付汇总、陪伴式对话、Skill 候选包生成。
-- **推理档（当前 `qwen3.7-plus`）**：结论会直接驱动实验设计、阻断交付或生成代码的
+- **推理档（当前 `qdoubao-seed-evolving`）**：结论会直接驱动实验设计、阻断交付或生成代码的
   任务——领域专家分析、`qc` 审计、`orchestrator` 计划、`mcp_builder` 代码生成。
 - 新 Agent 默认进推理档；要进轻量档需在 YAML 注释里说明"错误代价为什么低"。
-- `providers.yaml` 中 `is_default: true` 全局只能有一个（当前 `qwen3.7-plus`）；
+- `providers.yaml` 中 `is_default: true` 全局只能有一个（当前 `qdoubao-seed-evolving`）；
   其余 Provider 一律 `is_default: false`，靠 Agent 按名显式选用。
 
 ### 12.6 Skill 候选区治理规范

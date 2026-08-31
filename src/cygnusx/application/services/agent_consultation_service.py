@@ -282,6 +282,9 @@ class _BridgeEvidenceProjector:
 
 
 class AgentConsultationService:
+    # strict=False：容忍续写拼接 seam 落入 JSON 字符串值时产生的换行等控制字符
+    _JSON_DECODER = json.JSONDecoder(strict=False)
+
     def __init__(
         self,
         db: AsyncSession,
@@ -322,6 +325,7 @@ class AgentConsultationService:
         trace_id: str | None = None,
         model_id: UUID | None = None,
         on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
+        room_id: str | None = None,
     ) -> ConsultationEnvelope:
         started = time.monotonic()
         registry = get_agentteams_capability_registry()
@@ -397,6 +401,7 @@ class AgentConsultationService:
                 "actor_user_id": actor_user_id or requester_ref,
                 "requester_ref": requester_ref,
                 "trace_id": trace_id,
+                "room_id": room_id,
             }
         )
         session_token = session_id_var.set(f"agentteams:{case_id}")
@@ -552,6 +557,10 @@ class AgentConsultationService:
                 '"depends_on": []}]}, "quality_gate_required": bool}，target 限声明了 '
                 "workspace_execution 的 worker（如 agent-scrna、agent-rnaseq、agent-viz、agent-code）。"
                 "quality_gate_required 必须显式填写 true/false；只有 true 才会创建独立质控阶段。"
+                "排版要求：conclusion、recommendations 等文本字段使用 Markdown 排版——"
+                "分节用列表或小标题，关键术语、基因名、文件路径、参数名用行内代码 `...`；"
+                "代码、命令、配置、脚本一律用带语言标识的围栏代码块"
+                "（如 ```r、```bash、```python），禁止整段纯文本堆砌。"
             )
         hard_gate_clause = (
             f"\n硬规则预判：{json.dumps(hard_gate, ensure_ascii=False)}\n"
@@ -946,19 +955,37 @@ class AgentConsultationService:
     @staticmethod
     def _parse_envelope_with_status(raw_answer: str) -> tuple[ConsultationEnvelope, bool]:
         raw_answer = raw_answer.strip() or "会诊未返回内容"
-        match = _JSON_FENCE_RE.search(raw_answer)
-        candidate = match.group(1) if match else raw_answer
-        try:
-            payload = json.loads(AgentConsultationService._strip_json_trailing_commas(candidate))
-            if not isinstance(payload, dict):
-                raise ValueError("consultation envelope must be an object")
-            payload = AgentConsultationService._normalize_envelope_payload(payload)
-            return ConsultationEnvelope.model_validate(payload), True
-        except (json.JSONDecodeError, ValueError):
-            return ConsultationEnvelope(
-                conclusion=raw_answer[:8_000],
-                risks=["信封解析降级：专家答复未满足结构化 JSON 契约。"],
-            ), False
+        for candidate in AgentConsultationService._envelope_candidates(raw_answer):
+            try:
+                payload, _ = AgentConsultationService._JSON_DECODER.raw_decode(
+                    AgentConsultationService._strip_json_trailing_commas(candidate).lstrip()
+                )
+                if not isinstance(payload, dict):
+                    continue
+                payload = AgentConsultationService._normalize_envelope_payload(payload)
+                return ConsultationEnvelope.model_validate(payload), True
+            except (json.JSONDecodeError, ValueError):
+                continue
+        return ConsultationEnvelope(
+            conclusion=raw_answer[:8_000],
+            risks=["信封解析降级：专家答复未满足结构化 JSON 契约。"],
+        ), False
+
+    @staticmethod
+    def _envelope_candidates(raw_answer: str) -> list[str]:
+        """按优先级给出信封候选：完整围栏块 → 每个围栏开口到结尾 → 原文。
+
+        长度截断续写时模型可能重开一个新的 ```json 块，使首尾围栏跨块错配；
+        逐开口候选配合 raw_decode（忽略闭合围栏及之后的内容）可命中重开后的
+        完整信封。strict=False 容忍续写拼接 seam 落入字符串值产生的控制字符。
+        """
+        candidates = [m.group(1) for m in _JSON_FENCE_RE.finditer(raw_answer)]
+        for match in re.finditer(r"```(?:json)?[ \t]*", raw_answer, re.IGNORECASE):
+            tail = raw_answer[match.end() :]
+            if tail.lstrip().startswith("{"):
+                candidates.append(tail)
+        candidates.append(raw_answer)
+        return candidates
 
     @staticmethod
     def _normalize_envelope_payload(payload: dict[str, Any]) -> dict[str, Any]:

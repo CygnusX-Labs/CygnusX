@@ -330,6 +330,8 @@ async def test_fanout_emits_correlated_tool_reinjection_events(env, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_worker_loop_guard_stops_duplicate_tool_calls(env, monkeypatch) -> None:
+    # 生产阈值为 100，测试用小阈值快速触发保护逻辑。
+    monkeypatch.setattr(pss, "_MAX_DUPLICATE_TOOL_CALLS", 2)
     contexts = {"agent-code": _ctx("agent-code", tools=[{"function": {"name": "workspace_read"}}])}
     monkeypatch.setattr(pss, "AgentService", lambda db: AgentServiceStub(contexts))
     events: list[dict] = []
@@ -1149,3 +1151,12 @@ async def test_fanout_validation_rules(env, monkeypatch) -> None:
         tasks=[{"agent_id": "a", "task": "x"}, {"agent_id": "", "task": "y"}], **kwargs
     )
     assert missing["success"] is False and "缺少" in missing["llm_payload"]["error"]
+
+
+def test_has_unfinished_json_fence_detects_truncated_envelope() -> None:
+    assert pss._has_unfinished_json_fence('前文 ```json { "conclusion": "写到一半') is True
+
+
+def test_has_unfinished_json_fence_ignores_closed_blocks_and_plain_text() -> None:
+    assert pss._has_unfinished_json_fence('```json {"a": 1} ``` 后续说明') is False
+    assert pss._has_unfinished_json_fence("普通文本结论") is False

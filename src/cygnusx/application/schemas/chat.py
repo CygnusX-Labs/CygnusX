@@ -45,6 +45,11 @@ class ChatStreamRequest(BaseModel):
         None,
         description="会话模式 chat/studio；新建会话时生效，已有会话以会话行 mode 为准",
     )
+    runtime_profile: str | None = Field(
+        None,
+        description="运行时 profile（见 runtime_images.yaml，如 analysis-core/browser-office）；"
+        "仅新建 studio 会话时生效，缺省回落 Agent studio.image",
+    )
     project_id: str | None = Field(None, max_length=64, description="新建会话的项目边界")
     mcp_mode: Literal["off", "auto", "manual"] | None = None
     extra_mcp_servers: list[str] | None = Field(default=None)
@@ -224,7 +229,7 @@ class CreateAssistantRequest(BaseModel):
     color: str = "#4f8ef7"
     category: str = "general"
     default_temperature: float = 0.3
-    default_max_tokens: int = 4096
+    default_max_tokens: int = 65536
 
 
 class UpdateAssistantRequest(BaseModel):

@@ -103,6 +103,16 @@ _OVERDRIVE_WORKSPACE_TOOL_NAMES = frozenset(
 # 20K tokens 的英文/代码输出可能超过 40K 字符，保留足够空间让 Agent 配置生效。
 _ANSWER_CAP_CHARS = 100_000
 _MAX_LENGTH_CONTINUATIONS = 2
+
+
+def _has_unfinished_json_fence(text: str) -> bool:
+    """判断文本是否结束在一个未闭合的 ```json 围栏内（用于长度截断续写的提示词选择）。"""
+    if text.count("```") % 2 == 0:
+        return False
+    tail = text[text.rfind("```") + 3 :].lstrip()
+    if tail[:4].lower() == "json":
+        tail = tail[4:].lstrip()
+    return tail.startswith("{")
 # 模型偶发返回空内容（finish_reason=stop 且无任何正文）时的重试上限，
 # 避免把空答复当作正常结果向上层返回。
 _MAX_EMPTY_RESPONSE_RETRIES = 2
@@ -111,7 +121,10 @@ _TOOL_RESULT_CAP_CHARS = 8000
 # 可视化任务可能同时携带研究计划和代码阶段两个上游产物。
 _TASK_INSTRUCTION_MAX_CHARS = 20000
 _CONTEXT_SUMMARY_MAX_CHARS = 12000
-_MAX_DUPLICATE_TOOL_CALLS = 2
+# 连续相同（工具名+参数完全一致）工具调用的循环保护阈值。
+# 取较大值避免误伤正常的重复只读查询（如能力目录/房间消息读取），
+# 真正的死循环仍会被 max_rounds 兜底终止。
+_MAX_DUPLICATE_TOOL_CALLS = 100
 _MAX_REPEATED_TOOL_RESULTS = 2
 
 _WEB_SEARCH_TOOL_SCHEMA: dict[str, Any] = {
@@ -421,6 +434,20 @@ class ParallelSubAgentService:
             getattr(getattr(ctx, "agent", None), "agent_id", "") or ""
         )
         tools = list(getattr(ctx, "tools", []) or [])
+        room_id = str((agentteams_ctx_var.get() or {}).get("room_id") or "").strip()
+        if room_id:
+            room_tool_names = {"room_messages_read", "room_facts_query"}
+            known_names = {
+                str((tool.get("function") or {}).get("name") or "")
+                for tool in tools
+                if isinstance(tool, dict)
+            }
+            tools.extend(
+                tool
+                for tool in schema_loader.to_openai_tools()
+                if str((tool.get("function") or {}).get("name") or "") in room_tool_names
+                and str((tool.get("function") or {}).get("name") or "") not in known_names
+            )
         names = {
             str((tool.get("function") or {}).get("name") or "")
             for tool in tools
@@ -704,7 +731,11 @@ class ParallelSubAgentService:
                         messages=messages,
                         system_prompt=system_prompt,
                         temperature=0.3,
-                        max_tokens=min(int(getattr(ctx, "max_tokens", 20_000) or 20_000), 20_000),
+                        max_tokens=min(
+                            int(getattr(ctx, "max_tokens", 0) or 0)
+                            or int(getattr(ctx.model_config, "max_tokens", 0) or 20_000),
+                            262_144,
+                        ),
                         tools=child_tools or None,
                         deep_thinking=deep_thinking,
                     ):
@@ -873,15 +904,26 @@ class ParallelSubAgentService:
                     and length_continuations < _MAX_LENGTH_CONTINUATIONS
                 ):
                     length_continuations += 1
+                    if _has_unfinished_json_fence("\n\n".join(answer_parts)):
+                        # 截断发生在 JSON 围栏内：要求只续写 JSON 残片，避免模型
+                        # 重开一个新信封导致围栏跨块错配、整段解析降级。
+                        continuation_prompt = (
+                            "上一段回复因输出长度上限在 JSON 代码块内被截断。"
+                            "请从截断处精确续写剩余的 JSON：不要重新开始、不要重复"
+                            "已输出内容、不要输出任何解释或额外的标记，只输出 JSON 的"
+                            "后续片段，并在结束时补全闭合的 ```。"
+                        )
+                    else:
+                        continuation_prompt = (
+                            "上一段因输出长度达到上限而中断。请从中断处继续，"
+                            "不要重复已输出内容；保持相同的结构，直到完成当前任务。"
+                        )
                     messages.extend(
                         [
                             {"role": "assistant", "content": text},
                             {
                                 "role": "user",
-                                "content": (
-                                    "上一段因输出长度达到上限而中断。请从中断处继续，"
-                                    "不要重复已输出内容；保持相同的结构，直到完成当前任务。"
-                                ),
+                                "content": continuation_prompt,
                             },
                         ]
                     )
@@ -1331,6 +1373,7 @@ class ParallelSubAgentService:
                         "subagent_workdir": str(workdir),
                         "fanout_run_id": run_id,
                         "subagent_depth": 1,
+                        "room_id": str((agentteams_ctx_var.get() or {}).get("room_id") or ""),
                     },
                 )
                 if tool_name == "knowledge_search":

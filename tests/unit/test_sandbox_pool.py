@@ -65,7 +65,7 @@ def _settings(*, warm_size: int = 2, max_size: int = 2) -> SimpleNamespace:
         sandbox_default_cpu=1.0,
         sandbox_network_isolated=True,
         sandbox_docker_network="cygnusx_default",
-        sandbox_image="cygnusx/sandbox-base:latest",
+        sandbox_image="cygnusx-sandbox-copilot:v0.0.2dev",
     )
 
 

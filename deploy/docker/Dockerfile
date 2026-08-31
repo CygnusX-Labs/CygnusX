@@ -86,9 +86,11 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
 # validate_stdio_command 走 shutil.which，容器内必须有 node 运行时（python:3.11-slim 默认不带）。
 # bookworm apt 源（已切中科大镜像）提供 nodejs 18 / npm 9，满足绝大多数 MCP server。
 # tesseract：知识库图片索引使用中英文 OCR；缺失时只能索引文件名、说明和尺寸。
+# git：Studio 工作区检查点（studio_checkpoints）依赖 git CLI；缺失时创建/升级工作台会话会 500。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bzip2 \
     curl \
+    git \
     nodejs \
     npm \
     postgresql-client \

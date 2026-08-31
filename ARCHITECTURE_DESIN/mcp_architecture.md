@@ -243,7 +243,7 @@ OpenAICompatible   LiteLLM         Kimi (Legacy)
 
 | 名称 | 模型 | 端点 |
 |------|------|------|
-| qwen3.7-plus | qwen3.7-plus | 阿里云 MaaS |
+| qdoubao-seed-evolving | qdoubao-seed-evolving | 阿里云 MaaS |
 | deepseek-v4-pro | deepseek-v4-pro | 火山方舟 |
 | doubao-seed-2.0-pro | doubao-seed-2.0-pro | 火山方舟 |
 | gpt-5.5 | gpt-5.5 | 代理端点 |

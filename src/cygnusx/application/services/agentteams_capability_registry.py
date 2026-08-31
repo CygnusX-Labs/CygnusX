@@ -362,6 +362,57 @@ class AgentTeamsCapabilityRegistry:
             )
         return catalog
 
+    def room_consultation_catalog(self) -> list[dict[str, Any]]:
+        """协作室会诊/分诊候选目录：全部可会诊 Agent，含 ``chat_entry: false`` 的内部员工。
+
+        ``chat_entry`` 只约束 chat 侧对外路由入口（``chat_router_catalog``）；
+        协作室内部员工（如数据管理员、独立质量审计）虽不对外路由，但被用户
+        @ 点名或由经理分诊时可以在房间内直接回答用户。基集取
+        ``consultation_agents()``（天然排除 ``recruitable: false`` 的 Manager），
+        条目优先复用 ``chat_router_catalog``，缺失时由能力目录与 Agent 配置
+        兜底合成。
+        """
+        by_agent_id = {
+            str(entry.get("agent_id") or ""): entry for entry in self.chat_router_catalog()
+        }
+        abilities = self._ability_catalog.all()
+        active_agents = self._active_agents()
+        catalog: list[dict[str, Any]] = []
+        for agent_id in sorted(self.consultation_agents()):
+            existing = by_agent_id.get(agent_id)
+            if existing is not None:
+                catalog.append(existing)
+                continue
+            config = active_agents.get(agent_id) or {}
+            features = config.get("features") or {}
+            ability = abilities.get(agent_id) or {}
+            catalog.append(
+                {
+                    "agent_id": agent_id,
+                    "name": str(config.get("name") or agent_id),
+                    "description": str(
+                        ability.get("summary") or config.get("description") or ""
+                    ),
+                    "category": str(config.get("category") or "general"),
+                    "chat_entry": False,
+                    "capabilities": list(
+                        ability.get("capabilities") or features.get("capability_tags") or []
+                    ),
+                    "not_suitable_for": list(ability.get("not_suitable_for") or []),
+                    "handoff_when": list(ability.get("handoff_when") or []),
+                    "preferred_inputs": list(ability.get("preferred_inputs") or []),
+                    "routing_hints": [
+                        str(value) for value in features.get("routing_hints") or []
+                    ],
+                    "capability_tags": [
+                        str(value) for value in features.get("capability_tags") or []
+                    ],
+                    "avatar": str(config.get("avatar") or "💬"),
+                    "color": str(config.get("color") or "#64748b"),
+                }
+            )
+        return catalog
+
     def capability_detail_context(self, agent_ids: list[str]) -> str:
         """组队会诊/派单确认时按需加载选中候选的 detail 层文本(F5 渐进暴露第二层)。
 

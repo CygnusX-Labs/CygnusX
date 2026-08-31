@@ -8,7 +8,7 @@ selection:
 profiles:
   analysis-core:
     name: 通用多语言分析运行时
-    image: cygnusx-analysis:core-2026.07
+    image: cygnusx-analysis:core-v0.0.2dev
     family: cygnusx-analysis
     isolation_class: task-analysis
     runtime_uid: 10001
@@ -35,7 +35,7 @@ profiles:
 
   analysis-plot:
     name: 科研绘图运行时
-    image: cygnusx-analysis:plot-2026.07
+    image: cygnusx-analysis:plot-v0.0.2dev
     family: cygnusx-analysis
     isolation_class: task-analysis
     runtime_uid: 10001
@@ -63,7 +63,7 @@ profiles:
 
   analysis-scrna:
     name: 单细胞分析运行时
-    image: cygnusx-analysis:scrna-2026.07
+    image: cygnusx-analysis:scrna-v0.0.2dev
     family: cygnusx-analysis
     isolation_class: task-analysis-heavy
     runtime_uid: 10001

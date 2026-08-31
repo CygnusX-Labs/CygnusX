@@ -135,6 +135,39 @@ def test_parse_envelope_flattens_nested_string_lists() -> None:
     assert result.evidence_refs == ["https://example.test/weather"]
 
 
+def test_parse_envelope_recovers_restarted_envelope_after_length_continuation() -> None:
+    """长度截断续写时模型重开了一个完整信封：跨块错配的旧配对方式会整段降级。"""
+    raw = (
+        '```json { "conclusion": "我在绘图阶段输出 ggtree 脚本 + '
+        '```json { "conclusion": "（接上段）可视化美化评估收尾。", '
+        '"recommendations": ["先核验树文件"], "risks": [] } ```'
+    )
+    envelope, parse_success = AgentConsultationService._parse_envelope_with_status(raw)
+
+    assert parse_success is True
+    assert envelope.conclusion == "（接上段）可视化美化评估收尾。"
+    assert envelope.recommendations == ["先核验树文件"]
+
+
+def test_parse_envelope_tolerates_newline_seam_inside_string() -> None:
+    """续写拼接的 \\n\\n seam 落入字符串值时，strict=False 仍可解析。"""
+    raw = '```json\n{"conclusion": "前半段\n\n后半段", "risks": []}\n```'
+    envelope, parse_success = AgentConsultationService._parse_envelope_with_status(raw)
+
+    assert parse_success is True
+    assert envelope.conclusion == "前半段\n\n后半段"
+
+
+def test_parse_envelope_still_degrades_on_truncated_json() -> None:
+    """只有一段截断 JSON、没有重开完整信封时，仍走降级兜底。"""
+    raw = '```json { "conclusion": "写到一半被截断'
+    envelope, parse_success = AgentConsultationService._parse_envelope_with_status(raw)
+
+    assert parse_success is False
+    assert envelope.conclusion == raw
+    assert envelope.risks == ["信封解析降级：专家答复未满足结构化 JSON 契约。"]
+
+
 @pytest.mark.asyncio
 async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monkeypatch) -> None:
     task_id = "00000000-0000-0000-0000-000000000002"
@@ -190,8 +223,9 @@ async def test_quality_gate_blocks_low_mapping_rate_and_keeps_verified_refs(monk
     instruction = parallel_service.run.await_args.kwargs["tasks"][0]["task"]
     assert "mapping_rate" in instruction
     assert "不得把硬规则 BLOCKED 降级" in instruction
-    assert result.token_usage == 0
-    assert result.risks == ["信封解析降级：专家答复未满足结构化 JSON 契约。"]
+    # 信封内字符串含未转义换行也能容错解析（strict=False），硬门判定不受影响
+    assert result.token_usage == 1
+    assert result.risks == []
 
 
 def test_workspace_consultation_uses_scoped_workdir() -> None:

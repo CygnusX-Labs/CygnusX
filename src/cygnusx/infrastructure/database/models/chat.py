@@ -412,7 +412,7 @@ class ChatAssistantModel(Base, TimestampMixin):
         PGUUID(as_uuid=True), ForeignKey("ai_provider_configs.id"), nullable=True
     )
     default_temperature: Mapped[float] = mapped_column(Float, default=0.3, nullable=False)
-    default_max_tokens: Mapped[int] = mapped_column(Integer, default=4096, nullable=False)
+    default_max_tokens: Mapped[int] = mapped_column(Integer, default=65536, nullable=False)
 
     icon: Mapped[str] = mapped_column(String(10), default="\U0001f916", nullable=False)
     color: Mapped[str] = mapped_column(String(20), default="#4f8ef7", nullable=False)

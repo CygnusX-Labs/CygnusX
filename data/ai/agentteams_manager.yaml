@@ -8,16 +8,16 @@
 agent_id: agentteams-manager
 name: 生物信息部门经理
 description: AgentTeams 协作室的部门经理：承接需求、组织专家、审核计划并对交付质量负责。
-avatar: "🧭"
+avatar: "🧑‍🔬"
 color: "#4f8ef7"
 category: general
 # Manager 的会诊回复需要稳定的结构化输出（JSON 信封 / ask_user 澄清），
 # 沿用平台标准重推理模型。
-model: qwen3.7-plus
+model: qdoubao-seed-evolving
 prompt_file: prompts/agentteams_manager.md
 welcome_message: "你好，我是生物信息部门经理。描述你的分析目标，我来组织专家团队推进。"
 temperature: 0.4
-max_tokens: 32768
+max_tokens: 65536
 mcp_ids:
   # cygnusx-platform builtin server（uuid5(DNS, "cygnusx-platform.builtin")），
   # 经 mcp_tools 白名单只暴露两个只读工具：能力目录与当前房间状态查询。

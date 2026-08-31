@@ -18,6 +18,38 @@ class ConstraintResult:
     repair_attempted: bool
 
 
+@dataclass(frozen=True)
+class GenericCapabilityRule:
+    """无领域锚点时的通用能力匹配规则：任务文本命中 task_markers 且指派的
+    Agent 身份不含 agent_markers、且目录中另有 Agent 覆盖该能力时判为错配。
+
+    只收录边界清晰的通用能力；领域级选派约束一律沉淀到 data/ai/domains/*.yaml。
+    """
+
+    label: str
+    task_markers: tuple[str, ...]
+    agent_markers: tuple[str, ...]
+
+
+_GENERIC_CAPABILITY_RULES: tuple[GenericCapabilityRule, ...] = (
+    GenericCapabilityRule(
+        label="可视化/绘图",
+        task_markers=(
+            "可视化", "绘图", "画图", "绘制", "图表", "热图", "树图",
+            "publication-ready", "plot", "figure", "heatmap", "ggtree", "itol",
+        ),
+        agent_markers=("viz", "可视化", "visualization", "绘图", "图表", "plot"),
+    ),
+    GenericCapabilityRule(
+        label="代码/脚本执行",
+        task_markers=(
+            "代码", "脚本", "python", "bash", "调试", "批量处理", "自动化",
+        ),
+        agent_markers=("code", "代码", "脚本", "沙盒", "sandbox", "python", "bash"),
+    ),
+)
+
+
 def authoritative_rules(rules: Sequence[AssignmentRule]) -> list[AssignmentRule]:
     return [rule for rule in rules if rule.authoritative and rule.required]
 
@@ -63,14 +95,23 @@ def _candidate_identity(candidate: Mapping[str, Any]) -> str:
     features = candidate.get("features")
     if not isinstance(features, Mapping):
         features = {}
+
+    def _list_value(key: str) -> list[str]:
+        # 目录项（build_overdrive_agent_catalog）把能力声明放在顶层，
+        # Agent 原始配置则放在 features 下，两处都认。
+        value = features.get(key) or candidate.get(key) or []
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value]
+
     return normalize_marker(
         " ".join(
             [
                 str(candidate.get("agent_id") or ""),
                 str(candidate.get("name") or ""),
                 str(candidate.get("category") or ""),
-                *(str(value) for value in features.get("capability_scope") or []),
-                *(str(value) for value in features.get("capability_tags") or []),
+                *_list_value("capability_scope"),
+                *_list_value("capability_tags"),
             ]
         )
     )
@@ -160,6 +201,76 @@ def validate_plan(
     return list(dict.fromkeys(violations))
 
 
+def validate_capability_match(
+    assignments: Sequence[Mapping[str, Any]],
+    catalog_by_id: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """无领域锚点时的通用能力匹配校验（软约束）。
+
+    任务文本（task + 输入输出契约）命中某通用能力组，但指派 Agent 的身份
+    （agent_id/name/category/capability_scope/capability_tags）未覆盖该能力、
+    且目录中存在其他 Agent 覆盖时，记为错配。目录中无人能覆盖时不记 violation
+    ——没有更优选择，错配无从修复。
+    """
+    identities = {
+        agent_id: _candidate_identity(candidate)
+        for agent_id, candidate in catalog_by_id.items()
+    }
+    violations: list[str] = []
+    for item in assignments:
+        agent_id = str(item.get("agent_id") or "")
+        if agent_id not in identities:
+            continue
+        text = normalize_marker(
+            " ".join(
+                [
+                    str(item.get("task") or ""),
+                    *(str(value) for value in item.get("accepts_inputs") or []),
+                    *(str(value) for value in item.get("produces_outputs") or []),
+                ]
+            )
+        )
+        identity = identities[agent_id]
+        for rule in _GENERIC_CAPABILITY_RULES:
+            if not any(marker in text for marker in rule.task_markers):
+                continue
+            if any(marker in identity for marker in rule.agent_markers):
+                continue
+            has_better_candidate = any(
+                any(marker in other for marker in rule.agent_markers)
+                for other_id, other in identities.items()
+                if other_id != agent_id
+            )
+            if not has_better_candidate:
+                continue
+            violations.append(
+                f"任务 {item.get('task_id')} 涉及{rule.label}，"
+                f"但分派的 Agent 能力范围未覆盖（{agent_id}）"
+            )
+    return list(dict.fromkeys(violations))
+
+
+def build_repair_prompt(violations: Sequence[str], authoritative_anchors: str) -> str:
+    """构造 Manager 修复提示词：有领域锚点时按锚点契约修复，否则按能力错配修复。"""
+    anchors = authoritative_anchors.strip()
+    if anchors and anchors != "无。":
+        return (
+            "你刚才的执行计划缺少本领域的必需环节或违反了依赖约束：\n"
+            + "\n".join(f"- {item}" for item in violations)
+            + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
+            + anchors
+            + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），"
+            "保留原计划中的合理分片、并行和额外环节，只修复违规点。"
+        )
+    return (
+        "你刚才的执行计划存在能力错配：\n"
+        + "\n".join(f"- {item}" for item in violations)
+        + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），"
+        "依据候选专家能力目录（capability_scope 与 default_role）重新选派，"
+        "保留原计划中的合理分片、并行和依赖关系，只修复违规点。"
+    )
+
+
 def merge_with_authoritative(
     assignments: Sequence[Mapping[str, Any]],
     authoritative_assignments: Sequence[Mapping[str, Any]],
@@ -193,11 +304,21 @@ async def apply_authoritative_plan(
     mode: str,
     repair_enabled: bool,
     repair_plan: Callable[[list[str]], Awaitable[tuple[str, list[dict[str, Any]]]]],
+    capability_check_enabled: bool = True,
 ) -> ConstraintResult:
     current = [dict(item) for item in assignments]
     authoritative = [dict(item) for item in authoritative_assignments]
-    if not authoritative or mode == "off":
+    if mode == "off":
         return ConstraintResult(current, speech, "llm", [], False)
+    if not authoritative:
+        return await _apply_generic_capability_check(
+            current=current,
+            speech=speech,
+            catalog_by_id=catalog_by_id,
+            repair_enabled=repair_enabled,
+            repair_plan=repair_plan,
+            capability_check_enabled=capability_check_enabled,
+        )
     if mode == "override":
         return ConstraintResult(authoritative, speech, "rule_override", [], False)
 
@@ -231,13 +352,45 @@ async def apply_authoritative_plan(
     )
 
 
+async def _apply_generic_capability_check(
+    *,
+    current: list[dict[str, Any]],
+    speech: str,
+    catalog_by_id: Mapping[str, Mapping[str, Any]],
+    repair_enabled: bool,
+    repair_plan: Callable[[list[str]], Awaitable[tuple[str, list[dict[str, Any]]]]],
+    capability_check_enabled: bool,
+) -> ConstraintResult:
+    """无领域锚点时的软校验：发现能力错配则请求 Manager 修复一次；
+    修复未果不阻断通用流程，违规项随结果保留供观测。"""
+    if not capability_check_enabled or not current:
+        return ConstraintResult(current, speech, "llm", [], False)
+    violations = validate_capability_match(current, catalog_by_id)
+    if not violations:
+        return ConstraintResult(current, speech, "llm", [], False)
+    if not repair_enabled:
+        return ConstraintResult(current, speech, "llm", violations, False)
+    repaired_speech, repaired = await repair_plan(violations)
+    if repaired and not validate_capability_match(repaired, catalog_by_id):
+        return ConstraintResult(
+            repaired,
+            repaired_speech or speech,
+            "llm_repaired",
+            [],
+            True,
+        )
+    return ConstraintResult(current, speech, "llm", violations, True)
+
+
 __all__ = [
     "ConstraintResult",
     "apply_authoritative_plan",
     "anchor_ids",
     "authoritative_rules",
+    "build_repair_prompt",
     "format_anchors",
     "merge_with_authoritative",
     "serialize_anchors",
+    "validate_capability_match",
     "validate_plan",
 ]

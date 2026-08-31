@@ -191,7 +191,7 @@ class AgentContext:
     features: dict[str, Any] = field(default_factory=dict)
     user_capabilities_customized: bool = False
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 65536
 
 
 class AgentService:
@@ -330,7 +330,7 @@ class AgentService:
                 "skill_ids": cfg.get("skill_ids", []),
                 "features": features,
                 "temperature": cfg.get("temperature", 0.7),
-                "max_tokens": cfg.get("max_tokens", 4096),
+                "max_tokens": cfg.get("max_tokens", 65536),
                 "is_builtin": True,
                 "is_active": True,
             }

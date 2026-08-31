@@ -270,3 +270,34 @@ def test_agentteams_team_manifest_contains_all_recruitable_experts() -> None:
 
     assert len(recruitable_ids) == 15
     assert worker_ids == recruitable_ids | {"workflow-operator"}
+
+
+def test_room_consultation_catalog_includes_internal_staff_without_chat_entry(tmp_path) -> None:
+    """chat_entry:false 的内部员工不进 chat 侧对外路由目录，但仍是房间会诊候选。"""
+
+    class _ChatEntryAbilities:
+        def all(self):
+            return {
+                "agent-code": {"summary": "代码实现"},
+                "agent-data": {"summary": "数据预检", "chat_entry": False},
+            }
+
+        def render_detail(self, agent_id: str) -> str:
+            return ""
+
+    registry = AgentTeamsCapabilityRegistry(
+        FlowRegistry.from_directory(tmp_path),
+        _ChatEntryAbilities(),
+        [
+            {"agent_id": "agent-code", "name": "Code", "features": _features("agent-code")},
+            {"agent_id": "agent-data", "name": "数据管理员", "features": _features("agent-data")},
+        ],
+    )
+
+    chat_ids = {entry["agent_id"] for entry in registry.chat_router_catalog()}
+    room_entries = {entry["agent_id"]: entry for entry in registry.room_consultation_catalog()}
+    assert "agent-data" not in chat_ids
+    assert set(room_entries) == {"agent-code", "agent-data"}
+    assert room_entries["agent-data"]["chat_entry"] is False
+    assert room_entries["agent-data"]["name"] == "数据管理员"
+    assert room_entries["agent-data"]["description"] == "数据预检"

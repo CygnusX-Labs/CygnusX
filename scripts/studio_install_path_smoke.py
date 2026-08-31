@@ -23,8 +23,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SKILLS_DIR = Path("/data/cygnusx/skills")
-CORE_IMAGE = "cygnusx-analysis:core-2026.07"
-SCRNA_IMAGE = "cygnusx-analysis:scrna-2026.07"
+CORE_IMAGE = "cygnusx-analysis:core-v0.0.2dev"
+SCRNA_IMAGE = "cygnusx-analysis:scrna-v0.0.2dev"
 PROXY_CONTAINER = "cygnusx-studio-egress-proxy"
 PROXY_ALIAS = "studio-egress-proxy"
 

@@ -5,6 +5,8 @@
  - 前端：ChatCodeCard（轻量卡片），不走 StudioCodeCard
  - 无审批、无工作区文件操作；交付文件写入 /tmp/chat_output/ 或容器内 /workspace/output/，
    执行后复制到宿主机 storage_path/chat_sandbox/<user>/<session>/output 持久化并提供下载
+ - 输入方向：本聊天会话的上传附件在执行前注入容器 /workspace/input/，
+   真实路径通过工具结果的 input_files 回写给模型
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID
@@ -34,6 +37,8 @@ CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA: dict[str, Any] = {
             "流式返回 stdout/stderr/图表。需要交付给用户的文件（Excel、表格、图片等）"
             "先创建目录并写入 /tmp/chat_output/ 或工作区 output/（如 output/figures/xxx.png），"
             "执行后平台自动收集并在消息中提供预览与下载。"
+            "用户随消息上传的文件会在执行前自动注入沙盒 /workspace/input/，"
+            "执行结果的 input_files 会列出真实路径，代码中按该路径直接读取即可。"
             "复杂分析（多文件协作、工作区管理）请使用工作台。"
         ),
         "parameters": {
@@ -65,15 +70,21 @@ CHAT_ARTIFACT_CONTAINER_DIR = "/tmp/chat_output"
 # 与上面的 /tmp/chat_output 并行收集，保证两种写法都能在消息里出现预览/下载。
 CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR = "/workspace/output"
 
-# 执行前清理交付目录的 bash 命令：容器来自 warm pool 可能被复用，
-# 必须清掉上一个会话遗留的产物，避免跨会话文件串扰。
+# 用户上传附件的注入目录：执行前由后端把本会话上传文件 docker cp 进容器，
+# 模型按执行结果 input_files 里的真实路径读取。
+CHAT_INPUT_CONTAINER_DIR = "/workspace/input"
+
+# 执行前清理交付/输入目录的 bash 命令：容器来自 warm pool 可能被复用，
+# 必须清掉上一个会话遗留的产物与输入文件，避免跨会话文件串扰。
 # mkdir 时一并创建 figures/results 常用子目录，避免用户代码直接
 # savefig("/tmp/chat_output/figures/xxx.png") 时因子目录不存在而报 FileNotFoundError。
 _ARTIFACT_DIR_RESET_CMD = (
     f"rm -rf {CHAT_ARTIFACT_CONTAINER_DIR} {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}"
+    f" {CHAT_INPUT_CONTAINER_DIR}"
     f" && mkdir -p"
     f" {CHAT_ARTIFACT_CONTAINER_DIR}/figures {CHAT_ARTIFACT_CONTAINER_DIR}/results"
     f" {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}/figures {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}/results"
+    f" {CHAT_INPUT_CONTAINER_DIR}"
 )
 
 # 交付目录重置归属：container_id -> 上次执行重置的 session_id。
@@ -86,6 +97,14 @@ _artifact_dir_owner: dict[str, str] = {}
 # 后续调用只把新增/内容变化的文件返回给前端，避免同一文件在多轮消息的
 # artifacts 清单里重复出现（宿主机复制仍全量执行，保证文件落盘）。
 _collected_artifacts: dict[str, dict[str, tuple]] = {}
+
+# 容器内已注入输入文件的签名：container_id -> {文件名: (size, mtime)}。
+# 同一容器被同一会话亲和复用时跳过未变化的重复注入；容器切换会话（交付目录重置）
+# 时清空对应条目，重新全量注入。
+_injected_inputs: dict[str, dict[str, tuple]] = {}
+
+# 单次注入的附件总大小上限，防止超大上传撑爆容器磁盘/内存。
+_INJECT_MAX_TOTAL_BYTES = 512 * 1024 * 1024
 
 # ===== 内部工具 =====
 
@@ -202,10 +221,156 @@ async def _collect_artifacts(
 # ===== 执行器 =====
 
 
+async def _collect_session_attachment_refs(
+    db: Any, chat_session_id: str, user_id: str
+) -> list[tuple[str, str]]:
+    """收集本聊天会话的附件引用：消息元数据为主，chat-uploads 会话标记扫描兜底。
+
+    返回 [(规范化引用(upload://… / file://…), 展示名)]，按消息顺序去重。
+    目录引用（directory://）走 Studio 工作区，不注入聊天沙盒。
+    """
+    from sqlalchemy import select
+
+    from cygnusx.infrastructure.database.models.chat import ChatMessageModel
+
+    refs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(file_id: Any, name: Any) -> None:
+        fid = str(file_id or "").strip()
+        if not fid:
+            return
+        ref = fid if "://" in fid else f"upload://{fid}"
+        if ref in seen:
+            return
+        seen.add(ref)
+        refs.append((ref, str(name or "")))
+
+    try:
+        result = await db.execute(
+            select(ChatMessageModel)
+            .where(ChatMessageModel.session_id == str(chat_session_id))
+            .order_by(ChatMessageModel.created_at)
+        )
+        for msg in result.scalars().all():
+            if msg.role != "user":
+                continue
+            for att in (msg.metadata_json or {}).get("attachments") or []:
+                if att.get("type") == "directory":
+                    continue
+                _add(att.get("file_id"), att.get("name"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ChatSandbox] 收集会话附件引用失败: {e}")
+
+    # 兜底：上传时前端尚未拿到真实 session_id 的文件没有会话标记，
+    # 未进入消息元数据的本会话上传按文件名内嵌标记找回。
+    try:
+        from cygnusx.infrastructure.config.storage_config import get_user_chat_upload_dir
+
+        upload_dir = get_user_chat_upload_dir(str(user_id))
+        marker = f".s{str(chat_session_id)[:8]}"
+        if marker != ".s" and upload_dir.is_dir():
+            for path in sorted(upload_dir.iterdir()):
+                if path.is_file() and marker in path.name:
+                    _add(path.name.split(".", 1)[0], path.name)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ChatSandbox] 扫描 chat-uploads 目录失败: {e}")
+    return refs
+
+
+async def _inject_session_files(
+    db: Any, user_id: str, chat_session_id: str | None, container_id: str | None
+) -> list[dict[str, Any]]:
+    """把本聊天会话的上传附件复制进容器 /workspace/input/，返回 [{name, path, size}]。
+
+    未变化（size+mtime 相同）的文件跳过重复注入；任一文件解析失败仅跳过，
+    整体失败返回空列表，不阻断代码执行。
+    """
+    if not chat_session_id or not container_id:
+        return []
+    from cygnusx.infrastructure.mcp.presets import _resolve_workspace_file
+    from cygnusx.infrastructure.sandbox import get_sandbox_pool
+
+    refs = await _collect_session_attachment_refs(db, chat_session_id, user_id)
+    if not refs:
+        return []
+
+    container_key = str(container_id)
+    # ref -> (容器内文件名, size, mtime)：按引用追踪，同名不同文件不会误判为已注入
+    injected = _injected_inputs.setdefault(container_key, {})
+    used_names: set[str] = {value[0] for value in injected.values()}
+    pending: list[tuple[Any, str, tuple, str]] = []
+    metas: list[dict[str, Any]] = []
+    total_bytes = 0
+    for ref, display_name in refs:
+        try:
+            target, meta = await _resolve_workspace_file(str(user_id), ref, db)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ChatSandbox] 解析附件引用失败 {ref}: {e}")
+            continue
+        if target is None or not target.is_file():
+            continue
+        try:
+            stat = target.stat()
+        except OSError:
+            continue
+        signature = (stat.st_size, stat.st_mtime)
+        existing = injected.get(ref)
+        if existing and existing[1:] == signature:
+            # 同引用同内容：容器里已有，直接复用
+            metas.append(
+                {
+                    "name": existing[0],
+                    "path": f"{CHAT_INPUT_CONTAINER_DIR}/{existing[0]}",
+                    "size": stat.st_size,
+                }
+            )
+            continue
+        arcname = Path(display_name).name or target.name
+        if not arcname or arcname in used_names:
+            arcname = f"{str(meta.get('file_id') or '')[:8]}_{arcname or target.name}"
+        total_bytes += stat.st_size
+        if total_bytes > _INJECT_MAX_TOTAL_BYTES:
+            logger.warning(
+                f"[ChatSandbox] 注入附件总大小超过 {_INJECT_MAX_TOTAL_BYTES} 上限，"
+                f"跳过 {arcname} 及后续文件"
+            )
+            break
+        used_names.add(arcname)
+        pending.append((target, arcname, signature, ref))
+        metas.append(
+            {
+                "name": arcname,
+                "path": f"{CHAT_INPUT_CONTAINER_DIR}/{arcname}",
+                "size": stat.st_size,
+            }
+        )
+
+    if pending:
+        try:
+            written = set(
+                await get_sandbox_pool().copy_files_in(
+                    container_key,
+                    [(src, name) for src, name, _sig, _ref in pending],
+                    CHAT_INPUT_CONTAINER_DIR,
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ChatSandbox] 附件注入容器失败: {e}")
+            return []
+        for _src, name, sig, ref in pending:
+            if name in written:
+                injected[ref] = (name, *sig)
+    # 只报告容器里确实存在的文件：本轮写入的 + 签名未变的存量
+    valid_names = {value[0] for value in injected.values()}
+    return [m for m in metas if m["name"] in valid_names]
+
+
 async def execute_chat_sandbox(
     args: dict[str, Any],
     user_id: str,
     on_output: Any | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """在 standalone sandbox pool 中执行代码，返回 llm_payload + ui_payload。"""
     from cygnusx.application.services.sandbox_service import SandboxService
@@ -242,8 +407,20 @@ async def execute_chat_sandbox(
                     ):
                         pass
                     _artifact_dir_owner[container_key] = str(session.id)
+                    # 输入目录随重置被清空，注入签名一并失效
+                    _injected_inputs.pop(container_key, None)
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[ChatSandbox] 交付目录清理失败（继续执行）: {e}")
+
+            # 执行前把本聊天会话的上传附件注入容器 /workspace/input/，
+            # 让模型代码可以按真实文件系统路径直接读取用户文件。
+            try:
+                input_files = await _inject_session_files(
+                    db, user_id, session_id, session.container_id
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[ChatSandbox] 会话附件注入失败（继续执行）: {e}")
+                input_files = []
 
             stdout_parts: list[str] = []
             stderr_parts: list[str] = []
@@ -310,6 +487,14 @@ async def execute_chat_sandbox(
                 llm_payload["plotly_note"] = (
                     "plotly 图表已在消息中内联交互预览，无需再引导用户下载 HTML 查看"
                 )
+            if input_files:
+                llm_payload["input_files"] = [
+                    {"name": item["name"], "path": item["path"]} for item in input_files
+                ]
+                llm_payload["input_files_note"] = (
+                    "用户上传的附件已注入沙盒，代码中请直接按上述 path 读取，"
+                    "不要再去 /tmp 或全盘搜索文件"
+                )
             if artifacts:
                 llm_payload["artifacts"] = [str(item["path"]) for item in artifacts]
                 llm_payload["artifacts_note"] = (
@@ -346,6 +531,7 @@ async def stream_chat_sandbox_tool(
     args: dict[str, Any],
     user_id: str,
     tool_call_id: str = "",
+    session_id: str | None = None,
 ) -> AsyncIterator[ChatChunk | dict[str, Any]]:
     """流式执行聊天沙盒工具，产出 tool_output 事件 + 最终结果信封。"""
     queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=_STREAM_QUEUE_MAX_CHUNKS)
@@ -353,7 +539,9 @@ async def stream_chat_sandbox_tool(
     async def _on_output(stream: str, data: str) -> None:
         await queue.put((stream, data))
 
-    task = asyncio.create_task(execute_chat_sandbox(args, user_id, on_output=_on_output))
+    task = asyncio.create_task(
+        execute_chat_sandbox(args, user_id, on_output=_on_output, session_id=session_id)
+    )
 
     last_emit = time.monotonic()
     while True:

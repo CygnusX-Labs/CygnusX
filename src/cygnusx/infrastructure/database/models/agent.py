@@ -45,7 +45,7 @@ class AgentTemplateModel(Base, TimestampMixin):
         if self.temperature is None:
             self.temperature = 0.7
         if self.max_tokens is None:
-            self.max_tokens = 4096
+            self.max_tokens = 65536
         if self.is_builtin is None:
             self.is_builtin = False
         if self.is_active is None:
@@ -87,7 +87,7 @@ class AgentTemplateModel(Base, TimestampMixin):
     features: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     temperature: Mapped[float] = mapped_column(Float, default=0.7, nullable=False)
-    max_tokens: Mapped[int] = mapped_column(Integer, default=4096, nullable=False)
+    max_tokens: Mapped[int] = mapped_column(Integer, default=65536, nullable=False)
 
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

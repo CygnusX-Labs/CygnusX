@@ -318,8 +318,8 @@ async def test_unbound_builtin_agent_resolves_default_model_for_studio():
     """Studio 创建时应为历史空绑定的内置 Agent 解析默认模型。"""
     provider = SimpleNamespace(
         id=uuid4(),
-        name="qwen3.7-plus",
-        model="qwen3.7-plus",
+        name="qdoubao-seed-evolving",
+        model="qdoubao-seed-evolving",
         is_active=True,
         is_default=True,
     )
@@ -344,8 +344,8 @@ async def test_unbound_builtin_agent_resolves_default_model_for_studio():
 
     assert model_id == provider.id
     assert agent.model_id == provider.id
-    assert agent.model_name == "qwen3.7-plus"
-    assert agent.model_engine == "qwen3.7-plus"
+    assert agent.model_name == "qdoubao-seed-evolving"
+    assert agent.model_engine == "qdoubao-seed-evolving"
 
 
 @pytest.mark.asyncio
@@ -630,7 +630,7 @@ def test_mcp_builder_agent_loads_successfully():
     assert data is not None, "mcp_builder.yaml 加载失败"
     assert data["agent_id"] == "agent-mcp-builder"
     assert data["name"] == "MCP 构建师"
-    assert data["model"] == "qwen3.7-plus"
+    assert data["model"] == "qdoubao-seed-evolving"
 
     # Studio 配置验证
     assert "studio" in data

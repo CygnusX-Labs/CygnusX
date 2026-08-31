@@ -9,7 +9,7 @@ model: deepseek-v4-flash
 prompt_file: prompts/explorer.md
 welcome_message: "你好！我是代码库侦察员，可以先帮你梳理项目结构、关键文件和依赖关系。"
 temperature: 0.2
-max_tokens: 8192
+max_tokens: 65536
 mcp_ids: []
 skill_ids: []
 features:

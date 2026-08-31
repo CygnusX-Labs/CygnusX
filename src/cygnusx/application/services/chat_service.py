@@ -151,6 +151,9 @@ from cygnusx.application.services.overdrive_plan_constraint_service import (
     authoritative_rules as overdrive_authoritative_rules,
 )
 from cygnusx.application.services.overdrive_plan_constraint_service import (
+    build_repair_prompt,
+)
+from cygnusx.application.services.overdrive_plan_constraint_service import (
     format_anchors as format_overdrive_anchors,
 )
 from cygnusx.application.services.overdrive_planning_service import (
@@ -427,9 +430,10 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 4.1. 任何“分析/执行/运行/处理/生成/构建/绘制”类任务都必须先建立通用输入契约：明确任务类型、输入来源（上传文件、工作区、已有结果或用户明确说明的纯方法讨论）和预期交付。没有可核验输入时，必须把 questions 填成澄清问题并将 assignments 置为空；禁止因为关键词命中某个领域就臆造 FASTQ、矩阵、图片、树文件或其他产物。此规则适用于 RNA-seq、单细胞、可视化、富集、系统发育、代码/报告处理等所有领域。
 5. assignments 0–12 个；每项必须有唯一 task_id，depends_on 只能引用同一列表中的 task_id，并可声明 accepts_inputs、produces_outputs、retry、timeout_seconds、priority。没有依赖且数据契约无交集的任务必须并行；存在真实上下游关系时才串行。
 6. 采用满足任务所需的最小专家集合：单领域任务只分配一个最匹配专家；只有用户明确要求多个独立交付物，或存在不可省略的真实上下游依赖时，才增加其他专家。不得固定套用“通用助手 → 代码助手 → 可视化助手”。
+6.1. 上方“本领域必需环节”为“无。”且任务属于多阶段分析/执行类时，计划默认按“输入核验 → 核心分析/实现 → 可视化/解读 → 汇总交付”组织：输入核验与汇总交付可与相邻阶段合并，完全缺省时必须在 speech 中说明理由；下游任务的 accepts_inputs 必须能由上游任务的 produces_outputs 满足。简单问答和单领域小任务仍遵循规则 6，不得为套用骨架而增加专家。
 7. 同一专家可承担多个任务；只有真正互不依赖的任务才允许同波并行。简单问答、闲聊、单领域问题 → questions 和 assignments 都为空数组。
 8. speech 应说明执行顺序和依赖关系，不得声称所有专家会同时处理；禁止提及“超频模式已开启/切换”“高性能响应状态”等系统状态。
-9. 用户不需要手动配置调度。优先依据候选专家的 capability_scope 与 default_role 自动选择；不得把超出专家能力边界的任务硬派给该专家。
+9. 用户不需要手动配置调度。优先依据候选专家的 capability_scope 与 default_role 自动选择；不得把超出专家能力边界的任务硬派给该专家；选派后在 task 描述末尾用一句话注明选派依据（命中该专家的哪项能力）。
 10. 大规模输入可以设计分片并行，同一专家可承担多个 shard 任务；分片不得破坏必需锚点的依赖方向。
 10.1. 大型单一交付物（完整指南、多章节报告、综述、端到端方案等）默认按章节/模块拆成 2–4 个内容互不重叠的分片任务并行执行，再加一个"汇总定稿"任务（depends_on 引用全部分片 task_id）负责合并、去重、统一口径并产出最终交付物；分片可以分给同一专家，不违反最小专家集合规则。
 10.2. 每个分片任务在 task 描述中写清各自覆盖范围并声明各自的 produces_outputs（如 guide-part-upstream.md）；汇总任务的 accepts_inputs 引用这些产物。交付物较小时保持单任务，不为并行而拆分。
@@ -2571,6 +2575,7 @@ class ChatService(
         enable_code_execution: bool = False,
         deep_thinking: bool = False,
         mode: str | None = None,
+        runtime_profile: str | None = None,
         mcp_mode: str | None = None,
         extra_mcp_servers: list[str] | None = None,
         multi_agent: bool | None = None,
@@ -2758,6 +2763,16 @@ class ChatService(
             explicit_overdrive_changed = effective_overdrive if overdrive else None
             if studio_mode:
                 studio_image = (ctx.features.get("studio") or {}).get("image")
+                if runtime_profile and runtime_profile.strip():
+                    # 用户在助手页显式选择的运行时优先于 Agent yaml 的 studio.image
+                    try:
+                        _, selected_profile = get_runtime_images().select(
+                            set(), "studio", preferred_profile=runtime_profile.strip()
+                        )
+                        studio_image = selected_profile.image
+                    except (KeyError, ValueError) as exc:
+                        yield ChatChunk(type="error", content=f"运行时选择失败：{exc}")
+                        return
             title = f"与 {ctx.agent.name} 的对话"
             dto = await self.create_session(
                 user_id,
@@ -3218,8 +3233,13 @@ class ChatService(
         # Studio 模式：附件与历史上传文件在沙盒内无法以 file:// / upload:// 引用直接读取，
         # 只有软链进 /workspace/input/ 后才能按文件系统路径读取。这里在组装提示词前先把
         # 这些文件幂等引入工作区，并把沙盒可读路径回写给模型（恢复"工作区文件挂载沙盒"设计）。
+        # 仅限 Studio：普通聊天的轻量沙盒没有工作区挂载，软链路径在聊天沙盒内不可读；
+        # 普通聊天的附件由 chat_sandbox_execute 执行前注入容器 /workspace/input/。
         studio_sandbox_paths: dict[str, str] = {}
-        if any(str(att.get("file_id") or "").startswith(("file://", "upload://", "directory://")) for att in attachment_dicts):
+        if studio_mode and any(
+            str(att.get("file_id") or "").startswith(("file://", "upload://", "directory://"))
+            for att in attachment_dicts
+        ):
             studio_sandbox_paths = await self._link_session_files_to_workspace(
                 current_session_id, user_id, attachment_dicts
             )
@@ -4772,6 +4792,7 @@ class ChatService(
                             args,
                             user_id=str(user_id),
                             tool_call_id=tc.get("id", ""),
+                            session_id=str(current_session_id),
                         ):
                             if isinstance(item, ChatChunk):
                                 yield item
@@ -5515,12 +5536,9 @@ class ChatService(
             ) -> tuple[str, list[dict[str, Any]]]:
                 try:
                     repair_raw = await call_manager(
-                        "你刚才的执行计划缺少本领域的必需环节或违反了依赖约束：\n"
-                        + "\n".join(f"- {item}" for item in violations)
-                        + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
-                        + format_overdrive_anchors(authoritative_rules)
-                        + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），"
-                        "保留原计划中的合理分片、并行和额外环节，只修复违规点。",
+                        build_repair_prompt(
+                            violations, format_overdrive_anchors(authoritative_rules)
+                        ),
                         max_tokens=2400 if deep_thinking else 900,
                     )
                 except Exception:  # noqa: BLE001
@@ -5570,6 +5588,7 @@ class ChatService(
                 mode=settings.overdrive_authoritative_mode,
                 repair_enabled=settings.overdrive_plan_repair_enabled,
                 repair_plan=repair_plan,
+                capability_check_enabled=settings.overdrive_capability_check_enabled,
             )
             assignments = registry.minimize_assignments(
                 constrained.assignments, catalog_by_id, intake_slots

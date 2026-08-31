@@ -285,7 +285,9 @@ class AgentTeamsIntrospectionService:
         owner_id: str | None,
     ) -> AgentTeamsRoomModel | None:
         if case_id.startswith("room-"):
-            raise IntrospectionDeniedError("自省查询被拒绝：scope 必须是 Case，不能是房间命名空间")
+            raise IntrospectionDeniedError(
+                "自省查询被拒绝：房间未立项时请使用 room_facts_query 或 room_messages_read"
+            )
         if room_id is not None:
             room = await db.scalar(
                 select(AgentTeamsRoomModel).where(AgentTeamsRoomModel.room_id == room_id)

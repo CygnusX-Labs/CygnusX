@@ -92,17 +92,24 @@ def _manager_agent_config() -> dict:
 
 
 class FakeAbilityCatalog:
-    def __init__(self, agent_ids: set[str]) -> None:
+    def __init__(
+        self, agent_ids: set[str], *, chat_entry_false: set[str] | None = None
+    ) -> None:
         self._agent_ids = agent_ids
+        self._chat_entry_false = chat_entry_false or set()
 
     def all(self) -> dict[str, dict]:
-        return {agent_id: {} for agent_id in self._agent_ids}
+        return {
+            agent_id: {"chat_entry": False} if agent_id in self._chat_entry_false else {}
+            for agent_id in self._agent_ids
+        }
 
 
 def _registry(
     *agent_ids: str,
     planner_ids: set[str] | None = None,
     with_manager: bool = False,
+    chat_entry_false: set[str] | None = None,
 ) -> AgentTeamsCapabilityRegistry:
     planners = planner_ids or set()
     configs = [
@@ -114,7 +121,7 @@ def _registry(
         configs.append(_manager_agent_config())
         catalog_ids.add("agentteams-manager")
     return AgentTeamsCapabilityRegistry(
-        ability_catalog=FakeAbilityCatalog(catalog_ids),
+        ability_catalog=FakeAbilityCatalog(catalog_ids, chat_entry_false=chat_entry_false),
         agent_configs=configs,
     )
 
@@ -1335,6 +1342,81 @@ async def test_clarify_opt_out_reply_falls_back_to_chat(monkeypatch) -> None:
     assert "room.route_decision" not in event_types
 
 
+def test_ask_reply_answer_text_strips_nested_question() -> None:
+    """结构化答复只取每行最后一个「：」之后的答案文本，剥离嵌套的问题原文。"""
+    content = (
+        "【澄清回复】\n"
+        "1. 数据来源（任选其一）：填写工作区文件名/路径，例如 raw/genes.xlsx：先讨论方案（暂不执行）"
+    )
+
+    assert (
+        AgentTeamsRoomResponseService._ask_reply_answer_text(content)
+        == "先讨论方案（暂不执行）"
+    )
+    assert AgentTeamsRoomResponseService._ask_reply_answer_text("随便聊聊") is None
+
+
+@pytest.mark.asyncio
+async def test_clarify_opt_out_without_pending_card_falls_back_to_chat(monkeypatch) -> None:
+    """pending 卡检测失效（事件流取不到历史卡）时，结构化 opt-out 答复也必须
+    终止追问：答复里嵌套的问题原文含“执行”动词，不得再被判成执行意图。"""
+    reply = (
+        "【澄清回复】\n"
+        "1. 收到你的执行请求「帮我做差异分析」。如需立即执行，请上传文件或填写工作区路径；"
+        "也可以先讨论分析方案。：先讨论方案（暂不执行）"
+    )
+    events = [_user_message_event("帮我做差异分析"), _user_message_event(reply)]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的，先讨论方案。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "responded"}
+    run.assert_awaited_once()
+    agentteams.start_chat_planning.assert_not_awaited()
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.ask_user" not in event_types
+    assert "room.route_decision" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_clarify_card_origin_stays_original_request_not_nested_reply(monkeypatch) -> None:
+    """继续追问时卡片引用的执行请求必须保持原始请求，不得递归嵌套上一轮答复。"""
+    reply = (
+        "【澄清回复】\n"
+        "1. 收到你的执行请求「帮我做差异分析」。如需立即执行，请上传文件或填写工作区路径；"
+        "也可以先讨论分析方案。：使用工作区已有数据（请回复文件名或路径）"
+    )
+    events = [
+        _user_message_event("帮我做差异分析"),
+        _clarify_card_event("帮我做差异分析", 1),
+        _user_message_event(reply),
+    ]
+    agentteams = _agentteams(status="received", events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="好的。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+
+    result = await _service(
+        agentteams=agentteams, registry=_registry("agent-general"), redis=FakeRedis()
+    ).respond("bioops_1", "user-a", reply)
+
+    assert result == {"status": "asked"}
+    run.assert_not_awaited()
+    ask_call = next(
+        call
+        for call in agentteams.post_case_evidence.await_args_list
+        if call.kwargs["event_type"] == "room.ask_user"
+    )
+    payload = ask_call.kwargs["payload"]
+    assert payload["round"] == 2
+    assert payload["origin_content"] == "帮我做差异分析"
+    assert "【澄清回复】" not in payload["origin_content"]
+    assert "【澄清回复】" not in payload["questions"][0]["question"]
+
+
 @pytest.mark.asyncio
 async def test_non_execution_ask_user_card_does_not_arm_pending_clarify(monkeypatch) -> None:
     """Manager LLM 产出的普通澄清卡（无 clarify_kind 标记）不计入执行对象追问：
@@ -1540,12 +1622,18 @@ async def test_direct_mention_failure_falls_back_to_manager_with_audit(monkeypat
         call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list
     ]
     assert event_types == [
+        "room.typing",
+        "room.typing",
         "room.agent_message",
         "room.agent_timeout",
         "room.typing",
         "room.agent_message",
         "room.typing",
     ]
+    # 前两条 typing 是领域 Agent 直答的开/结束，携带响应者身份。
+    expert_typing = _evidence_calls(agentteams, "room.typing")[:2]
+    assert [call.kwargs["payload"]["typing"] for call in expert_typing] == [True, False]
+    assert all(call.kwargs["payload"]["agent_id"] == "agent-scrna" for call in expert_typing)
     fallback = _evidence_calls(agentteams, "room.agent_message")[0]
     assert fallback.kwargs["payload"]["direct_fallback"] is True
     assert "暂时无法响应" in fallback.kwargs["payload"]["content"]
@@ -1645,6 +1733,58 @@ async def test_direct_mention_success_has_no_fallback(monkeypatch) -> None:
     assert len(messages) == 1
     assert messages[0].kwargs["payload"]["direct_mention"] is True
     assert messages[0].kwargs["payload"]["content"] == "领域直答：质控已通过。"
+
+
+@pytest.mark.asyncio
+async def test_direct_mention_emits_typing_events_with_agent_identity(monkeypatch) -> None:
+    """直答路径必须落 room.typing(True/False) 且携带响应者身份，
+    前端据此显示「<领域 Agent> 正在输入」而不是一律显示经理。"""
+    events = _direct_message_events()
+    agentteams = _agentteams(events=events)
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="领域直答：质控已通过。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+    room = _room(case_id="bioops_1")
+
+    result = await _service(
+        agentteams=agentteams,
+        registry=_registry("agent-scrna", with_manager=True),
+        redis=FakeRedis(),
+    ).respond_room(room, "user-a", "这个样本的质控怎么看？", target_agent_id="agent-scrna")
+
+    assert result == {"status": "direct_responded"}
+    typing_calls = _evidence_calls(agentteams, "room.typing")
+    assert len(typing_calls) == 2
+    assert [call.kwargs["payload"]["typing"] for call in typing_calls] == [True, False]
+    for call in typing_calls:
+        assert call.kwargs["payload"]["agent_id"] == "agent-scrna"
+        assert call.kwargs["payload"]["agent_name"] == "agent-scrna"
+
+
+@pytest.mark.asyncio
+async def test_direct_mention_failure_still_clears_typing(monkeypatch) -> None:
+    """直答报错降级时 typing 也必须复位，避免指示器残留（TTL 之外的硬复位）。"""
+    events = _direct_message_events()
+    agentteams = _agentteams(events=events)
+
+    async def run(self, **kwargs):
+        if kwargs["agent_id"] == "agent-scrna":
+            raise RuntimeError("worker llm down")
+        return ConsultationEnvelope(conclusion="Manager 已接管，先给出初步判断。")
+
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+    room = _room(case_id="bioops_1")
+
+    result = await _service(
+        agentteams=agentteams,
+        registry=_registry("agent-scrna", with_manager=True),
+        redis=FakeRedis(),
+    ).respond_room(room, "user-a", "这个样本的质控怎么看？", target_agent_id="agent-scrna")
+
+    assert result == {"status": "responded"}
+    # 前两条 typing 属于直答的领域 Agent（True→False 硬复位）；其后是 Manager 接管主回路的 typing。
+    typing_calls = _evidence_calls(agentteams, "room.typing")
+    assert [call.kwargs["payload"]["typing"] for call in typing_calls[:2]] == [True, False]
+    assert all(call.kwargs["payload"]["agent_id"] == "agent-scrna" for call in typing_calls[:2])
 
 
 @pytest.mark.asyncio
@@ -2027,3 +2167,346 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
     assert "scrna 分区项目事实" not in content
     assert "不应出现" not in content
     assert store_calls == ["", "agentteams-manager"]
+
+
+def test_room_message_history_injects_other_agent_reply_without_current_message(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(
+            room_context_message_limit=20,
+            room_context_max_chars=16_000,
+            room_context_include_thinking=False,
+        ),
+    )
+    history = AgentTeamsRoomResponseService._room_message_history(
+        [
+            {
+                "event_type": "room.user_message",
+                "payload": {"payload": {"content": "请代码助手回答"}},
+            },
+            {
+                "event_type": "room.agent_message",
+                "payload": {
+                    "payload": {"agent_id": "agent-code", "content": "代码助手的真实回复"}
+                },
+            },
+            {
+                "event_type": "room.user_message",
+                "payload": {"payload": {"content": "重复代码助手刚刚的回复"}},
+            },
+        ],
+        current_content="重复代码助手刚刚的回复",
+    )
+
+    assert "agent-code：代码助手的真实回复" in history
+    assert "重复代码助手刚刚的回复" not in history
+    assert "thinking" not in history.lower()
+
+
+# ---- 纯咨询分诊（CHAT → 领域专家直答）----
+
+
+def _chat_question_events(content: str) -> list[dict]:
+    return [
+        {
+            "event_id": "evt-chat-1",
+            "event_type": "room.user_message",
+            "recorded_at": "2026-08-26T12:40:00+00:00",
+            "payload": {"summary": content, "payload": {"actor": "user-a", "content": content}},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_consultation_triage_routes_chat_question_to_specialist(monkeypatch) -> None:
+    """纯咨询问题命中分诊：落 room.route_transition 事件并由领域专家直答。"""
+    content = "rna-seq 的原理是什么呀"
+    agentteams = _agentteams(events=_chat_question_events(content))
+    redis = FakeRedis()
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="RNA-seq 的核心原理是……"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+    service = _service(
+        agentteams=agentteams,
+        registry=_registry("agent-rnaseq", "agent-general", with_manager=True),
+        redis=redis,
+    )
+    triage = AsyncMock(
+        return_value={"agent_id": "agent-rnaseq", "reason": "RNA-seq 原理属转录组领域", "confidence": 0.92}
+    )
+    monkeypatch.setattr(service, "_triage_consultation_agent", triage)
+
+    result = await service.respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "triage_responded"}
+    # 只有领域专家被会诊，Manager 不再重复作答。
+    assert run.await_count == 1
+    assert run.await_args.kwargs["agent_id"] == "agent-rnaseq"
+    assert "分诊" in run.await_args.kwargs["question"]
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.route_transition" in event_types
+    transition_call = next(
+        call
+        for call in agentteams.post_case_evidence.await_args_list
+        if call.kwargs["event_type"] == "room.route_transition"
+    )
+    assert transition_call.kwargs["payload"]["target_agent_id"] == "agent-rnaseq"
+    assert transition_call.kwargs["payload"]["trigger"] == "consultation_triage"
+    assert transition_call.kwargs["payload"]["causation_event_id"] == "evt-chat-1"
+    reply_call = next(
+        call
+        for call in agentteams.post_case_evidence.await_args_list
+        if call.kwargs["event_type"] == "room.agent_message"
+    )
+    assert reply_call.kwargs["payload"]["agent_id"] == "agent-rnaseq"
+    assert reply_call.kwargs["payload"]["routed_by"] == "manager_triage"
+    assert reply_call.kwargs["payload"]["direct_mention"] is False
+
+
+@pytest.mark.asyncio
+async def test_consultation_triage_miss_keeps_manager_reply(monkeypatch) -> None:
+    """分诊未命中（返回 None）：维持 Manager 主回路回答，不落分诊事件。"""
+    content = "rna-seq 的原理是什么呀"
+    agentteams = _agentteams(events=_chat_question_events(content))
+    redis = FakeRedis()
+    run = AsyncMock(return_value=ConsultationEnvelope(conclusion="经理直接回答。"))
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", run)
+    service = _service(
+        agentteams=agentteams,
+        registry=_registry("agent-rnaseq", "agent-general", with_manager=True),
+        redis=redis,
+    )
+    monkeypatch.setattr(service, "_triage_consultation_agent", AsyncMock(return_value=None))
+
+    result = await service.respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    assert run.await_args.kwargs["agent_id"] == "agentteams-manager"
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.route_transition" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_consultation_triage_direct_failure_degrades_to_manager(monkeypatch) -> None:
+    """分诊命中但专家直答失败：按 A3 口径落可见降级，随后 Manager 接管回复。"""
+    content = "rna-seq 的原理是什么呀"
+    agentteams = _agentteams(events=_chat_question_events(content))
+    redis = FakeRedis()
+
+    async def _run_consultation(self, **kwargs):
+        if kwargs.get("agent_id") == "agent-rnaseq":
+            raise RuntimeError("specialist boom")
+        return ConsultationEnvelope(conclusion="经理兜底回答。")
+
+    monkeypatch.setattr(AgentConsultationService, "run_consultation", _run_consultation)
+    service = _service(
+        agentteams=agentteams,
+        registry=_registry("agent-rnaseq", "agent-general", with_manager=True),
+        redis=redis,
+    )
+    monkeypatch.setattr(
+        service,
+        "_triage_consultation_agent",
+        AsyncMock(return_value={"agent_id": "agent-rnaseq", "reason": "领域问题", "confidence": 0.9}),
+    )
+
+    result = await service.respond("bioops_1", "user-a", content)
+
+    assert result == {"status": "responded"}
+    event_types = [call.kwargs["event_type"] for call in agentteams.post_case_evidence.await_args_list]
+    assert "room.route_transition" in event_types
+    assert "room.agent_timeout" in event_types
+    fallback = next(
+        call
+        for call in agentteams.post_case_evidence.await_args_list
+        if call.kwargs["event_type"] == "room.agent_message"
+        and call.kwargs["payload"].get("direct_fallback")
+    )
+    assert fallback.kwargs["payload"]["target_agent_id"] == "agent-rnaseq"
+    # Manager 最终答复仍存在。
+    assert any(
+        call.kwargs["event_type"] == "room.agent_message"
+        and call.kwargs["payload"].get("content") == "经理兜底回答。"
+        for call in agentteams.post_case_evidence.await_args_list
+    )
+
+
+class _FakeRouteProvider:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    async def chat_stream(self, **_kwargs):
+        yield SimpleNamespace(type="text", content=self._text)
+
+
+def _triage_service() -> AgentTeamsRoomResponseService:
+    return _service(
+        agentteams=_agentteams(),
+        registry=_registry("agent-rnaseq", "agent-general", with_manager=True),
+        redis=FakeRedis(),
+    )
+
+
+def _patch_triage_runtime(monkeypatch, service, route_text: str) -> None:
+    catalog = [
+        {
+            "agent_id": "agent-rnaseq",
+            "name": "RNA-seq 专家",
+            "description": "bulk RNA-seq 差异表达分析",
+            "category": "analysis",
+        },
+        {
+            "agent_id": "agent-general",
+            "name": "通用助手",
+            "description": "通用问答",
+            "category": "general",
+        },
+    ]
+    monkeypatch.setattr(service._registry, "room_consultation_catalog", lambda: catalog)
+    from cygnusx.application.services.agent_service import AgentService
+
+    monkeypatch.setattr(
+        AgentService,
+        "assemble_context",
+        AsyncMock(return_value=SimpleNamespace(model_config=SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.ai_provider.openai_compatible.provider_manager",
+        _FakeRouteProvider(route_text),
+    )
+
+
+@pytest.mark.asyncio
+async def test_triage_consultation_agent_parses_llm_decision(monkeypatch) -> None:
+    service = _triage_service()
+    _patch_triage_runtime(
+        monkeypatch,
+        service,
+        '{"agent_id": "agent-rnaseq", "reason": "RNA-seq 原理属转录组领域", "confidence": 0.92}',
+    )
+
+    decision = await service._triage_consultation_agent(
+        "rna-seq 的原理是什么呀", manager_agent_id="agentteams-manager", model_id=None, user_id="user-a"
+    )
+
+    assert decision == {
+        "agent_id": "agent-rnaseq",
+        "reason": "RNA-seq 原理属转录组领域",
+        "confidence": 0.92,
+    }
+
+
+@pytest.mark.asyncio
+async def test_triage_consultation_agent_rejects_low_confidence_and_manager(monkeypatch) -> None:
+    service = _triage_service()
+    _patch_triage_runtime(
+        monkeypatch, service, '{"agent_id": "agent-rnaseq", "reason": "拿不准", "confidence": 0.4}'
+    )
+    assert (
+        await service._triage_consultation_agent(
+            "随便聊聊", manager_agent_id="agentteams-manager", model_id=None, user_id="user-a"
+        )
+        is None
+    )
+
+    _patch_triage_runtime(
+        monkeypatch,
+        service,
+        '{"agent_id": "agentteams-manager", "reason": "通用问题", "confidence": 0.99}',
+    )
+    assert (
+        await service._triage_consultation_agent(
+            "平台怎么用", manager_agent_id="agentteams-manager", model_id=None, user_id="user-a"
+        )
+        is None
+    )
+
+    _patch_triage_runtime(
+        monkeypatch, service, '{"agent_id": "agent-unknown", "reason": "幻觉候选", "confidence": 0.99}'
+    )
+    assert (
+        await service._triage_consultation_agent(
+            "rna-seq 的原理是什么呀",
+            manager_agent_id="agentteams-manager",
+            model_id=None,
+            user_id="user-a",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_triage_consultation_agent_failure_returns_none(monkeypatch) -> None:
+    """模型调用异常静默回落：分诊不得阻断 Manager 主回路。"""
+    service = _triage_service()
+    monkeypatch.setattr(
+        service._registry,
+        "room_consultation_catalog",
+        lambda: [{"agent_id": "agent-rnaseq", "name": "RNA-seq 专家"}],
+    )
+    from cygnusx.application.services.agent_service import AgentService
+
+    monkeypatch.setattr(
+        AgentService,
+        "assemble_context",
+        AsyncMock(side_effect=RuntimeError("model config unavailable")),
+    )
+
+    assert (
+        await service._triage_consultation_agent(
+            "rna-seq 的原理是什么呀",
+            manager_agent_id="agentteams-manager",
+            model_id=None,
+            user_id="user-a",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_triage_candidates_include_internal_staff_without_chat_entry(monkeypatch) -> None:
+    """chat_entry:false 的内部员工（如 agent-data）仍是房间分诊候选。
+
+    chat_entry 只约束 chat 侧对外路由入口；协作室内被 @ 或分诊直答不受其限制。
+    使用真实注册表（不 mock room_consultation_catalog）验证候选合成链路。
+    """
+    service = _service(
+        agentteams=_agentteams(),
+        registry=_registry(
+            "agent-rnaseq",
+            "agent-data",
+            with_manager=True,
+            chat_entry_false={"agent-data"},
+        ),
+        redis=FakeRedis(),
+    )
+    # agent-data 不进 chat 侧对外路由目录，但进房间会诊目录
+    assert "agent-data" not in {
+        entry["agent_id"] for entry in service._registry.chat_router_catalog()
+    }
+    assert "agent-data" in {
+        entry["agent_id"] for entry in service._registry.room_consultation_catalog()
+    }
+
+    from cygnusx.application.services.agent_service import AgentService
+
+    monkeypatch.setattr(
+        AgentService,
+        "assemble_context",
+        AsyncMock(return_value=SimpleNamespace(model_config=SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.ai_provider.openai_compatible.provider_manager",
+        _FakeRouteProvider(
+            '{"agent_id": "agent-data", "reason": "数据管理属数据管理员职责", "confidence": 0.9}'
+        ),
+    )
+
+    decision = await service._triage_consultation_agent(
+        "这个项目的数据管理要如何进行",
+        manager_agent_id="agentteams-manager",
+        model_id=None,
+        user_id="user-a",
+    )
+
+    assert decision is not None
+    assert decision["agent_id"] == "agent-data"

@@ -56,7 +56,7 @@ import {
   type StudioPlanStep,
   type TokenUsage,
 } from '@/composables/useAgentChatStream'
-import { studioApi, type StudioPermissionMode } from '@/api/studio'
+import { studioApi, type StudioPermissionMode, type StudioRuntimeProfile } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
 import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
 import { resolveRoleIdentity } from '@/utils/roleIdentity'
@@ -128,6 +128,8 @@ export interface AgentSession {
   /** 当前会话启用 AgentTeams multi-agent 协作运行时 */
   multi_agent?: boolean
   overdrive?: boolean
+  /** 用户为下一条消息选择的沙箱运行时 ID（null/undefined = 跟随 Agent 默认；会话创建后固定） */
+  runtime_profile?: string | null
 }
 
 /** 可用模型选项（来自 /api/v1/chat/models） */
@@ -1037,6 +1039,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** 新建 Studio 会话后登记 ID，无需整表刷新 */
   function markStudioSession(id: string): void {
     studioSessionIds.value = new Set([...studioSessionIds.value, id])
+  }
+
+  /** 可用沙箱运行时列表（输入框运行时选择器数据源；失败时保持空数组，选择器隐藏降级） */
+  const runtimeProfiles = ref<StudioRuntimeProfile[]>([])
+  let runtimeProfilesRequested = false
+
+  /** 拉取沙箱运行时列表；静默失败（未登录/接口不可用时不阻塞聊天） */
+  async function fetchRuntimeProfiles(): Promise<void> {
+    if (runtimeProfilesRequested) return
+    runtimeProfilesRequested = true
+    try {
+      runtimeProfiles.value = await studioApi.listRuntimeProfiles()
+    } catch {
+      runtimeProfiles.value = []
+    }
   }
 
   /** 一次性初始化全部资产（前台页面挂载时调用） */
@@ -2022,12 +2039,41 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // 新会话首次发消息时加锁，直到 onSessionCreated 回填真实 ID
     if (session.id.startsWith('sess-')) createSessionIdLock()
 
+    // 用户选择了沙箱运行时：仅对运行时未固定的会话生效（已是 studio 的会话由选择器禁用兜底）
+    const runtimeProfile = session.runtime_profile || undefined
+    if (runtimeProfile && session.mode !== 'studio') {
+      if (session.id.startsWith('sess-')) {
+        // 临时会话：首次请求即按 studio + 指定运行时创建，沙箱镜像随会话固定
+        session.mode = 'studio'
+      } else {
+        // 已落库的普通会话：先升级为 Studio 并固定运行时，失败则中止本轮发送
+        try {
+          const promoted = await studioApi.promoteSession(session.id, {
+            agent_id: agent.id,
+            runtime_profile: runtimeProfile,
+          })
+          session.mode = 'studio'
+          session.agent_id = promoted.agent_id || session.agent_id
+          markStudioSession(session.id)
+        } catch (e: any) {
+          aiMsg.content = `切换沙箱运行时失败: ${e?.response?.data?.detail || e?.message || '未知错误'}`
+          aiMsg.status = 'error'
+          isStreaming.value = false
+          streamingContent.value = ''
+          streamingThought.value = ''
+          releaseSessionIdLock()
+          return
+        }
+      }
+    }
+
     await streamChat(
       {
         agentId: agent.id,
         messages: apiMessages,
         sessionId: backendSessionId,
         mode: session.mode,
+        runtimeProfile,
         modelId: session.model_id,
         temperature: chatStore.conversationSettings.temperature,
         maxTokens: chatStore.conversationSettings.maxTokens,
@@ -2071,6 +2117,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             session.id = sessionId
             session.agent_id = agent.id
             currentSessionId.value = sessionId
+            if (session.mode === 'studio') markStudioSession(sessionId)
             syncAgentTeamsEventSubscriptions(session)
             if (messageId) aiMsg.backendMessageId = messageId
             releaseSessionIdLock()
@@ -2999,6 +3046,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     maybeRedirectToStudio,
     clearStudioRedirect,
     studioSessionIds, currentPlan, studioPermissions,
+    runtimeProfiles, fetchRuntimeProfiles,
     // getters
     activeAgents, currentSession, currentAgent, effectiveAgent, groupedSessions,
     // lookups

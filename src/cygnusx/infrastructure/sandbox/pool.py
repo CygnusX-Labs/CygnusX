@@ -303,6 +303,44 @@ class SandboxPool:
 
         return await asyncio.to_thread(_copy)
 
+    async def copy_files_in(
+        self,
+        container_id: str,
+        files: list[tuple[Path, str]],
+        container_dir: str,
+    ) -> list[str]:
+        """把宿主机文件复制进容器目录（copy_dir_out 的反向操作）。
+
+        files: [(宿主机路径, 容器内文件名)]，容器内文件名只取 basename 防目录穿越。
+        返回实际写入的文件名列表；容器/目录不可用时抛异常由调用方兜底。
+        """
+        if not files:
+            return []
+        client = self._get_client()
+        api = client.api
+
+        def _put() -> list[str]:
+            exec_id = api.exec_create(
+                container_id, cmd=["mkdir", "-p", container_dir], tty=False
+            )["Id"]
+            api.exec_start(exec_id)
+            buf = io.BytesIO()
+            written: list[str] = []
+            with tarfile.open(fileobj=buf, mode="w") as tar:
+                for src, arcname in files:
+                    name = Path(arcname).name
+                    if not name:
+                        continue
+                    tar.add(str(src), arcname=name)
+                    written.append(name)
+            try:
+                ok = api.put_archive(container_id, container_dir, buf.getvalue())
+            except Exception:
+                return []
+            return written if ok else []
+
+        return await asyncio.to_thread(_put)
+
     # ------------------------------------------------------------------
     # 代码执行（流式）
     # ------------------------------------------------------------------

@@ -17,10 +17,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import json
 import re
 import secrets
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -49,12 +50,14 @@ from cygnusx.application.services.notification_service import NotificationServic
 from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsRoomMemberModel,
     AgentTeamsRoomModel,
+    AgentTeamsTurnRecordModel,
 )
 from cygnusx.infrastructure.database.models.notification import NotificationModel
 from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.infrastructure.database.repositories.notification_repository import (
     SqlAlchemyNotificationRepository,
 )
+from cygnusx.infrastructure.storage.minio_store import MinioStore
 
 # 立项确认卡房间级事件类型：payload 契约见 build_room_proposal / _emit_case_proposal。
 ROOM_PROPOSAL_EVENT_TYPE = "room.proposal_confirm"
@@ -63,6 +66,38 @@ ROOM_CASE_BOUND_EVENT_TYPE = "room.case_bound"
 # 立项确认卡三选项；followup 卡（终态后再立项）为 continue/new/cancel。
 PROPOSAL_OPTIONS_NEW_CASE = ["confirm", "modify", "cancel"]
 PROPOSAL_OPTIONS_FOLLOWUP = ["continue", "new", "cancel"]
+
+# ------------------------------------------------------------------
+# 房间历史气泡回补（思考链 / 内联工具卡）
+# ------------------------------------------------------------------
+# room.agent_stream 是瞬态事件：Bridge 不写 MinIO，仅经 Redis 热缓存/进程内存
+# 分发，进程重建后历史增量即丢失，房间重开时历史气泡丢思考框与内联工具卡。
+# 事件聚合出口把两类已持久化数据合并回最终消息载荷（best-effort，失败不影响
+# 事件返回）：
+# 1. agent.tool_call/started/result 证据事件（审计链已持久化）按 stream_id 归并；
+# 2. agentteams_turn_records（DB 索引 + MinIO 全文）的 reasoning_text 按 agent
+#    分组、按时间序 FIFO 分配到该 agent 的最终消息，拼为 thought。
+_ROOM_TOOL_EVENT_TYPES = frozenset(
+    {"agent.tool_call", "agent.tool_started", "agent.tool_result"}
+)
+_ROOM_THOUGHT_MAX_CHARS = 8_000
+_ROOM_TURN_RECORD_MAX_BYTES = 8_000_000
+# turn 记录与 Bridge 事件分属不同进程时钟，匹配窗口两侧各留 skew。
+_ROOM_TURN_RECORD_SKEW = timedelta(seconds=90)
+
+
+def _room_event_time(value: Any) -> datetime | None:
+    """把事件 recorded_at（ISO 字符串或 datetime）归一化为 tz-aware datetime。"""
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _resolve_case_flow_id(flow_id: Any) -> str | None:
@@ -170,6 +205,9 @@ class AgentTeamsRoomService:
     def __init__(self, db: AsyncSession, agentteams: AgentTeamsService) -> None:
         self._db = db
         self._agentteams = agentteams
+        # SSE 轮询在同一实例上重复拉取同一页事件：已回补过的最终消息不再重复
+        # 做 DB/MinIO 读取（历史加载每次新建实例，不受影响）。
+        self._turn_detail_enriched_ids: set[str] = set()
 
     # ------------------------------------------------------------------
     # CRUD
@@ -612,6 +650,9 @@ class AgentTeamsRoomService:
         # B1：confirm_token 写入后即全出口脱敏（含 pending 卡）；存活 token 只存
         # 房间行 DB 字段，不再经事件流分发。
         events = [redact_confirm_token(event) for _, event in kept]
+        # 历史气泡回补：把已持久化的工具事件 / turn 记录 reasoning 合并进最终
+        # 消息载荷，房间重开后思考框与内联工具卡不依赖瞬态 room.agent_stream。
+        await self._enrich_room_turn_details(room, events)
         # BUG-E2E-09 终止条件：本页保留数 < limit 说明两流各返不足 limit 条、
         # 均已耗尽（被截事件只在保留数 == limit 时存在），游标清空让调用方判停；
         # 否则按截断后保留的各流最后一条推进游标（A2 不重不漏语义不变）。
@@ -665,6 +706,181 @@ class AgentTeamsRoomService:
             case_id, requester_ref, cursor=cursor, limit=limit
         )
         return [event for event in page.get("events", []) if isinstance(event, dict)]
+
+    # ------------------------------------------------------------------
+    # 房间历史气泡回补（思考链 / 内联工具卡）
+    # ------------------------------------------------------------------
+    async def _enrich_room_turn_details(
+        self, room: AgentTeamsRoomModel, events: list[dict[str, Any]]
+    ) -> None:
+        """get_room_events 出口的历史气泡回补入口；任何失败只记日志，不影响返回。"""
+        try:
+            await self._enrich_room_turn_details_inner(room, events)
+        except Exception as exc:  # noqa: BLE001 - 回补失败不得影响房间事件返回
+            logger.bind(room_id=room.room_id).warning(
+                "AgentTeams room turn-detail enrichment failed: {}", exc
+            )
+
+    async def _enrich_room_turn_details_inner(
+        self, room: AgentTeamsRoomModel, events: list[dict[str, Any]]
+    ) -> None:
+        tool_events: dict[str, dict[str, dict[str, Any]]] = {}
+        targets: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+        for event in events:
+            event_type = str(event.get("event_type") or "")
+            body = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            inner = body.get("payload") if isinstance(body.get("payload"), dict) else None
+            if inner is None:
+                continue
+            if event_type in _ROOM_TOOL_EVENT_TYPES:
+                stream_id = str(inner.get("stream_id") or "")
+                call_id = str(inner.get("tool_call_id") or "")
+                if not stream_id or not call_id:
+                    continue
+                calls = tool_events.setdefault(stream_id, {})
+                entry = calls.get(call_id)
+                if entry is None:
+                    entry = {
+                        "id": call_id,
+                        "name": str(inner.get("tool") or ""),
+                        "status": "running",
+                    }
+                    calls[call_id] = entry
+                if event_type == "agent.tool_result":
+                    entry["status"] = "failed" if inner.get("success") is False else "ok"
+                    duration = inner.get("duration_ms")
+                    if isinstance(duration, (int, float)):
+                        entry["duration_ms"] = int(duration)
+                    result_summary = str(inner.get("result_summary") or "")
+                    if result_summary:
+                        entry["result_summary"] = result_summary
+                else:
+                    args_summary = str(inner.get("args_summary") or "")
+                    if args_summary:
+                        entry["args_summary"] = args_summary
+                continue
+            if event_type not in ("room.agent_message", "room.ask_user"):
+                continue
+            stream_id = str(inner.get("stream_id") or "")
+            if not stream_id:
+                continue
+            event_id = str(event.get("event_id") or "")
+            if event_id and event_id in self._turn_detail_enriched_ids:
+                continue
+            targets.append((event, inner, stream_id))
+        if not targets:
+            return
+        for event, inner, stream_id in targets:
+            calls = tool_events.get(stream_id)
+            if calls and not inner.get("tool_calls"):
+                inner["tool_calls"] = list(calls.values())
+        pending = [
+            (event, inner)
+            for event, inner, _ in targets
+            if not inner.get("thought")
+        ]
+        if pending:
+            await self._inject_room_thoughts(room, events, pending)
+        for event, _, _ in targets:
+            event_id = str(event.get("event_id") or "")
+            if event_id:
+                self._turn_detail_enriched_ids.add(event_id)
+
+    async def _inject_room_thoughts(
+        self,
+        room: AgentTeamsRoomModel,
+        events: list[dict[str, Any]],
+        pending: list[tuple[dict[str, Any], dict[str, Any]]],
+    ) -> None:
+        """把 turn 记录的 reasoning_text 按 agent 时序 FIFO 分配到各最终消息。
+
+        一次应答可能含多轮 LLM 调用（工具回路/分诊/正式回复），其 turn 记录全部
+        落在「触发消息（causation_event_id）之后、最终消息之前」的时间窗内；按
+        agent 分组顺序消费即可把同一应答的多段思考拼到同一条气泡上。触发事件不
+        在当前页时退化为仅按上界匹配（best-effort）。
+        """
+        case_ids = {room_namespace_case_id(room.room_id)}
+        if room.case_id:
+            case_ids.add(str(room.case_id))
+        stmt = (
+            select(AgentTeamsTurnRecordModel)
+            .where(AgentTeamsTurnRecordModel.case_id.in_(sorted(case_ids)))
+            .order_by(AgentTeamsTurnRecordModel.recorded_at.asc())
+        )
+        rows = (await self._db.execute(stmt)).scalars().all()
+        if not rows:
+            return
+        by_agent: dict[str, list[AgentTeamsTurnRecordModel]] = {}
+        for row in rows:
+            by_agent.setdefault(str(row.agent_id), []).append(row)
+        event_times: dict[str, datetime] = {}
+        for item in events:
+            event_id = str(item.get("event_id") or "")
+            moment = _room_event_time(item.get("recorded_at"))
+            if event_id and moment is not None:
+                event_times[event_id] = moment
+        minio = MinioStore(probe=False)
+        cursors: dict[str, int] = {}
+        for event, inner in pending:
+            agent_id = str(inner.get("agent_id") or event.get("actor") or "")
+            records = by_agent.get(agent_id)
+            if not agent_id or not records:
+                continue
+            upper = _room_event_time(event.get("recorded_at"))
+            lower = event_times.get(str(inner.get("causation_event_id") or ""))
+            cursor = cursors.get(agent_id, 0)
+            picked: list[AgentTeamsTurnRecordModel] = []
+            while cursor < len(records):
+                record = records[cursor]
+                moment = record.recorded_at
+                if moment is not None and moment.tzinfo is None:
+                    moment = moment.replace(tzinfo=UTC)
+                if (
+                    upper is not None
+                    and moment is not None
+                    and moment > upper + _ROOM_TURN_RECORD_SKEW
+                ):
+                    break
+                cursor += 1
+                if (
+                    lower is not None
+                    and moment is not None
+                    and moment < lower - _ROOM_TURN_RECORD_SKEW
+                ):
+                    continue  # 属于更早应答的记录（其消息在先前分页）：消费但不展示
+                picked.append(record)
+            cursors[agent_id] = cursor
+            if not picked:
+                continue
+            thoughts: list[str] = []
+            for record in picked:
+                text = await self._read_turn_reasoning(minio, record)
+                if text:
+                    thoughts.append(text)
+            if thoughts:
+                inner["thought"] = "\n\n".join(thoughts)[:_ROOM_THOUGHT_MAX_CHARS]
+
+    @staticmethod
+    async def _read_turn_reasoning(
+        minio: MinioStore, record: AgentTeamsTurnRecordModel
+    ) -> str | None:
+        uri = str(record.s3_uri or "")
+        prefix = f"s3://{minio.bucket}/cases/{record.case_id}/"
+        if not uri.startswith(prefix):
+            return None
+        key = uri[len(prefix):]
+        try:
+            raw = await asyncio.to_thread(
+                minio.read_turn_record,
+                str(record.case_id),
+                key,
+                max_bytes=_ROOM_TURN_RECORD_MAX_BYTES,
+            )
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:  # noqa: BLE001 - 单条记录读取失败不阻断其他记录
+            return None
+        text = str(payload.get("reasoning_text") or "").strip()
+        return text or None
 
     async def _post_room_event(
         self,

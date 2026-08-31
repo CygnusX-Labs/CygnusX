@@ -16,6 +16,8 @@ export interface AgentChatStreamOptions {
   sessionId?: string
   /** 当前会话运行模式；Studio 模式会由后端装配工作区工具与上下文。 */
   mode?: 'chat' | 'studio'
+  /** 沙箱运行时配置 ID（仅新建会话且 mode="studio" 时生效，创建后固定不可变） */
+  runtimeProfile?: string | null
   /** 当前请求强制使用的模型配置 ID（覆盖 Agent 默认模型） */
   modelId?: string
   /** 温度（0-1），后端 Agent 编排层可透传给底层模型 */
@@ -569,6 +571,7 @@ export function useAgentChatStream() {
             agent_id: options.agentId,
             session_id: options.sessionId,
             mode: options.mode,
+            runtime_profile: options.runtimeProfile ?? undefined,
             model_id: options.modelId,
             messages: options.messages,
             stream: true,

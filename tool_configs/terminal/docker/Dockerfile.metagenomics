@@ -1,6 +1,6 @@
 # CygnusX 宏基因组沙盒镜像
-# 构建: docker build -t cygnusx/sandbox-metagenomics:latest -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
-FROM cygnusx/sandbox-terminal:latest
+# 构建: docker build -t cygnusx-sandbox-metagenomics:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
+FROM cygnusx-sandbox-terminal:v0.0.2dev
 
 USER root
 

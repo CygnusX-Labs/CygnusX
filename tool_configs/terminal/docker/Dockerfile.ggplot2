@@ -1,6 +1,6 @@
 # CygnusX 科研绘图 ggplot2 沙盒镜像
-# 构建: docker build -t cygnusx/sandbox-ggplot2:latest -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
-FROM cygnusx/sandbox-terminal:latest
+# 构建: docker build -t cygnusx-sandbox-ggplot2:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
+FROM cygnusx-sandbox-terminal:v0.0.2dev
 
 USER root
 

@@ -96,8 +96,8 @@ class TerminalImagesConfig(BaseModel):
 class ImageConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    name: str = "cygnusx/sandbox-terminal"
-    tag: str = "latest"
+    name: str = "cygnusx-sandbox-terminal"
+    tag: str = "v0.0.2dev"
     pull_policy: str = "IfNotPresent"
 
     @property
@@ -268,7 +268,7 @@ class TerminalConfigManager:
                     id="base",
                     name="基础生信",
                     description="预装常用生信工具",
-                    image="cygnusx/sandbox-terminal:latest",
+                    image="cygnusx-sandbox-terminal:v0.0.2dev",
                     enabled=True,
                 ),
             ],

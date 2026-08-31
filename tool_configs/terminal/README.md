@@ -331,7 +331,7 @@ TerminalService.admin_delete_session(session_id)
 | 配置段 | 关键参数 | 默认值 | 说明 |
 |--------|---------|--------|------|
 | `enabled` | - | `true` | 功能总开关 |
-| `image` | `name` / `tag` | `cygnusx/sandbox-terminal:latest` | 容器镜像 |
+| `image` | `name` / `tag` | `cygnusx-sandbox-terminal:v0.0.2dev` | 容器镜像 |
 | `image` | `pull_policy` | `IfNotPresent` | 镜像拉取策略 |
 | `default_resources` | `memory_mb` | `512` | 默认内存上限 (MB) |
 | `default_resources` | `cpu_cores` | `1.0` | 默认 CPU 核数 |
@@ -363,7 +363,7 @@ TerminalService.admin_delete_session(session_id)
 | `images[].id` | - | - | 镜像唯一标识（前端选择值、落库存储） |
 | `images[].name` | - | - | 前端显示名称 |
 | `images[].description` | - | - | 前端卡片描述 |
-| `images[].image` | - | - | Docker 镜像全名，如 `cygnusx/sandbox-terminal:latest` |
+| `images[].image` | - | - | Docker 镜像全名，如 `cygnusx-sandbox-terminal:v0.0.2dev` |
 | `images[].tags` | - | `[]` | 前端标签展示 |
 | `images[].icon` | - | `"🔧"` | 前端卡片图标 |
 | `images[].resources` | `memory_mb` / `cpu_cores` / `pid_limit` | - | 镜像默认资源；创建容器时优先于 `terminal_config.yaml` 的 `default_resources` |
@@ -380,7 +380,7 @@ TerminalService.admin_delete_session(session_id)
 
 1. 在 `tool_configs/terminal/docker/` 下新增 `Dockerfile.xxx` 并构建镜像：
    ```bash
-   docker build -t cygnusx/sandbox-rnaseq:latest -f tool_configs/terminal/docker/Dockerfile.rnaseq tool_configs/terminal/docker/
+   docker build -t cygnusx-sandbox-rnaseq:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.rnaseq tool_configs/terminal/docker/
    ```
 2. 在 `tool_configs/terminal/terminal_images.yaml` 中增加镜像条目并设置 `enabled: true`。
 3. 刷新前端页面，`GET /terminal/environments` 会自动返回新镜像，前端镜像选择器即时展示。
@@ -418,7 +418,7 @@ CMD ["ttyd", "-p", "7681", "-W", "-t", "fontSize=14", "-t", "fontFamily=JetBrain
 
 ```bash
 # 构建沙盒终端镜像
-docker build -t cygnusx/sandbox-terminal:latest tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
 
 # 或通过 make 自动化（含清理 + 前端构建 + 服务重启）
 make docker-reload
@@ -427,7 +427,7 @@ make docker-reload
 `make docker-reload` 执行顺序：
 1. `docker-network` — 创建 `cygnusx_net` + `cygnusx-sandbox-net` 外部网络（幂等）
 2. 清理残留 `cygnusx-*` 容器（防名称冲突）
-3. 构建 `cygnusx/sandbox-terminal:latest` 镜像
+3. 构建 `cygnusx-sandbox-terminal:v0.0.2dev` 镜像
 4. 构建前端 (`npm run build`)
 5. 启动主栈 + Worker 栈
 6. 检查 Alembic 迁移状态
@@ -435,38 +435,38 @@ make docker-reload
 ### 用途镜像
 
 除基础镜像外，终端提供三种按用途划分的派生镜像。它们均继承
-`cygnusx/sandbox-terminal:latest` 的 ttyd、zsh 和非 root 运行环境，并在安装完成后切回 UID 1000。
+`cygnusx-sandbox-terminal:v0.0.2dev` 的 ttyd、zsh 和非 root 运行环境，并在安装完成后切回 UID 1000。
 
 | ID | Dockerfile | 镜像名 | 默认资源 | 主要工具 |
 |---|---|---|---|---|
-| `scrna` | `docker/Dockerfile.scrna` | `cygnusx/sandbox-scrna:latest` | 4 GB / 2 核 | scanpy、anndata、leiden、Harmony、Scrublet、scVelo |
-| `gatk` | `docker/Dockerfile.gatk` | `cygnusx/sandbox-gatk:latest` | 4 GB / 4 核 | GATK4、PLINK1.9、PLINK2、tabix |
-| `ggplot2` | `docker/Dockerfile.ggplot2` | `cygnusx/sandbox-ggplot2:latest` | 1 GB / 1 核 | R、ggplot2、tidyverse、ggrepel、cowplot、plotnine、中文字体 |
-| `rnaseq` | `docker/Dockerfile.rnaseq` | `cygnusx/sandbox-rnaseq:latest` | 4 GB / 4 核 | hisat2、salmon、kallisto、featureCounts、DESeq2、tximport |
-| `assembly` | `docker/Dockerfile.assembly` | `cygnusx/sandbox-assembly:latest` | 8 GB / 4 核 | SPAdes、flye、QUAST、BUSCO、minimap2 |
-| `metagenomics` | `docker/Dockerfile.metagenomics` | `cygnusx/sandbox-metagenomics:latest` | 8 GB / 4 核 | kraken2、bracken、centrifuge、fastp、MultiQC |
+| `scrna` | `docker/Dockerfile.scrna` | `cygnusx-sandbox-scrna:v0.0.2dev` | 4 GB / 2 核 | scanpy、anndata、leiden、Harmony、Scrublet、scVelo |
+| `gatk` | `docker/Dockerfile.gatk` | `cygnusx-sandbox-gatk:v0.0.2dev` | 4 GB / 4 核 | GATK4、PLINK1.9、PLINK2、tabix |
+| `ggplot2` | `docker/Dockerfile.ggplot2` | `cygnusx-sandbox-ggplot2:v0.0.2dev` | 1 GB / 1 核 | R、ggplot2、tidyverse、ggrepel、cowplot、plotnine、中文字体 |
+| `rnaseq` | `docker/Dockerfile.rnaseq` | `cygnusx-sandbox-rnaseq:v0.0.2dev` | 4 GB / 4 核 | hisat2、salmon、kallisto、featureCounts、DESeq2、tximport |
+| `assembly` | `docker/Dockerfile.assembly` | `cygnusx-sandbox-assembly:v0.0.2dev` | 8 GB / 4 核 | SPAdes、flye、QUAST、BUSCO、minimap2 |
+| `metagenomics` | `docker/Dockerfile.metagenomics` | `cygnusx-sandbox-metagenomics:v0.0.2dev` | 8 GB / 4 核 | kraken2、bracken、centrifuge、fastp、MultiQC |
 
 构建顺序必须先构建基础镜像：
 
 ```bash
-docker build -t cygnusx/sandbox-terminal:latest tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-scrna:latest -f tool_configs/terminal/docker/Dockerfile.scrna tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-gatk:latest -f tool_configs/terminal/docker/Dockerfile.gatk tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-ggplot2:latest -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-rnaseq:latest -f tool_configs/terminal/docker/Dockerfile.rnaseq tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-assembly:latest -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
-docker build -t cygnusx/sandbox-metagenomics:latest -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-scrna:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.scrna tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-gatk:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.gatk tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-ggplot2:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.ggplot2 tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-rnaseq:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.rnaseq tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-assembly:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
+docker build -t cygnusx-sandbox-metagenomics:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.metagenomics tool_configs/terminal/docker/
 ```
 
 每个镜像构建后，使用下列命令验证关键工具与普通用户身份：
 
 ```bash
-docker run --rm --entrypoint sh cygnusx/sandbox-scrna:latest -lc 'id -u; python3 -c "import scanpy, scvelo"'
-docker run --rm --entrypoint sh cygnusx/sandbox-gatk:latest -lc 'id -u; gatk --version; plink --version; plink2 --version'
-docker run --rm --entrypoint sh cygnusx/sandbox-ggplot2:latest -lc 'id -u; R --version; R -q -e "library(ggplot2)"; python3 -c "import plotnine"'
-docker run --rm --entrypoint sh cygnusx/sandbox-rnaseq:latest -lc 'id -u; hisat2 --version; salmon --version; kallisto version; featureCounts -v; R -q -e "library(DESeq2); library(tximport)"'
-docker run --rm --entrypoint sh cygnusx/sandbox-assembly:latest -lc 'id -u; spades.py --version; flye --version; quast.py --version; busco --version; minimap2 --version'
-docker run --rm --entrypoint sh cygnusx/sandbox-metagenomics:latest -lc 'id -u; kraken2 --version; bracken -v; centrifuge --version; fastp --version; multiqc --version'
+docker run --rm --entrypoint sh cygnusx-sandbox-scrna:v0.0.2dev -lc 'id -u; python3 -c "import scanpy, scvelo"'
+docker run --rm --entrypoint sh cygnusx-sandbox-gatk:v0.0.2dev -lc 'id -u; gatk --version; plink --version; plink2 --version'
+docker run --rm --entrypoint sh cygnusx-sandbox-ggplot2:v0.0.2dev -lc 'id -u; R --version; R -q -e "library(ggplot2)"; python3 -c "import plotnine"'
+docker run --rm --entrypoint sh cygnusx-sandbox-rnaseq:v0.0.2dev -lc 'id -u; hisat2 --version; salmon --version; kallisto version; featureCounts -v; R -q -e "library(DESeq2); library(tximport)"'
+docker run --rm --entrypoint sh cygnusx-sandbox-assembly:v0.0.2dev -lc 'id -u; spades.py --version; flye --version; quast.py --version; busco --version; minimap2 --version'
+docker run --rm --entrypoint sh cygnusx-sandbox-metagenomics:v0.0.2dev -lc 'id -u; kraken2 --version; bracken -v; centrifuge --version; fastp --version; multiqc --version'
 ```
 
 `terminal_images.yaml` 已注册上述镜像，配置加载器检测 mtime 后自动热加载；镜像必须先在运行终端服务的 Docker 主机上构建或拉取，再允许用户创建会话。

@@ -38,7 +38,7 @@ class ChatAssistantManagement:
         system_prompt: str,
         default_model_id: uuid.UUID | None = None,
         default_temperature: float = 0.3,
-        default_max_tokens: int = 4096,
+        default_max_tokens: int = 65536,
         icon: str = "🤖",
         color: str = "#4f8ef7",
         category: str = "general",

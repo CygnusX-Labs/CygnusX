@@ -129,7 +129,7 @@ CygnusX 的 AI Agent（如 `agent-scrna` 单细胞分析师）通过 Skill 获�
 | 沙盒 | 镜像 | 网络 | 包管理 |
 |---|---|---|---|
 | **Studio 会话沙盒** | `cygnusx-analysis:core/plot/scrna-2026.07`（micromamba，uid 10001） | **白名单代理**（internal 网络 + egress proxy）：仅放行包源域名 | micromamba/uv/pip 可现场装包，但仅限白名单源 |
-| **聊天沙箱池** | `cygnusx/sandbox-base:latest`（conda env `cygnusx`） | 直连外网 | conda/pip 可装，外网可达（含 CRAN/GitHub/业务 API） |
+| **聊天沙箱池** | `cygnusx-sandbox-copilot:v0.0.2dev`（conda env `cygnusx`） | 直连外网 | conda/pip 可装，外网可达（含 CRAN/GitHub/业务 API） |
 
 Studio 出站白名单（`data/ai/studio.yaml` → `studio.sandbox.network.allow`，由 egress proxy 强制）：
 

@@ -21,6 +21,7 @@ from cygnusx.application.services.overdrive_plan_constraint_service import (
     anchor_ids as overdrive_anchor_ids,
     apply_authoritative_plan,
     authoritative_rules as overdrive_authoritative_rules,
+    build_repair_prompt,
     format_anchors as format_overdrive_anchors,
 )
 from cygnusx.application.services.overdrive_runtime import (
@@ -275,6 +276,7 @@ async def stream_overdrive_plan_decision(
             mode=settings.overdrive_authoritative_mode,
             repair_enabled=settings.overdrive_plan_repair_enabled,
             repair_plan=repair_plan,
+            capability_check_enabled=settings.overdrive_capability_check_enabled,
         )
         assignments = constrained.assignments
         speech = constrained.speech
@@ -384,7 +386,7 @@ async def repair_overdrive_plan(
     session_id: str,
     deep_thinking: bool,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """请求 Manager 修复违反领域锚点或依赖约束的计划。"""
+    """请求 Manager 修复违反领域锚点、依赖约束或通用能力匹配的计划。"""
     from cygnusx.application.services.chat.utils import _extract_route_json
 
     logger.warning(
@@ -395,11 +397,7 @@ async def repair_overdrive_plan(
     try:
         repair_raw = await ask_overdrive_manager(
             manager_context,
-            "你刚才的执行计划缺少本领域的必需环节或违反了依赖约束：\n"
-            + "\n".join(f"- {item}" for item in violations)
-            + "\n\n必需环节契约（必须全部覆盖，保持依赖方向）：\n"
-            + authoritative_anchors
-            + "\n\n请输出修正后的完整计划（与上一轮相同的 JSON 格式），保留原计划中的合理分片、并行和额外环节，只修复违规点。",
+            build_repair_prompt(violations, authoritative_anchors),
             max_tokens=2400 if deep_thinking else 900,
             deep_thinking=deep_thinking,
         )

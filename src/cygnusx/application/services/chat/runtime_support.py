@@ -30,6 +30,42 @@ _skill_duration = _chat_meter.create_histogram(
     "skill.execute.duration", unit="ms", description="技能工具执行耗时"
 )
 
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def extract_docx_text(source: Any) -> str:
+    """从 docx（OOXML zip 容器）提取正文纯文本，仅依赖标准库。
+
+    source 可以是本地路径（str/Path）或文件字节（bytes）。
+    原理：读取 word/document.xml，把段落结尾/换行/制表符转成文本符号后剥掉其余 XML 标签。
+    提取失败（非 zip、缺 document.xml 等）返回空串。
+    """
+    import io
+    import re
+    import zipfile
+    from html import unescape
+
+    try:
+        if isinstance(source, bytes):
+            zf_ctx = zipfile.ZipFile(io.BytesIO(source))
+        else:
+            zf_ctx = zipfile.ZipFile(str(source))
+        with zf_ctx as zf:
+            xml = zf.read("word/document.xml").decode("utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001
+        return ""
+    xml = re.sub(r"<w:tab\b[^>]*/?>", "\t", xml)
+    xml = re.sub(r"<w:br\b[^>]*/?>", "\n", xml)
+    xml = re.sub(r"</w:p>", "\n", xml)
+    text = unescape(re.sub(r"<[^>]+>", "", xml))
+    # 收敛空行，避免注入大量空白
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def is_docx_attachment(mime_type: str, filename: str) -> bool:
+    """按 MIME 或扩展名识别 docx 附件。"""
+    return mime_type == _DOCX_MIME or Path(filename).suffix.lower() == ".docx"
+
 
 class ChatRuntimeSupport:
     """供聊天 Runtime 复用的无状态能力混入。"""
@@ -137,7 +173,8 @@ class ChatRuntimeSupport:
                 else:
                     lines.append(
                         f"- {att.get('name', '')}（file_id: {ref}，"
-                        f'可用 workspace_read_file(file_id="{ref}") 读取）'
+                        f'可用 workspace_read_file(file_id="{ref}") 读取；'
+                        f"chat_sandbox_execute 执行时会自动注入沙盒 /workspace/input/）"
                     )
 
         sections: list[str] = []
@@ -384,7 +421,9 @@ class ChatRuntimeSupport:
                     snippets.append(
                         f"[文件: {att.get('name', '')}，file_id: {ref}，"
                         f'可用 workspace_read_file(file_id="{ref}") 读取内容，'
-                        f"或在其它工具参数中直接引用该 file_id]"
+                        f"或在其它工具参数中直接引用该 file_id；"
+                        f"调用 chat_sandbox_execute 执行代码时，该文件会自动注入沙盒 "
+                        f"/workspace/input/ 目录（真实路径见工具结果的 input_files）]"
                     )
             if text:
                 snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")
@@ -500,16 +539,19 @@ class ChatRuntimeSupport:
 
     @staticmethod
     async def _read_attachment_text(att: dict[str, Any]) -> str:
-        """读取文本类附件内容。"""
+        """读取文本类附件内容；PDF/DOCX 走专用抽取，避免二进制乱码注入模型。"""
         att_url = att.get("url", "")
         local_path = ChatRuntimeSupport._resolve_attachment_path(att_url)
         mime_type = str(att.get("mime_type", "")).lower()
         filename = str(att.get("name", ""))
         is_pdf = mime_type == "application/pdf" or Path(filename).suffix.lower() == ".pdf"
+        is_docx = is_docx_attachment(mime_type, filename)
         try:
             if local_path:
                 if is_pdf:
                     return await ChatRuntimeSupport._extract_pdf_text(local_path)
+                if is_docx:
+                    return await anyio.to_thread.run_sync(extract_docx_text, local_path)
                 async with await anyio.open_file(
                     local_path, "r", encoding="utf-8", errors="ignore"
                 ) as f:
@@ -531,6 +573,8 @@ class ChatRuntimeSupport:
                         return await ChatRuntimeSupport._extract_pdf_text(tmp_path)
                     finally:
                         await anyio.Path(tmp_path).unlink(missing_ok=True)
+                if is_docx:
+                    return await anyio.to_thread.run_sync(extract_docx_text, resp.content)
                 return resp.text
         except Exception as e:  # noqa: BLE001
             logger.warning(f"读取文本附件失败 {att.get('name')}: {e}")

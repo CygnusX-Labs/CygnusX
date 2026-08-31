@@ -23,8 +23,8 @@ enabled: true
 # 容器镜像
 # --------------------------------------------
 image:
-  name: "cygnusx/sandbox-terminal"
-  tag: "latest"
+  name: "cygnusx-sandbox-terminal"
+  tag: "v0.0.2dev"
   pull_policy: "IfNotPresent"
 
 # --------------------------------------------

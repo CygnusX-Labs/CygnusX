@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from loguru import logger
 
 from cygnusx.infrastructure.mcp.presets import _BINARY_ONLY_SUFFIXES
 from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
@@ -27,6 +30,11 @@ _GITIGNORE = "\n".join(
 )
 
 
+def _git_available() -> bool:
+    """运行镜像可能未安装 git（如精简运行时），检查点功能此时整体降级。"""
+    return shutil.which("git") is not None
+
+
 def _run(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args], cwd=workspace, text=True, capture_output=True, check=False
@@ -36,6 +44,10 @@ def _run(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def ensure_checkpoint_repository(session_id: str) -> Path:
     workspace = studio_sandbox_manager.workspace_dir(session_id)
     workspace.mkdir(parents=True, exist_ok=True)
+    if not _git_available():
+        # git 缺失不应阻断会话创建/升级，仅失去检查点能力
+        logger.warning("git 不可用，跳过 Studio 检查点仓库初始化（session={}）", session_id)
+        return workspace
     if not (workspace / ".git").exists():
         _run(workspace, "init", "-q")
     if not _run(workspace, "config", "user.email").stdout.strip():
@@ -82,6 +94,10 @@ def _checkpoint_rows(workspace: Path) -> list[tuple[str, str, str, str]]:
 
 def create_checkpoint(session_id: str, tool_call_id: str = "") -> dict[str, Any]:
     workspace = ensure_checkpoint_repository(session_id)
+    if not _git_available():
+        # 返回空 dict（falsy），调用方按"无检查点"处理，不打断对话流
+        logger.warning("git 不可用，跳过 Studio 检查点创建（session={}）", session_id)
+        return {}
     skipped = _skip_large_files(workspace)
     if skipped:
         exclude = workspace / ".git" / "info" / "exclude"
@@ -123,6 +139,8 @@ def _prune_checkpoints(workspace: Path) -> None:
 
 
 def list_checkpoints(session_id: str) -> list[dict[str, Any]]:
+    if not _git_available():
+        return []
     workspace = ensure_checkpoint_repository(session_id)
     checkpoints = []
     for checkpoint_id, created_at, message, _ in _checkpoint_rows(workspace)[:_MAX_CHECKPOINTS]:
@@ -140,6 +158,8 @@ def list_checkpoints(session_id: str) -> list[dict[str, Any]]:
 
 
 def restore_checkpoint(session_id: str, checkpoint_id: str) -> dict[str, Any]:
+    if not _git_available():
+        raise ValueError("当前环境缺少 git，无法恢复工作区检查点")
     create_checkpoint(session_id, "restore-before")
     workspace = ensure_checkpoint_repository(session_id)
     result = _run(workspace, "reset", "--hard", checkpoint_id)

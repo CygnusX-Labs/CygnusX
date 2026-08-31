@@ -14,7 +14,7 @@ _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 def provider_env_key(name: str) -> str:
     """由 provider 名称推导约定环境变量名：转大写、非字母数字转下划线、加 _API_KEY 后缀。
 
-    例如 "qwen3.7-plus" -> "DEEPSEEK_V4_FLASH_API_KEY"。
+    例如 "qdoubao-seed-evolving" -> "DEEPSEEK_V4_FLASH_API_KEY"。
     网页端回写 YAML 时用该名生成 ``${...}`` 占位，真实 Key 只存 DB，不落盘。
     """
     sanitized = re.sub(r"[^A-Za-z0-9]+", "_", (name or "").strip()).strip("_").upper()

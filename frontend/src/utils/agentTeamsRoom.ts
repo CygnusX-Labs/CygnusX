@@ -53,6 +53,24 @@ export interface RoomRouteDecision {
   options: RoomRouteDecisionOption[]
 }
 
+/** 咨询分诊转场卡（room.route_transition 事件投影）：纯咨询问题（CHAT 意图）由经理
+ *  分诊给领域专家直答。与 room.route_decision（流程路径决策）语义隔离，不复用。 */
+export interface RoomRouteTransition {
+  fromAgentId: string
+  fromName: string
+  targetAgentId: string
+  targetName: string
+  reason: string
+  /** 分诊置信度（0~1 或 0~100）；缺省/非数字时为 null，卡片不展示百分比。 */
+  confidence: number | null
+  trigger: string
+  causationEventId: string
+}
+
+/** 回复来源标记：manager_triage 为经理分诊直答，direct_mention 为用户直接点名。
+ *  旧消息无 routed_by 字段时为 undefined。 */
+export type RoomRoutedBy = 'manager_triage' | 'direct_mention'
+
 /** 立项确认卡（room.proposal_confirm 房间级事件投影，会话-工单解耦）：
  *  execute 意图不直接建 Case，先出卡；confirm 后才创建 Case 并绑定房间。 */
 export interface RoomProposal {
@@ -102,6 +120,16 @@ export interface RoomToolInfo {
   name: string
   status: 'running' | 'ok' | 'failed'
   durationMs?: number
+}
+
+/** 挂接在 speech 气泡上的单条工具/MCP 调用（Manager/直答专家应答过程）。 */
+export interface RoomToolCall {
+  id: string
+  name: string
+  status: 'running' | 'ok' | 'failed'
+  durationMs?: number
+  argsSummary?: string
+  resultSummary?: string
 }
 
 /** 仅在技术事件视图中展示的、已截断的执行追踪字段。 */
@@ -171,6 +199,8 @@ export interface RoomMessage {
   collapsed?: boolean
   /** progress 行对应的结构化工具调用信息（用于房间卡片内联进度行）。 */
   tool?: RoomToolInfo
+  /** 该发言气泡内联展示的工具/MCP 调用列表（与 AI 助手气泡内工具卡片一致）。 */
+  toolCalls?: RoomToolCall[]
   /** 用于调试模式的调用关联信息，默认不展开。 */
   debugTrace?: RoomDebugTrace
   /** 关联的工作项 ID（claim / running / 终态事件携带）。 */
@@ -186,6 +216,10 @@ export interface RoomMessage {
   hideContent?: boolean
   /** 路由决策卡（room.route_decision）：高置信渲染折叠卡片，模糊时升级为选项确认卡。 */
   routeDecision?: RoomRouteDecision
+  /** 咨询分诊转场卡（room.route_transition）：经理把纯咨询问题分诊给领域专家直答。 */
+  routeTransition?: RoomRouteTransition
+  /** 领域专家回复的来源标记：manager_triage 时在气泡头部展示「经理分诊」标识。 */
+  routedBy?: RoomRoutedBy
   /** 立项确认卡（room.proposal_confirm）：未立项/终态后续聊的 execute 意图投影。 */
   proposal?: RoomProposal
   /** 当前用户本人的发言（room.user_message 投影）：时间线上右对齐渲染。 */
@@ -211,7 +245,7 @@ export interface RoomRoleMetadata {
 }
 
 const SYSTEM_SENDER: RoomSender = { name: '系统', avatar: '⚙️', color: '#64748b', role: 'worker' }
-const MANAGER_FALLBACK: RoomSender = { name: '生物信息部门经理', avatar: '🧭', color: '#4f8ef7', role: 'manager' }
+const MANAGER_FALLBACK: RoomSender = { name: '生物信息部门经理', avatar: '🧑‍🔬', color: '#4f8ef7', role: 'manager' }
 const QC_FALLBACK: RoomSender = { name: '质量审计员', avatar: '🛡️', color: '#d97706', role: 'worker' }
 const USER_SENDER: RoomSender = { name: '我', avatar: '🧑‍💻', color: '#4f8ef7', role: 'manager' }
 
@@ -490,6 +524,26 @@ function normalizeRouteDecision(value: unknown): RoomRouteDecision | null {
   }
 }
 
+/** 归一化 room.route_transition 事件载荷；缺目标专家（id 与名称同时缺失）时返回 null（事件丢弃）。 */
+function normalizeRouteTransition(value: unknown): RoomRouteTransition | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const targetAgentId = pickString(record, ['target_agent_id'])
+  const targetName = pickString(record, ['target_name'])
+  if (!targetAgentId && !targetName) return null
+  const rawConfidence = record.confidence
+  return {
+    fromAgentId: pickString(record, ['from_agent_id']),
+    fromName: pickString(record, ['from_name']),
+    targetAgentId,
+    targetName,
+    reason: pickString(record, ['reason']),
+    confidence: typeof rawConfidence === 'number' ? rawConfidence : null,
+    trigger: pickString(record, ['trigger']),
+    causationEventId: pickString(record, ['causation_event_id']),
+  }
+}
+
 /** 归一化 room.proposal_confirm 事件载荷。
  *  B1 起 confirm_token 全出口脱敏（可能缺省/为 null），不再作为必要条件——
  *  确认动作凭 owner + pending 状态走 confirm-proposal 端点，token 仅作可选二次校验。 */
@@ -721,15 +775,23 @@ export function projectCaseEvent(
       : actor || 'bioops-manager'
     const sender = resolveRoomSender(senderActor, metadata)
     const streamId = pickString(inner, ['stream_id'])
+    const routedBy = pickString(inner, ['routed_by']) || pickString(body, ['routed_by'])
     // Manager 回复链路可能把整段 JSON 信封塞进 content；能解析出结构化字段时
     // 交给前端做结论/建议/风险/硬门禁的结构化展示，解析失败回退纯文本气泡。
     const managerReport = normalizeManagerReport(inner.manager_report) || parseManagerReport(content)
+    // 房间重开后瞬态流式增量已丢失：后端聚合时把持久化的思考链/工具事件
+    // 注入最终消息载荷（thought / tool_calls），这里直接取用。
+    const thought = pickString(inner, ['thought'])
+    const injectedToolCalls = normalizeInjectedToolCalls(inner.tool_calls)
     return {
       id: event_id,
       sender,
       kind: 'speech',
       content: truncate(sender.role === 'manager' ? sanitizeManagerText(content) : content, 2_000),
       ...(streamId ? { streamId } : {}),
+      ...(thought ? { thought } : {}),
+      ...(injectedToolCalls.length ? { toolCalls: injectedToolCalls } : {}),
+      ...(routedBy === 'manager_triage' || routedBy === 'direct_mention' ? { routedBy } : {}),
       ...(managerReport ? { managerReport } : {}),
     }
   }
@@ -783,6 +845,9 @@ export function projectCaseEvent(
     const streamId = pickString(inner, ['stream_id'])
     const managerReport = normalizeManagerReport(inner.manager_report)
     const clarifyKind = pickString(inner, ['clarify_kind'])
+    // 同 room.agent_message：后端注入的历史思考链/工具卡直接取用。
+    const thought = pickString(inner, ['thought'])
+    const injectedToolCalls = normalizeInjectedToolCalls(inner.tool_calls)
     return {
       id: event_id,
       sender,
@@ -790,6 +855,8 @@ export function projectCaseEvent(
       content: clarifyKind === 'execution_object' ? '' : truncate(content, 2_000),
       hideContent: clarifyKind === 'execution_object',
       ...(streamId ? { streamId } : {}),
+      ...(thought ? { thought } : {}),
+      ...(injectedToolCalls.length ? { toolCalls: injectedToolCalls } : {}),
       ...(managerReport ? { managerReport } : {}),
       askRequest: {
         questions,
@@ -827,6 +894,30 @@ export function projectCaseEvent(
       content: formatRouteDecisionSummary(decision),
       routeDecision: decision,
       ...(askRequest ? { askRequest } : {}),
+    }
+  }
+
+  if (event_type === 'room.route_transition') {
+    // 咨询分诊转场卡：CHAT 意图由经理分诊给领域专家直答，载荷在内层 payload.payload
+    // （同 room 消息事件）。与 room.route_decision（流程路径决策）语义隔离。
+    const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+    const transition = normalizeRouteTransition(inner) || normalizeRouteTransition(body)
+    if (!transition) return null
+    const sender = resolveRoomSender(transition.fromAgentId || actor || 'bioops-manager', metadata)
+    // 名称缺省时按角色元数据兜底解析，保证旧事件也能渲染出可读卡片。
+    if (!transition.fromName && transition.fromAgentId) {
+      transition.fromName = resolveRoomSender(transition.fromAgentId, metadata).name
+    }
+    if (!transition.targetName) {
+      transition.targetName = resolveRoomSender(transition.targetAgentId, metadata).name
+    }
+    return {
+      id: event_id,
+      sender,
+      kind: 'speech',
+      content: '',
+      hideContent: true,
+      routeTransition: transition,
     }
   }
 
@@ -1345,6 +1436,71 @@ function extractDebugTrace(
   return Object.values(trace).some((value) => value !== undefined) ? trace : undefined
 }
 
+/** 把携带 stream_id 的工具事件归并到对应发言气泡的 toolCalls 列表。
+ *  工具事件可能早于首个流式增量到达（气泡尚未创建），先按 stream_id 暂存，
+ *  气泡创建时一次性挂上；同一 tool_call_id 的 call/started/result 合并为一条。 */
+function attachStreamToolCall(
+  pending: Map<string, RoomToolCall[]>,
+  streams: Map<string, RoomMessage>,
+  streamId: string,
+  event: AgentTeamsEvent,
+  inner: Record<string, unknown>,
+): void {
+  const rawTool = pickString(inner, ['tool', 'tool_name', 'name'])
+  const tool = rawTool ? formatToolName(rawTool) : ''
+  if (!tool) return
+  let list = pending.get(streamId)
+  if (!list) {
+    list = []
+    pending.set(streamId, list)
+  }
+  const callId = pickString(inner, ['tool_call_id']) || event.event_id
+  let entry = list.find((item) => item.id === callId)
+  if (!entry) {
+    entry = { id: callId, name: tool, status: 'running' }
+    list.push(entry)
+  }
+  if (event.event_type === 'agent.tool_result') {
+    entry.status = inner.success === false ? 'failed' : 'ok'
+    if (typeof inner.duration_ms === 'number') entry.durationMs = Math.round(inner.duration_ms)
+    const resultSummary = pickString(inner, ['result_summary'])
+    if (resultSummary) entry.resultSummary = resultSummary
+  } else {
+    entry.status = 'running'
+    const argsSummary = pickString(inner, ['args_summary'])
+    if (argsSummary) entry.argsSummary = argsSummary
+  }
+  const stream = streams.get(streamId)
+  if (stream) stream.toolCalls = list
+}
+
+/** 归一化后端在 room.agent_message / room.ask_user 载荷里注入的历史工具调用。
+ *  房间重开后 room.agent_stream 瞬态增量已丢失，后端聚合时把审计链中持久化的
+ *  工具事件合并成 tool_calls（snake_case 字段），这里映射为 RoomToolCall。 */
+function normalizeInjectedToolCalls(value: unknown): RoomToolCall[] {
+  if (!Array.isArray(value)) return []
+  const calls: RoomToolCall[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const raw = item as Record<string, unknown>
+    const id = pickString(raw, ['id'])
+    const name = pickString(raw, ['name'])
+    if (!id || !name) continue
+    const call: RoomToolCall = {
+      id,
+      name,
+      status: raw.status === 'ok' || raw.status === 'failed' ? raw.status : 'running',
+    }
+    if (typeof raw.duration_ms === 'number') call.durationMs = Math.round(raw.duration_ms)
+    const argsSummary = pickString(raw, ['args_summary'])
+    if (argsSummary) call.argsSummary = argsSummary
+    const resultSummary = pickString(raw, ['result_summary'])
+    if (resultSummary) call.resultSummary = resultSummary
+    calls.push(call)
+  }
+  return calls
+}
+
 /** 将一批事件投影为房间消息列表（丢弃不在投影表内的事件，保持原顺序）。
  *  同一 work_item_id 的重复 claim/running 占位消息在此去重：保留首次认领
  *  （attempt 变化视为合法重试，予以保留），其余重复占位合并掉，避免时间线上
@@ -1358,6 +1514,9 @@ export function projectCaseEvents(
   const messages: RoomMessage[] = []
   const startAttempts = new Map<string, number>()
   const streams = new Map<string, RoomMessage>()
+  // Manager/直答专家应答过程中的工具调用事件携带 stream_id，
+  // 归并到对应发言气泡内联展示（对齐 AI 助手气泡内工具卡片），不再生成独立 progress 行。
+  const streamToolCalls = new Map<string, RoomToolCall[]>()
   // 按 recorded_at 排序：Bridge 事件可能因并发投递或分页合并导致顺序与发生顺序不一致，
   // 前端按时间戳归位后再投影，确保工具调用证据出现在最终结论之前。
   const sorted = [...events].sort((a, b) => {
@@ -1393,6 +1552,8 @@ export function projectCaseEvents(
           streamRawContent: '',
         }
         streams.set(streamId, stream)
+        const pendingCalls = streamToolCalls.get(streamId)
+        if (pendingCalls) stream.toolCalls = pendingCalls
         messages.push(stream)
       }
       if (channel === 'reasoning') stream.thought = `${stream.thought || ''}${delta}`
@@ -1414,6 +1575,19 @@ export function projectCaseEvents(
       }
       continue
     }
+    if (
+      event.event_type === 'agent.tool_call'
+      || event.event_type === 'agent.tool_started'
+      || event.event_type === 'agent.tool_result'
+    ) {
+      const body = event.payload || {}
+      const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
+      const streamId = pickString(inner, ['stream_id'])
+      if (streamId) {
+        attachStreamToolCall(streamToolCalls, streams, streamId, event, inner)
+        continue
+      }
+    }
     const message = projectCaseEvent(event, metadata)
     if (!message) continue
     if (message.streamId) {
@@ -1421,7 +1595,10 @@ export function projectCaseEvents(
       if (stream && event.event_type === 'room.agent_message') {
         Object.assign(stream, message, {
           id: stream.id,
-          thought: stream.thought,
+          // 流式增量还在时以气泡上的思考链/工具卡为准；增量丢失（房间重开）
+          // 时回退到后端注入进最终消息载荷的 thought / toolCalls。
+          thought: stream.thought || message.thought,
+          toolCalls: stream.toolCalls?.length ? stream.toolCalls : message.toolCalls,
           streaming: false,
           streamId: message.streamId,
           streamRawContent: undefined,
@@ -1456,6 +1633,14 @@ export function projectCaseEvents(
       startAttempts.set(message.workItemId, attempt)
     }
     messages.push(message)
+  }
+  // 房间重开兜底：room.agent_stream 瞬态增量不持久化，历史工具事件失去可挂的
+  // 流式气泡（或工具事件与最终消息分属不同分页/时钟微差导致顺序颠倒）。全部
+  // 事件投影完成后，把仍孤儿的工具调用按 stream_id 挂到最终消息气泡上。
+  for (const message of messages) {
+    if (!message.streamId || message.toolCalls?.length) continue
+    const pendingCalls = streamToolCalls.get(message.streamId)
+    if (pendingCalls?.length) message.toolCalls = pendingCalls
   }
   applyAskAnswerEvidence(sorted, messages)
   const consumedReplyIds = markAskRequestsAnswered(messages)
@@ -1609,21 +1794,42 @@ export function shouldStartNewRoomCase(
 }
 
 /** 从原始事件流推导 Manager "正在输入"态：最后一条 room.typing 为 true 且未过期，
- *  且其间没有 room.agent_message / room.ask_user（回复到达即输入结束）。 */
+ *  且其间没有 room.agent_message / room.ask_user / room.agent_stream（回复到达即输入结束）。
+ *  事件可能乱序到达（SSE 断线后由轮询补回），以 recorded_at 排序后再取末态，
+ *  避免迟到的 typing:true 盖过已到达的回复事件导致指示器残留。 */
 export function resolveManagerTyping(events: AgentTeamsEvent[], now: number = Date.now()): boolean {
+  return resolveRoomTyping(events, now).active
+}
+
+/** 同 resolveManagerTyping，但额外返回 typing 事件携带的响应者名字：
+ *  领域 Agent 直答时后端会在 payload 里带 agent_name，指示器据此显示真实响应者；
+ *  未携带（经理路径）时返回 null，由调用方回退到经理显示名。 */
+export function resolveRoomTyping(
+  events: AgentTeamsEvent[],
+  now: number = Date.now(),
+): { active: boolean; agentName: string | null } {
+  const ordered = [...events].sort((a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at))
   let typing = false
   let typingAt = 0
-  for (const event of events) {
+  let agentName: string | null = null
+  for (const event of ordered) {
     if (event.event_type === 'room.typing') {
       const body = event.payload || {}
       const inner = (body.payload && typeof body.payload === 'object' ? body.payload : {}) as Record<string, unknown>
       typing = inner.typing === true
       typingAt = Date.parse(event.recorded_at) || 0
-    } else if (event.event_type === 'room.agent_message' || event.event_type === 'room.ask_user') {
+      agentName = typeof inner.agent_name === 'string' && inner.agent_name ? inner.agent_name : null
+    } else if (
+      event.event_type === 'room.agent_message'
+      || event.event_type === 'room.ask_user'
+      || event.event_type === 'room.agent_stream'
+    ) {
       typing = false
+      agentName = null
     }
   }
-  return typing && typingAt > 0 && now - typingAt < MANAGER_TYPING_TTL_MS
+  const active = typing && typingAt > 0 && now - typingAt < MANAGER_TYPING_TTL_MS
+  return { active, agentName: active ? agentName : null }
 }
 
 export interface RoomWorkerStep {

@@ -228,7 +228,7 @@ async def test_deepseek_chat_keeps_enable_thinking(monkeypatch: pytest.MonkeyPat
     provider = OpenAICompatibleProvider(
         AIProviderConfigModel(
             name="deepseek",
-            model="qwen3.7-plus-ga-260731",
+            model="qdoubao-seed-evolving-ga-260731",
             base_url="https://ark.cn-beijing.volces.com/api/v3",
         )
     )
@@ -258,7 +258,7 @@ async def test_deepseek_v4_explicitly_disables_thinking(monkeypatch: pytest.Monk
     provider = OpenAICompatibleProvider(
         AIProviderConfigModel(
             name="deepseek",
-            model="qwen3.7-plus-ga-260731",
+            model="qdoubao-seed-evolving-ga-260731",
             base_url="https://ark.cn-beijing.volces.com/api/v3",
         )
     )
@@ -287,8 +287,8 @@ async def test_non_volc_qwen_keeps_enable_thinking(monkeypatch: pytest.MonkeyPat
     """非火山方舟的 Qwen 兼容端点保持原有 enable_thinking 协议。"""
     provider = OpenAICompatibleProvider(
         AIProviderConfigModel(
-            name="qwen3.7-plus",
-            model="qwen3.7-plus",
+            name="qdoubao-seed-evolving",
+            model="qdoubao-seed-evolving",
             base_url="https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
         )
     )

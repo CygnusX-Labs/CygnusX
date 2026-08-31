@@ -26,7 +26,7 @@
 用户（Studio 会话）
     │ 自然语言需求
     ▼
-agent-mcp-builder（qwen3.7-plus, temperature=0.2）
+agent-mcp-builder（qdoubao-seed-evolving, temperature=0.2）
     │ 六阶段工作流（Prompt 驱动）
     │ ① 规划 → ② 搜索 → ③ 编码 → ④ 测试 → ⑤ 文档 → ⑥ 注册
     │
@@ -69,7 +69,7 @@ Celery beat（每 5 分钟）
 
 | 文件 | 内容 |
 |------|------|
-| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qwen3.7-plus`，temperature 0.2，max_tokens 8000，`tool_packs: [workspace, memory]`，studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.mcp_builder`（配额/TTL/产物目录元数据） |
+| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qdoubao-seed-evolving`，temperature 0.2，max_tokens 8000，`tool_packs: [workspace, memory]`，studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.mcp_builder`（配额/TTL/产物目录元数据） |
 | `data/ai/prompts/mcp_builder.md` | 六阶段系统提示词（约 14k 字符）：规划/搜索/编码/测试/文档/注册；含两份代码模板（本地 pandas 版 + NCBI httpx 版）、安全红线、"绝不代为提交"约束（注册须用户/前端触发 API） |
 | `data/CygnusX.yaml` | `agents.enabled` 追加 `mcp_builder`（加载白名单） |
 | `data/ai/prompts/router.md` | 路由候选表追加构建师条目（"创建/生成 MCP Server、给 AI 加新工具"类请求分派给它） |

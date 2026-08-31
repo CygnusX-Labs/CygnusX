@@ -198,43 +198,43 @@ docker-build-deg: ## 构建 DEG 差异表达分析 R 运行时镜像（DESeq2 + 
 docker-build-synteny: ## 构建 MCScanX 思路的基因组共线性分析运行时镜像
 	docker build -t cygnusx-synteny:v1 -f deploy/docker/Dockerfile.synteny tool_configs/synteny
 
-docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime 三件套 + 旧沙盒池 + studio base/bio + 终端全家桶，任一失败即中止）
+docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime 三件套 + Copilot 代码执行沙盒 + studio base/bio + 终端全家桶，任一失败即中止）
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║  🐳 CygnusX 沙盒/分析运行时镜像全量重建（共 12 个镜像）        ║"
+	@echo "║  🐳 CygnusX 沙盒/分析运行时镜像全量重建（共 14 个镜像）        ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "🧪 步骤 1/5：Studio 运行时三件套（cygnusx-analysis core/plot/scrna）..."
 	deploy/runtime-images/build.sh
 	@echo "   ✅ 步骤 1/5 完成"
 	@echo ""
-	@echo "📦 步骤 2/5：旧沙盒池镜像（cygnusx/sandbox-base:latest）..."
-	docker build -t cygnusx/sandbox-base:latest -f deploy/sandbox/Dockerfile deploy/sandbox
+	@echo "📦 步骤 2/5：AI Copilot 代码执行沙盒镜像（cygnusx-sandbox-copilot:v0.0.2dev）..."
+	docker build -t cygnusx-sandbox-copilot:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
 	@echo "   ✅ 步骤 2/5 完成"
 	@echo ""
-	@echo "🛠️  步骤 3/5：Studio 旧镜像（cygnusx-sandbox base/bio）..."
+	@echo "🛠️  步骤 3/5：Studio 沙盒三件套（cygnusx-sandbox base/bio/browser-office）..."
 	deploy/studio/build.sh
 	@echo "   ✅ 步骤 3/5 完成"
 	@echo ""
-	@echo "💻 步骤 4/5：终端基础镜像（cygnusx/sandbox-terminal:latest）..."
-	docker build -t cygnusx/sandbox-terminal:latest tool_configs/terminal/docker/
+	@echo "💻 步骤 4/5：终端基础镜像（cygnusx-sandbox-terminal:v0.0.2dev）..."
+	docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
 	@echo "   ✅ 步骤 4/5 完成"
 	@echo ""
 	@echo "🧬 步骤 5/5：终端子镜像 6 个（rnaseq/scrna/gatk/ggplot2/assembly/metagenomics）..."
 	@i=0; for t in rnaseq scrna gatk ggplot2 assembly metagenomics; do \
 		i=$$((i+1)); \
 		echo ""; \
-		echo "   ▶ [$$i/6] 构建 cygnusx/sandbox-$$t:latest ..."; \
-		docker build -t cygnusx/sandbox-$$t:latest -f tool_configs/terminal/docker/Dockerfile.$$t tool_configs/terminal/docker/ || exit 1; \
-		echo "   ✅ [$$i/6] cygnusx/sandbox-$$t:latest 完成"; \
+		echo "   ▶ [$$i/6] 构建 cygnusx-sandbox-$$t:v0.0.2dev ..."; \
+		docker build -t cygnusx-sandbox-$$t:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.$$t tool_configs/terminal/docker/ || exit 1; \
+		echo "   ✅ [$$i/6] cygnusx-sandbox-$$t:v0.0.2dev 完成"; \
 	done
 	@echo ""
 	@echo "📋 镜像清单核对："
 	@ok=0; miss=0; \
-	for img in cygnusx-analysis:core-2026.07 cygnusx-analysis:plot-2026.07 cygnusx-analysis:scrna-2026.07 \
-		cygnusx/sandbox-base:latest cygnusx-sandbox-base:v0.0.2dev cygnusx-sandbox-bio:v0.0.2dev cygnusx-sandbox-browser-office:v0.0.2dev cygnusx/sandbox-terminal:latest \
-		cygnusx/sandbox-rnaseq:latest cygnusx/sandbox-scrna:latest cygnusx/sandbox-gatk:latest \
-		cygnusx/sandbox-ggplot2:latest cygnusx/sandbox-assembly:latest cygnusx/sandbox-metagenomics:latest; do \
+	for img in cygnusx-analysis:core-v0.0.2dev cygnusx-analysis:plot-v0.0.2dev cygnusx-analysis:scrna-v0.0.2dev \
+		cygnusx-sandbox-copilot:v0.0.2dev cygnusx-sandbox-base:v0.0.2dev cygnusx-sandbox-bio:v0.0.2dev cygnusx-sandbox-browser-office:v0.0.2dev cygnusx-sandbox-terminal:v0.0.2dev \
+		cygnusx-sandbox-rnaseq:v0.0.2dev cygnusx-sandbox-scrna:v0.0.2dev cygnusx-sandbox-gatk:v0.0.2dev \
+		cygnusx-sandbox-ggplot2:v0.0.2dev cygnusx-sandbox-assembly:v0.0.2dev cygnusx-sandbox-metagenomics:v0.0.2dev; do \
 		if docker image inspect $$img >/dev/null 2>&1; then \
 			echo "   ✅ $$img"; ok=$$((ok+1)); \
 		else \
@@ -322,7 +322,7 @@ docker-purge: ## [危险] 彻底清理 Docker 资源：容器+数据卷+网络+�
 	-docker network rm $(DOCKER_NETWORK) $(SANDBOX_NETWORK) 2>/dev/null
 	-@docker network ls --filter "name=studio-" -q | xargs -r docker network rm 2>/dev/null
 	@echo "=> 删除本地构建镜像（主栈 / Worker / 沙盒终端 / 分析运行时 / 富集 R）..."
-	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-studio-egress-proxy --filter reference=cygnusx-worker --filter reference=cygnusx-phylo-worker --filter reference=cygnusx-r-enrichment --filter reference=cygnusx/sandbox-terminal --filter reference=cygnusx-analysis -q) 2>/dev/null
+	-docker rmi $$(docker images --filter reference=docker-web --filter reference=docker-beat --filter reference=docker-flower --filter reference=docker-studio-egress-proxy --filter reference=cygnusx-worker --filter reference=cygnusx-phylo-worker --filter reference=cygnusx-r-enrichment --filter reference=cygnusx-sandbox-terminal --filter reference=cygnusx-analysis -q) 2>/dev/null
 	@echo "=> 清理前端构建产物..."
 	rm -rf frontend/dist
 	@echo "=> Docker 资源清理完成"
@@ -375,14 +375,14 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
 	@echo "🐳 步骤 2/11：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
-	@docker image inspect cygnusx/sandbox-terminal:latest >/dev/null 2>&1 && \
-		echo "   ⏭️  cygnusx/sandbox-terminal:latest 已存在，跳过构建" || \
-		docker build -t cygnusx/sandbox-terminal:latest tool_configs/terminal/docker/
+	@docker image inspect cygnusx-sandbox-terminal:v0.0.2dev >/dev/null 2>&1 && \
+		echo "   ⏭️  cygnusx-sandbox-terminal:v0.0.2dev 已存在，跳过构建" || \
+		docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
 	@echo ""
 	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
-	@if docker image inspect cygnusx-analysis:core-2026.07 >/dev/null 2>&1 && \
-	    docker image inspect cygnusx-analysis:plot-2026.07 >/dev/null 2>&1 && \
-	    docker image inspect cygnusx-analysis:scrna-2026.07 >/dev/null 2>&1; then \
+	@if docker image inspect cygnusx-analysis:core-v0.0.2dev >/dev/null 2>&1 && \
+	    docker image inspect cygnusx-analysis:plot-v0.0.2dev >/dev/null 2>&1 && \
+	    docker image inspect cygnusx-analysis:scrna-v0.0.2dev >/dev/null 2>&1; then \
 		echo "   ⏭️  cygnusx-analysis 三个运行时镜像均已存在，跳过构建"; \
 	else \
 		deploy/runtime-images/build.sh; \

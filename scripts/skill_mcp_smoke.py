@@ -39,25 +39,25 @@ WEB_CONTAINER = "cygnusx-web"
 IMAGES: dict[str, dict] = {
     # Studio 默认运行时（micromamba base，等价 sandbox-agent 的 CMD 环境）
     "core": {
-        "image": "cygnusx-analysis:core-2026.07",
+        "image": "cygnusx-analysis:core-v0.0.2dev",
         "prefix": ["micromamba", "run", "-n", "base"],
         "desc": "Studio 默认分析运行时",
     },
     "plot": {
-        "image": "cygnusx-analysis:plot-2026.07",
+        "image": "cygnusx-analysis:plot-v0.0.2dev",
         "prefix": ["micromamba", "run", "-n", "base"],
         "desc": "科研绘图运行时",
     },
     "scrna": {
-        "image": "cygnusx-analysis:scrna-2026.07",
+        "image": "cygnusx-analysis:scrna-v0.0.2dev",
         "prefix": ["micromamba", "run", "-n", "base"],
         "desc": "单细胞分析运行时",
     },
     # 聊天沙箱池镜像（conda env 直接在 PATH）
     "base": {
-        "image": "cygnusx/sandbox-base:latest",
+        "image": "cygnusx-sandbox-copilot:v0.0.2dev",
         "prefix": [],
-        "desc": "聊天沙箱池 sandbox-base",
+        "desc": "聊天沙箱池 sandbox-copilot",
     },
     # 工具箱专属镜像
     "deg": {
@@ -71,7 +71,7 @@ IMAGES: dict[str, dict] = {
         "desc": "富集工具箱镜像",
     },
     "term": {
-        "image": "cygnusx/sandbox-terminal:latest",
+        "image": "cygnusx-sandbox-terminal:v0.0.2dev",
         "prefix": [],
         "desc": "终端工具镜像",
     },

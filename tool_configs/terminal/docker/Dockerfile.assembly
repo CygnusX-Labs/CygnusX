@@ -1,6 +1,6 @@
 # CygnusX 基因组组装沙盒镜像
-# 构建: docker build -t cygnusx/sandbox-assembly:latest -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
-FROM cygnusx/sandbox-terminal:latest
+# 构建: docker build -t cygnusx-sandbox-assembly:v0.0.2dev -f tool_configs/terminal/docker/Dockerfile.assembly tool_configs/terminal/docker/
+FROM cygnusx-sandbox-terminal:v0.0.2dev
 
 USER root
 

@@ -424,3 +424,100 @@ span 允许保留 `gen_ai.request.model`、`gen_ai.usage.*`（或兼容的既有
   需要额外冻结数据快照、工具版本和运行环境，本期不承诺。
 - 路线 B 的 Bridge 原生成员列表、多人 requester 和反向同步需独立设计与迁移；不得在 A1+
   施工中隐式混入。
+
+## 14. 通用流程路径（提示词层 + 通用能力校验）与领域包沉淀路线 · 2026-08-27
+
+> **背景**：以 tnpd 单基因系统发育树方案评审为契机确认的设计口径——"经理出方案 →
+> 各阶段分派给专门 Agent → 汇总交付"不依赖预先编写的领域包也能运转，但未命中
+> `data/ai/domains/*.yaml` 时缺少能力匹配与阶段完整性的硬约束。本期决策：**先用提示词层
+> 实现通用路径并补齐通用能力匹配软校验，后续按使用频率将跑通的流程沉淀为领域包**。
+> 领域锚点模式（如 `domains/phylo.yaml` 的 `assignments.rules` + `validate_plan` 强制校验）
+> 仍是已定义领域的最高质量路径，本节不改变其优先级。
+>
+> **施工状态（2026-08-27）**：§14.2 提示词骨架与能力匹配软校验均已落地（实现位置见
+> §14.2 末），单测覆盖于 `tests/unit/test_overdrive_plan_constraint_service.py`；
+> 剩余后续项见 §14.4。
+
+### 14.1 现状基线（as-built）
+
+未命中任何领域包时，框架已具备完整的自由规划管线，缺的是质量保障而非功能：
+
+- **规划**：`select_lead_planner`（`overdrive_planning_service.py:858`）在领域评分全 0 时
+  兜底到 `agent-general`；Manager LLM 依据 `build_overdrive_agent_catalog`
+  （`overdrive_control.py:704`，注入各 Agent 的 `capability_scope`/`default_role`/
+  `accepts_inputs`/`produces_outputs`）自由生成阶段拆分与分派。
+- **校验**：`overdrive_run_service.py:93-133` 的结构校验与领域无关、始终生效（task_id 唯一、
+  agent_id 真实存在、depends_on 合法、契约字段齐全）；但锚点校验
+  `apply_authoritative_plan`（`overdrive_plan_constraint_service.py:199`）在无权威规则时
+  直接放行，**没有任何能力匹配检查**——派错 Agent 会静默通过。
+- **执行与汇总**：与领域模式共用 parallel_subagents 拓扑波次分派与 DeliveryAssembler
+  汇总，不依赖领域配置。
+
+### 14.2 本期施工：通用阶段骨架提示词
+
+在 `OVERDRIVE_MANAGER_PROMPT`（`chat_service.py:410-445`）增加"未命中领域包时"的规划规则，
+作为 `{authoritative_anchors}` 为"无。"时的补充约束：
+
+1. **通用四阶段骨架**：计划默认按 输入核验 → 核心分析/实现 → 可视化/解读 → 汇总交付
+   组织；任务可合并但不可缺省"输入核验"与"汇总交付"，缺省时必须在 speech 中说明理由。
+2. **能力匹配选派**：每个 assignment 的 `agent_id` 必须依据 catalog 中候选专家的
+   `capability_scope` 与 `default_role` 选择，并在任务描述中写明选派理由；禁止仅按名称
+   字面猜测分工。
+3. **交接契约**：每个任务必须写明 `accepts_inputs`/`produces_outputs`，下游任务的
+   inputs 必须能由上游 outputs 满足。
+4. **领域优先**：命中领域锚点时锚点规则优先，通用骨架仅约束锚点未覆盖的剩余阶段。
+
+提示词是软约束，不替代校验。实现位置：
+
+- 提示词：`OVERDRIVE_MANAGER_PROMPT` 新增规则 6.1（通用四阶段骨架）并强化规则 9
+  （选派须在 task 描述注明能力依据），`chat_service.py`。
+- 通用能力校验：`validate_capability_match` 与 `_apply_generic_capability_check`
+  （`overdrive_plan_constraint_service.py`）——无领域锚点时按通用能力组
+  （可视化/绘图、代码/脚本执行）核对任务文本与 Agent 身份
+  （agent_id/name/category/capability_scope/capability_tags），错配且目录中另有 Agent
+  覆盖时请求 Manager 修复一次；修复未果不阻断通用流程，违规项随 `plan_violations`
+  保留供观测。`build_repair_prompt` 按有无锚点切换修复提示词文案，两个修复调用点
+  （`overdrive_control.py` 的 `repair_overdrive_plan` 与 `chat_service.py` 的
+  plan_builder）统一改用它。
+- 开关：`overdrive_capability_check_enabled`（默认开，`config.py`），关闭即回退纯
+  LLM 自由规划。
+
+### 14.3 领域包沉淀路线
+
+通用路径兜底长尾需求；同类流程**复现 2–3 次以上**即沉淀为 `data/ai/domains/<domain>.yaml`，
+享受锚点硬约束。建包规范：
+
+- **粗粒度锚点**：每域 3–6 条 authoritative 锚点，描述"必须有什么阶段、谁来干
+  （`agent_match`）、交接什么产物"；阶段内部细节留给执行 Agent 与其 `skill_ids` 挂载的
+  领域知识（如 `skills/bio_skills/`），不把框架变成僵化流水线。
+- **分支决策前置**：方案分叉（如定根策略、是否修剪）用 `intake.questions` 与 `slots` 在
+  规划前问清，不写成多套互斥锚点。
+- **marker 去重**：新增 `domain_markers` 前先与既有包比对，避免多包重叠命中导致路由歧义；
+  `question_filters` 随 marker 同步维护。
+- **契约对齐能力**：`produces_outputs`/`accepts_inputs` 对照目标 Agent 的
+  `capability_scope` 与已挂载 skill 编写，不承诺执行侧没有的产物。
+- **热加载**：`DomainPackLoader.reload_if_changed`（`domain_pack_loader.py:34`）按文件签名
+  自动重载，新增/修改领域包无需重启；单包校验失败不影响其他包。
+
+首个沉淀案例：tnpd 系统发育树流程，将 `domains/phylo.yaml` 现有 `phylogeny-build` 粗锚点
+拆分为 输入校验（agent-code）→ 比对与修剪（agent-code）→ 建树与定根（agent-code）→
+树可视化（agent-viz）→ 报告交付（agent-delivery）的锚点链，并在
+`prompt_injections.manager_notes` 补充分派口径。
+
+### 14.4 后续路线（不在本期）
+
+- **能力组扩充**：通用能力表当前只含可视化与代码两组边界清晰的能力；数据核验、
+  交付报告等组误报率偏高，待真实运行样本积累后再评估是否加入。领域级选派约束不
+  进通用表，一律沉淀到领域包。
+- **catch-all 兜底领域包**：给 `DomainRegistry.match_domains`（`domain_registry.py:48`）
+  增加"无命中时兜底 pack"语义，使通用四阶段骨架也享受锚点硬约束。
+- **领域包半自动生成**：利用既有热重载，由新领域请求触发领域包草稿生成，把"支持任意
+  领域"转化为"领域包快速注册"。
+
+### 14.5 验收要点
+
+| 场景 | 必须证明的结果 |
+|---|---|
+| 通用路径规划 | 构造不命中任何领域包的执行类请求；计划包含输入核验与汇总交付阶段，每个 assignment 的 agent 与 catalog 能力声明一致，契约字段齐全 |
+| 领域优先不回归 | phylo 等已定义领域的锚点校验、修复、合并行为与施工前一致；通用骨架不改变锚点覆盖阶段的分派 |
+| 沉淀闭环 | tnpd 流程经扩充后的 phylo.yaml 执行：锚点链各阶段由 `agent_match` 指定 Agent 承接，交付物含 Newick + 树图 + 方法学报告 |

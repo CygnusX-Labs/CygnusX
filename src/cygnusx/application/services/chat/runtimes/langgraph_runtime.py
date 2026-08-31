@@ -166,7 +166,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 # 与 legacy 手写循环同一执行本体；LangGraph 执行器只回单个信封，
                 # 不走 stream_chat_sandbox_tool 的增量 tool_output 事件，
                 # stdout/stderr/产物随最终 ui_payload 一次性透出。
-                return await execute_chat_sandbox(args, user_id)
+                return await execute_chat_sandbox(args, user_id, session_id=session_id)
             server = _find_server(tool_name)
             if server is None:
                 return {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}

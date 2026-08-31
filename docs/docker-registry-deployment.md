@@ -44,7 +44,7 @@
 |------|-----------|-----------|------|
 | Enrichment | `deploy/docker/Dockerfile.enrichment` | `cygnusx-r-enrichment:<ver>` | GO/KEGG R 分析 |
 | DEG | `deploy/docker/Dockerfile.deg` | `cygnusx-r-deg:<ver>` | 差异表达 R 分析 |
-| Sandbox Terminal | `deploy/sandbox/Dockerfile` + `tool_configs/terminal/docker/` | `cygnusx/sandbox-terminal:latest` | 终端沙盒 |
+| Sandbox Terminal | `deploy/sandbox/Dockerfile` + `tool_configs/terminal/docker/` | `cygnusx-sandbox-terminal:v0.0.2dev` | 终端沙盒 |
 | Studio Egress Proxy | `deploy/studio/proxy.Dockerfile` | `docker-studio-egress-proxy` | Studio 出站代理 |
 | Phylo Toolkit | `deploy/docker/Dockerfile.phylo` | `cygnusx/phylo-toolkit:1.0.0` | 系统发育树工具 |
 
@@ -169,7 +169,7 @@ build_and_push "cygnusx-analysis:scrna-2026.07" "$REGISTRY/analysis-scrna:2026.0
 log "=== 推送工具镜像（变动极少，首次推送后跳过）==="
 build_and_push "cygnusx-r-enrichment:latest"   "$REGISTRY/r-enrichment:1.2.0"
 build_and_push "cygnusx-r-deg:latest"          "$REGISTRY/r-deg:1.0.0"
-build_and_push "cygnusx/sandbox-terminal:latest" "$REGISTRY/sandbox-terminal:2026.07"
+build_and_push "cygnusx-sandbox-terminal:v0.0.2dev" "$REGISTRY/sandbox-terminal:2026.07"
 
 # 同步 latest tag（可选）
 if [ "${UPDATE_LATEST:-0}" = "1" ]; then
@@ -461,7 +461,7 @@ dive $REGISTRY/web:$VERSION   # 需要安装 dive: https://github.com/wagoodman/
 | `docker-compose.worker.yml` | phylo-worker | `${CYGNUSX_PHYLO_WORKER_IMAGE:-cygnusx-phylo-worker:dev}` | ✅ 已支持 |
 | Makefile | enrichment | `$(ENRICHMENT_DOCKER_IMAGE)` | ✅ 已支持 |
 | Makefile | deg | `$(DEG_DOCKER_IMAGE)` | ✅ 已支持 |
-| Makefile | sandbox-terminal | 硬编码 `cygnusx/sandbox-terminal:latest` | 加环境变量 |
+| Makefile | sandbox-terminal | 硬编码 `cygnusx-sandbox-terminal:v0.0.2dev` | 加环境变量 |
 
 ## 附录 B：环境变量模板（追加到 `.env.example`）
 

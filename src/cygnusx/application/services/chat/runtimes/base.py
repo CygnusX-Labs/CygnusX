@@ -26,6 +26,7 @@ class ChatRuntimeRequest:
     enable_code_execution: bool = False
     deep_thinking: bool = False
     mode: str | None = None
+    runtime_profile: str | None = None
     mcp_mode: str | None = None
     extra_mcp_servers: list[str] | None = None
     multi_agent: bool | None = None

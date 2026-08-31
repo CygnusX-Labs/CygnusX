@@ -1,6 +1,6 @@
 ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
 # CygnusX 生信分析沙盒镜像
-# 构建：docker build --build-arg CYGNUSX_IMAGE_TAG=v0.0.2dev -t cygnusx/sandbox-base:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
+# 构建：docker build -t cygnusx-sandbox-copilot:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
 #
 # 设计（符合 1 人运维 / 单机部署原则）：
 # - 基于 condaforge/mambaforge，通过 bioconda 预装 scanpy + R/Seurat 交互式分析栈

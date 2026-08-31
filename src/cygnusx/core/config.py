@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     mas_apptainer_binary: str = "apptainer"
     mas_apptainer_image: str = ""
     mas_apptainer_pipeline_root: str = "/opt/cygnusx/pipelines/RNAFlow"
-    mas_scrna_docker_image: str = "cygnusx-analysis:scrna-2026.07"
+    mas_scrna_docker_image: str = "cygnusx-analysis:scrna-v0.0.2dev"
     mas_scrna_timeout_seconds: int = 7200
     # ===== Persistent Goal Runtime (opt-in, isolated from chat SSE) =====
     goal_runtime_enabled: bool = False
@@ -152,11 +152,14 @@ class Settings(BaseSettings):
     memory_v2_enabled: bool = False
     memory_fact_time_decay_lambda: float = 0.02
     memory_settle_min_new_messages: int = 4
-    memory_extraction_model: str = "qwen3.7-plus"
+    memory_extraction_model: str = "qdoubao-seed-evolving"
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
     overdrive_authoritative_mode: Literal["constraint", "override", "off"] = "constraint"
     overdrive_plan_repair_enabled: bool = True
+    # 无领域锚点时的通用能力匹配软校验：发现选派错配则请求 Manager 修复一次，
+    # 修复未果仅记录违规不阻断流程；关闭即回退到纯 LLM 自由规划。
+    overdrive_capability_check_enabled: bool = True
     # MAS Orchestrator 引擎灰度：legacy 维持现状路径（默认，行为完全不变）；
     # langgraph 走新编排图（plan_generate/plan_confirm/dispatch/aggregate +
     # checkpoint 恢复）。langgraph 启用时 legacy 路径进入 deprecation 倒计时。
@@ -341,8 +344,14 @@ class Settings(BaseSettings):
     # A3（Part 2.7 失败降级路径）：@领域 Agent 直答的超时秒数；超时/报错/目标
     # 不可用时 Manager 降级接管（可见降级消息 + room.agent_timeout 审计事件）。
     # 依据: 实测 E2E-11 — 真实 LLM 直答耗时 26.9s（evidence/e2e-2026-08-21/summary.md），
-    # 30s 余量很薄；上调需同步评估降级触发率
-    agentteams_direct_timeout_seconds: float = 30.0
+    # 30s 余量很薄；2026-08-26 协作室 agent-data 直答（长思考链）实测超 30s 被
+    # 降级接管，故上调至 120s；直答带流式思考投影，等待期间用户可见进度
+    agentteams_direct_timeout_seconds: float = 120.0
+    # 协作室上下文读取面：正文默认共享，思考过程按需开启。
+    room_context_message_limit: int = 20
+    room_context_max_chars: int = 16_000
+    room_context_include_thinking: bool = False
+    room_messages_read_max_limit: int = 100
 
     # ===== Matrix Gateway（CygnusX 仅持有 Gateway 服务凭证，绝不保存 Matrix 凭证） =====
     agentteams_gateway_enabled: bool = False
@@ -395,7 +404,7 @@ class Settings(BaseSettings):
 
     # ===== 代码执行沙盒 =====
     sandbox_enabled: bool = True
-    sandbox_image: str = "cygnusx/sandbox-base:latest"
+    sandbox_image: str = "cygnusx-sandbox-copilot:v0.0.2dev"
     sandbox_docker_network: str = "cygnusx_default"
     # 是否将沙盒容器置于无网络模式（默认 True），防止用户代码扫描/访问内网
     sandbox_network_isolated: bool = True
@@ -422,7 +431,7 @@ class Settings(BaseSettings):
     mcp_builder_requires_review: bool = True  # 发布是否需要管理员审核
     mcp_builder_max_per_user: int = 5  # 每用户最大实验 MCP 数量
     mcp_builder_default_ttl_hours: int = 24  # 实验 MCP 默认 TTL
-    mcp_builder_default_model: str = "qwen3.7-plus"  # 代码生成默认模型（与平台 agent 标准一致）
+    mcp_builder_default_model: str = "qdoubao-seed-evolving"  # 代码生成默认模型（与平台 agent 标准一致）
 
     # ===== 限流（全局每 IP 滑动窗口，Redis 不可用时降级放行）=====
     rate_limit_enabled: bool = True

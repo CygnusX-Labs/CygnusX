@@ -3,17 +3,17 @@ studio:
   default_image: cygnusx-sandbox-browser-office:v0.0.2dev
   images:
     analysis-core:
-      image: cygnusx-analysis:core-2026.07
+      image: cygnusx-analysis:core-v0.0.2dev
       runtime_profile: analysis-core
       dockerfile: deploy/runtime-images/core.Dockerfile
       capabilities: [code]
     analysis-plot:
-      image: cygnusx-analysis:plot-2026.07
+      image: cygnusx-analysis:plot-v0.0.2dev
       runtime_profile: analysis-plot
       dockerfile: deploy/runtime-images/plot.Dockerfile
       capabilities: [code]
     analysis-scrna:
-      image: cygnusx-analysis:scrna-2026.07
+      image: cygnusx-analysis:scrna-v0.0.2dev
       runtime_profile: analysis-scrna
       dockerfile: deploy/runtime-images/scrna.Dockerfile
       capabilities: [code]

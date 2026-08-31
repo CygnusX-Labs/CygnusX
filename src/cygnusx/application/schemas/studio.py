@@ -22,6 +22,10 @@ class CreateStudioSessionRequest(BaseModel):
         default_factory=lambda: ["code", "browser", "document"],
         description="请求的沙盒运行能力；默认开放代码、浏览器和文档能力，仍受部署镜像约束",
     )
+    runtime_profile: str | None = Field(
+        None,
+        description="显式指定运行时 profile（见 runtime_images.yaml）；优先于按能力匹配的镜像",
+    )
 
 
 class PromoteStudioSessionRequest(BaseModel):
@@ -29,6 +33,10 @@ class PromoteStudioSessionRequest(BaseModel):
 
     agent_id: str | None = Field(
         None, description="可选：将会话重绑定到该 Agent（路由场景缺省沿用会话绑定 Agent）"
+    )
+    runtime_profile: str | None = Field(
+        None,
+        description="显式指定运行时 profile；优先于目标 Agent studio.image",
     )
 
 

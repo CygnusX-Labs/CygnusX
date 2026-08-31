@@ -34,9 +34,10 @@ _USER_ID = "11111111-1111-1111-1111-111111111111"
 
 @pytest.fixture(autouse=True)
 def _reset_module_state() -> None:
-    # 模块级状态（交付目录重置归属 / 已收集产物签名）在用例间隔离
+    # 模块级状态（交付目录重置归属 / 已收集产物签名 / 已注入输入签名）在用例间隔离
     chat_sandbox_tools._artifact_dir_owner.clear()
     chat_sandbox_tools._collected_artifacts.clear()
+    chat_sandbox_tools._injected_inputs.clear()
 
 
 def test_reset_cmd_creates_common_subdirs() -> None:
@@ -377,3 +378,132 @@ async def test_collect_artifacts_registers_files_with_file_registry(
     _args, kwargs = calls[0]
     assert kwargs.get("source") == FileSource.CHAT_SANDBOX
     assert str(kwargs.get("directory")) == f"workspace/chat-output/{session_id}/output"
+
+
+# ===== 会话附件注入 /workspace/input/ =====
+
+
+class _FakeScalars:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
+
+
+class _FakeResult:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def scalars(self) -> _FakeScalars:
+        return _FakeScalars(self._rows)
+
+
+class _FakeSessionDB:
+    """伪装 SQLAlchemy 会话：execute 返回预设的消息行。"""
+
+    def __init__(self, messages: list[object]) -> None:
+        self._messages = messages
+
+    async def execute(self, _stmt: object) -> _FakeResult:
+        return _FakeResult(self._messages)
+
+
+def _user_message(attachments: list[dict[str, object]]) -> SimpleNamespace:
+    return SimpleNamespace(role="user", metadata_json={"attachments": attachments})
+
+
+def _patch_inject_deps(
+    monkeypatch: pytest.MonkeyPatch,
+    host_file: Path,
+    pool: SimpleNamespace,
+) -> None:
+    """替换 _inject_session_files 的解析器与沙盒池；chat-uploads 扫描指向空目录。"""
+
+    async def fake_resolve(user_id: str, file_id: str, db: object):
+        return host_file, {"file_id": file_id.replace("upload://", "")}
+
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.mcp.presets._resolve_workspace_file", fake_resolve
+    )
+    monkeypatch.setattr("cygnusx.infrastructure.sandbox.get_sandbox_pool", lambda: pool)
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.config.storage_config.get_user_chat_upload_dir",
+        lambda _uid: host_file.parent / "nonexistent-chat-uploads",
+    )
+
+
+@pytest.mark.unit
+async def test_inject_session_files_copies_uploads_into_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host_file = tmp_path / "abc123.s12345678.docx"
+    host_file.write_bytes(b"docx-bytes")
+    pool = SimpleNamespace(copy_files_in=AsyncMock(return_value=["MDH2序列.docx"]))
+    _patch_inject_deps(monkeypatch, host_file, pool)
+    db = _FakeSessionDB(
+        [
+            _user_message(
+                [{"file_id": "upload://abc123", "name": "MDH2序列.docx", "type": "file"}]
+            )
+        ]
+    )
+
+    metas = await chat_sandbox_tools._inject_session_files(
+        db, _USER_ID, "12345678-chat-session", "container-1"
+    )
+
+    assert metas == [
+        {"name": "MDH2序列.docx", "path": "/workspace/input/MDH2序列.docx", "size": 10}
+    ]
+    args = pool.copy_files_in.await_args
+    assert args.args[0] == "container-1"
+    assert args.args[1] == [(host_file, "MDH2序列.docx")]
+    assert args.args[2] == "/workspace/input"
+
+
+@pytest.mark.unit
+async def test_inject_session_files_skips_unchanged_reinject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host_file = tmp_path / "abc123.s12345678.docx"
+    host_file.write_bytes(b"docx-bytes")
+    pool = SimpleNamespace(copy_files_in=AsyncMock(return_value=["MDH2序列.docx"]))
+    _patch_inject_deps(monkeypatch, host_file, pool)
+    db = _FakeSessionDB(
+        [
+            _user_message(
+                [{"file_id": "upload://abc123", "name": "MDH2序列.docx", "type": "file"}]
+            )
+        ]
+    )
+
+    first = await chat_sandbox_tools._inject_session_files(
+        db, _USER_ID, "12345678-chat-session", "container-1"
+    )
+    second = await chat_sandbox_tools._inject_session_files(
+        db, _USER_ID, "12345678-chat-session", "container-1"
+    )
+
+    # 第二次注入：文件未变化则不再复制，但仍报告容器内已有路径
+    assert pool.copy_files_in.await_count == 1
+    assert second == first
+
+    # 文件变化（size 改变）后再次注入：需要重新复制
+    host_file.write_bytes(b"docx-bytes-v2-longer")
+    await chat_sandbox_tools._inject_session_files(
+        db, _USER_ID, "12345678-chat-session", "container-1"
+    )
+    assert pool.copy_files_in.await_count == 2
+
+
+@pytest.mark.unit
+async def test_inject_session_files_without_session_or_container_is_noop() -> None:
+    assert await chat_sandbox_tools._inject_session_files(None, _USER_ID, None, "c1") == []
+    assert await chat_sandbox_tools._inject_session_files(None, _USER_ID, "sess", None) == []
+
+
+def test_reset_cmd_clears_and_recreates_input_dir() -> None:
+    cmd = chat_sandbox_tools._ARTIFACT_DIR_RESET_CMD
+    assert "rm -rf" in cmd and chat_sandbox_tools.CHAT_INPUT_CONTAINER_DIR in cmd
+    assert "mkdir -p" in cmd

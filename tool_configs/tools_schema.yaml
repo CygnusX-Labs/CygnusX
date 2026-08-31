@@ -164,6 +164,48 @@ tools:
     llm_result_fields: [task_id, status, flow_id, parameters, metrics, artifacts, file_records, error_excerpt, success, error]
     ui_result_fields: []
 
+  - key: agentteams-room-messages-read
+    name: room_messages_read
+    description: 读取当前绑定协作室的用户与 Agent 回复正文。仅可读取当前房间；需要翻查更早消息或按需查看已持久化思考过程时调用。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: cygnusx.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: room_messages_read
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true, room_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        room_id: {type: string, description: 当前协作室 ID；建议省略，省略时自动使用调用上下文绑定的房间；如填写必须是绑定房间（room- 前缀的命名空间形式亦可）}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 20}
+        before: {type: string, description: 可选 ISO 时间游标，仅返回该时间之前的消息}
+        after: {type: string, description: 可选 ISO 时间游标，仅返回该时间之后的消息}
+        include_thinking: {type: boolean, default: false, description: 是否按需返回 MinIO 已持久化的 Agent 思考过程}
+      required: []
+    llm_result_fields: [room_id, messages, count, next_before, next_after, success, error]
+    ui_result_fields: [room_id, messages, count, next_before, next_after]
+
+  - key: agentteams-room-facts-query
+    name: room_facts_query
+    description: 查询当前协作室未立项或已立项前的房间事件时间线；不替代 case_facts_query，且不会计入 Case 运营指标。
+    category: agentteams-evidence
+    invocation_mode: backend_sync
+    service: cygnusx.application.services.agentteams_data_tool_service.AgentTeamsDataToolService
+    method: room_facts_query
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true, room_scoped: true}
+    input_schema:
+      type: object
+      properties:
+        room_id: {type: string, description: 当前协作室 ID；建议省略，省略时自动使用调用上下文绑定的房间；如填写必须是绑定房间（room- 前缀的命名空间形式亦可）}
+        template: {type: string, enum: [event_timeline, messages], default: event_timeline}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 50}
+      required: []
+    llm_result_fields: [room_id, template, rows, messages, row_count, total_count, count, truncated, next_cursor, success, error]
+    ui_result_fields: [room_id, template, rows, messages, row_count, total_count, count, truncated, next_cursor]
+
   - key: agentteams-task-file-preview
     name: task_file_preview
     description: 预览当前用户任务目录内的文本产物头部；拒绝绝对路径、路径穿越和符号链接。

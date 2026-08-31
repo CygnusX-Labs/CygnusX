@@ -247,3 +247,111 @@ def test_artifact_fetch_downloads_owned_case_object(tmp_path) -> None:
         "size_bytes": 7,
         "sha256": hashlib.sha256(b"a,b\n1,2").hexdigest(),
     }
+
+
+class _RoomDb(_Db):
+    """scalar 返回 None：房间不存在，用于验证访问校验之后的分支。"""
+
+    async def scalar(self, _statement):
+        return None
+
+
+def _room_service() -> AgentTeamsDataToolService:
+    return AgentTeamsDataToolService(
+        case_service=SimpleNamespace(), minio_store=SimpleNamespace()
+    )
+
+
+@pytest.mark.asyncio
+async def test_room_messages_read_accepts_namespace_prefixed_room_id() -> None:
+    """Agent 上下文中可见的房间标识是命名空间 case_id（room-<id>），
+    与绑定 room_id 指向同一房间，不应误判为越权。"""
+    bound = "d027d5a12c8e4bb09ff1102e44a9b07b"
+    context = ToolInvocationContext(user_id=USER_ID, session_id="s-1", db=_RoomDb())
+    context.extra["room_id"] = bound
+    with pytest.raises(ValidationError, match="ROOM_NOT_FOUND"):
+        await _room_service().room_messages_read(
+            user_id=USER_ID, room_id=f"room-{bound}", context=context
+        )
+
+
+@pytest.mark.asyncio
+async def test_room_messages_read_rejects_other_room_id() -> None:
+    context = ToolInvocationContext(user_id=USER_ID, session_id="s-1", db=_RoomDb())
+    context.extra["room_id"] = "d027d5a12c8e4bb09ff1102e44a9b07b"
+    with pytest.raises(ValidationError, match="ROOM_ACCESS_DENIED"):
+        await _room_service().room_messages_read(
+            user_id=USER_ID, room_id="room-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", context=context
+        )
+
+
+@pytest.mark.asyncio
+async def test_room_facts_query_accepts_namespace_prefixed_room_id() -> None:
+    bound = "d027d5a12c8e4bb09ff1102e44a9b07b"
+    context = ToolInvocationContext(user_id=USER_ID, session_id="s-1", db=_RoomDb())
+    context.extra["room_id"] = bound
+    with pytest.raises(ValidationError, match="ROOM_NOT_FOUND"):
+        await _room_service().room_facts_query(
+            user_id=USER_ID, room_id=f"room-{bound}", context=context
+        )
+
+
+@pytest.mark.asyncio
+async def test_room_messages_read_paginates_to_latest_events() -> None:
+    """Bridge 事件流为 oldest-first 分页；房间流中 agent_stream 等高频事件
+    占满首页后，最新消息在后续页，必须沿 next_cursor 翻到流末尾。"""
+    bound = "d027d5a12c8e4bb09ff1102e44a9b07b"
+    room = SimpleNamespace(room_id=bound, owner_id=USER_ID, case_id=None)
+
+    class RoomDb(_Db):
+        async def scalar(self, _statement):
+            return room
+
+    class CaseService:
+        async def get_case_events(self, case_id, requester_ref, *, cursor=None, limit=100):
+            assert case_id == f"room-{bound}"
+            assert requester_ref == USER_ID
+            if cursor is None:
+                return {
+                    "events": [
+                        {
+                            "event_id": "e1",
+                            "event_type": "room.user_message",
+                            "recorded_at": "2026-08-26T12:31:44+00:00",
+                            "payload": {"content": "hi"},
+                        },
+                        {
+                            "event_id": "s1",
+                            "event_type": "room.agent_stream",
+                            "recorded_at": "2026-08-26T12:31:50+00:00",
+                            "payload": {"content": "<delta>"},
+                        },
+                    ],
+                    "next_cursor": "s1",
+                }
+            assert cursor == "s1"
+            return {
+                "events": [
+                    {
+                        "event_id": "e2",
+                        "event_type": "room.agent_message",
+                        "recorded_at": "2026-08-26T12:32:10+00:00",
+                        "payload": {"content": "单细胞专家的回复", "agent_id": "agent-scrna"},
+                    }
+                ],
+                "next_cursor": None,
+            }
+
+    service = AgentTeamsDataToolService(
+        case_service=CaseService(), minio_store=SimpleNamespace()
+    )
+    context = ToolInvocationContext(user_id=USER_ID, session_id="s-1", db=RoomDb())
+    context.extra["room_id"] = bound
+    result = await service.room_messages_read(user_id=USER_ID, context=context)
+
+    assert [message["content"] for message in result["messages"]] == [
+        "hi",
+        "单细胞专家的回复",
+    ]
+    assert result["messages"][1]["agent_id"] == "agent-scrna"
+    assert result["scan_truncated"] is False

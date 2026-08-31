@@ -54,6 +54,7 @@ import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MessageArtifactGallery from '@/components/ai-chat/MessageArtifactGallery.vue'
 import AskUserCard from '@/components/ai-chat/AskUserCard.vue'
 import RouteDecisionCard from '@/components/agent-teams/RouteDecisionCard.vue'
+import RoomRouteTransitionCard from '@/components/agent-teams/RoomRouteTransitionCard.vue'
 import RoomProposalCard from '@/components/agent-teams/RoomProposalCard.vue'
 import AgentTeamsSettingsDrawer from '@/components/agent-teams/AgentTeamsSettingsDrawer.vue'
 import RoomMcpToolCard from '@/components/agent-teams/RoomMcpToolCard.vue'
@@ -80,13 +81,14 @@ import {
   groupRoomMessages,
   projectCaseEvents,
   resolveElementRoomUrl,
-  resolveManagerTyping,
+  resolveRoomTyping,
   shouldStartNewRoomCase,
   type RoomAskRequest,
   type RoomChangeAssessment,
   type RoomMessage,
   type RoomRoleMetadata,
   type RoomDebugTrace,
+  type RoomToolCall,
   type RoomWorkerBlock,
   type RoomWorkerStep,
 } from '@/utils/agentTeamsRoom'
@@ -155,7 +157,12 @@ const renameVisible = ref(false)
 const renameTitle = ref('')
 const renamingRoom = ref(false)
 const localTypingUntil = ref<number>(0)
+const localTypingName = ref<string | null>(null)
 let localTypingTimer: number | null = null
+/** 响应式时钟：typing 的 TTL 过期判断依赖 Date.now()，computed 不会在时间到时自动重算；
+ *  若无新事件到达（typing:false 丢失等），指示器会永久残留。每秒推进一次驱动 TTL 过期收起。 */
+const typingNow = ref(Date.now())
+let typingNowTimer: ReturnType<typeof setInterval> | null = null
 const seenEventIds = ref<Set<string>>(new Set())
 const expandedStepIds = ref<Set<string>>(new Set())
 const expandedThoughtIds = ref<Set<string>>(new Set())
@@ -204,7 +211,7 @@ const effectiveRoleMetadata = computed<RoomRoleMetadata>(() => {
   labels['bioops-manager'] = {
     agent_id: labels['bioops-manager']?.agent_id || 'bioops-manager',
     name: roomPreferences.managerLabel,
-    avatar: labels['bioops-manager']?.avatar || '🧭',
+    avatar: labels['bioops-manager']?.avatar || '🧑‍🔬',
     color: labels['bioops-manager']?.color || '#4f8ef7',
     role: 'manager',
   }
@@ -244,8 +251,14 @@ const roomMessages = computed(() => projectCaseEvents(events.value, effectiveRol
 const visibleMessages = computed(() => roomMessages.value.filter((item) => !item.collapsed))
 const collapsedMessages = computed(() => roomMessages.value.filter((item) => item.collapsed))
 const roomBlocks = computed(() => groupRoomMessages(visibleMessages.value))
-const backendTyping = computed(() => resolveManagerTyping(events.value))
-const managerTyping = computed(() => backendTyping.value || localTypingUntil.value > Date.now())
+const backendTyping = computed(() => resolveRoomTyping(events.value, typingNow.value))
+const managerTyping = computed(() => backendTyping.value.active || localTypingUntil.value > typingNow.value)
+// 正在输入者名字：后端 typing 事件携带 agent_name 时显示真实响应者（如被 @ 的领域 Agent），
+// 否则回退到经理显示名；本地乐观态优先用消息中 @ 提及的名字。
+const typingAgentName = computed(() => {
+  if (backendTyping.value.active) return backendTyping.value.agentName || roomPreferences.managerLabel
+  return localTypingName.value || roomPreferences.managerLabel
+})
 const eventTimes = computed(() => new Map(events.value.map((event) => [event.event_id, event.recorded_at])))
 const canApprove = computed(() => detail.value?.status === 'approval_pending')
 const canRetry = computed(() => detail.value?.status === 'execution_failed')
@@ -734,6 +747,16 @@ function formatDebugTrace(trace: RoomDebugTrace): string {
   ].filter(Boolean).join('\n')
 }
 
+/** 发言气泡内联工具卡片的调试信息：有参数/结果摘要时才传，供卡片展开查看。 */
+function speechToolDebugTrace(toolCall: RoomToolCall): RoomDebugTrace | undefined {
+  if (!toolCall.argsSummary && !toolCall.resultSummary) return undefined
+  return {
+    toolCallId: toolCall.id,
+    argsSummary: toolCall.argsSummary,
+    resultSummary: toolCall.resultSummary,
+  }
+}
+
 function toggleStepDetail(stepId: string) {
   const next = new Set(expandedStepIds.value)
   if (next.has(stepId)) next.delete(stepId)
@@ -758,14 +781,21 @@ function isThoughtExpanded(messageId: string): boolean {
 
 function clearLocalTyping() {
   localTypingUntil.value = 0
+  localTypingName.value = null
   if (localTypingTimer !== null) {
     clearTimeout(localTypingTimer)
     localTypingTimer = null
   }
 }
 
-function showLocalTyping() {
+/** 从消息内容解析第一个 @ 提及的名字，用于本地乐观"正在输入"态显示真实响应者。 */
+function firstMentionName(content: string): string | null {
+  return content.match(/@([^\s@，,：:]+)/)?.[1] ?? null
+}
+
+function showLocalTyping(name?: string | null) {
   clearLocalTyping()
+  localTypingName.value = name ?? null
   localTypingUntil.value = Date.now() + LOCAL_TYPING_TTL_MS
   localTypingTimer = window.setTimeout(clearLocalTyping, LOCAL_TYPING_TTL_MS)
 }
@@ -1074,7 +1104,7 @@ async function sendRoomMessage(content: string, contextRefs: AgentTeamsContextRe
       clearLocalTyping()
       message.warning('消息已记录，但 Manager 回复调度暂不可用，请稍后重试。')
     } else {
-      showLocalTyping()
+      showLocalTyping(firstMentionName(content))
     }
     // 发言经审计事件回投房间；事件流不可用时立即拉一次，不等轮询。
     if (!eventStreamHealthy.value) await refreshDetail({ background: true })
@@ -1134,7 +1164,7 @@ async function sendRoomNamespaceMessage(content: string, contextRefs: AgentTeams
       clearLocalTyping()
       message.warning('消息已记录，但 Manager 回复调度暂不可用，请稍后重试。')
     } else {
-      showLocalTyping()
+      showLocalTyping(firstMentionName(content))
     }
     // 发言经审计事件回投房间；事件流不可用时立即拉一次，不等轮询。
     if (!eventStreamHealthy.value) await refreshRoomDetail({ background: true })
@@ -1323,7 +1353,7 @@ async function createCaseFromDraft(
       clearLocalTyping()
       message.warning('消息已记录，但 Manager 回复调度暂不可用，请稍后重试。')
     } else {
-      showLocalTyping()
+      showLocalTyping(firstMentionName(content))
     }
     // 事件流未就绪时立即拉取一次，确保用户消息与 Manager 回复尽快出现。
     if (!eventStreamHealthy.value) await refreshDetail({ resetEvents: true })
@@ -1733,6 +1763,7 @@ watch(visibleMessages, async () => {
 onMounted(() => {
   roomPreferences.hydrateFromUser()
   void loadRoomModels()
+  typingNowTimer = setInterval(() => { typingNow.value = Date.now() }, 1000)
   // 首屏骨架立即渲染；角色元数据与 Case 列表并行加载、各自填充，互不阻塞
   void agentTeamsApi
     .getRoleLabels()
@@ -1751,6 +1782,10 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   clearLocalTyping()
+  if (typingNowTimer !== null) {
+    clearInterval(typingNowTimer)
+    typingNowTimer = null
+  }
   stopPolling()
   stopEventStream()
   cancelAnimationFrame(listScrollFrame)
@@ -2178,6 +2213,7 @@ onBeforeUnmount(() => {
                   <div class="speech__main">
                     <div class="speech__head">
                       <span class="speech__name" :style="{ color: block.message.sender.color }">{{ block.message.sender.name }}</span>
+                      <span v-if="block.message.routedBy === 'manager_triage'" class="speech__route-tag">经理分诊</span>
                       <span v-if="block.message.sender.role === 'manager' && !block.message.isUser && roomPreferences.managerRoleSuffix" class="speech__role"> · {{ roomPreferences.managerRoleSuffix }}</span>
                       <span v-else-if="block.message.sender.archetype && !block.message.isUser" class="speech__role"> · {{ block.message.sender.archetype }}</span>
                       <time class="speech__time" :title="formatMessageFullTime(block.message.id)">{{ formatMessageTime(block.message.id) }}</time>
@@ -2203,6 +2239,14 @@ onBeforeUnmount(() => {
                         </div>
                       </transition>
                     </div>
+                    <div v-if="block.message.toolCalls?.length" class="speech__tool-calls">
+                      <RoomMcpToolCard
+                        v-for="toolCall in block.message.toolCalls"
+                        :key="toolCall.id"
+                        :tool="{ name: toolCall.name, status: toolCall.status, durationMs: toolCall.durationMs }"
+                        :debug-trace="speechToolDebugTrace(toolCall)"
+                      />
+                    </div>
                     <RoomProposalCard
                       v-if="block.message.proposal"
                       :proposal="block.message.proposal"
@@ -2212,6 +2256,10 @@ onBeforeUnmount(() => {
                     <RouteDecisionCard
                       v-if="block.message.routeDecision && !block.message.askRequest"
                       :decision="block.message.routeDecision"
+                    />
+                    <RoomRouteTransitionCard
+                      v-if="block.message.routeTransition"
+                      :transition="block.message.routeTransition"
                     />
                     <div v-else-if="block.message.dispatch" class="speech__bubble room-handoff-card room-dispatch-card">
                       <div class="room-handoff-card__title">任务分派</div>
@@ -2390,7 +2438,7 @@ onBeforeUnmount(() => {
 
               <div v-if="managerTyping" class="room-typing" role="status" aria-live="polite">
                 <span class="room-typing__dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                <span class="room-typing__label">{{ roomPreferences.managerLabel }} 正在输入…</span>
+                <span class="room-typing__label">{{ typingAgentName }} 正在输入…</span>
               </div>
 
             </div>
@@ -2685,16 +2733,22 @@ onBeforeUnmount(() => {
 /* 成员发言气泡（manager / 孤立 worker 发言）：布局迁移自 KimiMessageItem——
    头像 + 13px/600 角色名 + 12px 时间戳头部行，气泡正文 14px/1.7；
    AI 气泡用 Elevated 表面 + 细边框（深色下 --neutral-fill-2 即 Surface Elevated），
-   用户气泡右对齐实心主色，气泡最大宽度 720px（§18.1） */
+   用户气泡右对齐实心主色、最大宽度 720px；Agent 回复列宽固定为消息区的一半（§18.1） */
 .speech { display: flex; gap: var(--space-md); }
 .speech--user { flex-direction: row-reverse; }
 .room-avatar { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-on-primary); font-size: 15px; }
 .room-avatar--sm { width: 26px; height: 26px; flex-basis: 26px; font-size: 13px; }
-.speech__main { display: grid; min-width: 0; width: min(720px, calc(100% - 32px - var(--space-md))); max-width: min(720px, calc(100% - 32px - var(--space-md))); gap: var(--space-xs); }
+.speech__main { display: grid; min-width: 0; gap: var(--space-xs); }
+.speech--user .speech__main { width: min(720px, calc(100% - 32px - var(--space-md))); max-width: min(720px, calc(100% - 32px - var(--space-md))); }
+/* Agent 回复列宽钉在消息区的一半：宽屏下长回复不再铺满整行；
+   窄屏用 min(480px, 可用宽度) 兜底，避免过窄。报告卡/询问卡等结构化卡片同宽，
+   折叠/展开也不会发生宽度跳变。 */
+.speech:not(.speech--user) .speech__main { width: max(50%, min(480px, calc(100% - 32px - var(--space-md)))); max-width: calc(100% - 32px - var(--space-md)); box-sizing: border-box; }
 .speech__head { display: flex; align-items: baseline; gap: var(--space-sm); }
 .speech--user .speech__head { flex-direction: row-reverse; }
 .speech__name { font-size: var(--font-small-size); font-weight: 600; }
 .speech__role { color: var(--neutral-text-3); font-size: var(--font-caption-size); font-weight: 400; }
+.speech__route-tag { align-self: center; padding: 1px 6px; color: var(--arco-primary); background: color-mix(in srgb, var(--arco-primary) 10%, transparent); border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 1.4; }
 .speech__time { color: var(--neutral-text-3); font-size: var(--font-caption-size); }
 .speech__bubble { padding: var(--space-md) var(--space-lg); border: 1px solid var(--neutral-border); border-radius: 4px var(--radius-card) var(--radius-card) var(--radius-card); background: var(--neutral-fill-2); color: var(--neutral-text-1); font-size: var(--font-body-size); line-height: 1.7; word-break: break-all; overflow-wrap: anywhere; white-space: pre-wrap; }
 .speech--user .speech__bubble { justify-self: end; max-width: 75%; border-color: transparent; border-radius: var(--radius-card) 4px var(--radius-card) var(--radius-card); background: var(--arco-primary); color: var(--text-on-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -2714,6 +2768,7 @@ onBeforeUnmount(() => {
 .room-streaming-caret { display: inline-block; width: 2px; height: 1.1em; margin-left: 3px; vertical-align: -0.16em; background: var(--arco-primary); animation: room-streaming-caret 0.9s step-end infinite; }
 @keyframes room-streaming-caret { 50% { opacity: 0; } }
 .room-thought { overflow: hidden; border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); background: var(--neutral-fill-1); }
+.speech__tool-calls { display: flex; flex-direction: column; gap: var(--space-xs); margin-top: var(--space-xs); margin-bottom: var(--space-xs); }
 .room-thought__toggle { display: flex; align-items: center; gap: var(--space-sm); width: 100%; padding: var(--space-sm) var(--space-md); border: 0; background: transparent; color: var(--neutral-text-2); cursor: pointer; font-size: var(--font-caption-size); text-align: left; transition: background-color var(--motion-quick) ease-out; }
 .room-thought__toggle:hover { background: var(--neutral-hover); }
 .room-thought__toggle:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: -2px; }
@@ -2724,13 +2779,9 @@ onBeforeUnmount(() => {
 .room-thought-expand-enter-active, .room-thought-expand-leave-active { transition: opacity var(--motion-quick) ease-out, max-height var(--motion-base) ease-out; }
 .room-thought-expand-enter-from, .room-thought-expand-leave-to { max-height: 0; opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .room-streaming-caret { animation: none; } .room-thought__arrow, .room-thought-expand-enter-active, .room-thought-expand-leave-active { transition: none; } }
-/* Manager 结构化长文（分析方案）：对齐 §18.1.1 内联卡片形态——与消息内容区等宽、
-   上限 1120px、box-sizing: border-box（普通对话气泡仍遵守 720px 上限，见 .speech__main） */
-.speech--report .speech__main { width: min(720px, calc(100% - 32px - var(--space-md))); max-width: 100%; box-sizing: border-box; }
-/* 询问工具卡片所在消息：.speech__main 是 shrink-to-fit 的 grid，列宽随最宽内容变化，
-   会导致卡片折叠（短表头）与展开（长问答）宽度跳变。这里把列宽钉在上限值
-   （沿用 720px/82% 上限，与 .speech--report 的 width:100% 同一手法），折叠/展开同宽。 */
-.speech--ask .speech__main { width: 100%; box-sizing: border-box; }
+/* Manager 结构化长文（分析方案）与询问工具卡片：列宽与普通 Agent 回复一致，
+   统一由 .speech:not(.speech--user) .speech__main 的半宽规则钉住（§18.1.1），
+   卡片折叠/展开同宽，不再单独覆盖宽度。 */
 /* AI 输出经 MarkdownRenderer 渲染：white-space 重置为 normal，避免容器 pre-wrap 继承后
    把 markdown-it 输出的标签换行显示成多余空行 */
 .speech__bubble :deep(.md-body),

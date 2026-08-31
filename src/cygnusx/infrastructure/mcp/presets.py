@@ -534,6 +534,7 @@ _BINARY_ONLY_SUFFIXES = frozenset(
 # read_file 默认内容上限（100KB，超出截断并标注）
 _DEFAULT_READ_MAX_BYTES = 100 * 1024
 _PDF_SUFFIX = ".pdf"
+_DOCX_SUFFIX = ".docx"
 _PDF_READ_MAX_CHARS = 50_000
 
 
@@ -971,6 +972,25 @@ async def _workspace_read_file(
                 if extracted["truncated"]
                 else ""
             )
+        )
+        return meta
+
+    # DOCX：OOXML zip 容器，抽取正文纯文本，不按 UTF-8 硬读（否则注入乱码）
+    if name.lower().endswith(_DOCX_SUFFIX):
+        from cygnusx.application.services.chat.runtime_support import extract_docx_text
+
+        text = await asyncio.to_thread(extract_docx_text, str(target))
+        if not text:
+            return {
+                "error": "无法提取文本：该 DOCX 可能已损坏或不含正文内容。",
+                **meta,
+            }
+        truncated = len(text) > max_bytes
+        meta["content"] = text[:max_bytes]
+        meta["truncated"] = truncated
+        meta["summary"] = (
+            f"DOCX {name}（{meta['size_human']}）正文文本"
+            + (f"，已截断至前 {max_bytes} 字符" if truncated else "")
         )
         return meta
 

@@ -26,6 +26,7 @@ import {
   FlagOutline,
   CloseOutline,
   DesktopOutline,
+  CubeOutline,
 } from '@vicons/ionicons5'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
@@ -68,6 +69,8 @@ export interface ToolbarConfig {
   terminal?: boolean
   mcp?: boolean
   deepThinking?: boolean
+  /** 沙箱运行时选择器 */
+  runtime?: boolean
   workbench?: boolean
   clear?: boolean
   send?: boolean
@@ -165,6 +168,7 @@ const defaultToolbarConfig = computed<ToolbarConfig>(() => {
       terminal: false,
       mcp: false,
       deepThinking: false,
+      runtime: false,
       workbench: false,
       clear: true,
       send: true,
@@ -177,6 +181,7 @@ const defaultToolbarConfig = computed<ToolbarConfig>(() => {
     terminal: true,
     mcp: true,
     deepThinking: true,
+    runtime: true,
     workbench: props.showWorkbenchControl,
     clear: true,
     send: true,
@@ -188,6 +193,24 @@ const toolbar = computed<ToolbarConfig>(() => ({
   ...props.toolbarConfig,
 }))
 
+/** 沙箱运行时选择器：数据源为 agentHub.runtimeProfiles；接口不可用时为空数组，选择器隐藏降级 */
+const runtimeProfiles = computed(() => agentHub.runtimeProfiles)
+const showRuntimeMenu = ref(false)
+/** 当前会话已固定沙箱运行时（studio 会话创建时确定，之后不可变） */
+const runtimeLocked = computed(() => agentHub.currentSession?.mode === 'studio')
+const selectedRuntimeId = computed(() => agentHub.currentSession?.runtime_profile || '')
+const selectedRuntime = computed(
+  () => runtimeProfiles.value.find((profile) => profile.id === selectedRuntimeId.value) || null,
+)
+const showRuntimeSelector = computed(
+  () => Boolean(toolbar.value.runtime && agentHub.currentSession && runtimeProfiles.value.length),
+)
+
+function selectRuntime(id: string) {
+  if (agentHub.currentSession) agentHub.currentSession.runtime_profile = id || null
+  showRuntimeMenu.value = false
+}
+
 /** 中部能力胶囊区域是否还需要渲染 */
 const showToolbarCenter = computed(
   () =>
@@ -195,6 +218,7 @@ const showToolbarCenter = computed(
     toolbar.value.terminal ||
     toolbar.value.mcp ||
     toolbar.value.deepThinking ||
+    showRuntimeSelector.value ||
     toolbar.value.workbench,
 )
 
@@ -1155,6 +1179,7 @@ function handleClearConfirm() {
 
 onMounted(() => {
   void modulesStore.ensureLoaded()
+  void agentHub.fetchRuntimeProfiles()
   syncMcpSelection()
   refreshGoalStatus()
   document.addEventListener('pointerdown', handleDocumentPointerDown)
@@ -1497,6 +1522,71 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             {{ chatStore.deepThinking ? '关闭深度思考' : '开启深度思考' }}
           </n-tooltip>
+          <n-popover
+            v-if="showRuntimeSelector"
+            v-model:show="showRuntimeMenu"
+            trigger="click"
+            placement="top"
+            :width="240"
+          >
+            <template #trigger>
+              <n-tooltip trigger="hover" :disabled="showRuntimeMenu">
+                <template #trigger>
+                  <n-button
+                    text
+                    class="toolbar-btn runtime-btn"
+                    :class="{ active: Boolean(selectedRuntime) }"
+                    :disabled="runtimeLocked"
+                    :aria-label="selectedRuntime ? `沙箱运行时：${selectedRuntime.name}` : '选择沙箱运行时'"
+                    :aria-pressed="Boolean(selectedRuntime)"
+                  >
+                    <n-icon size="18"><CubeOutline /></n-icon>
+                    <span v-if="selectedRuntime" class="btn-label">{{ selectedRuntime.name }}</span>
+                  </n-button>
+                </template>
+                {{ runtimeLocked
+                  ? '当前会话的沙箱运行时已在创建时固定，请新建会话切换'
+                  : selectedRuntime
+                    ? `沙箱运行时：${selectedRuntime.name}，下一条消息将进入沙箱模式`
+                    : '选择沙箱运行时（默认跟随 Agent）' }}
+              </n-tooltip>
+            </template>
+            <div class="runtime-menu" role="menu" aria-label="沙箱运行时">
+              <button
+                type="button"
+                class="runtime-option"
+                :class="{ active: !selectedRuntimeId }"
+                role="menuitemradio"
+                :aria-checked="!selectedRuntimeId"
+                @click="selectRuntime('')"
+              >
+                跟随 Agent 默认
+              </button>
+              <n-tooltip
+                v-for="profile in runtimeProfiles"
+                :key="profile.id"
+                trigger="hover"
+                placement="right"
+              >
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="runtime-option"
+                    :class="{ active: selectedRuntimeId === profile.id }"
+                    role="menuitemradio"
+                    :aria-checked="selectedRuntimeId === profile.id"
+                    @click="selectRuntime(profile.id)"
+                  >
+                    {{ profile.name }}
+                  </button>
+                </template>
+                <div class="runtime-tip">
+                  <div v-if="profile.description">{{ profile.description }}</div>
+                  <div class="runtime-tip-image">镜像：{{ profile.image }}</div>
+                </div>
+              </n-tooltip>
+            </div>
+          </n-popover>
           <n-tooltip v-if="toolbar.workbench" trigger="hover">
             <template #trigger>
               <n-button
@@ -1723,6 +1813,13 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
       padding: 2px 4px 0;
     }
 
+    .input-highlight {
+      /* inset:0 对齐的是 wrapper 的 padding box，不含上面的 padding；
+         textarea 在内容盒里（右移 4px、下移 2px），不收进内容盒就会与
+         透明文字错位形成重影。 */
+      inset: 2px 4px 0;
+    }
+
     .input-highlight,
     .chat-textarea :deep(.n-input__textarea-el) {
       min-height: 56px;
@@ -1748,9 +1845,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
     position: absolute;
     inset: 0;
     /* 必须与下方 textarea(.n-input__textarea-el) 排版完全一致，否则透明文字的光标
-       会与可见高亮文字错位。naive-ui textarea-el 实际内边距为
-       padding: var(--n-padding-vertical) 0，默认主题 = (34 - 1.5*14)/2 = 6.5px 0；
-       此前 overlay 用 8px 12px，导致光标水平偏移约一个汉字宽度（落在"你好"中间）。 */
+       会与可见高亮文字错位。textarea 的 padding 已在组件样式里显式锁为 6.5px 0
+       （不依赖 naive-ui 主题变量），这里保持同值。 */
     padding: 6.5px 0;
     pointer-events: none;
     color: var(--chat-text-primary, var(--neutral-text-1));
@@ -1759,19 +1855,20 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
     line-height: 24px;
     letter-spacing: normal;
     white-space: pre-wrap;
-    word-break: normal;
+    /* word-break 必须与 naive-ui textarea-el 的 break-word 一致，
+       否则长 token（如 @长名称 / 文件路径）折行点不同，mention 之后整段错位。 */
+    word-break: break-word;
     overflow-wrap: break-word;
     overflow: hidden;
     z-index: 0;
   }
 
+  /* mention 高亮只允许不影响文字量度的样式：inline-block/padding/font-weight
+     会改变字形宽度，mention 之后的字符与透明 textarea 文字错位（视觉重影）。 */
   .input-highlight :deep(.mention-chip) {
-    display: inline-block;
-    padding: 0 4px;
     border-radius: 4px;
     background: var(--arco-primary-light);
     color: var(--arco-primary);
-    font-weight: 600;
   }
 
   /* IME 组合期间：naive-ui 在 composition 中不更新 v-model，overlay 拿不到正在输入的
@@ -1996,6 +2093,10 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
     :deep(.n-input__textarea-el) {
       max-height: 200px;
+      /* 显式锁死内边距，与 .input-highlight 完全一致：naive-ui 默认
+         padding-top/bottom 来自主题变量 --n-padding-vertical（按 14px 字号
+         算出 5.8px），而 overlay 是 6.5px，依赖它会产生纵向重影。 */
+      padding: 6.5px 0;
       color: var(--chat-text-primary, var(--neutral-text-1));
       caret-color: var(--chat-text-primary, var(--neutral-text-1));
       background: transparent;
@@ -2154,6 +2255,48 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
 
   p { margin: 0 0 var(--space-sm); font-size: 13px; }
   div { display: flex; justify-content: center; gap: var(--space-sm); }
+}
+
+.runtime-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .runtime-option {
+    width: 100%;
+    padding: 6px 10px;
+    color: var(--neutral-text-2);
+    font-size: 13px;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 150ms ease, color 150ms ease;
+
+    &:hover {
+      color: var(--neutral-text-1);
+      background: var(--neutral-hover);
+    }
+
+    &.active {
+      color: var(--arco-primary);
+      background: var(--arco-primary-light);
+      font-weight: 500;
+    }
+  }
+}
+
+.runtime-tip {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 18px;
+
+  .runtime-tip-image {
+    margin-top: 4px;
+    opacity: 0.75;
+    word-break: break-all;
+  }
 }
 
 .ai-composer__disclaimer {

@@ -30,6 +30,7 @@ class DelegatingAgentRuntime(ChatRuntime):
             enable_code_execution=request.enable_code_execution,
             deep_thinking=request.deep_thinking,
             mode=request.mode,
+            runtime_profile=request.runtime_profile,
             mcp_mode=request.mcp_mode,
             extra_mcp_servers=request.extra_mcp_servers,
             multi_agent=request.multi_agent,

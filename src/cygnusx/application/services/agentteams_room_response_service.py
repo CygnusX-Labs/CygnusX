@@ -14,6 +14,7 @@ agent-general 并写 ``room.manager_persona_fallback`` 审计事件），把结�
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from collections.abc import Callable
@@ -74,7 +75,15 @@ ROOM_RESPONSE_DEDUP_KEY_PREFIX = "agentteams:room-response:done:"
 ROOM_RESPONSE_DEDUP_TTL_SECONDS = 24 * 60 * 60
 # 产出过真实响应的终态（失败/跳过不落幂等标记，允许后续重试）。
 _RESPONSE_SUCCESS_STATUSES = frozenset(
-    {"responded", "asked", "planning_started", "tool_executed", "proposal_pending", "direct_responded"}
+    {
+        "responded",
+        "asked",
+        "planning_started",
+        "tool_executed",
+        "proposal_pending",
+        "direct_responded",
+        "triage_responded",
+    }
 )
 # Case 终态（含已取消）后房间继续对话时，新的 execute 意图转为"继续/新建"选择卡。
 ROOM_FOLLOWUP_CASE_STATUSES = frozenset({"closed", "delivery_ready", "cancelled"})
@@ -91,6 +100,9 @@ _ROOM_STREAM_FLUSH_CHARS = 24
 # 房间内 Manager 回复正文的落库上限：结构化长文（分析方案等）容易超过 4k，
 # 截断会让用户误以为"没生成完"，放宽到 10k。
 _ROOM_REPLY_CONTENT_MAX_CHARS = 10_000
+# 思考链随最终消息载荷一并落库的上限：room.agent_stream 是瞬态事件（不持久化），
+# 思考链写入 room.agent_message / room.ask_user 载荷后，房间重开仍能渲染思考框。
+_ROOM_REPLY_THOUGHT_MAX_CHARS = 8_000
 _INTERNAL_CAPABILITY_RISK_MARKER = "未获准调用能力目录类只读工具"
 _INTERNAL_CAPABILITY_RISK_SECTION = re.compile(
     r"(?is)(?:^|\n)\s*(?:#{1,6}\s*)?风险\s*[:：]?\s*"
@@ -115,6 +127,36 @@ MAX_EXECUTION_CLARIFY_ROUNDS = 2
 CLARIFY_KIND_ROUTE_DOMAIN = "route_domain"
 MAX_ROUTE_CLARIFY_ROUNDS = 2
 ROOM_ASK_REPLY_MARKER = "【澄清回复】"
+# 纯咨询分诊（CHAT 意图）：Manager 直答前先用一次轻量 LLM 调用判断是否有
+# 更合适的领域专家；命中则落 room.route_transition 事件并转专家直答（复用
+# direct 直答链路），置信度不足或任何失败都静默回落 Manager 主回路。
+ROOM_ROUTE_TRANSITION_EVENT_TYPE = "room.route_transition"
+_ROOM_TRIAGE_MIN_CONFIDENCE = 0.75
+_ROOM_TRIAGE_CATALOG_KEYS = (
+    "agent_id",
+    "name",
+    "description",
+    "category",
+    "routing_hints",
+    "routing_notes",
+    "not_suitable_for",
+)
+_ROOM_TRIAGE_SYSTEM_PROMPT = """你是 AgentTeams 协作室的消息分诊器。房间由「{manager_name}」担任编排经理，
+默认由经理直接回答用户问题。你的唯一职责是判断：用户这条纯咨询消息是否明显更
+适合由某个领域专家回答；是则选出该专家，否则输出经理本人（即不分诊）。
+
+候选专家目录（JSON 数组，唯一有效候选集；description 含适用与不适用场景，
+不适用场景命中时不要硬选）：
+{catalog}
+
+规则：
+1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "confidence": 0.0}}；
+   第一个字符必须是 {{，禁止输出思考过程、复述用户消息或任何其他文字。
+2. agent_id 必须来自候选目录，或 "{manager_agent_id}"（经理本人）。
+3. 寒暄、平台使用问题、需要统筹协调或跨多个领域的问题，一律选经理本人。
+4. 原理/概念/方法类问题若明显属于某专家领域（如 RNA-seq 原理 → RNA-seq 方向
+   专家、单细胞问题 → 单细胞专家），选该专家。
+5. 拿不准时选经理本人；confidence 低于 {min_confidence} 的选择等同拿不准。"""
 _CLARIFY_OPT_OUT_MARKERS = ("先不执行", "暂不执行", "先讨论", "继续讨论", "不用了", "取消")
 _CLARIFY_EXHAUSTED_NOTE = (
     "系统提示：就该执行请求已进行 "
@@ -167,6 +209,13 @@ return 0
 class _RoomResponseStreamProjector:
     """将 Manager 的底层模型增量映射为可由房间 SSE 消费的审计事件。"""
 
+    _TOOL_EVENT_TYPES = frozenset({
+        "worker_tool_call",
+        "worker_tool_started",
+        "worker_tool_result",
+        "agent_loop_guard_triggered",
+    })
+
     def __init__(
         self,
         service: AgentTeamsService,
@@ -184,9 +233,19 @@ class _RoomResponseStreamProjector:
         self._role = role
         self._display_name = display_name
         self._buffers = {"reasoning": "", "content": ""}
+        # 完整思考链累积（截断封顶）：flush 只清增量缓冲，最终消息落库时随载荷
+        # 一并持久化，房间重开后历史气泡仍可渲染思考框。
+        self._reasoning_full = ""
+
+    @property
+    def reasoning_text(self) -> str:
+        return self._reasoning_full[:_ROOM_REPLY_THOUGHT_MAX_CHARS]
 
     async def __call__(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
+        if event_type in self._TOOL_EVENT_TYPES:
+            await self._emit_tool_event(event_type, event)
+            return
         channel = (
             "reasoning"
             if event_type == "worker_reasoning_delta"
@@ -200,8 +259,56 @@ class _RoomResponseStreamProjector:
         if channel == "content" and self._buffers["reasoning"]:
             await self.flush("reasoning")
         self._buffers[channel] += content
+        if channel == "reasoning" and len(self._reasoning_full) < _ROOM_REPLY_THOUGHT_MAX_CHARS:
+            self._reasoning_full += content
         if len(self._buffers[channel]) >= _ROOM_STREAM_FLUSH_CHARS or "\n" in content:
             await self.flush(channel)
+
+    async def _emit_tool_event(self, event_type: str, event: dict[str, Any]) -> None:
+        """把应答过程中的工具/MCP 调用投影为房间证据事件，供前端在气泡内展示。"""
+        tool = str(event.get("tool_name") or "")
+        payload: dict[str, Any] = {
+            "stream_id": self._stream_id,
+            "agent_id": self._agent_id,
+            "role": self._role,
+            "tool": tool,
+            "tool_call_id": str(event.get("tool_call_id") or ""),
+            "round": int(event.get("round") or 0),
+            "execution_path": str(
+                event.get("execution_path") or "agentteams_worker_react"
+            ),
+        }
+        if event_type == "worker_tool_call":
+            evidence_type = "agent.tool_call"
+            summary = f"{self._display_name} 调用工具 {tool}"
+            payload["args_summary"] = str(event.get("args_summary") or "")[:500]
+        elif event_type == "worker_tool_started":
+            evidence_type = "agent.tool_started"
+            summary = f"{self._display_name} 开始执行工具 {tool}"
+        elif event_type == "worker_tool_result":
+            success = bool(event.get("success"))
+            evidence_type = "agent.tool_result"
+            summary = f"工具 {tool} 执行{'成功' if success else '失败'}"
+            payload["result_summary"] = str(event.get("result_summary") or "")[:500]
+            payload["success"] = success
+            payload["duration_ms"] = int(event.get("duration_ms") or 0)
+        else:
+            reason = str(event.get("reason") or "unknown")
+            evidence_type = "agent.loop_guard_triggered"
+            summary = f"{self._display_name} 运行保护已触发：{reason}"
+            payload["reason"] = reason
+        try:
+            await self._service.post_case_evidence(
+                self._case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type=evidence_type,
+                summary=summary,
+                payload=payload,
+            )
+        except Exception as exc:  # noqa: BLE001 - 工具事件投影失败不能打断模型回复
+            logger.bind(case_id=self._case_id).warning(
+                "AgentTeams room tool event failed: {}", exc
+            )
 
     async def flush(self, channel: str | None = None) -> None:
         channels = (channel,) if channel else ("reasoning", "content")
@@ -363,6 +470,7 @@ class AgentTeamsRoomResponseService:
             actor_user_id=actor_user_id or requester_ref,
             target_agent_id=target_agent_id,
             target_agent_ids=target_agent_ids,
+            room=room,
             model_id=model_id,
         )
 
@@ -396,6 +504,23 @@ class AgentTeamsRoomResponseService:
             event_items = [
                 item for item in events.get("events", []) if isinstance(item, dict)
             ]
+            if room is not None and room.case_id:
+                namespace_events = await self._agentteams.get_case_events(
+                    room_namespace_case_id(room.room_id), requester_ref, limit=_CONTEXT_EVENT_LIMIT
+                )
+                event_items = sorted(
+                    [
+                        *event_items,
+                        *(
+                            item
+                            for item in namespace_events.get("events", [])
+                            if isinstance(item, dict)
+                        ),
+                    ],
+                    key=lambda item: (
+                        str(item.get("recorded_at") or ""), str(item.get("event_id") or "")
+                    ),
+                )
             # 幂等去重：同一条用户发言已产出过响应（任务重试、broker 重投递、
             # post_case_message 与房间同步双通道重复调度）时直接跳过，
             # 避免房间里出现两张相同的 Manager 回复/澄清卡片。
@@ -438,6 +563,7 @@ class AgentTeamsRoomResponseService:
                         actor_user_id=actor_user_id,
                         model_id=model_id,
                         causation_event_id=causation_event_id,
+                        room_id=room.room_id if room is not None else None,
                     ))
                     refreshed = await self._agentteams.get_case_events(
                         case_id, requester_ref, limit=_CONTEXT_EVENT_LIMIT
@@ -468,6 +594,7 @@ class AgentTeamsRoomResponseService:
                         actor_user_id=actor_user_id,
                         model_id=model_id,
                         causation_event_id=causation_event_id,
+                        room_id=room.room_id if room is not None else None,
                     )
                     if str(direct_result.get("status") or "") not in {
                         "direct_failed",
@@ -531,6 +658,28 @@ class AgentTeamsRoomResponseService:
                 # 泛化追问，造成“已经交接却仍要求确认”的重复交互。
                 response_status = "planning_started"
                 return {"status": response_status}
+            if (
+                execution_outcome == "none"
+                and not multi_direct_context
+                and direct_consultation_intent is ExecutionIntent.CHAT
+            ):
+                # 纯咨询分诊：Manager 直答前先判断是否有更合适的领域专家；
+                # 命中则落 room.route_transition 事件并转专家直答。返回 None
+                # 表示不分诊或分诊失败（已按 A3 口径落可见降级），继续 Manager 主回路。
+                triage_status = await self._try_consultation_triage(
+                    case_id,
+                    requester_ref,
+                    content,
+                    case=case,
+                    event_items=event_items,
+                    actor_user_id=actor_user_id,
+                    model_id=model_id,
+                    causation_event_id=causation_event_id,
+                    room=room,
+                )
+                if triage_status is not None:
+                    response_status = triage_status
+                    return {"status": response_status}
             # 触发成功后 Bridge 侧已推进到 planning_running；用拷贝覆盖快照状态，
             # 避免 Manager 按触发前的 received 快照作答。
             question_case = (
@@ -565,6 +714,9 @@ class AgentTeamsRoomResponseService:
                 manager_display_name=self._manager_display_name(),
                 consultation=consultation,
                 memory_context=memory_context,
+                room_message_history=self._room_message_history(
+                    event_items, current_content=content
+                ),
             )
             await self._set_typing(case_id, typing=True)
             try:
@@ -586,12 +738,17 @@ class AgentTeamsRoomResponseService:
                         question=question,
                         capability="interpretation",
                         evidence_refs=[],
-                        requested_tools=[],
+                        requested_tools=["room_messages_read"],
                         requester_ref=requester_ref,
                         actor_user_id=actor_user_id,
                         model_id=model_id,
                         causation_event_id=causation_event_id,
                         on_event=stream_projector,
+                        room_id=(
+                            room.room_id
+                            if room is not None
+                            else (case_id[5:] if case_id.startswith("room-") else None)
+                        ),
                     )
                     stage_ms["llm"] = round((time.monotonic() - stage_started) * 1000)
                 finally:
@@ -642,6 +799,7 @@ class AgentTeamsRoomResponseService:
                             "agent_id": agent_id,
                             "role": "bioops-manager",
                             "stream_id": stream_id,
+                            "thought": stream_projector.reasoning_text,
                             "manager_report": manager_report,
                             "causation_event_id": causation_event_id,
                             "questions": questions,
@@ -661,6 +819,7 @@ class AgentTeamsRoomResponseService:
                         "agent_id": agent_id,
                         "role": "bioops-manager",
                         "stream_id": stream_id,
+                        "thought": stream_projector.reasoning_text,
                         "manager_report": manager_report,
                         "causation_event_id": causation_event_id,
                         },
@@ -711,6 +870,162 @@ class AgentTeamsRoomResponseService:
                 stage_ms=stage_ms,
             ).info("AgentTeams room response timing")
 
+    async def _try_consultation_triage(
+        self,
+        case_id: str,
+        requester_ref: str,
+        content: str,
+        *,
+        case: dict[str, Any],
+        event_items: list[dict[str, Any]],
+        actor_user_id: str,
+        model_id: UUID | None,
+        causation_event_id: str | None,
+        room: AgentTeamsRoomModel | None,
+    ) -> str | None:
+        """纯咨询分诊：CHAT 意图下判断是否有更合适的领域专家。
+
+        返回最终响应状态（分诊成功或专家已接管）或 ``None``（不分诊/分诊失败，
+        调用方继续 Manager 主回路）。直答失败按 A3 口径落可见降级后同样返回
+        ``None``，由 Manager 接管正式回复。
+        """
+        manager_agent_id = await self._manager_agent_with_audit(case_id)
+        if manager_agent_id is None:
+            return None
+        decision = await self._triage_consultation_agent(
+            content, manager_agent_id=manager_agent_id, model_id=model_id, user_id=requester_ref
+        )
+        if decision is None:
+            return None
+        target_agent_id = decision["agent_id"]
+        target_name = self._agent_display_name(target_agent_id)
+        try:
+            await self._agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type=ROOM_ROUTE_TRANSITION_EVENT_TYPE,
+                summary=(
+                    f"{self._manager_display_name()} 将问题分诊给「{target_name}」："
+                    f"{decision['reason']}"
+                )[:200],
+                payload={
+                    "from_agent_id": manager_agent_id,
+                    "from_name": self._manager_display_name(),
+                    "target_agent_id": target_agent_id,
+                    "target_name": target_name,
+                    "reason": decision["reason"],
+                    "confidence": decision["confidence"],
+                    "trigger": "consultation_triage",
+                    "causation_event_id": causation_event_id,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - 分诊事件失败不得阻断专家答复
+            logger.bind(case_id=case_id, target_agent_id=target_agent_id).warning(
+                "AgentTeams consultation triage event failed: {}", exc
+            )
+        direct_result = await self._respond_to_direct_agent(
+            case_id,
+            requester_ref,
+            content,
+            case,
+            event_items,
+            target_agent_id,
+            actor_user_id=actor_user_id,
+            causation_event_id=causation_event_id,
+            model_id=model_id,
+            room_id=room.room_id if room is not None else None,
+            origin="manager_triage",
+        )
+        status = str(direct_result.get("status") or "")
+        if status in {"direct_failed", "direct_agent_unavailable"}:
+            await self._emit_direct_agent_fallback(
+                case_id,
+                target_agent_id=target_agent_id,
+                reason=str(direct_result.get("reason") or status),
+                causation_event_id=causation_event_id,
+            )
+            return None
+        return "triage_responded" if status == "direct_responded" else status
+
+    async def _triage_consultation_agent(
+        self,
+        content: str,
+        *,
+        manager_agent_id: str,
+        model_id: UUID | None,
+        user_id: str,
+    ) -> dict[str, Any] | None:
+        """一次轻量 LLM 调用为纯咨询消息选择最合适的领域专家。
+
+        候选集 = ``room_consultation_catalog()``（全部可会诊 Agent，含
+        ``chat_entry: false`` 的房间内部员工；chat_entry 仅约束 chat 侧对外
+        路由入口），剔除 Manager 本人。
+        任何失败（模型报错、解析失败、候选为空）都返回 None，静默回落 Manager。
+        """
+        try:
+            from cygnusx.application.services.agent_service import AgentService
+            from cygnusx.application.services.chat.utils import _extract_route_json
+            from cygnusx.infrastructure.ai_provider.openai_compatible import provider_manager
+
+            catalog = [
+                {key: entry.get(key) for key in _ROOM_TRIAGE_CATALOG_KEYS}
+                for entry in self._registry.room_consultation_catalog()
+                if str(entry.get("agent_id") or "") != manager_agent_id
+            ]
+            if not catalog:
+                return None
+            assemble_kwargs: dict[str, Any] = {"user_id": user_id}
+            if model_id is not None:
+                assemble_kwargs["model_id"] = model_id
+            manager_ctx = await AgentService(self._db).assemble_context(
+                manager_agent_id, **assemble_kwargs
+            )
+            if manager_ctx is None or manager_ctx.model_config is None:
+                return None
+            system_prompt = (
+                _ROOM_TRIAGE_SYSTEM_PROMPT.replace(
+                    "{catalog}", json.dumps(catalog, ensure_ascii=False)
+                )
+                .replace("{manager_name}", self._manager_display_name())
+                .replace("{manager_agent_id}", manager_agent_id)
+                .replace("{min_confidence}", str(_ROOM_TRIAGE_MIN_CONFIDENCE))
+            )
+            route_text = ""
+            async for chunk in provider_manager.chat_stream(
+                config=manager_ctx.model_config,
+                messages=[{"role": "user", "content": content.strip()[:2_000]}],
+                system_prompt=system_prompt,
+                temperature=0,
+                max_tokens=150,
+                tools=None,
+                deep_thinking=False,
+            ):
+                if chunk.type == "text":
+                    route_text += chunk.content
+            decision = _extract_route_json(route_text)
+            if not decision:
+                return None
+            target_id = str(decision.get("agent_id") or "").strip()
+            if not target_id or target_id == manager_agent_id:
+                return None
+            valid_ids = {str(entry["agent_id"]) for entry in catalog}
+            if target_id not in valid_ids:
+                return None
+            try:
+                confidence = float(decision.get("confidence") or 0.0)
+            except (TypeError, ValueError):
+                return None
+            if confidence < _ROOM_TRIAGE_MIN_CONFIDENCE:
+                return None
+            return {
+                "agent_id": target_id,
+                "reason": str(decision.get("reason") or "")[:200],
+                "confidence": confidence,
+            }
+        except Exception as exc:  # noqa: BLE001 - 分诊失败静默回落 Manager 主回路
+            logger.warning("AgentTeams consultation triage failed, fallback to manager: {}", exc)
+            return None
+
     async def _respond_to_direct_agent(
         self,
         case_id: str,
@@ -722,11 +1037,15 @@ class AgentTeamsRoomResponseService:
         actor_user_id: str,
         causation_event_id: str | None = None,
         model_id: UUID | None = None,
+        room_id: str | None = None,
+        origin: str = "direct_mention",
     ) -> dict[str, str]:
         """Phase 1 direct mention: readonly domain answer, without execution or approval bypass.
 
         失败/超时/目标不可用时返回带 ``reason`` 的失败状态（不抛异常），由调用方
         执行 A3 降级（可见降级消息 + room.agent_timeout 审计 + Manager 接管）。
+        ``origin`` 为 ``manager_triage`` 时表示由纯咨询分诊转入（话术与事件载荷
+        与用户直接点名区分）。
         """
         if target_agent_id not in self._registry.consultation_agents():
             return {
@@ -754,20 +1073,39 @@ class AgentTeamsRoomResponseService:
             {},
         )
         agent_display_name = str(agent_label.get("name") or target_agent_id)
+        if origin == "manager_triage":
+            intro = (
+                f"你是 AgentTeams 房间中的领域 Agent：{agent_display_name}"
+                f"（{target_agent_id}）。请以该身份用第一人称回复。\n"
+                f"房间由「{manager_name}」担任编排经理；你与房间内其他领域 Agent 是平级同事。\n"
+                f"「{manager_name}」判断用户当前的咨询问题更适合由你回答，已将其分诊给你。"
+                f"对外提及编排经理时一律使用「{manager_name}」，禁止使用英文 Manager 称呼。\n"
+            )
+        else:
+            intro = (
+                f"你是被用户在 AgentTeams 房间中直接点名的领域 Agent：{agent_display_name}"
+                f"（{target_agent_id}）。请以该身份用第一人称回复。\n"
+                f"房间由「{manager_name}」担任编排经理；你与房间内其他领域 Agent 是平级同事。"
+                f"对外提及编排经理时一律使用「{manager_name}」，禁止使用英文 Manager 称呼。\n"
+            )
         question = (
-            f"你是被用户在 AgentTeams 房间中直接点名的领域 Agent：{agent_display_name}"
-            f"（{target_agent_id}）。请以该身份用第一人称回复。\n"
-            f"房间由「{manager_name}」担任编排经理；你与房间内其他领域 Agent 是平级同事。"
-            f"对外提及编排经理时一律使用「{manager_name}」，禁止使用英文 Manager 称呼。\n"
+            f"{intro}"
             f"请只回答当前领域问题，不代表 {manager_name} 承诺范围、预算或审批。\n"
             f"如果用户要求真实计算、写入或改变执行计划，只说明影响并等待用户与"
             f"{manager_name} 确认后再推进，禁止自行执行。\n"
             f"Case 目标：{str(case.get('intent') or '')[:500]}\n"
             f"Case 状态：{str(case.get('status') or '')}\n"
             f"最近房间事件：{self._recent_event_context(events)}\n"
+            f"{self._room_message_history(events, current_content=content)}"
             f"用户点名消息：{content.strip()[:4_000]}"
         )
         timeout_seconds = get_settings().agentteams_direct_timeout_seconds
+        await self._set_typing(
+            case_id,
+            typing=True,
+            agent_id=target_agent_id,
+            agent_name=agent_display_name,
+        )
         try:
             stream_id = uuid4().hex
             stream_projector = _RoomResponseStreamProjector(
@@ -789,12 +1127,13 @@ class AgentTeamsRoomResponseService:
                         question=question,
                         capability="interpretation",
                         evidence_refs=[],
-                        requested_tools=[],
+                        requested_tools=["room_messages_read"],
                         requester_ref=requester_ref,
                         actor_user_id=actor_user_id,
                         model_id=model_id,
                         causation_event_id=causation_event_id,
                         on_event=stream_projector,
+                        room_id=room_id or (case_id[5:] if case_id.startswith("room-") else None),
                     ),
                     timeout=timeout_seconds,
                 )
@@ -809,8 +1148,10 @@ class AgentTeamsRoomResponseService:
                     "content": envelope.conclusion[:_ROOM_REPLY_CONTENT_MAX_CHARS],
                     "agent_id": target_agent_id,
                     "role": "worker",
-                    "direct_mention": True,
+                    "direct_mention": origin == "direct_mention",
+                    "routed_by": origin,
                     "stream_id": stream_id,
+                    "thought": stream_projector.reasoning_text,
                     "causation_event_id": causation_event_id,
                     "manager_report": {
                         "conclusion": envelope.conclusion,
@@ -840,6 +1181,13 @@ class AgentTeamsRoomResponseService:
                 "status": "direct_failed",
                 "reason": f"{type(exc).__name__}: {exc}"[:300],
             }
+        finally:
+            await self._set_typing(
+                case_id,
+                typing=False,
+                agent_id=target_agent_id,
+                agent_name=agent_display_name,
+            )
 
     async def _emit_direct_agent_fallback(
         self,
@@ -934,6 +1282,51 @@ class AgentTeamsRoomResponseService:
                 lines.append(summary[:700])
         return "；".join(lines) or "暂无历史动态"
 
+    @staticmethod
+    def _room_message_history(
+        events: list[dict[str, Any]], *, current_content: str
+    ) -> str:
+        settings = get_settings()
+        limit = max(1, min(int(settings.room_context_message_limit), 100))
+        max_chars = max(500, int(settings.room_context_max_chars))
+        messages: list[dict[str, str]] = []
+        for event in events:
+            if event.get("event_type") not in {"room.user_message", "room.agent_message"}:
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            nested = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
+            content = str(nested.get("content") or "").strip()
+            if not content or content == current_content.strip():
+                continue
+            actor = str(nested.get("agent_id") or event.get("actor") or "用户").strip()
+            label = actor if event.get("event_type") == "room.agent_message" else "用户"
+            messages.append({"label": label, "content": content})
+        if not messages:
+            return ""
+        omitted = max(0, len(messages) - limit)
+        selected = messages[-limit:]
+        lines = ["房间消息历史（仅正文）："]
+        if omitted:
+            lines.append(f"更早的 {omitted} 条消息已省略。")
+        used = sum(len(line) for line in lines)
+        for message in selected:
+            line = f"- {message['label']}：{message['content']}"
+            if used + len(line) + 1 > max_chars:
+                omitted += 1
+                continue
+            lines.append(line)
+            used += len(line) + 1
+        if len(lines) == 1:
+            return ""
+        logger.info(
+            "AgentTeams room context injected: messages=%d omitted=%d include_thinking=%s",
+            len(selected),
+            omitted,
+            settings.room_context_include_thinking,
+        )
+        logger.debug("AgentTeams room context history:\n{}", "\n".join(lines))
+        return "\n".join(lines) + "\n"
+
     async def _maybe_start_chat_execution(
         self,
         *,
@@ -994,18 +1387,31 @@ class AgentTeamsRoomResponseService:
                 answer_to_event_id=str(pending_route_event.get("event_id") or "") or None,
                 context_refs=refs,
             )
-        if (pending_clarify or pending_route_event is not None) and any(
-            marker in content for marker in _CLARIFY_OPT_OUT_MARKERS
+        structured_answer = self._ask_reply_answer_text(content)
+        # 意图分类只基于用户真正的答案文本：结构化答复里嵌套的问题原文常含
+        # “执行”等动词与示例文件名，直接对全文分类会把“先讨论方案（暂不执行）”
+        # 误判为 clarify/execute，造成无限追问。
+        intent_source = structured_answer or content
+        if structured_answer is not None and any(
+            marker in structured_answer for marker in _CLARIFY_OPT_OUT_MARKERS
         ):
-            # 用户在澄清中明确放弃执行：按纯对话处理，不再追问。
+            # 结构化澄清答复中明确放弃执行：不依赖 pending 卡检测（事件流异常时
+            # 也必须能终止追问），直接按纯对话处理。
             return "none"
-        intent = classify_execution_intent(content, refs)
+        if (
+            structured_answer is None
+            and (pending_clarify or pending_route_event is not None)
+            and any(marker in content for marker in _CLARIFY_OPT_OUT_MARKERS)
+        ):
+            # 自由文本发言在澄清中明确放弃执行：按纯对话处理，不再追问。
+            return "none"
+        intent = classify_execution_intent(intent_source, refs)
         origin_content: str | None = None
         if pending_clarify and intent not in {
             ExecutionIntent.EXECUTE,
             ExecutionIntent.TOOL_EXECUTE,
         }:
-            if has_explicit_object(content, refs):
+            if has_explicit_object(intent_source, refs):
                 # 澄清回复补全了作用对象：沿用原始执行请求，自动转入 execute。
                 intent = ExecutionIntent.EXECUTE
                 origin_content = self._pending_clarify_origin(events, content)
@@ -1039,7 +1445,7 @@ class AgentTeamsRoomResponseService:
                 return "degraded"
             emitted = await self._emit_execution_clarify(
                 case_id,
-                content,
+                self._pending_clarify_origin(events, content) or content,
                 round_no=rounds + 1,
                 causation_event_id=causation_event_id,
                 workspace_candidates=workspace_candidates,
@@ -1198,6 +1604,7 @@ class AgentTeamsRoomResponseService:
                     execution_mode="readonly_consultation",
                     causation_event_id=causation_event_id,
                     on_event=stream_projector,
+                    room_id=(case_id[5:] if case_id.startswith("room-") else None),
                 )
             finally:
                 await stream_projector.flush()
@@ -1215,6 +1622,7 @@ class AgentTeamsRoomResponseService:
                     "agent_id": agent_id,
                     "role": "bioops-manager",
                     "stream_id": stream_id,
+                    "thought": stream_projector.reasoning_text,
                     "execution_path": "agentteams_tool_execution",
                     "route": "tool_execute",
                     "causation_event_id": causation_event_id,
@@ -1783,6 +2191,24 @@ class AgentTeamsRoomResponseService:
             intake["comparison"] = f"{match.group(1).strip()} vs {match.group(2).strip()}"
         return intake
 
+    @staticmethod
+    def _ask_reply_answer_text(content: str) -> str | None:
+        """从【澄清回复】结构化答复中提取纯答案文本（剥离嵌套的问题原文）。
+
+        前端 ``formatRoomAskReply`` 的格式为 marker 首行 + ``N. {question}：{answer}``
+        逐行拼接；问题原文可能自带「：」，故答案取每行最后一个「：」之后的文本，
+        与前端 ``parseRoomAskReply`` 的解析口径对齐。非结构化答复返回 None。
+        """
+        stripped = content.strip()
+        if not stripped.startswith(ROOM_ASK_REPLY_MARKER):
+            return None
+        answers: list[str] = []
+        for raw in stripped[len(ROOM_ASK_REPLY_MARKER):].split("\n"):
+            line = re.sub(r"^\d+[.、)]\s*", "", raw.strip())
+            if line:
+                answers.append(line.rsplit("：", 1)[-1].strip())
+        return "；".join(answer for answer in answers if answer) or None
+
     @classmethod
     def _pending_clarify_origin(
         cls, events: list[dict[str, Any]], content: str
@@ -1797,6 +2223,9 @@ class AgentTeamsRoomResponseService:
             inner_raw = payload.get("payload")
             inner = dict(inner_raw) if isinstance(inner_raw, dict) else {}
             origin = str(inner.get("origin_content") or "").strip()
+            if origin.startswith(ROOM_ASK_REPLY_MARKER):
+                # 兼容历史异常数据：origin 本身不应是澄清答复，剥掉 marker 首行。
+                origin = origin[len(ROOM_ASK_REPLY_MARKER):].strip()
             return origin or None
         return None
 
@@ -1868,20 +2297,34 @@ class AgentTeamsRoomResponseService:
             decision["confidence"],
         )
 
-    async def _set_typing(self, case_id: str, *, typing: bool) -> None:
+    async def _set_typing(
+        self,
+        case_id: str,
+        *,
+        typing: bool,
+        agent_id: str | None = None,
+        agent_name: str | None = None,
+    ) -> None:
         """落 ``room.typing`` 瞬时事件驱动房间页"正在输入"指示；失败仅记日志。
 
         typing 事件只由真正拿到锁并进入响应的流程发出——被锁丢弃的消息不会
         产生 typing 事件，因此不会残留永久"正在输入"态（前端另有新鲜度兜底）。
+        领域 Agent 直答时携带 agent_id/agent_name，前端据此显示真实响应者，
+        而不是一律显示经理"正在输入"。
         """
-        manager_name = self._manager_display_name()
+        name = agent_name or self._manager_display_name()
+        payload: dict[str, Any] = {"typing": typing}
+        if agent_id:
+            payload["agent_id"] = agent_id
+        if agent_name:
+            payload["agent_name"] = agent_name
         try:
             await self._agentteams.post_case_evidence(
                 case_id,
                 work_item_id=CASE_LEVEL_WORK_ITEM_ID,
                 event_type="room.typing",
-                summary=f"{manager_name} 正在输入" if typing else f"{manager_name} 输入结束",
-                payload={"typing": typing},
+                summary=f"{name} 正在输入" if typing else f"{name} 输入结束",
+                payload=payload,
             )
         except Exception as exc:  # noqa: BLE001 - typing 指示失败不得影响响应主流程
             logger.bind(case_id=case_id).warning("AgentTeams room typing event failed: {}", exc)
@@ -2115,6 +2558,7 @@ class AgentTeamsRoomResponseService:
         manager_display_name: str | None = None,
         consultation: bool = False,
         memory_context: str | None = None,
+        room_message_history: str | None = None,
     ) -> str:
         preferences = preferences or {}
         latest_user_message = fallback_content.strip()
@@ -2230,7 +2674,8 @@ class AgentTeamsRoomResponseService:
             f"沟通风格为{style}；执行偏好为{autonomy}。\n"
             + case_block
             + f"最近房间动态：\n{context_block}\n"
-            f"本条发言引用文件：{refs_block}\n"
+            + (f"{room_message_history}\n" if room_message_history else "")
+            + f"本条发言引用文件：{refs_block}\n"
             # L4 读取面记忆注入（M2）：共享层 + Manager 分区，<user_memory> 不可信包装
             + (f"{memory_context}\n" if memory_context else "")
             + f"请求人最新发言：{latest_user_message}"

@@ -8,9 +8,9 @@ color: "#8b5cf6"
 category: development
 
 # 代码生成使用最强模型 + 低温度，保证协议合规与稳定性
-model: qwen3.7-plus
+model: qdoubao-seed-evolving
 temperature: 0.2
-max_tokens: 32768
+max_tokens: 65536
 
 prompt_file: prompts/mcp_builder.md
 welcome_message: "你好！我是 MCP 构建师。告诉我你想要什么工具（例如：查询 PubMed 文献、调用 OpenWeather 天气接口），我会自动生成、测试并注册一个 MCP Server 供平台 AI 调用。"

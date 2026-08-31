@@ -91,6 +91,7 @@ from cygnusx.core.exceptions import (
 )
 from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
+from cygnusx.infrastructure.config.runtime_image_loader import get_runtime_images
 from cygnusx.infrastructure.config.studio_loader import get_studio_config
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 from cygnusx.infrastructure.database.models.user import UserModel
@@ -390,7 +391,16 @@ async def create_studio_session(
         raise BusinessError("请求的沙盒能力未获该 Agent 授权")
 
     image = studio_cfg.get("image")
-    if set(requested_capabilities) != {"code"}:
+    if req.runtime_profile and req.runtime_profile.strip():
+        # 显式指定的运行时 profile 优先于按能力匹配的镜像
+        try:
+            _, selected_profile = get_runtime_images().select(
+                set(), "studio", preferred_profile=req.runtime_profile.strip()
+            )
+            image = selected_profile.image
+        except (KeyError, ValueError) as exc:
+            raise BusinessError(f"运行时选择失败：{exc}") from exc
+    elif set(requested_capabilities) != {"code"}:
         image = get_studio_config().image_for_capabilities(requested_capabilities)
         if not image:
             raise BusinessError("当前部署未配置覆盖所请求能力的 Studio 沙盒镜像")
@@ -447,7 +457,17 @@ async def promote_session_to_studio(
 
     target_agent_id = (req.agent_id if req else None) or session.agent_id
     image: str | None = None
-    if target_agent_id:
+    runtime_profile = (req.runtime_profile if req else None) or ""
+    if runtime_profile.strip():
+        # 显式指定的运行时 profile 优先于目标 Agent 的 studio.image
+        try:
+            _, selected_profile = get_runtime_images().select(
+                set(), "studio", preferred_profile=runtime_profile.strip()
+            )
+            image = selected_profile.image
+        except (KeyError, ValueError) as exc:
+            raise BusinessError(f"运行时选择失败：{exc}") from exc
+    elif target_agent_id:
         agent = await AgentService(db).get_agent(target_agent_id)
         if agent is not None:
             studio_cfg = (agent.features or {}).get("studio") or {}
@@ -500,6 +520,27 @@ async def create_studio_session_from_report(
         dto.session_id, current_user_id, _sandbox_image(session) if session else None
     )
     return dto
+
+
+@router.get("/runtime-profiles", summary="可用 Studio 运行时 profile 列表")
+async def list_runtime_profiles(current_user_id: CurrentUserId) -> list[dict[str, Any]]:
+    """向前端运行时选择器暴露 runtime_images.yaml 中注册的 profile。"""
+    registry = get_runtime_images()
+    profiles: list[dict[str, Any]] = []
+    for profile_id in registry.profiles:
+        profile = registry.resolved_profile(profile_id)
+        profiles.append(
+            {
+                "id": profile_id,
+                "name": profile.name,
+                "description": profile.description,
+                "image": profile.image,
+                "capabilities": sorted(profile.capabilities),
+                "executor_compatibility": sorted(profile.executor_compatibility),
+                "is_default": profile_id == registry.selection.default_profile,
+            }
+        )
+    return profiles
 
 
 @router.get("/sessions", response_model=list[ChatSessionDTO], summary="Studio 会话列表")

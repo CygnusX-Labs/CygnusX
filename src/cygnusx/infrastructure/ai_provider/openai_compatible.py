@@ -198,7 +198,7 @@ class OpenAICompatibleProvider:
         messages: list[dict[str, str]],
         system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 65536,
         tools: list[dict[str, Any]] | None = None,
         deep_thinking: bool = False,
     ) -> AsyncIterator[ChatChunk]:
