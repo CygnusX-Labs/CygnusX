@@ -1520,6 +1520,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         message_id: string
         role: string
         content: string
+        status?: string
         metadata_json?: Record<string, unknown>
         type?: string
         message_type?: string
@@ -1538,6 +1539,9 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           role: m.role as 'user' | 'assistant' | 'system',
           content: m.content,
           createdAt: m.created_at,
+          // 只透传 error 态：中断残留的 streaming 行按普通消息展示，避免永久加载态
+          status: m.status === 'error' ? 'error' : undefined,
+          error: typeof m.metadata_json?.error === 'string' ? m.metadata_json.error : undefined,
           modelName: (m.metadata_json?.model as string) || undefined,
           // usage is response metadata; keep it off user/system messages even if an old
           // backend row contains a stale tokens payload.
@@ -2638,7 +2642,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             releaseSessionIdLock()
             return
           }
-          aiMsg.content = streamingContent.value || `生成失败: ${error}`
+          aiMsg.content = streamingContent.value
+          aiMsg.error = error
           aiMsg.thought = streamingThought.value || undefined
           aiMsg.status = 'error'
           aiMsg.toolCalls = (aiMsg.toolCalls || []).map((t) =>
@@ -2779,10 +2784,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     return null
   }
 
-  /** 批准待审批工具；带 modifiedArgs 即"编辑后批准"（乐观更新，后端决议经 approval_resolved 回写） */
+  /** 批准待审批工具；带 modifiedArgs 即"编辑后批准"，always 即"本会话不再询问"（乐观更新，后端决议经 approval_resolved 回写） */
   async function approveToolCall(
     approvalId: string,
     modifiedArgs?: Record<string, unknown>,
+    always?: boolean,
   ): Promise<void> {
     if (!isStreaming.value) {
       throw new Error('APPROVAL_STREAM_INACTIVE')
@@ -2793,7 +2799,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       tc.status = 'running'
     }
     try {
-      await studioApi.approveApproval(approvalId, modifiedArgs)
+      await studioApi.approveApproval(approvalId, modifiedArgs, always)
     } catch (e) {
       if (tc?.approval) {
         tc.approval.status = 'pending'

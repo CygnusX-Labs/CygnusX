@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from loguru import logger
@@ -63,6 +65,117 @@ class ReportService:
     def _rel_path(self, abs_path: Path) -> str:
         """将已校验的绝对路径转为相对 data_root 的路径（供 StorageBackend 使用）。"""
         return self._factory.relative_to_root(abs_path)
+
+    async def _file_nonempty(self, rel_path: str) -> bool:
+        """存在且大小非零——把"存在即 completed"收紧为"存在且非空"。"""
+        stat_info = await self._backend.stat(rel_path)
+        return bool(
+            stat_info and not stat_info.get("is_dir") and int(stat_info.get("size") or 0) > 0
+        )
+
+    async def _load_result_manifest(self, work_path: Path) -> tuple[dict[str, Any] | None, Path]:
+        """按 ARDP §6.2 兜底顺序发现 result_manifest.json；缺失/解析失败返回 (None, root)。
+
+        解析失败只记 WARNING 并回退旧约定（manifest 是流程侧新契约，不得打断存量注册）。
+        """
+        for root in (work_path, work_path.parent / "data_deliver", work_path / "data_deliver"):
+            rel = self._rel_path(root / "result_manifest.json")
+            if not await self._backend.exists(rel):
+                continue
+            try:
+                raw = await self._backend.read(rel)
+                manifest = json.loads(raw.decode("utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("result_manifest.json 解析失败（{}），回退旧约定: {}", rel, exc)
+                return None, root
+            if not isinstance(manifest, dict):
+                logger.warning("result_manifest.json 顶层不是对象（{}），回退旧约定", rel)
+                return None, root
+            return manifest, root
+        return None, work_path
+
+    async def _evaluate_result_manifest(
+        self, manifest: dict[str, Any], root: Path
+    ) -> tuple[str | None, str | None, str]:
+        """校验 manifest 声明的产物文件：真实存在、大小非零、md5（若声明）一致。
+
+        返回 (status, primary_html_rel, note)；status=None 表示 manifest 缺关键字段，
+        调用方回退旧约定判定。校验失败不抛异常——落 failed + 结构化 WARNING 留痕。
+        """
+        run = manifest.get("run") if isinstance(manifest.get("run"), dict) else {}
+        run_status = str(run.get("status") or "")
+        if not manifest.get("manifest_version") or run_status not in {
+            "completed",
+            "completed_no_report",
+            "failed",
+            "aborted",
+        }:
+            logger.warning(
+                "result_manifest.json 缺少 manifest_version/run.status（{}），回退旧约定", root
+            )
+            return None, None, ""
+
+        failures: list[str] = []
+        for entry in manifest.get("files") or []:
+            if not isinstance(entry, dict):
+                continue
+            rel = str(entry.get("path") or "").strip()
+            if not rel or rel.endswith("/") or str(entry.get("type") or "") == "dir":
+                continue
+            failure = await self._check_manifest_file(root, rel, str(entry.get("md5") or ""))
+            if failure:
+                failures.append(failure)
+        report_block = manifest.get("report") if isinstance(manifest.get("report"), dict) else {}
+        entry_rel = str(report_block.get("entry") or "").strip()
+        primary_html_rel: str | None = None
+        if entry_rel:
+            failure = await self._check_manifest_file(root, entry_rel, "")
+            if failure:
+                failures.append(failure)
+            else:
+                primary_html_rel = self._rel_path((root / entry_rel).resolve())
+
+        if run_status in {"failed", "aborted"}:
+            error = manifest.get("error") if isinstance(manifest.get("error"), dict) else {}
+            message = str(error.get("message") or "")[:200]
+            note = f"流程终态 {run_status}" + (f"：{message}" if message else "")
+            return "failed", None, note
+        if failures:
+            logger.warning("result_manifest 产物校验失败（{}）: {}", root, failures)
+            return "failed", None, f"产物校验失败：{'；'.join(failures[:5])}"[:500]
+        return "completed", primary_html_rel, ""
+
+    @staticmethod
+    def _resolve_within(root: Path, rel: str) -> Path | None:
+        """把 manifest 声明的相对路径解析到 root 内；越权（.. 逃逸）返回 None。"""
+        resolved_root = root.resolve()
+        target = (resolved_root / rel).resolve()
+        try:
+            target.relative_to(resolved_root)
+        except ValueError:
+            return None
+        return target
+
+    async def _check_manifest_file(self, root: Path, rel: str, md5: str) -> str:
+        """单个 manifest 声明文件的存在性/非空/md5 校验；通过返回空串，失败返回原因。"""
+        target = self._resolve_within(root, rel)
+        if target is None:
+            return f"{rel} 路径越权（禁止 .. 逃逸）"
+        storage_rel = self._rel_path(target)
+        stat_info = await self._backend.stat(storage_rel)
+        if not stat_info or stat_info.get("is_dir"):
+            return f"{rel} 不存在"
+        if int(stat_info.get("size") or 0) <= 0:
+            return f"{rel} 大小为零"
+        expected_md5 = md5.strip().lower()
+        if expected_md5:
+            try:
+                content = await self._backend.read(storage_rel)
+            except Exception as exc:  # noqa: BLE001
+                return f"{rel} 读取失败（{exc}）"
+            if hashlib.md5(content).hexdigest() != expected_md5:  # noqa: S324 - 对齐交付协议 md5 字段
+                return f"{rel} md5 与声明不一致"
+        return ""
 
     async def list_reports(
         self,
@@ -244,7 +357,25 @@ class ReportService:
                 pass
 
         html_rel = self._rel_path(html_path)
-        status = "completed" if await self._backend.exists(html_rel) else "failed"
+        html_ready = await self._file_nonempty(html_rel)
+        status = "completed" if html_ready else "failed"
+
+        # ARDP（Protocol/分析流程结果交付协议_v1.md）：产物目录存在 result_manifest.json
+        # 时优先按 manifest 判定（声明产物存在/非空/md5 比对）；缺失或无效时回退旧约定。
+        manifest, manifest_root = await self._load_result_manifest(work_path)
+        if manifest is not None:
+            manifest_status, manifest_html_rel, note = await self._evaluate_result_manifest(
+                manifest, manifest_root
+            )
+            if manifest_status is not None:
+                status = manifest_status
+                if manifest_html_rel:
+                    html_rel = manifest_html_rel
+                    html_ready = True
+                    html_path = Path(self._factory.data_root) / html_rel
+                    report_dir = html_path.parent
+                if note:
+                    description = f"{description} | {note}" if description else note
 
         report = ReportModel(
             id=uuid.uuid4(),
@@ -264,7 +395,7 @@ class ReportService:
         )
         await self._repo.create(report)
 
-        if await self._backend.exists(html_rel):
+        if html_ready:
             stat_info = await self._backend.stat(html_rel)
             file_model = ReportFileModel(
                 id=uuid.uuid4(),

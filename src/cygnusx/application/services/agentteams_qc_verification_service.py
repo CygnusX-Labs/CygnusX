@@ -15,8 +15,14 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cygnusx.application.schemas.qc_verification import QcVerificationReport
-from cygnusx.infrastructure.database.models.chat import QcVerificationCheckModel
+from cygnusx.application.schemas.qc_verification import (
+    EXTERNAL_LOOKUP_CLAIM_TYPE,
+    QcVerificationReport,
+)
+from cygnusx.infrastructure.database.models.chat import (
+    CaseArtifactVersionModel,
+    QcVerificationCheckModel,
+)
 
 _MAX_REVIEWER_AGENT_LEN = 80
 # 血缘清单端点返回的最近判决行上限；counts 为全量聚合不受此限。
@@ -58,6 +64,65 @@ class AgentTeamsQcVerificationService:
         if rows:
             await self._db.flush()
         return rows
+
+    async def enforce_verifiable_evidence(
+        self,
+        *,
+        case_id: str,
+        report: QcVerificationReport,
+    ) -> list[dict[str, Any]]:
+        """证据指针验真：evidence_event_id 必须指向本 Case 已登记的审计事件/血缘 version。
+
+        平台 DB 可查的合法指针集合 = ``case_artifact_versions`` 的 version_id
+        ∪ producing_event_id（产物登记时写入的 Bridge 审计事件 id）。qc 编一个
+        不存在的 id 从此处拦下，按既有"降级为 fail/inconclusive"惯例处理：
+        - ``external_lookup`` 断言 → fail（伪造指针视同绕过编造引用条款）；
+        - 其它类型且原判非 fail → inconclusive（证据不可复核，不按 pass/warn 放行）。
+        返回降级明细供调用方留痕；本方法只改 report，不落库。
+        """
+        known_ids = await self._known_evidence_ids(case_id)
+        downgrades: list[dict[str, Any]] = []
+        for check in report.checks:
+            evidence_id = (check.evidence_event_id or "").strip()
+            if not evidence_id or evidence_id in known_ids:
+                continue
+            claim = report.claims[check.claim_index]
+            original = check.verdict
+            if original == "fail":
+                continue
+            check.verdict = (
+                "fail" if claim.claim_type == EXTERNAL_LOOKUP_CLAIM_TYPE else "inconclusive"
+            )
+            check.reason = (
+                f"证据指针验真失败：{evidence_id} 未指向本 Case 已登记的审计事件或血缘 "
+                f"version（原判 {original}）。{check.reason}"
+            )[:1_000]
+            downgrades.append(
+                {
+                    "claim_index": check.claim_index,
+                    "evidence_event_id": evidence_id,
+                    "original_verdict": original,
+                    "verdict": check.verdict,
+                }
+            )
+        return downgrades
+
+    async def _known_evidence_ids(self, case_id: str) -> set[str]:
+        """本 Case 平台 DB 可验的合法证据指针集合（version_id ∪ producing_event_id）。"""
+        result = await self._db.execute(
+            select(
+                CaseArtifactVersionModel.id,
+                CaseArtifactVersionModel.producing_event_id,
+            ).where(CaseArtifactVersionModel.case_id == case_id)
+        )
+        known: set[str] = set()
+        for version_id, producing_event_id in result.all():
+            if version_id is not None:
+                known.add(str(version_id))
+            event_id = str(producing_event_id or "").strip()
+            if event_id:
+                known.add(event_id)
+        return known
 
     async def record_degradation(
         self,

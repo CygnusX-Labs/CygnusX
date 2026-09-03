@@ -1,6 +1,8 @@
 studio:
   enabled: true
-  default_image: cygnusx-sandbox-browser-office:v0.0.2dev
+  # 默认走 micromamba 系 analysis 镜像（含 Python 3.12 + R 4.4 + uv + pip）；
+  # browser/document 能力会话仍按 capabilities 匹配到 browser-office 镜像。
+  default_image: cygnusx-analysis:core-v0.0.2dev
   images:
     analysis-core:
       image: cygnusx-analysis:core-v0.0.2dev

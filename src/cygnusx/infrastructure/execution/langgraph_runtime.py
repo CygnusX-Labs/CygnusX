@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -96,6 +97,21 @@ class LangGraphRuntimeService:
         }
 
         async def _run() -> None:
+            # 兜底：图在独立 asyncio task 中执行，若 contextvars 链路在 task 边界
+            # 丢失（agent.run 不再是当前 span），显式 attach 网关发布的父 context，
+            # 保证图内 agent.tool_dispatch / ai.chat / mcp.call_tool 挂到 agent.run 下。
+            from opentelemetry import context as _otel_context
+            from opentelemetry import trace as _otel_trace
+
+            from cygnusx.core.telemetry import agent_parent_context_var
+
+            fallback_token = None
+            parent_ctx = agent_parent_context_var.get()
+            if (
+                parent_ctx is not None
+                and not _otel_trace.get_current_span().get_span_context().is_valid
+            ):
+                fallback_token = _otel_context.attach(parent_ctx)
             try:
                 final = cast(
                     AgentState,
@@ -116,6 +132,9 @@ class LangGraphRuntimeService:
                 self.error = str(e)
                 await queue.put(ChatChunk(type="error", content=f"运行时异常: {e}"))
             finally:
+                if fallback_token is not None:
+                    with contextlib.suppress(Exception):
+                        _otel_context.detach(fallback_token)
                 await queue.put(None)
 
         task = asyncio.create_task(_run())

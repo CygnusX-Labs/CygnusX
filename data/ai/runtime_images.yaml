@@ -92,11 +92,10 @@ profiles:
     dockerfile: deploy/studio/bio.Dockerfile
     executor_compatibility: [studio]
     description: Studio 生物信息学镜像，提供单细胞分析、序列处理和常用 NGS 命令行工具。
-    capabilities: [python, r, bash, tabular, statistics, plotting, interactive-plotting, machine-learning, single-cell, hdf5, bioinformatics]
+    capabilities: [python, bash, tabular, statistics, plotting, interactive-plotting, machine-learning, single-cell, hdf5, bioinformatics]
     task_tags: [studio, bioinformatics, scrna, scanpy, alignment, blast]
     languages:
       python: "3.12"
-      r: "4.4"
     software:
       scanpy: "installed"
       anndata: "installed"
@@ -118,11 +117,10 @@ profiles:
     dockerfile: deploy/studio/browser-office.Dockerfile
     executor_compatibility: [studio]
     description: Studio 浏览器与办公文档镜像，提供 Chromium、Playwright、LibreOffice 和 Word/PPTX 处理能力。
-    capabilities: [python, r, bash, tabular, statistics, plotting, interactive-plotting, machine-learning, single-cell, hdf5, bioinformatics, browser, document]
+    capabilities: [python, bash, tabular, statistics, plotting, interactive-plotting, machine-learning, single-cell, hdf5, bioinformatics, browser, document]
     task_tags: [studio, browser, document, office, libreoffice, playwright]
     languages:
       python: "3.12"
-      r: "4.4"
     software:
       playwright: "installed"
       chromium: "installed"

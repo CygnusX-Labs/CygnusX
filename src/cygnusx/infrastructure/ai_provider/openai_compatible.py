@@ -50,6 +50,29 @@ def _usage_int(value: Any) -> int:
         return 0
 
 
+def _parse_retry_after(value: str | None) -> float | None:
+    """解析 Retry-After 响应头（秒数或 HTTP-date），缺失/非法时返回 None。"""
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    from datetime import UTC, datetime
+    from email.utils import parsedate_to_datetime
+
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(0.0, (parsed - datetime.now(UTC)).total_seconds())
+
+
 # 带 tools 首尝空响应后，会降级为不带 tools 重试；此时系统词里仍描述着工具，
 # 模型容易在正文里以文本形式「模拟」工具调用并编造结果。追加一条明确约束，
 # 让模型直接用自然语言作答，而不是输出 <tool_use> 之类的伪调用文本。
@@ -84,6 +107,28 @@ def _strip_tool_artifacts(messages: list[dict[str, Any]]) -> list[dict[str, Any]
             continue
         cleaned.append({k: v for k, v in msg.items() if k != "tool_call_id"})
     return cleaned
+
+
+def _dedupe_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 function.name 保序去重。
+
+    工具可能来自多个不做交叉去重的来源（内置表、MCP server、Studio 能力表等）；
+    DeepSeek 等供应商严格校验工具名唯一，重名会直接拒请求
+    （invalid_request_error: Tool names must be unique）。
+    """
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for tool in tools:
+        name = ""
+        if isinstance(tool, dict):
+            name = str((tool.get("function") or {}).get("name") or "")
+        if name and name in seen:
+            logger.warning(f"工具名重复，已忽略重复定义: {name}")
+            continue
+        if name:
+            seen.add(name)
+        unique.append(tool)
+    return unique
 
 
 def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -211,11 +256,14 @@ class OpenAICompatibleProvider:
         内置自动重试（仅在「尚未向用户输出任何正文/工具调用」时生效）：
         - 可重试错误（超时 / 连接中断等，见 _stream_once 的 retryable 标记）：
           最多自动重试 ``llm_stream_transient_retries`` 次（默认 3）；
+        - 429 限流：单独计数，最多自动重试 ``llm_stream_rate_limit_retries`` 次
+          （默认 2），退避优先尊重响应的 Retry-After 头；
         - 空响应：自动重试一次，第二次尝试会降级为不带 tools 再试；
         一旦已经输出正文或工具调用，任何错误都会直接上抛给调用方，不再重试，
         避免把已展示给用户的内容重复一遍。
         """
         transient_retry_limit = max(0, get_settings().llm_stream_transient_retries)
+        rate_limit_retry_limit = max(0, get_settings().llm_stream_rate_limit_retries)
         retry_base_delay_seconds = max(
             0.0, float(get_settings().llm_stream_retry_base_delay_seconds)
         )
@@ -226,6 +274,7 @@ class OpenAICompatibleProvider:
         retry_without_tools = False
         retry_without_thinking = False
         transient_retries = 0
+        rate_limit_retries = 0
         empty_retried = False
 
         while True:
@@ -245,6 +294,7 @@ class OpenAICompatibleProvider:
                 attempt_messages = _strip_tool_artifacts(messages)
 
             should_retry = False
+            retry_delay_seconds = 0.0
             async for chunk in self._stream_once(
                 attempt_messages,
                 attempt_system_prompt,
@@ -268,17 +318,40 @@ class OpenAICompatibleProvider:
                     last_finish_reason = chunk.metadata.get("finish_reason") or last_finish_reason
                 elif chunk.type == "error":
                     attempt_had_error = True
+                    # 429 限流有独立的重试上限与计数，不占用瞬时重试额度；
+                    # 退避优先用响应的 Retry-After，缺失时退化为线性退避。
+                    is_rate_limited = chunk.metadata.get("http_status") == 429
+                    budget_left = (
+                        rate_limit_retries < rate_limit_retry_limit
+                        if is_rate_limited
+                        else transient_retries < transient_retry_limit
+                    )
                     if (
                         chunk.metadata.get("retryable")
                         and not has_yielded_text
                         and not has_tool_calls
-                        and transient_retries < transient_retry_limit
+                        and budget_left
                     ):
-                        transient_retries += 1
-                        logger.warning(
-                            f"模型 '{self.name}' 瞬时失败且尚未输出，"
-                            f"自动重试 {transient_retries}/{transient_retry_limit}"
-                        )
+                        if is_rate_limited:
+                            rate_limit_retries += 1
+                            retry_after = chunk.metadata.get("retry_after")
+                            retry_delay_seconds = (
+                                float(retry_after)
+                                if retry_after is not None
+                                else retry_base_delay_seconds * rate_limit_retries
+                            )
+                            logger.warning(
+                                f"模型 '{self.name}' 触发限流（429）且尚未输出，"
+                                f"{retry_delay_seconds:.1f}s 后自动重试 "
+                                f"{rate_limit_retries}/{rate_limit_retry_limit}"
+                            )
+                        else:
+                            transient_retries += 1
+                            retry_delay_seconds = retry_base_delay_seconds * transient_retries
+                            logger.warning(
+                                f"模型 '{self.name}' 瞬时失败且尚未输出，"
+                                f"自动重试 {transient_retries}/{transient_retry_limit}"
+                            )
                         should_retry = True
                         break
                     yield chunk
@@ -287,8 +360,8 @@ class OpenAICompatibleProvider:
                     yield chunk
 
             if should_retry:
-                if retry_base_delay_seconds:
-                    await asyncio.sleep(retry_base_delay_seconds * transient_retries)
+                if retry_delay_seconds:
+                    await asyncio.sleep(retry_delay_seconds)
                 continue
             if attempt_had_text or has_tool_calls:
                 break
@@ -353,7 +426,7 @@ class OpenAICompatibleProvider:
             "stream_options": {"include_usage": True},
         }
         if tools:
-            payload["tools"] = tools
+            payload["tools"] = _dedupe_tools(tools)
             payload["tool_choice"] = "auto"
         model_name = f"{self.name} {self.model}".lower()
         if deep_thinking or "deepseek-v4" in model_name:
@@ -392,9 +465,19 @@ class OpenAICompatibleProvider:
                     )
                     return
                 if response.status_code == 429:
+                    retry_after = _parse_retry_after(response.headers.get("retry-after"))
+                    logger.warning(
+                        f"[LLM限流] provider={self.name} model={self.model} "
+                        f"retry_after={retry_after}"
+                    )
                     yield ChatChunk(
                         type="error",
                         content=f"请求频率过高（模型: {self.name}），请稍后重试",
+                        metadata={
+                            "retryable": True,
+                            "http_status": 429,
+                            "retry_after": retry_after,
+                        },
                     )
                     return
                 if response.status_code == 404:

@@ -295,7 +295,7 @@ class DirectChatRuntime(ChatRuntime):
                     elif chunk.type == "error":
                         await self._persist_message_snapshot(
                             ai_message.message_id,
-                            full_content or f"生成失败: {chunk.content}",
+                            full_content,
                             "error",
                             {"error": chunk.content},
                         )
@@ -408,7 +408,7 @@ class DirectChatRuntime(ChatRuntime):
 
             await self._persist_message_snapshot(
                 ai_message.message_id,
-                full_content or "工具调用轮次达到上限",
+                full_content,
                 "error",
                 {"error": "工具调用轮次达到上限"},
             )
@@ -417,7 +417,7 @@ class DirectChatRuntime(ChatRuntime):
         except Exception as e:  # noqa: BLE001
             await self._persist_message_snapshot(
                 ai_message.message_id,
-                full_content or f"生成失败: {e}",
+                full_content,
                 "error",
                 {"error": str(e)},
             )

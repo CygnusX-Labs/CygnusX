@@ -83,6 +83,7 @@ export const useChatSessionStore = defineStore('chatSession', () => {
         content: m.content,
         reasoning: '',
         status: m.status as 'complete' | 'streaming' | 'error',
+        error: typeof m.metadata_json?.error === 'string' ? m.metadata_json.error : undefined,
         created_at: m.created_at,
       }))
     } finally {
@@ -221,7 +222,8 @@ export const useChatSessionStore = defineStore('chatSession', () => {
         onError: (error) => {
           streamError.value = error
           aiMsg.status = 'error'
-          aiMsg.content = streamingContent.value || error
+          aiMsg.content = streamingContent.value
+          aiMsg.error = error
         },
         onDone: (_sessionId, _messageId) => {
           aiMsg.status = 'complete'

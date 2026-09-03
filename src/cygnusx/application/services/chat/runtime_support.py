@@ -131,6 +131,7 @@ class ChatRuntimeSupport:
         exclude_file_ids: set[str] | None = None,
         user_id: str | None = None,
         studio_sandbox_paths: dict[str, str] | None = None,
+        studio_mode: bool = False,
     ) -> str:
         """汇总本会话历史消息中的附件引用，供后续轮次继承文件上下文。
 
@@ -139,6 +140,8 @@ class ChatRuntimeSupport:
         额外兜底：扫描该用户 chat-uploads 目录，按文件名内嵌的会话标记
         （``.s{session_id前8位}``）找回本会话上传过、但未进入消息元数据的文件。
         严格按会话隔离：其它会话的上传不注入，避免跨对话污染。
+        ``studio_mode`` 决定未挂载文件的回退措辞：Studio 会话没有
+        chat_sandbox_execute，不能再用"执行时自动注入沙盒"的说法。
         """
         exclude = exclude_file_ids or set()
         result = await self._db.execute(
@@ -171,11 +174,18 @@ class ChatRuntimeSupport:
                         "沙盒代码请直接按该路径读取，勿用 file:// / upload:// 引用）"
                     )
                 else:
-                    lines.append(
-                        f"- {att.get('name', '')}（file_id: {ref}，"
-                        f'可用 workspace_read_file(file_id="{ref}") 读取；'
-                        f"chat_sandbox_execute 执行时会自动注入沙盒 /workspace/input/）"
-                    )
+                    if studio_mode:
+                        lines.append(
+                            f"- {att.get('name', '')}（file_id: {ref}，未挂载进沙盒工作区；"
+                            f'可用 workspace_read_file(file_id="{ref}") 在宿主侧读取内容，'
+                            f"或调用 datahub_import 引入沙盒 /workspace/input/ 后按路径读取）"
+                        )
+                    else:
+                        lines.append(
+                            f"- {att.get('name', '')}（file_id: {ref}，"
+                            f'可用 workspace_read_file(file_id="{ref}") 读取；'
+                            f"chat_sandbox_execute 执行时会自动注入沙盒 /workspace/input/）"
+                        )
 
         sections: list[str] = []
         if lines:
@@ -364,6 +374,7 @@ class ChatRuntimeSupport:
 
         ``studio_sandbox_paths``：Studio 模式下文件引用 → 沙盒可读路径的映射；
         命中时提示模型直接用工作区路径读取（沙盒无法解析 file:// / upload:// 引用）。
+        传 ``None`` 表示普通聊天（附件由 chat_sandbox_execute 执行前注入轻量沙盒）。
         """
         if not messages:
             return messages
@@ -417,13 +428,22 @@ class ChatRuntimeSupport:
                         f"在 sandbox_execute 代码或工作区工具中请直接使用该路径读取，"
                         f"不要使用 file:// / upload:// 引用（沙盒内无法解析）]"
                     )
-                else:
+                elif studio_sandbox_paths is None:
+                    # 普通聊天：轻量沙盒执行前由 chat_sandbox_execute 注入附件
                     snippets.append(
                         f"[文件: {att.get('name', '')}，file_id: {ref}，"
                         f'可用 workspace_read_file(file_id="{ref}") 读取内容，'
                         f"或在其它工具参数中直接引用该 file_id；"
                         f"调用 chat_sandbox_execute 执行代码时，该文件会自动注入沙盒 "
                         f"/workspace/input/ 目录（真实路径见工具结果的 input_files）]"
+                    )
+                else:
+                    # Studio：文件未挂载进工作区，沙盒代码在文件系统中找不到它，
+                    # 不能再提 chat_sandbox_execute 自动注入（Studio 模式该工具不挂载）。
+                    snippets.append(
+                        f"[文件: {att.get('name', '')}，file_id: {ref}，"
+                        f"该文件未挂载进沙盒工作区，沙盒内无法按文件路径访问；"
+                        f'请用 workspace_read_file(file_id="{ref}") 在宿主侧读取内容]'
                     )
             if text:
                 snippet = text[:max_len] + ("\n...（已截断）" if len(text) > max_len else "")

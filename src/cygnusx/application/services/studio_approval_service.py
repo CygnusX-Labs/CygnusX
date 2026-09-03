@@ -9,6 +9,11 @@
   超时按拒绝处理（action="timeout"）。
 - 审批提示是瞬态 SSE 事件，不落库；前端刷新/断流后通过
   ``GET /studio/approvals?session_id=`` 拉取 pending 记录重建审批卡。
+- 拦截名单 = 硬编码 APPROVAL_REQUIRED_TOOLS ∪ tools_schema.yaml 中
+  ``requires_confirm: true`` 的工具（见 approval_required_tools()）。
+- 决议（含 timeout）经 record_approval_audit() 落 audit_logs 持久审计；
+  approve 可携 always=True，由 REST 端点把 (session, tool) 记入会话
+  sandbox_meta.permissions.always_allow，之后同会话同工具直接放行。
 """
 
 from __future__ import annotations
@@ -28,10 +33,114 @@ APPROVAL_REQUIRED_TOOLS: frozenset[str] = frozenset(
         "workspace_write",
         "workspace_edit",
         "artifact_register",
+        # 编排代码可多次回调写/执行类工具，supervised 下整段审批一次，子调用不逐次弹窗
+        "tool_orchestrate",
+        # 普通聊天的代码执行与 Studio sandbox_execute 同险，supervised 下同闸
+        "chat_sandbox_execute",
     }
 )
 
 APPROVAL_TTL_SECONDS = 300
+
+
+def approval_required_tools() -> frozenset[str]:
+    """审批闸拦截名单：硬编码集合 ∪ tools_schema.yaml 中 requires_confirm 的工具。
+
+    schema 读取失败（文件缺失/解析异常/依赖不可用）时回退硬编码集合——
+    已知危险工具仍被拦截，按最安全的方向降级。
+    """
+    try:
+        from cygnusx.tools.schema_loader import schema_loader
+
+        dynamic = {tool.name for tool in schema_loader.get_config().tools if tool.requires_confirm}
+    except Exception:  # noqa: BLE001
+        logger.warning("[Studio] 读取 tools_schema requires_confirm 失败，回退硬编码审批名单")
+        return APPROVAL_REQUIRED_TOOLS
+    return APPROVAL_REQUIRED_TOOLS | frozenset(dynamic)
+
+
+def always_allow_set(sandbox_meta: dict[str, Any] | None) -> set[str]:
+    """从会话 sandbox_meta.permissions.always_allow 读取"本会话总是允许"的工具集合。
+
+    数据缺失/畸形时返回空集合（仍逐次审批，安全方向降级）。
+    """
+    permissions = (sandbox_meta or {}).get("permissions") or {}
+    raw = permissions.get("always_allow") if isinstance(permissions, dict) else None
+    if not isinstance(raw, list):
+        return set()
+    return {str(item) for item in raw}
+
+
+def needs_approval(permission_mode: str | None, tool_name: str, always_allow: set[str]) -> bool:
+    """supervised 模式下受控工具是否需要逐次审批（always_allow 命中直接放行）。"""
+    return (
+        permission_mode == "supervised"
+        and tool_name in approval_required_tools()
+        and tool_name not in always_allow
+    )
+
+
+async def record_approval_audit(
+    *,
+    user_id: str,
+    approval_id: str,
+    session_id: str,
+    tool_name: str,
+    action: str,
+    resolver: str,
+    always: bool = False,
+    reason: str | None = None,
+    arguments: dict[str, Any] | None = None,
+    approval_kind: str = "tool",
+    method: str = "POST",
+) -> None:
+    """审批决议落 audit_logs（best-effort）：Redis 记录 TTL 到期后的持久审计。
+
+    独立 session 写入，不耦合请求/聊天流事务；任何异常仅告警，不阻断审批主流程。
+    """
+    try:
+        from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
+        from cygnusx.infrastructure.database.session import get_session_factory
+
+        try:
+            uid = uuid.UUID(str(user_id))
+        except (ValueError, TypeError, AttributeError):
+            uid = None
+        args_summary = ""
+        if arguments:
+            try:
+                args_summary = json.dumps(arguments, ensure_ascii=False, default=str)[:500]
+            except (TypeError, ValueError):
+                args_summary = ""
+        entry = AuditLogModel(
+            user_id=uid,
+            username=None,
+            method=method,
+            path=f"/api/v1/studio/approvals/{approval_id}/{action}",
+            resource_type="studio_approval",
+            resource_id=approval_id,
+            status_code=200,
+            ip=None,
+            user_agent=None,
+            detail={
+                "event": "approval_decision",
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "action": action,
+                "resolver": resolver,
+                "always": always,
+                "approval_kind": approval_kind,
+                **({"reason": reason} if reason else {}),
+                **({"args_summary": args_summary} if args_summary else {}),
+            },
+        )
+        factory = get_session_factory()
+        async with factory() as session:
+            session.add(entry)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Studio] 审批决议审计落库失败（忽略，不影响审批结果）: {}", exc)
+
 
 _RECORD_KEY = "studio:approval:{approval_id}"
 _RESULT_KEY = "studio:approval:result:{approval_id}"
@@ -156,10 +265,12 @@ class StudioApprovalService:
         action: str,
         modified_args: dict[str, Any] | None = None,
         reason: str | None = None,
+        always: bool = False,
     ) -> dict[str, Any] | None:
         """消费审批：校验归属与 pending 状态，写决议 list 并更新记录状态。
 
         返回更新后的记录；记录不存在、归属不符或已被消费（含超时落账）时返回 None。
+        always=True 时决议载荷携带 always 标记，供聊天流更新本会话放行集合。
         """
         redis = get_redis()
         resolution: dict[str, Any] = {"action": action}
@@ -167,6 +278,8 @@ class StudioApprovalService:
             resolution["modified_args"] = modified_args
         if reason:
             resolution["reason"] = reason
+        if always:
+            resolution["always"] = True
         raw = await cast(
             Awaitable[str | bytes | None],
             redis.eval(

@@ -10,12 +10,12 @@
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, provide, nextTick, type Component } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { NButton, NCheckbox, NIcon, NInput, NSelect, NSwitch, NTag, NTooltip, NModal, NSpin, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NIcon, NInput, NSelect, NSwitch, NTag, NTooltip, NModal, NSpin, useDialog, useMessage } from 'naive-ui'
 import {
   ArrowBackOutline, RefreshOutline, FileTrayStackedOutline, ShareSocialOutline,
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
   AnalyticsOutline, ChatbubbleEllipsesOutline, CodeSlashOutline, DocumentTextOutline,
-  FlaskOutline, GridOutline, PowerOutline, TimeOutline,
+  FlaskOutline, GridOutline, PowerOutline, TimeOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import AskUserModal from '@/components/ai-chat/AskUserModal.vue'
@@ -51,6 +51,7 @@ const router = useRouter()
 const store = useAgentHubStore()
 const authStore = useAuthStore()
 const message = useMessage()
+const dialog = useDialog()
 
 const sessionId = computed(() => (route.params.sessionId as string) || '')
 
@@ -249,6 +250,44 @@ async function refreshStudioSessions() {
     studioSessions.value = await studioApi.listSessions()
   } catch {
     studioSessions.value = []
+  }
+}
+
+// ---------- 会话删除 ----------
+function confirmDeleteSession(s: StudioSessionDTO) {
+  if (s.session_id === sessionId.value && store.isStreaming) {
+    message.warning('会话正在执行，请等待完成后再删除')
+    return
+  }
+  dialog.warning({
+    title: '删除会话',
+    content: `确定删除“${s.title}”吗？删除后无法恢复。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: () => deleteStudioSession(s.session_id),
+  })
+}
+
+async function deleteStudioSession(id: string) {
+  try {
+    await studioApi.deleteSession(id)
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    message.error(status === 409 ? '会话正在执行任务，请稍后再试' : '删除会话失败，请稍后重试')
+    return
+  }
+  studioSessions.value = studioSessions.value.filter((s) => s.session_id !== id)
+  // 同步移除 agentHub 编排缓存，避免已删会话残留在历史抽屉里
+  const storeIdx = store.sessions.findIndex((s) => s.id === id)
+  if (storeIdx >= 0) store.sessions.splice(storeIdx, 1)
+  message.success('会话已删除')
+  if (sessionId.value === id) {
+    // 删的是当前会话：跳到列表下一个，没有则回工作台空态
+    if (studioSessions.value.length) {
+      router.replace({ name: 'studio', params: { sessionId: studioSessions.value[0].session_id } })
+    } else {
+      router.replace({ name: 'studio' })
+    }
   }
 }
 
@@ -1068,6 +1107,16 @@ function formatSessionTime(iso: string): string {
                 :class="`is-${inferStudioTaskStatus(s, sessionId, store.isStreaming)}`"
                 :title="inferStudioTaskStatus(s, sessionId, store.isStreaming)"
               />
+              <n-button
+                text
+                size="tiny"
+                class="session-delete-btn"
+                title="删除会话"
+                :aria-label="`删除会话：${s.title}`"
+                @click.stop="confirmDeleteSession(s)"
+              >
+                <n-icon><TrashOutline /></n-icon>
+              </n-button>
             </div>
             <div v-if="!studioSessions.length" class="block-empty">暂无工作台会话</div>
           </div>
@@ -1462,10 +1511,28 @@ function formatSessionTime(iso: string): string {
   padding: 0 8px 8px;
 }
 .session-item {
+  position: relative;
   padding: 7px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease;
+}
+.session-delete-btn {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  z-index: 1;
+  padding: 2px;
+  color: var(--text-tertiary, var(--chat-text-muted));
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.session-item:hover .session-delete-btn,
+.session-delete-btn:focus-visible {
+  opacity: 1;
+}
+.session-delete-btn:hover {
+  color: var(--error-color, #d03050);
 }
 .task-card { display: grid; grid-template-columns: 30px minmax(0, 1fr) 10px; align-items: center; gap: 8px; min-height: 52px; border: 1px solid transparent; border-radius: 12px; }
 .task-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; color: var(--studio-primary); background: var(--surface-highlight, var(--chat-surface-hover)); }

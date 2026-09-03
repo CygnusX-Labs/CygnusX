@@ -315,13 +315,21 @@ const isError = computed(() =>
   || (props.message.content?.startsWith('生成失败') ?? false),
 )
 
+// 错误原因文本：优先取独立的 error 字段；兼容历史数据（错误信息曾直接写入 content）
+const errorText = computed(() => {
+  if (props.message.error) return props.message.error
+  const content = props.message.content || ''
+  return content.startsWith('生成失败') ? content : ''
+})
+
 // 错误是否属于用户无法自行处理的平台侧问题（密钥/配置/授权），用于提示联系管理员
+// 只匹配错误原因本身，避免正文叙述中的「权限/配置」等字眼造成误报
 const isAdminConfigError = computed(() =>
-  /API Key|密钥|过期|授权|权限|配置|403|permission|unauthor/i.test(props.message.content || ''),
+  /API Key|密钥|过期|授权|权限|配置|403|permission|unauthor/i.test(errorText.value),
 )
 
 const isAuthExpiredError = computed(() =>
-  /401|令牌无效|已过期|请重新登录|登录态失效|refresh/i.test(props.message.content || ''),
+  /401|令牌无效|已过期|请重新登录|登录态失效|refresh/i.test(errorText.value),
 )
 
 const hasOutputTokens = computed(() => (props.message.tokens?.output ?? 0) > 0)
@@ -979,7 +987,7 @@ function handleEdit() {
       <div v-if="isError" class="ai-empty-state error">
         <div class="empty-icon">💫</div>
         <div class="empty-title">星尘信号受到了干扰</div>
-        <div class="empty-desc">{{ message.content || '生成失败，请稍后重试或切换模型' }}</div>
+        <div class="empty-desc">{{ errorText || '生成失败，请稍后重试或切换模型' }}</div>
         <div class="error-admin-hint">
           {{ isAuthExpiredError
             ? '当前登录态已失效，请先重新登录后再重试。'
@@ -1979,6 +1987,11 @@ function handleEdit() {
   border-style: solid;
   border-color: rgba(208, 48, 80, 0.25);
   background: linear-gradient(180deg, #fff8f9 0%, #ffffff 100%);
+}
+/* 深色模式：错误卡改用危险色浅底 + 卡片底色，避免白底突兀 */
+:root[data-theme="dark"] .ai-empty-state.error {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: linear-gradient(180deg, var(--arco-danger-light, rgba(239, 68, 68, 0.15)) 0%, var(--chat-ai-card, #111111) 100%);
 }
 .empty-icon {
   font-size: 36px;

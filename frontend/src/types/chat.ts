@@ -67,5 +67,7 @@ export interface DisplayMessage {
   content: string
   reasoning: string
   status: 'complete' | 'streaming' | 'error'
+  /** 错误原因；出错时 content 保留已累计正文 */
+  error?: string
   created_at: string
 }

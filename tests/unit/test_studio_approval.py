@@ -228,6 +228,10 @@ def test_approval_required_tools_cover_write_and_execute() -> None:
         "workspace_write",
         "workspace_edit",
         "artifact_register",
+        # 编排代码可多次回调写/执行类工具，supervised 下整段审批一次
+        "tool_orchestrate",
+        # 普通聊天的代码执行与 Studio sandbox_execute 同险，同在硬编码受控集合
+        "chat_sandbox_execute",
     } == APPROVAL_REQUIRED_TOOLS
     # 只读工具不在受控集合内
     assert "workspace_read" not in APPROVAL_REQUIRED_TOOLS

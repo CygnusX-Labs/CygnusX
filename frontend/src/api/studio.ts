@@ -274,6 +274,11 @@ export const studioApi = {
     return res.data
   },
 
+  /** 删除 Studio 会话（沙盒忙碌时后端返回 409；工作区文件由保留期机制清理） */
+  async deleteSession(sessionId: string): Promise<void> {
+    await apiClient.delete(`/studio/sessions/${sessionId}`)
+  },
+
   async listCheckpoints(sessionId: string): Promise<StudioCheckpoint[]> {
     const res = await apiClient.get<{ checkpoints: StudioCheckpoint[] }>(
       `/studio/sessions/${sessionId}/checkpoints`,
@@ -308,13 +313,15 @@ export const studioApi = {
     return res.data?.approvals || []
   },
 
-  /** 批准待审批的工具调用；带 modifiedArgs 即"编辑后批准" */
+  /** 批准待审批的工具调用；带 modifiedArgs 即"编辑后批准"；always 即"本会话不再询问" */
   async approveApproval(
     approvalId: string,
     modifiedArgs?: Record<string, unknown>,
+    always?: boolean,
   ): Promise<void> {
     await apiClient.post(`/studio/approvals/${approvalId}/approve`, {
       ...(modifiedArgs ? { modified_args: modifiedArgs } : {}),
+      ...(always ? { always: true } : {}),
     })
   },
 

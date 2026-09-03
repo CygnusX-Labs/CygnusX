@@ -185,9 +185,12 @@ from cygnusx.application.services.research_search_optimizer import ResearchSearc
 from cygnusx.application.services.search_provider_service import SearchProviderService
 from cygnusx.application.services.site_settings_service import SiteSettingsService
 from cygnusx.application.services.studio_approval_service import (
-    APPROVAL_REQUIRED_TOOLS,
     APPROVAL_TTL_SECONDS,
+    always_allow_set,
+    approval_required_tools,
     get_studio_approval_service,
+    needs_approval,
+    record_approval_audit,
 )
 from cygnusx.application.services.studio_checkpoints import create_checkpoint
 from cygnusx.application.services.studio_loop_guard import (
@@ -223,10 +226,10 @@ from cygnusx.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
-    STUDIO_TOOL_SCHEMAS,
     execute_studio_tool,
     normalize_plan_steps,
     stream_studio_tool,
+    studio_runtime_tool_schemas,
 )
 from cygnusx.application.services.unified_intent_router import (
     capability_notice,
@@ -320,6 +323,29 @@ def _active_agentteams_case_id(metadata: dict[str, Any]) -> str | None:
         if isinstance(case_id, str) and statuses.get(case_id) not in {"closed", "cancelled"}
     ]
     return active[-1] if active else None
+
+
+def _resolve_handoff_studio_image(features: dict[str, Any] | None) -> str | None:
+    """解析 handoff 目标 Agent 的 Studio 沙盒镜像。
+
+    features.studio.image 优先；未声明时按 runtime_profile 经运行时注册表解析；
+    两者都没有或解析失败时返回 None（沿用当前会话沙盒镜像）。
+    """
+    studio_features = dict((features or {}).get("studio") or {})
+    image = studio_features.get("image")
+    if image:
+        return str(image)
+    profile_id = str(studio_features.get("runtime_profile") or "").strip()
+    if not profile_id:
+        return None
+    try:
+        _, selected_profile = get_runtime_images().select(
+            set(), "studio", preferred_profile=profile_id
+        )
+        return selected_profile.image
+    except (KeyError, ValueError) as exc:
+        logger.warning("Handoff 目标 Agent 运行时解析失败，沿用当前沙盒镜像: {}", exc)
+        return None
 
 
 DEFAULT_SYSTEM_PROMPT = get_prompt("agents.general")
@@ -598,6 +624,34 @@ class ChatService(
             logger.warning("会话记忆定期沉淀任务投递失败，已跳过: {}", exc)
 
     # --- Agent 调度中枢：SSE 流式聊天（含 MCP 工具调用闭环） ---
+
+    async def _with_studio_preset_servers(self, servers: list[Any]) -> list[Any]:
+        """Studio 会话补充内置预设 MCP（conda-meta-mcp）。
+
+        Agent 绑定重建会刻意清掉 conda-meta-mcp 的"全局注入"，避免普通聊天
+        工具表膨胀；但 Studio 渐进式能力目录依赖它在会话级可见（新会话默认
+        预加载，装包前先查 conda 元数据），因此这里在 Studio 作用域内按
+        预设 ID（漂移时按名称）补回，幂等。
+        """
+        from cygnusx.infrastructure.database.repositories.mcp_repository import (
+            SqlAlchemyMCPServerRepository,
+        )
+        from cygnusx.infrastructure.mcp.conda_meta_preset import (
+            CONDA_META_MCP_SERVER_ID,
+            CONDA_META_MCP_SERVER_NAME,
+        )
+
+        repo = SqlAlchemyMCPServerRepository(self._db)
+        server = await repo.get_by_id(CONDA_META_MCP_SERVER_ID)
+        if server is None:
+            server = await repo.get_by_name(CONDA_META_MCP_SERVER_NAME)
+        if server is None or not server.is_enabled:
+            return servers
+        if any(
+            str(item.id) == str(server.id) or item.name == server.name for item in servers
+        ):
+            return servers
+        return [*servers, server]
 
     async def _route_to_agent(
         self,
@@ -2634,6 +2688,12 @@ class ChatService(
         # 会话级权限模式（§2）：supervised（默认，写/执行类工具需用户批准）| auto
         studio_permission_mode = "supervised"
         studio_plan_approved = False
+        # "本会话总是允许"集合（permissions.always_allow）：命中的受控工具跳过逐次审批；
+        # 流内 always 批准会即时补充进本集合，后续调用同流内即放行。
+        studio_always_allow: set[str] = set()
+        # 普通聊天路径的会话权限模式：仅当会话显式携带 permissions.mode 时生效，
+        # 缺失（普通聊天目前无权限设置入口）时保持现状放行。
+        chat_permission_mode: str | None = None
         studio_capability_state = CapabilityState()
         bound_skills = list(getattr(ctx, "skills", []) or [])
         bound_mcp_servers = list(ctx.mcp_servers or [])
@@ -2665,6 +2725,13 @@ class ChatService(
                 session.updated_at = datetime.now(UTC)
             studio_mode = session.mode == "studio"
             session_mcp_meta = dict(session.sandbox_meta or {})
+            studio_always_allow = always_allow_set(session_mcp_meta)
+            _session_permissions = session_mcp_meta.get("permissions")
+            chat_permission_mode = (
+                _session_permissions.get("mode")
+                if isinstance(_session_permissions, dict)
+                else None
+            )
             active_case_id = _active_agentteams_case_id(session_mcp_meta)
             if active_case_id:
                 session_mcp_meta["agentteams_case_id"] = active_case_id
@@ -2742,6 +2809,7 @@ class ChatService(
                 studio_permission_mode = (sandbox_meta.get("permissions") or {}).get(
                     "mode", "supervised"
                 )
+                bound_mcp_servers = await self._with_studio_preset_servers(bound_mcp_servers)
                 studio_capability_state = normalize_capability_state(
                     sandbox_meta.get("capabilities"), bound_skills, bound_mcp_servers
                 )
@@ -2791,6 +2859,13 @@ class ChatService(
                 project_id=project_id,
             )
             current_session_id = dto.session_id
+            if studio_mode:
+                # 新会话同样按默认策略预加载内置预设（conda-meta-mcp），
+                # 否则首轮对话的能力目录与默认加载集合都缺它。
+                bound_mcp_servers = await self._with_studio_preset_servers(bound_mcp_servers)
+                studio_capability_state = normalize_capability_state(
+                    None, bound_skills, bound_mcp_servers
+                )
 
         # 发布会话 ID 到上下文（覆盖 Agent + Studio 工作台）：本次流式任务内所有
         # AI/MCP/技能日志都会带上 session_id；同时写入 agent.run span 便于按会话查 trace。
@@ -3236,17 +3311,20 @@ class ChatService(
         # 仅限 Studio：普通聊天的轻量沙盒没有工作区挂载，软链路径在聊天沙盒内不可读；
         # 普通聊天的附件由 chat_sandbox_execute 执行前注入容器 /workspace/input/。
         studio_sandbox_paths: dict[str, str] = {}
-        if studio_mode and any(
-            str(att.get("file_id") or "").startswith(("file://", "upload://", "directory://"))
-            for att in attachment_dicts
-        ):
+        # file_id 可能是裸 hex（前端聊天上传不带 scheme），不能按 startswith 判断，
+        # 否则聊天上传永远进不了工作区软链；_link_session_files_to_workspace 内部会统一规范化。
+        # Studio 下每轮无条件执行：函数内部会收集本会话历史消息里的附件引用（幂等软链），
+        # 若只在本轮带附件时才挂载，ask_user 澄清等后续轮次会把已上传文件"弄丢"，
+        # 模型只能看到 file_id 引用而无法在沙盒按路径读取。
+        if studio_mode:
             studio_sandbox_paths = await self._link_session_files_to_workspace(
                 current_session_id, user_id, attachment_dicts
             )
 
         if attachments:
+            # 普通聊天传 None，附件提示据此区分 Studio 工作区挂载与轻量沙盒注入两种说法
             llm_messages = await self._build_multimodal_messages(
-                llm_messages, attachments, studio_sandbox_paths
+                llm_messages, attachments, studio_sandbox_paths if studio_mode else None
             )
 
         # 4.1 上下文继承：把本会话历史消息中上传过的文件（file_id 引用）注入本轮，
@@ -3259,6 +3337,7 @@ class ChatService(
             exclude_file_ids=current_file_ids,
             user_id=user_id,
             studio_sandbox_paths=studio_sandbox_paths or None,
+            studio_mode=studio_mode,
         )
         if history_file_ctx:
             llm_messages = self._append_context_to_last_user_message(llm_messages, history_file_ctx)
@@ -3556,8 +3635,22 @@ class ChatService(
             return runtime_tools, f"{prompt}\n\n{MAS_PLAN_PREVIEW_PROMPT_SUFFIX}".strip()
 
         def _studio_runtime(state: CapabilityState) -> tuple[list[dict[str, Any]], str, list[Any]]:
-            runtime_tools = list(base_tools)
-            runtime_tools.extend(STUDIO_TOOL_SCHEMAS)
+            # base_tools 可能已含 knowledge_search 等与 Studio 能力表同名的工具，
+            # 先按名字剔除再拼接，避免发给模型的 tools 重名（DeepSeek 会直接拒请求）。
+            # 按 agent features 条件挂载的工具（如 ptc_enabled → tool_orchestrate）
+            # 由 studio_runtime_tool_schemas 统一给出，保证剔除集与下发集一致。
+            studio_tool_schemas = studio_runtime_tool_schemas(ctx.features)
+            studio_names = {
+                str(item.get("function", {}).get("name") or "")
+                for item in (*studio_tool_schemas, *CAPABILITY_TOOL_SCHEMAS)
+                if isinstance(item, dict)
+            }
+            runtime_tools = [
+                tool
+                for tool in base_tools
+                if str(tool.get("function", {}).get("name") or "") not in studio_names
+            ]
+            runtime_tools.extend(studio_tool_schemas)
             runtime_tools.extend(CAPABILITY_TOOL_SCHEMAS)
             reserved_names = {item.get("function", {}).get("name", "") for item in runtime_tools}
             safe_servers = []
@@ -3636,6 +3729,9 @@ class ChatService(
             return runtime_tools, runtime_prompt, safe_servers
 
         if studio_mode:
+            # 路由/handoff 可能重置 bound_mcp_servers，进入工作台运行时前
+            # 最后兜底补一次 Studio 预设（幂等），保证能力目录与加载校验一致。
+            bound_mcp_servers = await self._with_studio_preset_servers(bound_mcp_servers)
             tools, system_prompt, active_mcp_servers = _studio_runtime(studio_capability_state)
         tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
         if isinstance(star_command, dict):
@@ -3667,7 +3763,19 @@ class ChatService(
             target_servers = (
                 [] if effective_mcp_mode == "off" else list(target_ctx.mcp_servers or [])
             )
-            target_tools = list(target_ctx.tools or []) + list(base_tools)
+            # 目标 Agent 的 ctx.tools 与 base_tools 可能同名（如 web_search），按名字合并去重，
+            # 避免转交后发给模型的 tools 重名被拒（Tool names must be unique）。
+            target_tools = list(target_ctx.tools or [])
+            target_existing_names = {
+                str(t.get("function", {}).get("name") or "")
+                for t in target_tools
+                if isinstance(t, dict)
+            }
+            target_tools.extend(
+                tool
+                for tool in base_tools
+                if str(tool.get("function", {}).get("name") or "") not in target_existing_names
+            )
             # 与主路径一致：知识库检索与轻量沙盒在普通聊天兜底挂载，
             # 避免转交后的目标 Agent 反而失去检索/执行能力。
             if not studio_mode and supports_function_tools:
@@ -3743,7 +3851,7 @@ class ChatService(
                 logger.error("Handoff 目标 Agent 长期记忆召回失败，已跳过: %s", exc)
             # 会话历史文件清单注入目标 Agent，避免转交后丢失上传文件的 file_id 引用。
             handoff_file_ctx = await self._collect_session_file_context(
-                current_session_id, user_id=user_id
+                current_session_id, user_id=user_id, studio_mode=studio_mode
             )
             if handoff_file_ctx:
                 target_prompt = f"{target_prompt}\n\n{handoff_file_ctx}".strip()
@@ -4116,7 +4224,7 @@ class ChatService(
                     elif chunk.type == "error":
                         await self.update_message_content(
                             ai_message.message_id,
-                            full_content or f"生成失败: {chunk.content}",
+                            full_content,
                             "error",
                             {"error": chunk.content},
                         )
@@ -4214,7 +4322,9 @@ class ChatService(
                     is_mas_plan_tool = (
                         mas_plan_tool_enabled and tool_name == MAS_PLAN_PREVIEW_TOOL_NAME
                     )
-                    is_handoff_tool = (not studio_mode) and tool_name == HANDOFF_TOOL_NAME
+                    # Studio 同样支持转交：目标 Agent 的上下文、沙盒镜像与能力状态
+                    # 在下方 directive 消费分支统一切换
+                    is_handoff_tool = tool_name == HANDOFF_TOOL_NAME
                     is_subagent_tool = tool_name == PARALLEL_SUBAGENTS_TOOL_NAME
                     is_agentteams_case_tool = tool_name == "create_agentteams_case"
                     # Skills 三层渐进式披露内部工具（非 Studio；Studio 走 capability_load 机制）
@@ -4624,6 +4734,19 @@ class ChatService(
                                     },
                                 )
                                 plan_approved = action == "approved"
+                                if action == "timeout":
+                                    # 超时无 REST 决议可审计，由聊天流补记（best-effort）
+                                    await record_approval_audit(
+                                        user_id=str(user_id),
+                                        approval_id=approval["approval_id"],
+                                        session_id=str(current_session_id),
+                                        tool_name="update_plan",
+                                        action="timeout",
+                                        resolver="timeout",
+                                        arguments={"steps": steps},
+                                        approval_kind="plan",
+                                        method="EVENT",
+                                    )
                                 if not plan_approved:
                                     plan_rejection = str(
                                         resolution.get("reason")
@@ -4678,7 +4801,7 @@ class ChatService(
                         approval_passed = True
                         if (
                             studio_permission_mode == "plan"
-                            and tool_name in APPROVAL_REQUIRED_TOOLS
+                            and tool_name in approval_required_tools()
                             and not studio_plan_approved
                         ):
                             approval_passed = False
@@ -4696,9 +4819,117 @@ class ChatService(
                                     },
                                 },
                             }
-                        if (
-                            studio_permission_mode == "supervised"
-                            and tool_name in APPROVAL_REQUIRED_TOOLS
+                        # always_allow 命中的工具直接放行（"本会话不再询问"）
+                        if needs_approval(studio_permission_mode, tool_name, studio_always_allow):
+                            approval_service = get_studio_approval_service()
+                            approval = await approval_service.create(
+                                user_id=user_id,
+                                session_id=current_session_id,
+                                tool_call_id=tc.get("id", ""),
+                                tool_name=tool_name,
+                                arguments=args,
+                                risk_hint=_studio_risk_hint(tool_name, args),
+                            )
+                            yield ChatChunk(
+                                type="approval_request",
+                                metadata={
+                                    "approval_id": approval["approval_id"],
+                                    "tool_call_id": tc.get("id", ""),
+                                    "tool_name": tool_name,
+                                    "arguments": args,
+                                    "risk_hint": approval["risk_hint"],
+                                    "timeout_seconds": APPROVAL_TTL_SECONDS,
+                                },
+                            )
+                            resolution_task = asyncio.create_task(
+                                approval_service.wait_resolution(approval["approval_id"])
+                            )
+                            try:
+                                while not resolution_task.done():
+                                    await asyncio.wait({resolution_task}, timeout=15)
+                                    if not resolution_task.done():
+                                        yield ChatChunk(type="heartbeat")
+                                resolution = resolution_task.result()
+                            finally:
+                                if not resolution_task.done():
+                                    resolution_task.cancel()
+                            action = str(resolution.get("action") or "timeout")
+                            yield ChatChunk(
+                                type="approval_resolved",
+                                metadata={
+                                    "approval_id": approval["approval_id"],
+                                    "tool_call_id": tc.get("id", ""),
+                                    "action": action,
+                                },
+                            )
+                            if action == "edited" and isinstance(
+                                resolution.get("modified_args"), dict
+                            ):
+                                args = resolution["modified_args"]
+                                action = "approved"
+                            if action == "approved" and resolution.get("always"):
+                                # 本会话后续同工具调用直接放行（REST 端点已持久化到会话）
+                                studio_always_allow.add(tool_name)
+                            if action == "timeout":
+                                # 超时无 REST 决议可审计，由聊天流补记（best-effort）
+                                await record_approval_audit(
+                                    user_id=str(user_id),
+                                    approval_id=approval["approval_id"],
+                                    session_id=str(current_session_id),
+                                    tool_name=tool_name,
+                                    action="timeout",
+                                    resolver="timeout",
+                                    arguments=args,
+                                    method="EVENT",
+                                )
+                            if action != "approved":
+                                approval_passed = False
+                                reason = resolution.get("reason") or (
+                                    "用户未响应（超时）"
+                                    if action == "timeout"
+                                    else "用户拒绝了该操作"
+                                )
+                                reject_payload = {"rejected": True, "error": reason}
+                                result = {
+                                    "success": False,
+                                    "rejected": True,
+                                    "result": {
+                                        "llm_payload": reject_payload,
+                                        "ui_payload": dict(reject_payload),
+                                    },
+                                }
+                        # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
+                        if approval_passed:
+                            should_checkpoint = False
+                            round_checkpoint_requested = round_checkpoint_requested or tool_name in {
+                                "workspace_write",
+                                "workspace_edit",
+                            } or (
+                                tool_name == "sandbox_execute"
+                                and studio_permission_mode in {"auto", "plan"}
+                            )
+                            result = {}
+                            async for item in stream_studio_tool(
+                                tool_name,
+                                args,
+                                current_session_id,
+                                image=studio_image,
+                                tool_call_id=tc.get("id", ""),
+                                user_id=user_id,
+                                db=self._db,
+                            ):
+                                if isinstance(item, ChatChunk):
+                                    yield item
+                                else:
+                                    result = item
+                    elif is_chat_sandbox_tool:
+                        # 普通聊天的代码执行与 Studio sandbox_execute 同险：会话显式
+                        # 声明 supervised 权限模式时走同一审批闸（复用审批服务与
+                        # approval_request/approval_resolved SSE 事件流）；会话未声明
+                        # 权限模式（普通聊天现状）时保持放行。
+                        chat_approval_passed = True
+                        if needs_approval(
+                            chat_permission_mode, tool_name, studio_always_allow
                         ):
                             approval_service = get_studio_approval_service()
                             approval = await approval_service.create(
@@ -4746,8 +4977,21 @@ class ChatService(
                             ):
                                 args = resolution["modified_args"]
                                 action = "approved"
+                            if action == "approved" and resolution.get("always"):
+                                studio_always_allow.add(tool_name)
+                            if action == "timeout":
+                                await record_approval_audit(
+                                    user_id=str(user_id),
+                                    approval_id=approval["approval_id"],
+                                    session_id=str(current_session_id),
+                                    tool_name=tool_name,
+                                    action="timeout",
+                                    resolver="timeout",
+                                    arguments=args,
+                                    method="EVENT",
+                                )
                             if action != "approved":
-                                approval_passed = False
+                                chat_approval_passed = False
                                 reason = resolution.get("reason") or (
                                     "用户未响应（超时）"
                                     if action == "timeout"
@@ -4762,42 +5006,18 @@ class ChatService(
                                         "ui_payload": dict(reject_payload),
                                     },
                                 }
-                        # 沙盒执行：sandbox_execute 的 stdout/stderr 以 tool_output 事件边跑边推
-                        if approval_passed:
-                            should_checkpoint = False
-                            round_checkpoint_requested = round_checkpoint_requested or tool_name in {
-                                "workspace_write",
-                                "workspace_edit",
-                            } or (
-                                tool_name == "sandbox_execute"
-                                and studio_permission_mode in {"auto", "plan"}
-                            )
+                        if chat_approval_passed:
                             result = {}
-                            async for item in stream_studio_tool(
-                                tool_name,
+                            async for item in stream_chat_sandbox_tool(
                                 args,
-                                current_session_id,
-                                image=studio_image,
+                                user_id=str(user_id),
                                 tool_call_id=tc.get("id", ""),
-                                user_id=user_id,
-                                db=self._db,
+                                session_id=str(current_session_id),
                             ):
                                 if isinstance(item, ChatChunk):
                                     yield item
                                 else:
                                     result = item
-                    elif is_chat_sandbox_tool:
-                        result = {}
-                        async for item in stream_chat_sandbox_tool(
-                            args,
-                            user_id=str(user_id),
-                            tool_call_id=tc.get("id", ""),
-                            session_id=str(current_session_id),
-                        ):
-                            if isinstance(item, ChatChunk):
-                                yield item
-                            else:
-                                result = item
                     elif server is None:
                         if tool_name in {"goal_complete", "goal_blocked"}:
                             from cygnusx.application.services.goal_terminal_tools import (
@@ -4878,17 +5098,34 @@ class ChatService(
 
                     if loop_guard is not None:
                         error_type = "unknown_error"
-                        raw_error = (
-                            llm_result.get("error_type")
-                            or llm_result.get("error")
-                            or (
-                                llm_result.get("result", {}).get("error")
-                                if isinstance(llm_result.get("result"), dict)
+                        # 优先读信封里的机器可读 code；缺失时把外部 MCP 的
+                        # failure_kind 映射到同一套码；都没有才回退截取
+                        # error 字符串（兼容旧信封）。
+                        from cygnusx.tools.errors import code_from_failure_kind
+
+                        code = llm_result.get("code")
+                        if not code:
+                            failure_kind = llm_result.get("failure_kind") or (
+                                result.get("failure_kind")
+                                if isinstance(result, dict)
                                 else None
                             )
-                        )
-                        if raw_error:
-                            error_type = str(raw_error)[:160]
+                            if failure_kind:
+                                code = code_from_failure_kind(str(failure_kind))
+                        if code:
+                            error_type = str(code)
+                        else:
+                            raw_error = (
+                                llm_result.get("error_type")
+                                or llm_result.get("error")
+                                or (
+                                    llm_result.get("result", {}).get("error")
+                                    if isinstance(llm_result.get("result"), dict)
+                                    else None
+                                )
+                            )
+                            if raw_error:
+                                error_type = str(raw_error)[:160]
                         result_trigger = loop_guard.record_result(
                             tool_name,
                             bool(result.get("success")),
@@ -4996,6 +5233,13 @@ class ChatService(
                             target_tools,
                             target_prompt,
                         ) = await _prepare_handoff_target(directive)
+                        # Studio：解析目标 Agent 的沙盒镜像，镜像变化时
+                        # manager.ensure_running 会在下一次工具调用自动重建沙盒。
+                        target_image = (
+                            _resolve_handoff_studio_image(target_ctx.features)
+                            if studio_mode
+                            else None
+                        )
                         await AgentHandoffService.record_handoff_anchor(
                             user_id=user_id,
                             session_id=current_session_id,
@@ -5006,6 +5250,14 @@ class ChatService(
                             handoff_session.agent_id = str(directive["target_agent_id"])
                             handoff_session.model_id = target_model.id
                             handoff_session.updated_at = datetime.now(UTC)
+                            if studio_mode:
+                                handoff_meta = dict(handoff_session.sandbox_meta or {})
+                                if target_image:
+                                    handoff_meta["image"] = target_image
+                                # 能力状态属于源 Agent，转交后重置，下一条消息按目标
+                                # Agent 绑定能力重新归一化（normalize_state 防跨 Agent 漂移）
+                                handoff_meta.pop("capabilities", None)
+                                handoff_session.sandbox_meta = handoff_meta
                         await self.update_message_content(
                             ai_message.message_id,
                             full_content,
@@ -5036,9 +5288,27 @@ class ChatService(
                         model_config = target_model
                         bound_skills = target_skills
                         bound_mcp_servers = target_servers
-                        active_mcp_servers = target_servers
-                        tools = target_tools
-                        system_prompt = target_prompt
+                        if studio_mode:
+                            # Studio：按目标 Agent 重建工作台运行时（工具表、能力目录、
+                            # 运行时软件清单），并切换沙盒镜像；能力状态重置为目标
+                            # Agent 的默认绑定，源 Agent 已加载的能力不越权带过去。
+                            if target_image:
+                                studio_image = target_image
+                            target_servers = await self._with_studio_preset_servers(
+                                target_servers
+                            )
+                            bound_mcp_servers = target_servers
+                            studio_capability_state = normalize_capability_state(
+                                None, target_skills, target_servers
+                            )
+                            tools, system_prompt, active_mcp_servers = _studio_runtime(
+                                studio_capability_state
+                            )
+                            tools, system_prompt = _attach_mas_plan_tool(tools, system_prompt)
+                        else:
+                            active_mcp_servers = target_servers
+                            tools = target_tools
+                            system_prompt = target_prompt
                         tool_context = ToolInvocationContext(
                             user_id=user_id,
                             agent_id=agent_id,
@@ -5193,7 +5463,7 @@ class ChatService(
         except Exception as e:  # noqa: BLE001
             await self.update_message_content(
                 ai_message.message_id,
-                full_content or f"生成失败: {e}",
+                full_content,
                 "error",
                 {"error": str(e)},
             )

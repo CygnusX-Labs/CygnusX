@@ -766,7 +766,8 @@ tools:
     category: environment
     invocation_mode: open_page
     route: /tools/terminal
-    requires_confirm: false
+    # 终端执行类：打开即获得沙盒 shell，需用户二次确认
+    requires_confirm: true
     annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: true}
     input_schema: {type: object, properties: {}}
     llm_result_fields: [route, message, success, error]

@@ -140,9 +140,14 @@ class UpdateStudioPermissionsRequest(BaseModel):
 
 
 class StudioApprovalApproveRequest(BaseModel):
-    """批准工具审批；modified_args 为用户编辑后的参数（编辑后批准）。"""
+    """批准工具审批；modified_args 为用户编辑后的参数（编辑后批准）。
+
+    always=True 表示"本会话不再询问"：批准后 (session, tool) 记入会话
+    permissions.always_allow，同会话同工具后续直接放行；切换权限模式时清空。
+    """
 
     modified_args: dict[str, Any] | None = Field(None, description="编辑后的工具参数")
+    always: bool = Field(False, description="本会话内对该工具不再逐次审批")
 
 
 class StudioApprovalRejectRequest(BaseModel):

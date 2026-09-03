@@ -292,3 +292,66 @@ def test_lineage_report_lines_render_versions_and_upstream() -> None:
     assert any("无平台登记" in line for line in empty)
     degraded = AgentTeamsService._lineage_report_lines({"versions": []}, "血缘清单不可用：DBError")
     assert degraded == ["## 血缘清单", "血缘清单不可用：DBError"]
+
+
+def test_verify_case_checksums_compares_latest_versions() -> None:
+    asyncio.run(_test_verify_case_checksums())
+
+
+async def _test_verify_case_checksums() -> None:
+    def row(artifact_id: str, version_no: int, checksum: str) -> CaseArtifactVersionModel:
+        return CaseArtifactVersionModel(
+            case_id="case-1",
+            artifact_id=artifact_id,
+            version_no=version_no,
+            checksum_sha256=checksum,
+            size_bytes=1,
+            content_type="",
+            storage_uri=f"uri:{artifact_id}",
+            environment_snapshot={},
+        )
+
+    # DB 按 (artifact_id, version_no desc) 返回：每个产物最新版本在前
+    rows = [
+        row("exec-01/a.md", 2, hashlib.sha256(b"good").hexdigest()),
+        row("exec-01/a.md", 1, hashlib.sha256(b"old").hexdigest()),
+        row("exec-02/b.md", 1, hashlib.sha256(b"registered").hexdigest()),
+        row("exec-03/c.md", 1, hashlib.sha256(b"gone").hexdigest()),
+    ]
+    db = _db_with_results([_Result(scalars=rows)])
+    service = AgentTeamsArtifactLineageService(db)
+    contents = {
+        "uri:exec-01/a.md": b"good",
+        "uri:exec-02/b.md": b"tampered",
+        "uri:exec-03/c.md": None,
+    }
+
+    async def resolver(uri: str):
+        return contents[uri]
+
+    results = await service.verify_case_checksums("case-1", resolver)
+    by_artifact = {item["artifact_id"]: item for item in results}
+
+    assert set(by_artifact) == {"exec-01/a.md", "exec-02/b.md", "exec-03/c.md"}
+    # 只比对每个产物的最新版本（v2），且与登记值一致
+    assert by_artifact["exec-01/a.md"]["version_no"] == 2
+    assert by_artifact["exec-01/a.md"]["status"] == "verified"
+    # 内容被篡改 → mismatch（不静默吞）
+    assert by_artifact["exec-02/b.md"]["status"] == "mismatch"
+    assert "篡改" in by_artifact["exec-02/b.md"]["reason"]
+    # 内容无法解析 → unverified 而非静默跳过
+    assert by_artifact["exec-03/c.md"]["status"] == "unverified"
+
+
+def test_checksum_report_line_summarizes_statuses() -> None:
+    items = [
+        {"artifact_id": "a", "status": "verified"},
+        {"artifact_id": "b", "status": "mismatch"},
+        {"artifact_id": "c", "status": "unverified"},
+    ]
+    line = AgentTeamsService._checksum_report_line(items)
+    assert "1 一致" in line
+    assert "1 不一致" in line
+    assert "1 未比对" in line
+    assert "`b`" in line
+    assert "未做 checksum 比对" in AgentTeamsService._checksum_report_line([])

@@ -65,6 +65,7 @@ features:
   engine: langgraph
   managed_prompt: true
   subagents_spawnable: true  # 可作为并行子 Agent 被 fan-out 派生
+  ptc_enabled: true  # Studio 下挂载 tool_orchestrate（代码编排式批量工具调用）
   default_role: 任务 intake、研究目标拆解、总体研究计划与数据契约
   capability_scope: [需求澄清, 研究设计, 数据契约, 跨专家协调, 综合方案]
   capability_tags: [intake, research-design, data-contract, quality-control, synthesis]

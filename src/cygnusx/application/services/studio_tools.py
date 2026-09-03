@@ -35,6 +35,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from cygnusx.application.services.ptc_orchestrator import (
+    PTC_DEFAULT_TIMEOUT_SECONDS,
+    run_orchestration,
+)
 from cygnusx.application.services.studio_context_service import (
     import_datahub_file,
     link_report_files,
@@ -128,6 +132,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "document_convert",
         "onlyoffice_status",
         "onlyoffice_convert",
+        "tool_orchestrate",
         "ask_user",
     }
 )
@@ -401,6 +406,55 @@ STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     ASK_USER_TOOL_SCHEMA,
 ]
+
+# tool_orchestrate（Programmatic Tool Calling）：模型提交一段 Python 编排代码，
+# 在宿主受限子进程中运行并可多次回调白名单内工具（见 ptc_orchestrator.py）。
+# 中间子调用结果不回灌模型上下文，只回传代码 print 的最终汇总——schema 不进
+# STUDIO_TOOL_SCHEMAS，由 chat_service 按 agent features.ptc_enabled 条件挂载。
+TOOL_ORCHESTRATE_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "tool_orchestrate",
+        "description": (
+            "用一段 Python 代码编排调用多个平台工具（批量/循环/条件分支场景，如遍历多个文件"
+            "逐个处理再汇总）。代码中可用两个注入函数：call_tool(name, **args) 调用单个工具"
+            "（成功返回结果 dict，失败抛 RuntimeError）；parallel_calls([{'name':..., 'args': {...}}])"
+            " 并发调用多个工具（按顺序返回结果列表，单项失败位置为 {'error': ...}）。"
+            "可用工具：workspace_read / workspace_list / workspace_write / workspace_edit / "
+            "sandbox_execute / knowledge_search / pipeline_query / document_inspect / "
+            "document_create / document_edit / document_convert / datahub_import / "
+            "platform_result_import / artifact_register。"
+            "重要契约：子调用的中间结果不会回传给你，代码必须用 print 输出最终汇总，"
+            "你只能看到 print 的内容。单次最多 50 次子调用，总超时默认 600 秒。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python 编排代码，必须用 print 输出最终汇总",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "总超时秒数（默认 600，上限 1800）",
+                },
+            },
+            "required": ["code"],
+        },
+    },
+}
+
+
+def studio_runtime_tool_schemas(features: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Studio 工具 schema 全集 + 按 agent features 条件挂载的工具。
+
+    目前仅 ptc_enabled → tool_orchestrate；chat_service._studio_runtime 统一经此
+    组装，保证工具名单与下发给模型的 schema 一致。
+    """
+    schemas = list(STUDIO_TOOL_SCHEMAS)
+    if (features or {}).get("ptc_enabled"):
+        schemas.append(TOOL_ORCHESTRATE_SCHEMA)
+    return schemas
 
 
 def _studio_function_schema(
@@ -759,6 +813,39 @@ async def _sandbox_execute(
 
     # 非零退出不算工具失败：结果照常回灌，由模型解读报错
     return _ok_result(llm_payload, ui_payload)
+
+
+async def _tool_orchestrate(
+    args: dict[str, Any],
+    session_id: str,
+    image: str | None,
+    on_output: OutputCallback | None,
+    user_id: str | None,
+    db: AsyncSession | None,
+) -> dict[str, Any]:
+    """tool_orchestrate：模型提交的编排代码交给 ptc_orchestrator 在受限子进程运行，
+    子调用进度经 on_output 以 stdout 流桥接给前端（同 sandbox_execute 的流式通道）。"""
+    code = str(args.get("code") or "")
+    if not code.strip():
+        return _error_result("code 不能为空")
+    timeout_raw = args.get("timeout")
+    timeout_sec = (
+        int(timeout_raw) if isinstance(timeout_raw, int | float) else PTC_DEFAULT_TIMEOUT_SECONDS
+    )
+
+    async def _progress(text: str) -> None:
+        if on_output is not None:
+            await on_output("stdout", f"{text}\n")
+
+    return await run_orchestration(
+        code,
+        session_id,
+        user_id=user_id,
+        db=db,
+        image=image,
+        timeout_sec=timeout_sec,
+        on_progress=_progress,
+    )
 
 
 async def _workspace_write(
@@ -1239,7 +1326,8 @@ async def execute_studio_tool(
     """执行 Studio 内置工具，返回 {"success": bool, "result": {"llm_payload", "ui_payload"}}。
 
     - 同一会话的所有工具共享该会话工作区（session_id 直达 sandbox manager）；
-    - on_output 仅对 sandbox_execute 有意义：stdout/stderr 增量实时回调；
+    - on_output 对 sandbox_execute / tool_orchestrate 有意义：前者回调 stdout/stderr
+      增量，后者回调每次子调用的进度行；
     - user_id / db 仅平台联动工具（datahub_import / platform_result_import /
       artifact_register）需要，由 chat_service 从会话上下文注入；缺省时这些工具
       返回友好错误而非抛异常；
@@ -1275,6 +1363,8 @@ async def execute_studio_tool(
                 image = upgraded_image
         if name == "sandbox_execute":
             return await _sandbox_execute(args, session_id, image, on_output, user_id)
+        if name == "tool_orchestrate":
+            return await _tool_orchestrate(args, session_id, image, on_output, user_id, db)
         if name == "workspace_write":
             return await _workspace_write(args, session_id, image, user_id)
         if name == "workspace_edit":
@@ -1337,9 +1427,10 @@ async def stream_studio_tool(
 ) -> AsyncIterator[ChatChunk | dict[str, Any]]:
     """执行 Studio 工具并流式产出事件。
 
-    产出序列：ChatChunk(type="tool_output")*（仅 sandbox_execute 有，
-    metadata={"tool", "tool_call_id", "stream": "stdout"|"stderr", "data"}），
-    最后一项为结果信封 dict（同 execute_studio_tool 返回值）。
+    产出序列：ChatChunk(type="tool_output")*（sandbox_execute 输出 stdout/stderr 增量，
+    tool_orchestrate 输出每次子调用的进度行；metadata={"tool", "tool_call_id",
+    "stream": "stdout"|"stderr", "data"}），最后一项为结果信封 dict
+    （同 execute_studio_tool 返回值）。
     """
     queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=_STREAM_QUEUE_MAX_CHUNKS)
 
@@ -1352,7 +1443,7 @@ async def stream_studio_tool(
             args,
             session_id,
             image=image,
-            on_output=_on_output if name == "sandbox_execute" else None,
+            on_output=_on_output if name in ("sandbox_execute", "tool_orchestrate") else None,
             user_id=user_id,
             db=db,
         )

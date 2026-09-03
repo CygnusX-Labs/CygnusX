@@ -57,6 +57,9 @@ _WORKSPACE_FILES_PROMPT_FALLBACK = """## 工作区文件工具
 
 你拥有当前会话用户工作区的只读文件工具：`list_workspace_files`、`search_workspace_files`、
 `find_session_uploads`（按会话找回上传文件），找到文件后将 `file_id` 交给 `workspace_read_file` 读取。
+作用域边界：这套工具访问的是平台用户工作区/文件中心（宿主侧存储），看不到 AI 工作台
+沙盒里的 /workspace；Studio 模式下查看沙盒工作区（input/、output/ 等）改用
+`workspace_list` / `workspace_read`，把文件中心数据引入沙盒用 `datahub_import`。
 数据缺失或任务背景不清晰时，必须先调用 `ask_user` 弹窗向用户澄清（options 给可点选选项，
 推荐项放第一个标注“（推荐）”），禁止自行假设开干；用户已给出关键信息时直接执行，不重复澄清。
 会话隔离：只允许使用本会话中用户上传或明确指定的文件；其它会话的文件禁止主动读取或

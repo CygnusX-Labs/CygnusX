@@ -20,6 +20,12 @@ class MCPExternalCallError(RuntimeError):
         self.detail = detail
 
 
+# 连续失败达到该阈值即视为 degraded 并打开熔断。
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
+# 熔断冷却默认值；生产上由 Settings.mcp_circuit_breaker_cooldown_seconds 覆盖。
+DEFAULT_CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60.0
+
+
 @dataclass(frozen=True)
 class ToolRetryPolicy:
     """外部工具的有限重试策略。"""
@@ -43,10 +49,14 @@ class ToolHealth:
     consecutive_failures: int = 0
     last_failure: float | None = None
     last_latency_ms: float | None = None
+    # 熔断冷却截止时刻（time.time() 口径）；None 表示未处于冷却。
+    circuit_open_until: float | None = None
+    # 半开试探占位：True 时其他并发调用继续短路，避免一窝蜂试探。
+    probe_in_flight: bool = False
 
     @property
     def status(self) -> str:
-        if self.consecutive_failures >= 3:
+        if self.consecutive_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
             return "degraded"
         if self.consecutive_failures:
             return "warning"
@@ -67,18 +77,44 @@ class ToolHealth:
 
 @dataclass
 class MCPHealthRegistry:
-    """进程内 MCP 健康监控器，按 server/tool 隔离故障。"""
+    """进程内 MCP 健康监控器，按 server/tool 隔离故障。
+
+    所有方法都是同步的、没有 await 点，check-and-set 在单事件循环内
+    天然原子，因此 asyncio 并发下无需额外加锁。
+    """
 
     _items: dict[str, ToolHealth] = field(default_factory=dict)
+    circuit_cooldown_seconds: float = DEFAULT_CIRCUIT_BREAKER_COOLDOWN_SECONDS
 
     def _get(self, key: str) -> ToolHealth:
         return self._items.setdefault(key, ToolHealth())
+
+    def try_acquire_call(self, key: str) -> str:
+        """熔断门控，返回 "closed" / "half_open" / "open"。
+
+        - closed：未熔断，正常调用；
+        - half_open：冷却窗口已过，获准一次试探调用（占位，阻止并发试探）；
+        - open：冷却中或已有试探在途，调用方应短路走兜底链。
+        """
+        item = self._get(key)
+        if item.consecutive_failures < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+            return "closed"
+        now = time.time()
+        if item.circuit_open_until is not None and now < item.circuit_open_until:
+            return "open"
+        if item.probe_in_flight:
+            return "open"
+        item.probe_in_flight = True
+        return "half_open"
 
     def record_success(self, key: str, latency_ms: float) -> None:
         item = self._get(key)
         item.success_count += 1
         item.consecutive_failures = 0
         item.last_latency_ms = round(latency_ms, 2)
+        # 成功即恢复 healthy：释放半开占位并关闭熔断。
+        item.probe_in_flight = False
+        item.circuit_open_until = None
 
     def record_failure(self, key: str, latency_ms: float) -> None:
         item = self._get(key)
@@ -86,6 +122,10 @@ class MCPHealthRegistry:
         item.consecutive_failures += 1
         item.last_failure = time.time()
         item.last_latency_ms = round(latency_ms, 2)
+        item.probe_in_flight = False
+        if item.consecutive_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+            # 达到 degraded 阈值（含半开试探失败），重新进入冷却窗口。
+            item.circuit_open_until = time.time() + self.circuit_cooldown_seconds
 
     def snapshot(self, key: str) -> dict[str, Any]:
         return self._get(key).snapshot()

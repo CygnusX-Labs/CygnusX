@@ -13,6 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 
 
+def _strip_pg_unsafe_text(value: Any) -> Any:
+    """递归剥离 PostgreSQL text/jsonb 无法存储的 NUL 字符（\\x00）。
+
+    模型输出或工具结果可能夹带 NUL（二进制片段、终端控制序列等），asyncpg 遇到
+    会抛 UntranslatableCharacterError 并回滚整个事务，导致整轮回复丢失；
+    落库前统一剥离，仅影响不可存储字符，不改变正常内容。
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "") if "\x00" in value else value
+    if isinstance(value, dict):
+        return {key: _strip_pg_unsafe_text(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_pg_unsafe_text(item) for item in value]
+    return value
+
+
 class SessionService:
     """集中处理会话与消息 CRUD，不承载 Runtime 编排。"""
 
@@ -96,10 +112,10 @@ class SessionService:
             message_id=str(uuid.uuid4()),
             session_id=session_id,
             role=role,
-            content=content,
+            content=_strip_pg_unsafe_text(content),
             content_type=content_type,
             status=status,
-            metadata_json=metadata or {},
+            metadata_json=_strip_pg_unsafe_text(metadata or {}),
         )
         self._db.add(message)
         result = await self._db.execute(
@@ -131,10 +147,12 @@ class SessionService:
         message = result.scalar_one_or_none()
         if message is None:
             return
-        message.content = content
+        message.content = _strip_pg_unsafe_text(content)
         message.status = status
         if metadata:
-            message.metadata_json = {**(message.metadata_json or {}), **metadata}
+            message.metadata_json = _strip_pg_unsafe_text(
+                {**(message.metadata_json or {}), **metadata}
+            )
         await self._db.flush()
 
     async def get_messages(self, session_id: str) -> list[ChatMessageModel]:

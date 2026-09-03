@@ -20,6 +20,7 @@ from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.core.exceptions import ValidationError
 from cygnusx.infrastructure.mcp.workspace_file_refs import resolve_workspace_file_refs
 from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
+from cygnusx.tools.errors import ToolErrorCode, code_from_exception, is_retryable
 from cygnusx.tools.schema_loader import ToolSchema, ToolsSchemaLoader, schema_loader
 
 _UPLOAD_REF_RE = re.compile(r"^upload://(.+)$")
@@ -54,8 +55,10 @@ class ToolBridgeService:
         """执行工具调用，返回统一格式。"""
         schema = self._loader.get_tool(tool_name)
         if schema is None:
-            return self._error(f"未知工具: {tool_name}")
-        logger.info("tool_invocation user_id=%s tool=%s mode=%s", user_id, tool_name, schema.invocation_mode)
+            return self._error(f"未知工具: {tool_name}", code=ToolErrorCode.VALIDATION_ERROR)
+        logger.info(
+            "tool_invocation user_id=%s tool=%s mode=%s", user_id, tool_name, schema.invocation_mode
+        )
 
         if tool_name == "cygnusx_toolbox_search":
             query = str(arguments.get("query") or "")
@@ -74,20 +77,22 @@ class ToolBridgeService:
                 return self._error("analysis_flow 工具需要 ToolInvocationContext")
             return await self._execute_analysis_flow(context, schema, arguments)
 
+        ignored_params: list[str] = []
         try:
-            args = self._validate_and_sanitize(schema, arguments)
+            args, ignored_params = self._validate_and_sanitize(schema, arguments)
             args = await self._resolve_upload_refs(user_id, args, context)
         except ValidationError as e:
-            return self._error(str(e))
+            return self._error(str(e), code=code_from_exception(e))
 
         # 二次确认占位：Phase 1 先返回提示，由前端/LLM 交互确认
         if schema.requires_confirm and not arguments.get("_confirmed"):
-            return {
+            envelope = {
                 "success": True,
                 "is_error": False,
                 "llm_payload": {
                     "needs_confirm": True,
                     "tool_name": tool_name,
+                    "code": ToolErrorCode.CONFIRMATION_REQUIRED,
                     "summary": "该操作会提交计算任务，请用户确认后再执行。",
                     "preview_args": self._safe_preview(args),
                 },
@@ -97,18 +102,27 @@ class ToolBridgeService:
                     "args": self._safe_preview(args),
                 },
             }
+            self._attach_ignored_params(envelope, ignored_params)
+            return envelope
 
         try:
             raw = await self._dispatch(user_id, schema, args, context)
         except Exception as e:  # noqa: BLE001
-            return self._error(str(e))
+            return self._error(str(e), code=code_from_exception(e))
 
-        return self._package(schema, raw)
+        envelope = self._package(schema, raw)
+        self._attach_ignored_params(envelope, ignored_params)
+        return envelope
 
     def _validate_and_sanitize(
         self, schema: ToolSchema, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """基础校验：必填、字符串长度/行数、枚举白名单。"""
+    ) -> tuple[dict[str, Any], list[str]]:
+        """基础校验：必填、类型强转、字符串长度/行数、枚举白名单。
+
+        返回 (sanitized, ignored_params)。类型不匹配的参数先尝试安全强转
+        （LLM 常传"字符串数字"），真正无法转换才报 VALIDATION_ERROR；
+        未声明参数仍不传入工具，但记入 ignored_params 供调用方提示。
+        """
         props = schema.input_schema.get("properties", {})
         required = set(schema.input_schema.get("required", []))
 
@@ -117,22 +131,34 @@ class ToolBridgeService:
                 raise ValidationError(f"缺少必填参数: {key}")
 
         sanitized: dict[str, Any] = {}
+        ignored: list[str] = []
         for key, value in arguments.items():
             if key not in props:
+                # 下划线开头是桥接层控制参数（如 _confirmed），不算未声明参数。
+                if not key.startswith("_"):
+                    ignored.append(key)
                 continue
-            prop = props[key]
-            expected_type = prop.get("type")
+            expected_type = props[key].get("type")
 
-            if expected_type == "string" and isinstance(value, str):
+            if expected_type == "string":
+                if not isinstance(value, str):
+                    if isinstance(value, (int, float, bool)):
+                        value = str(value)
+                    else:
+                        raise ValidationError(f"参数 {key} 类型错误: 期望 string")
                 if len(value) > self._MAX_STRING_LEN:
                     raise ValidationError(f"参数 {key} 超过最大长度 {self._MAX_STRING_LEN}")
                 if value.count("\n") > self._MAX_TEXT_LINES:
                     raise ValidationError(f"参数 {key} 超过最大行数 {self._MAX_TEXT_LINES}")
                 sanitized[key] = value
-            elif expected_type == "number" and isinstance(value, (int, float)) or expected_type == "integer" and isinstance(value, int) or expected_type == "boolean" and isinstance(value, bool) or expected_type == "array" and isinstance(value, list) or expected_type == "object" and isinstance(value, dict):
-                sanitized[key] = value
+            elif expected_type in ("number", "integer"):
+                sanitized[key] = self._coerce_number(key, value, expected_type)
+            elif expected_type == "boolean":
+                sanitized[key] = self._coerce_boolean(key, value)
+            elif expected_type in ("array", "object"):
+                sanitized[key] = self._coerce_json(key, value, expected_type)
             else:
-                # 尝试简单转换
+                # 未声明 type 的参数原样透传
                 sanitized[key] = value
 
         # 枚举校验
@@ -141,7 +167,63 @@ class ToolBridgeService:
             if enum_values is not None and value not in enum_values:
                 raise ValidationError(f"参数 {key} 必须是 {enum_values} 之一")
 
-        return sanitized
+        return sanitized, ignored
+
+    @staticmethod
+    def _coerce_number(key: str, value: Any, expected_type: str) -> int | float:
+        """宽容强转 number/integer；无法转换时报 ValidationError。"""
+        if isinstance(value, bool):
+            raise ValidationError(f"参数 {key} 类型错误: 期望 {expected_type}")
+        if isinstance(value, (int, float)):
+            if expected_type == "integer" and not isinstance(value, int):
+                if float(value).is_integer():
+                    return int(value)
+                raise ValidationError(f"参数 {key} 类型错误: 期望 integer")
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                number = float(text)
+            except ValueError:
+                raise ValidationError(
+                    f"参数 {key} 类型错误: 期望 {expected_type}，无法转换 {value!r}"
+                ) from None
+            if expected_type == "integer":
+                if not number.is_integer():
+                    raise ValidationError(f"参数 {key} 类型错误: 期望 integer")
+                return int(number)
+            return number
+        raise ValidationError(f"参数 {key} 类型错误: 期望 {expected_type}")
+
+    @staticmethod
+    def _coerce_boolean(key: str, value: Any) -> bool:
+        """宽容强转 boolean；无法转换时报 ValidationError。"""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ("true", "1", "yes"):
+                return True
+            if text in ("false", "0", "no"):
+                return False
+        raise ValidationError(f"参数 {key} 类型错误: 期望 boolean")
+
+    @staticmethod
+    def _coerce_json(key: str, value: Any, expected_type: str) -> list | dict:
+        """宽容强转 array/object（接受 JSON 字符串）；无法转换时报 ValidationError。"""
+        expected = list if expected_type == "array" else dict
+        if isinstance(value, expected):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except ValueError:
+                raise ValidationError(
+                    f"参数 {key} 类型错误: 期望 {expected_type}，无法解析 JSON 字符串"
+                ) from None
+            if isinstance(parsed, expected):
+                return parsed
+        raise ValidationError(f"参数 {key} 类型错误: 期望 {expected_type}")
 
     async def _resolve_upload_refs(
         self,
@@ -159,26 +241,31 @@ class ToolBridgeService:
                 file_id = match.group(1).strip()
                 content = await self._read_chat_upload(user_id, file_id)
                 if content is None:
-                    raise ValidationError(f"无法读取上传文件: {file_id}")
+                    raise ValidationError(
+                        f"无法读取上传文件: {file_id}", code=ToolErrorCode.INPUT_NOT_FOUND
+                    )
             else:
                 continue
             if len(content.encode("utf-8")) > self._MAX_UPLOAD_FILE_BYTES:
                 raise ValidationError(
-                    f"引用文件超过 {self._MAX_UPLOAD_FILE_BYTES} 字节，无法直接作为工具输入"
+                    f"引用文件超过 {self._MAX_UPLOAD_FILE_BYTES} 字节，无法直接作为工具输入",
+                    code=ToolErrorCode.INPUT_NOT_FOUND,
                 )
             resolved[key] = content
-        return await resolve_workspace_file_refs(
-            resolved, user_id=user_id, context=context
-        )
+        try:
+            return await resolve_workspace_file_refs(resolved, user_id=user_id, context=context)
+        except ValidationError as e:
+            # 工作区 file:// 引用失败统一标记为 INPUT_NOT_FOUND
+            if e.code is None:
+                e.code = ToolErrorCode.INPUT_NOT_FOUND
+            raise
 
     async def _read_chat_upload(self, user_id: str, file_id: str) -> str | None:
         """从聊天上传目录读取文件内容。"""
         upload_dir = self._factory.chat_uploads_dir(user_id)
         upload_rel = self._factory.relative_to_root(upload_dir)
         entries = await self._backend.list(upload_rel, recursive=False)
-        candidates = [
-            e for e in entries if e["type"] == "file" and e["name"].startswith(file_id)
-        ]
+        candidates = [e for e in entries if e["type"] == "file" and e["name"].startswith(file_id)]
         if not candidates:
             return None
         # 优先匹配完全相等或带常见文本扩展名
@@ -245,7 +332,7 @@ class ToolBridgeService:
             else:
                 result = await service.prepare(flow_id, arguments)
         except Exception as e:  # noqa: BLE001
-            return self._error(str(e))
+            return self._error(str(e), code=code_from_exception(e))
 
         return self._package_analysis_flow_result(result)
 
@@ -338,6 +425,8 @@ class ToolBridgeService:
                     "success": False,
                     "is_error": True,
                     "error": "ARQ 入队失败，未返回任务对象",
+                    "code": ToolErrorCode.TASK_SUBMIT_FAILED,
+                    "retryable": True,
                 }
             task_id = job.job_id
             return {
@@ -353,6 +442,8 @@ class ToolBridgeService:
                 "success": False,
                 "is_error": True,
                 "error": f"ARQ 投递失败: {e}",
+                "code": ToolErrorCode.TASK_SUBMIT_FAILED,
+                "retryable": True,
             }
 
     async def _run_service_sync(
@@ -440,12 +531,25 @@ class ToolBridgeService:
                 "success": success,
             }
 
-        return {
+        envelope: dict[str, Any] = {
             "success": success,
             "is_error": is_error,
             "llm_payload": llm_payload,
             "ui_payload": ui_payload,
         }
+        if is_error:
+            # 失败路径补机器可读错误码（成功路径不动）；字段白名单之外的
+            # error/code/retryable 也在此透传，保证下游总能拿到分类信息。
+            code = str(raw.get("code") or ToolErrorCode.SERVICE_ERROR)
+            retryable = bool(raw.get("retryable", is_retryable(code)))
+            llm_payload.setdefault("success", False)
+            if "error" in raw:
+                llm_payload.setdefault("error", raw["error"])
+            llm_payload["code"] = code
+            llm_payload["retryable"] = retryable
+            envelope["code"] = code
+            envelope["retryable"] = retryable
+        return envelope
 
     @staticmethod
     def _pick(data: dict[str, Any], fields: list[str]) -> dict[str, Any]:
@@ -468,14 +572,31 @@ class ToolBridgeService:
         return preview
 
     @staticmethod
-    def _error(message: str) -> dict[str, Any]:
+    def _attach_ignored_params(envelope: dict[str, Any], ignored_params: list[str]) -> None:
+        """把被丢弃的未声明参数名附加到 llm_payload，提示调用方修正。"""
+        if ignored_params and isinstance(envelope.get("llm_payload"), dict):
+            envelope["llm_payload"]["ignored_params"] = list(ignored_params)
+
+    @staticmethod
+    def _error(
+        message: str, *, code: str | ToolErrorCode = ToolErrorCode.INTERNAL_ERROR
+    ) -> dict[str, Any]:
+        code = str(code)
+        retryable = is_retryable(code)
         return {
             "success": False,
             "is_error": True,
             # 顶层 error 供事件流摘要（_tool_result_summary）读取真实失败原因，
             # 避免降级成无信息量的“工具执行失败”。
             "error": message,
-            "llm_payload": {"success": False, "error": message},
+            "code": code,
+            "retryable": retryable,
+            "llm_payload": {
+                "success": False,
+                "error": message,
+                "code": code,
+                "retryable": retryable,
+            },
             "ui_payload": {"error": message},
         }
 

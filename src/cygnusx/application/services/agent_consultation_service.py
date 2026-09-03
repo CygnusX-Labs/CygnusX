@@ -25,6 +25,7 @@ from cygnusx.application.schemas.qc_verification import (
     merge_gate_decision,
     parse_qc_verification,
 )
+from cygnusx.core.config import get_settings
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.agent_service import AgentService
 from cygnusx.application.services.agentteams_artifact_lineage_service import (
@@ -371,7 +372,7 @@ class AgentConsultationService:
             hard_gate=hard_gate,
         )
         workdir_root = (
-            Path("/data/cygnusx") / "output" / "agentteams" / case_id / work_item_id
+            Path(get_settings().storage_path) / "output" / "agentteams" / case_id / work_item_id
             if execution_mode == "workspace_execution" and work_item_id
             else None
         )
@@ -719,6 +720,19 @@ class AgentConsultationService:
             )
         else:
             enforce_fabrication_clause(report)
+            # 证据指针验真：qc 编造不存在的 evidence_event_id 在此拦截并降级留痕；
+            # 验真查询本身失败（如存储不可用）不阻断会诊，按未验真继续并记录。
+            evidence_downgrades: list[dict[str, Any]] = []
+            evidence_verify_failed = False
+            try:
+                evidence_downgrades = await service.enforce_verifiable_evidence(
+                    case_id=case_id, report=report
+                )
+            except Exception as exc:  # noqa: BLE001 — 验真失败不得吞掉会诊结论
+                evidence_verify_failed = True
+                logger.bind(case_id=case_id, agent_id=agent_id).warning(
+                    "AgentTeams qc evidence pointer verification failed: {}", exc
+                )
             qc_decision = aggregate_qc_decision(report.checks)
             stats = {
                 "claims": len(report.claims),
@@ -727,6 +741,8 @@ class AgentConsultationService:
                 "warnings": sum(1 for c in report.checks if c.verdict == "warn"),
                 "inconclusive": sum(1 for c in report.checks if c.verdict == "inconclusive"),
                 "degraded": False,
+                "evidence_downgrades": len(evidence_downgrades),
+                "evidence_verify_failed": evidence_verify_failed,
             }
             try:
                 await service.record_checks(
@@ -759,6 +775,7 @@ class AgentConsultationService:
                     "agent_id": agent_id,
                     "work_item_id": work_item_id,
                     "causation_event_id": causation_event_id,
+                    "evidence_downgrade_details": evidence_downgrades[:20],
                     **stats,
                 },
             )

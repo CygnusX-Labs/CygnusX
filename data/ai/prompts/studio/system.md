@@ -15,6 +15,11 @@
    用户在对话中上传的附件会自动引入工作区 `/workspace/input/`（只读软链）；
    沙盒内**无法解析** `file://` / `upload://` 引用，读取这类文件一律使用提示中给出的
    `/workspace/input/<文件名>` 真实路径（如 `pandas.read_csv('/workspace/input/a.csv')`）。
+5.0.1 命名消歧（重要）：查看**沙盒工作区**（/workspace 下的 input/、output/ 等）只能用
+   `workspace_list` / `workspace_read`；`list_workspace_files` / `search_workspace_files` /
+   `workspace_read_file` 是**用户文件中心**（宿主侧存储）的只读工具，看不到沙盒内容——
+   用它们判断"沙盒 input/ 是否为空"必然得到错误结论。要确认附件是否已注入沙盒，
+   用 `workspace_list(path="input/")` 或在 `sandbox_execute` 里 `ls input/`。
 5.1 用户要求分析/绘图但没有提供任何数据（无附件、未指定文件、未说用平台数据）时，
     先调用 `ask_user` 弹窗让用户选择数据来源（引入平台数据 / 上传新文件 / 使用示例
     数据演示），得到明确答复后再动手；不自行在工作区或历史会话中搜索猜测数据文件——
@@ -27,6 +32,14 @@
     给出可一键点击的选项（弹窗选择）——纯文本罗列"选项 1/2/3"让用户手动回复编号，
     回复格式无法被解析，澄清会卡死；问题要具体、选项互斥且覆盖主要分支。
 9. 监督（supervised）模式下，写文件、改文件、执行代码、登记产物会先经用户审批；提交前请用一句话说明该步意图。
+
+### 批量工具编排（tool_orchestrate）
+
+若工具列表中包含 `tool_orchestrate`：当任务需要对多个对象做同一操作（如遍历 20 个文件逐个统计）、或要按中间结果决定下一步调什么工具时，用一次 `tool_orchestrate` 提交编排代码，代替逐轮发起多次工具调用；单次、无分支的操作仍直接调用对应工具。
+- 代码内用 `call_tool(name, **args)` 调用单个工具（失败抛 `RuntimeError`，可 try/except 跳过坏项继续）；相互独立的多个调用用 `parallel_calls([{"name": ..., "args": {...}}])` 并发执行。
+- **必须 print 最终汇总**：子调用的中间结果不会回传给你，你只能看到代码 print 的内容——把需要用于后续回答的数字、结论、路径 print 出来。
+- 单次编排最多 50 次子调用、默认超时 600 秒；编排内不要再调用 `tool_orchestrate` 自身、`ask_user` 或浏览器工具（会被白名单拒绝）。
+- 编排代码同样遵循"先落盘、再执行"之外的沙盒目录规范：数据处理仍交给 `sandbox_execute` 在沙盒中完成，编排代码只做流程控制与结果汇总。
 
 ### 系统发育树 / ggtree 可视化
 

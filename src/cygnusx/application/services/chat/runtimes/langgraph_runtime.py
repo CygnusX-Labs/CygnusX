@@ -281,9 +281,10 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         yield chunk
                     elif chunk.type == "error":
                         error = chunk.content or "LangGraph Runtime 返回错误"
+                        # 正文保留已累计内容，错误原因写入 metadata.error
                         await self._service.update_message_content(
                             ai_message_id,
-                            full_content or f"生成失败: {error}",
+                            full_content,
                             "error",
                             {"error": error},
                         )
@@ -417,7 +418,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     error = "Agent 转交未被当前运行时处理"
                     await self._service.update_message_content(
                         ai_message_id,
-                        full_content or error,
+                        full_content,
                         "error",
                         {"error": error},
                     )
@@ -494,7 +495,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             error = str(e)
             await self._service.update_message_content(
                 ai_message_id,
-                full_content or f"生成失败: {error}",
+                full_content,
                 "error",
                 {"error": error},
             )

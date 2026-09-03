@@ -11,6 +11,7 @@ from cygnusx.application.services.studio_tools import (
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
     STUDIO_TOOL_SCHEMAS,
+    TOOL_ORCHESTRATE_SCHEMA,
     execute_studio_tool,
     stream_studio_tool,
 )
@@ -107,10 +108,14 @@ def fake_manager(monkeypatch) -> _FakeManager:
 
 @pytest.mark.unit
 def test_tool_schemas_cover_all_tools():
-    """全部 Studio 内置工具均提供 OpenAI schema。"""
-    names = {t["function"]["name"] for t in STUDIO_TOOL_SCHEMAS}
+    """全部 Studio 内置工具均提供 OpenAI schema。
+
+    tool_orchestrate 的 schema 独立成 TOOL_ORCHESTRATE_SCHEMA（不进
+    STUDIO_TOOL_SCHEMAS），由 chat_service 按 agent features.ptc_enabled 条件挂载。
+    """
+    names = {t["function"]["name"] for t in (*STUDIO_TOOL_SCHEMAS, TOOL_ORCHESTRATE_SCHEMA)}
     assert names == set(STUDIO_TOOL_NAMES)
-    assert len(STUDIO_TOOL_SCHEMAS) == len(STUDIO_TOOL_NAMES)
+    assert len(STUDIO_TOOL_SCHEMAS) + 1 == len(STUDIO_TOOL_NAMES)
     assert {
         "datahub_import",
         "platform_result_import",

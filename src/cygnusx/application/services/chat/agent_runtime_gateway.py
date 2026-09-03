@@ -55,6 +55,16 @@ class AgentRuntimeGateway:
         if model_id is not None:
             span_attrs["agent.model_id"] = str(model_id)
         with tracer.start_as_current_span("agent.run", attributes=span_attrs) as span:
+            # 把 agent.run 的 span context 发布到 ContextVar：LangGraph 图任务等跨
+            # asyncio task 边界的子 span 在 contextvars 链路丢失时可显式取回父
+            # context（见 infrastructure/execution/langgraph_runtime.py）。
+            from opentelemetry import trace as _otel_trace
+
+            from cygnusx.core.telemetry import agent_parent_context_var
+
+            parent_ctx_token = agent_parent_context_var.set(
+                _otel_trace.set_span_in_context(span)
+            )
             start = time.perf_counter()
             status = "success"
             try:
@@ -120,6 +130,7 @@ class AgentRuntimeGateway:
                 span.record_exception(exc)
                 raise
             finally:
+                agent_parent_context_var.reset(parent_ctx_token)
                 duration_ms = (time.perf_counter() - start) * 1000
                 attrs = {"agent.id": agent_id, "agent.status": status}
                 span.set_attribute("agent.status", status)

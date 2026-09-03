@@ -35,7 +35,7 @@ def _extract_route_json(text: str) -> dict[str, Any] | None:
 
 def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
     """审批卡片上的单行风险提示（supervised 模式，§3.1）。"""
-    if tool_name == "sandbox_execute":
+    if tool_name in {"sandbox_execute", "chat_sandbox_execute"}:
         language = str(args.get("language") or "python")
         return f"将在沙盒中执行 {language} 代码"
     if tool_name == "workspace_write":
@@ -44,6 +44,8 @@ def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
         return f"将修改工作区文件 {args.get('path') or ''}".strip()
     if tool_name == "artifact_register":
         return f"将把产物 {args.get('path') or ''} 登记到结果报告中心".strip()
+    if tool_name == "tool_orchestrate":
+        return "将运行一段可多次调用工作区工具的编排代码（内部子调用不再逐次审批）"
     return "该操作需要用户批准"
 
 

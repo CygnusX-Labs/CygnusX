@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any
 
 from loguru import logger
@@ -30,6 +31,82 @@ _initialized = False
 _prometheus_reader: Any = None
 # httpx 自动埋点为进程级全局操作，重复 instrument 会告警，故仅执行一次。
 _httpx_instrumented = False
+
+# agent.run 网关把自身 span context 发布到这里；LangGraph 图任务等跨 asyncio task
+# 边界的子 span 在 contextvars 链路丢失时可显式取回父 context，避免 trace 断链。
+agent_parent_context_var: ContextVar[Any] = ContextVar(
+    "cygnusx_agent_parent_context", default=None
+)
+
+# Celery 消息头里携带 session_id 的自定义键（traceparent/tracestate 由 W3C propagator 写入）。
+_SESSION_HEADER = "x-cygnusx-session-id"
+
+
+def inject_trace_context(headers: dict[str, Any] | None) -> None:
+    """把当前 span context（traceparent）与 session_id 注入消息载体（如 Celery headers）。
+
+    无活跃 span / 未初始化 / 任何异常均为安全 no-op，绝不阻断业务。
+    """
+    if headers is None:
+        return
+    try:
+        from opentelemetry.propagate import inject
+
+        inject(headers)
+        from cygnusx.middleware.trace_context import session_id_var
+
+        session_id = session_id_var.get()
+        if session_id:
+            headers[_SESSION_HEADER] = session_id
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"trace context 注入失败（忽略）: {exc}")
+
+
+def extract_and_attach(headers: Any) -> tuple[Any | None, Any | None]:
+    """从消息载体提取 trace context 并 attach，同时恢复 session_id ContextVar。
+
+    返回 ``(context_token, session_token)``；无载体或失败时为 ``(None, None)``。
+    调用方须在作用域结束后把返回值交给 ``detach_extracted`` 复位。
+    """
+    if not headers:
+        return None, None
+    try:
+        from opentelemetry import context as otel_context
+        from opentelemetry.propagate import extract
+
+        context_token = otel_context.attach(extract(dict(headers)))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"trace context 提取失败（忽略）: {exc}")
+        return None, None
+    session_token = None
+    try:
+        session_id = headers.get(_SESSION_HEADER)
+        if session_id:
+            from cygnusx.middleware.trace_context import session_id_var
+
+            session_token = session_id_var.set(str(session_id))
+    except Exception:  # noqa: BLE001
+        pass
+    return context_token, session_token
+
+
+def detach_extracted(tokens: tuple[Any | None, Any | None]) -> None:
+    """与 ``extract_and_attach`` 配对：复位 session_id 并 detach context。"""
+    context_token, session_token = tokens
+    if session_token is not None:
+        try:
+            from cygnusx.middleware.trace_context import session_id_var
+
+            session_id_var.reset(session_token)
+        except Exception:  # noqa: BLE001
+            pass
+    if context_token is not None:
+        try:
+            from opentelemetry import context as otel_context
+
+            otel_context.detach(context_token)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _build_resource(service_name: str) -> Any:

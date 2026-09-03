@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import json
 import shutil
+import tempfile
 from collections.abc import AsyncIterator
 from math import ceil
 from pathlib import Path, PurePosixPath
@@ -1048,6 +1049,26 @@ class AgentTeamsService:
             )
         return manifest
 
+    async def materialize_case_delivery(
+        self,
+        case_id: str,
+        requester_ref: str,
+        db: AsyncSession,
+    ) -> dict[str, Any]:
+        """供交付门等内部路径调用：物化交付产物并返回本地落点与 checksum 比对结果。
+
+        与 ``get_manifest_with_delivery`` 共用同一物化实现；返回的本地文件清单
+        仅供平台内部（如交付门）使用，不并入 manifest、不向 API 响应暴露。
+        """
+        case = await self._get_case_for_requester(case_id, requester_ref)
+        manifest = await self._request(f"/v1/cases/{case_id}/manifest")
+        return await self._materialize_case_delivery(
+            case=case,
+            manifest=manifest,
+            requester_ref=requester_ref,
+            db=db,
+        )
+
     async def _materialize_case_delivery(
         self,
         *,
@@ -1055,8 +1076,9 @@ class AgentTeamsService:
         manifest: dict[str, Any],
         requester_ref: str,
         db: AsyncSession,
-    ) -> None:
+    ) -> dict[str, Any]:
         """Project Bridge delivery metadata into the Case's protocol run output directory."""
+        empty: dict[str, Any] = {"output_dir": "", "files": [], "checksum_verification": []}
         run_path = ""
         for ref in case.get("context_refs") or []:
             if not isinstance(ref, dict) or ref.get("kind") != "project":
@@ -1066,11 +1088,11 @@ class AgentTeamsService:
             if "/runs/" in run_path:
                 break
         if not run_path or not run_path.startswith("projects/") or "/runs/" not in run_path:
-            return
+            return empty
         try:
             user_uuid = UUID(requester_ref)
         except ValueError:
-            return
+            return empty
         factory = get_path_factory()
         output_rel = f"{run_path}/output"
         output_dir = (factory.user_root(requester_ref) / output_rel.removeprefix(""))
@@ -1118,6 +1140,40 @@ class AgentTeamsService:
             logger.bind(case_id=case.get("case_id")).warning(
                 "AgentTeams delivery lineage query failed: {}", exc
             )
+        # 篡改检测（F1 收尾）：交付前对已登记产物的最新版本重算 sha256 比对登记值，
+        # 不一致记 mismatch——结构化留痕（manifest + 审计事件 + 报告小节），不阻断交付。
+        checksum_verification: list[dict[str, Any]] = []
+        try:
+            checksum_verification = await AgentTeamsArtifactLineageService(
+                db
+            ).verify_case_checksums(
+                str(case.get("case_id") or ""),
+                self._delivery_content_resolver(str(case.get("case_id") or ""), factory, minio),
+            )
+        except Exception as exc:  # noqa: BLE001 - 校验执行失败不阻断交付，但必须显式可见
+            logger.bind(case_id=case.get("case_id")).warning(
+                "AgentTeams delivery checksum verification failed: {}", exc
+            )
+        manifest["artifact_checksum_verification"] = checksum_verification
+        mismatches = [item for item in checksum_verification if item["status"] == "mismatch"]
+        if mismatches:
+            logger.bind(
+                case_id=case.get("case_id"),
+                mismatch_count=len(mismatches),
+                artifacts=[item["artifact_id"] for item in mismatches],
+            ).warning("AgentTeams delivery checksum mismatch detected")
+            try:
+                await self.post_case_evidence(
+                    str(case.get("case_id") or ""),
+                    work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                    event_type="artifact.checksum_mismatch",
+                    summary=f"交付前 checksum 比对发现 {len(mismatches)} 个产物与登记值不一致",
+                    payload={"mismatches": mismatches[:50]},
+                )
+            except Exception as exc:  # noqa: BLE001 - 事件投影失败不阻断交付
+                logger.bind(case_id=case.get("case_id")).warning(
+                    "AgentTeams checksum mismatch evidence projection failed: {}", exc
+                )
         manifest_path = output_dir / "agentteams-delivery-manifest.json"
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         summary = str(manifest.get("remediation_summary") or "").strip()
@@ -1135,6 +1191,7 @@ class AgentTeamsService:
             "",
             "## 产物校验",
             f"manifest 中登记 {len(manifest.get('artifact_checksums') or {})} 个产物校验项。",
+            self._checksum_report_line(checksum_verification),
             "",
             *self._lineage_report_lines(lineage, lineage_note),
         ]
@@ -1166,6 +1223,71 @@ class AgentTeamsService:
                 )
             )
         await db.flush()
+        return {
+            "output_dir": str(output_dir),
+            "files": [
+                str(path) for path in sorted(output_dir.iterdir()) if path.is_file()
+            ],
+            "checksum_verification": checksum_verification,
+        }
+
+    @staticmethod
+    def _checksum_report_line(checksum_verification: list[dict[str, Any]]) -> str:
+        """交付报告"产物校验"小节的 checksum 比对汇总行。"""
+        if not checksum_verification:
+            return "本 Case 无平台登记的产物版本，未做 checksum 比对。"
+        counts = {"verified": 0, "mismatch": 0, "unverified": 0}
+        for item in checksum_verification:
+            counts[item["status"]] = counts.get(item["status"], 0) + 1
+        line = (
+            f"checksum 比对：{counts['verified']} 一致 / "
+            f"{counts['mismatch']} 不一致 / {counts['unverified']} 未比对。"
+        )
+        mismatched = [item["artifact_id"] for item in checksum_verification if item["status"] == "mismatch"]
+        if mismatched:
+            line += " 不一致产物：" + "、".join(f"`{name}`" for name in mismatched[:10])
+        return line
+
+    def _delivery_content_resolver(
+        self, case_id: str, factory: Any, minio: MinioStore
+    ) -> Any:
+        """构造 verify_case_checksums 的内容解析器：本地相对路径直读，s3:// 拉取临时文件。
+
+        任何解析失败都返回 None（调用方记 unverified），不抛异常打断交付。
+        """
+        data_root = Path(factory.data_root).resolve()
+
+        def local_content(uri: str) -> bytes | None:
+            target = (data_root / uri).resolve()
+            try:
+                target.relative_to(data_root)
+            except ValueError:
+                return None
+            if not target.is_file():
+                return None
+            return target.read_bytes()
+
+        async def resolve(storage_uri: str) -> bytes | None:
+            uri = str(storage_uri or "").strip()
+            if not uri:
+                return None
+            try:
+                parsed = urlparse(uri)
+                if parsed.scheme == "s3":
+                    parts = PurePosixPath(parsed.path.lstrip("/")).parts
+                    if parsed.netloc != minio.bucket or len(parts) < 3 or parts[0] != case_id:
+                        return None
+                    with tempfile.TemporaryDirectory(prefix="cygnusx-checksum-") as tmp:
+                        fetched = minio.fetch_case_object(case_id, "/".join(parts[1:]), Path(tmp) / "blob")
+                        return fetched.read_bytes()
+                return local_content(uri)
+            except (OSError, ValueError, BusinessError) as exc:
+                logger.bind(case_id=case_id, storage_uri=uri[:200]).warning(
+                    "AgentTeams checksum content resolve failed: {}", exc
+                )
+                return None
+
+        return resolve
 
     @staticmethod
     def _lineage_report_lines(lineage: dict[str, Any], lineage_note: str) -> list[str]:

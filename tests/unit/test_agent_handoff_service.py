@@ -349,3 +349,81 @@ async def test_record_handoff_anchor_commits_in_independent_session(monkeypatch)
     assert event.target_agent_id == "agent-b"
     assert db.added == [event]
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_prepare_handoff_unknown_target_error_lists_valid_agent_ids() -> None:
+    db = AsyncMock()
+    source = AgentTemplateModel(
+        agent_id="agent-general",
+        name="通用助手",
+        features={"handoff": {"allowed_targets": ["*"]}},
+        is_active=True,
+    )
+    viz = AgentTemplateModel(agent_id="agent-viz", name="可视化助手", is_active=True)
+    router = AgentTemplateModel(
+        agent_id="agent-router", name="星尘 AI", features={"router": True}, is_active=True
+    )
+    db.scalar.side_effect = [
+        ChatSessionModel(session_id="session-1", user_id="user-1", status="active"),
+        source,
+        None,
+    ]
+    candidates = MagicMock()
+    candidates.all.return_value = [source, viz, router]
+    db.scalars.return_value = candidates
+
+    with pytest.raises(BusinessError) as exc_info:
+        await AgentHandoffService(db).prepare_handoff(
+            user_id="user-1",
+            session_id="session-1",
+            source_agent_id="agent-general",
+            target_agent_id="可视化助手",
+            reason="需要科研绘图能力",
+            handoff_summary="尚未执行分析。",
+            user_intent="画样本间相关性热图",
+        )
+
+    message = str(exc_info.value)
+    assert "agent_id" in message
+    assert "agent-viz（可视化助手）" in message
+    # 路由 Agent 与源 Agent 自身不出现在可转交清单中
+    assert "agent-router" not in message
+    assert "agent-general（通用助手）" not in message
+
+
+@pytest.mark.asyncio
+async def test_prepare_handoff_whitelist_error_lists_allowed_targets_only() -> None:
+    db = AsyncMock()
+    source = AgentTemplateModel(
+        agent_id="agent-scrna",
+        name="单细胞分析师",
+        features={"handoff": {"allowed_targets": ["agent-rnaseq"]}},
+        is_active=True,
+    )
+    rnaseq = AgentTemplateModel(agent_id="agent-rnaseq", name="RNA-seq 分析师", is_active=True)
+    viz = AgentTemplateModel(agent_id="agent-viz", name="可视化助手", is_active=True)
+    db.scalar.side_effect = [
+        ChatSessionModel(session_id="session-1", user_id="user-1", status="active"),
+        source,
+        viz,
+    ]
+    candidates = MagicMock()
+    candidates.all.return_value = [source, rnaseq, viz]
+    db.scalars.return_value = candidates
+
+    with pytest.raises(BusinessError) as exc_info:
+        await AgentHandoffService(db).prepare_handoff(
+            user_id="user-1",
+            session_id="session-1",
+            source_agent_id="agent-scrna",
+            target_agent_id="agent-viz",
+            reason="需要科研绘图能力",
+            handoff_summary="尚未执行分析。",
+            user_intent="画样本间相关性热图",
+        )
+
+    message = str(exc_info.value)
+    assert "白名单" in message
+    assert "agent-rnaseq（RNA-seq 分析师）" in message
+    assert "agent-viz（可视化助手）" not in message

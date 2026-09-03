@@ -21,7 +21,7 @@ def test_loads_defaults_when_file_missing(tmp_path: Path):
     manager = StudioConfigManager(config_path=tmp_path / "not-exist.yaml")
     config = manager.get_config()
     assert config.enabled is True
-    assert config.default_image == "cygnusx-sandbox-browser-office:v0.0.2dev"
+    assert config.default_image == "cygnusx-analysis:core-v0.0.2dev"
     assert config.session.idle_ttl_minutes == 30
     assert config.session.workspace_retention_days == 7
     assert config.session.prewarm_on_create is True

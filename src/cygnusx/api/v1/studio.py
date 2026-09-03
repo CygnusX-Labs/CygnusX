@@ -59,7 +59,10 @@ from cygnusx.application.services.agent_service import AgentService
 from cygnusx.application.services.chat_service import ChatService
 from cygnusx.application.services.project_scope import resolve_agent_project_scope
 from cygnusx.application.services.skill_service import SkillService
-from cygnusx.application.services.studio_approval_service import get_studio_approval_service
+from cygnusx.application.services.studio_approval_service import (
+    get_studio_approval_service,
+    record_approval_audit,
+)
 from cygnusx.application.services.studio_checkpoints import (
     ensure_checkpoint_repository,
     list_checkpoints,
@@ -590,6 +593,24 @@ async def get_studio_session(
     )
 
 
+@router.delete("/sessions/{session_id}", summary="删除 Studio 会话")
+async def delete_studio_session(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> dict[str, bool]:
+    """删除 Studio 会话（软删，语义同 DELETE /chat/sessions/{id}）。
+
+    沙盒忙碌（代码执行/长任务运行中）时拒绝删除；空闲会话先休眠回收容器，
+    工作区目录保留，由既有保留期清理机制兜底，删会话不丢工作区文件。
+    """
+    await _get_studio_session(service, session_id, current_user_id)
+    if await studio_sandbox_manager.hibernate(session_id) == "busy":
+        raise ConflictError("会话正在执行任务，请稍后再试")
+    await service.delete_session(session_id, current_user_id)
+    return {"success": True}
+
+
 @router.patch("/sessions/{session_id}/ui", summary="保存 Studio 代码工作室视图状态")
 async def update_studio_ui(
     current_user_id: CurrentUserId,
@@ -626,7 +647,11 @@ async def update_studio_permissions(
     session_id: str,
     req: UpdateStudioPermissionsRequest,
 ) -> dict[str, Any]:
-    """会话级权限模式（§2）：supervised 写/执行类工具需用户批准；auto 即时执行。"""
+    """会话级权限模式（§2）：supervised 写/执行类工具需用户批准；auto 即时执行。
+
+    每次切换（含切回同一模式）都清空 permissions.always_allow，
+    避免 auto→supervised 后残留"本会话总是允许"的放行。
+    """
     session = await _get_studio_session(service, session_id, current_user_id)
     # 与 update_studio_ui 同理：jsonb_set 原子合并，避免覆盖聊天流并发写入的 plan 等键
     await db.execute(
@@ -636,7 +661,7 @@ async def update_studio_permissions(
             "COALESCE(sandbox_meta->'permissions', '{}'::jsonb) || CAST(:patch AS jsonb), true), "
             "updated_at = now() WHERE session_id = :sid"
         ),
-        {"patch": json.dumps({"mode": req.mode}), "sid": session_id},
+        {"patch": json.dumps({"mode": req.mode, "always_allow": []}), "sid": session_id},
     )
     await db.flush()
     await db.refresh(session)
@@ -686,6 +711,7 @@ async def list_pending_studio_approvals(
 @router.post("/approvals/{approval_id}/approve", summary="批准（或编辑后批准）工具审批")
 async def approve_studio_tool(
     current_user_id: CurrentUserId,
+    db: DbSession,
     approval_id: str,
     req: StudioApprovalApproveRequest,
 ) -> dict[str, Any]:
@@ -696,12 +722,45 @@ async def approve_studio_tool(
     if record.get("status") != "pending":
         raise ConflictError("审批已被消费")
     action = "edited" if req.modified_args else "approved"
+    # 计划审批（approval_kind=plan）不支持 always：计划是一次性的，无"同工具复用"语义
+    always = bool(req.always) and record.get("approval_kind", "tool") == "tool"
     resolved = await service.resolve(
-        approval_id, str(current_user_id), action, modified_args=req.modified_args
+        approval_id, str(current_user_id), action, modified_args=req.modified_args, always=always
     )
     if resolved is None:  # 并发消费兜底
         raise ConflictError("审批已被消费")
-    return {"success": True, "status": action}
+    if always:
+        # "本会话总是允许"：(session, tool) 追加进 permissions.always_allow；
+        # jsonb_set 原子合并，不覆盖聊天流并发写入的其他键；切换权限模式时清空。
+        await db.execute(
+            sql_text(
+                "UPDATE chat_sessions SET sandbox_meta = jsonb_set("
+                "COALESCE(sandbox_meta, '{}'::jsonb), '{permissions,always_allow}', "
+                "COALESCE(sandbox_meta->'permissions'->'always_allow', '[]'::jsonb) "
+                "|| CAST(:tool AS jsonb), true), "
+                "updated_at = now() WHERE session_id = :sid"
+            ),
+            {
+                "tool": json.dumps(str(resolved.get("tool_name") or "")),
+                "sid": str(resolved.get("session_id") or ""),
+            },
+        )
+        await db.flush()
+    # 决议落 audit_logs（best-effort，不阻断审批主流程）
+    await record_approval_audit(
+        user_id=str(current_user_id),
+        approval_id=approval_id,
+        session_id=str(resolved.get("session_id") or ""),
+        tool_name=str(resolved.get("tool_name") or ""),
+        action=action,
+        resolver="user",
+        always=always,
+        arguments=resolved.get("arguments")
+        if isinstance(resolved.get("arguments"), dict)
+        else None,
+        approval_kind=str(resolved.get("approval_kind") or "tool"),
+    )
+    return {"success": True, "status": action, "always": always}
 
 
 @router.post("/approvals/{approval_id}/reject", summary="退回工具审批")
@@ -721,6 +780,20 @@ async def reject_studio_tool(
     )
     if resolved is None:
         raise ConflictError("审批已被消费")
+    # 决议落 audit_logs（best-effort，不阻断审批主流程）
+    await record_approval_audit(
+        user_id=str(current_user_id),
+        approval_id=approval_id,
+        session_id=str(resolved.get("session_id") or ""),
+        tool_name=str(resolved.get("tool_name") or ""),
+        action="rejected",
+        resolver="user",
+        reason=req.reason,
+        arguments=resolved.get("arguments")
+        if isinstance(resolved.get("arguments"), dict)
+        else None,
+        approval_kind=str(resolved.get("approval_kind") or "tool"),
+    )
     return {"success": True, "status": "rejected"}
 
 

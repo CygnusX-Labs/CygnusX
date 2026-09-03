@@ -457,7 +457,7 @@ onBeforeUnmount(clearPreviews)
   overflow: hidden;
   border: 1px solid var(--stardust-border-soft);
   border-radius: calc(var(--radius-card, 12px) - 2px);
-  background: var(--bg-secondary);
+  background: var(--bg-secondary, var(--bg-card));
 }
 
 .message-artifacts__preview {
@@ -480,7 +480,7 @@ onBeforeUnmount(clearPreviews)
   width: 100%;
   height: 360px;
   border: 0;
-  background: #fff;
+  background: var(--bg-card, #fff);
 }
 
 .message-artifacts__fallback {
@@ -583,6 +583,51 @@ onBeforeUnmount(clearPreviews)
   background: var(--chat-bg-code, #f5f6f8);
 }
 
+/* 预览弹层经 NModal teleport 到 body，吃不到聊天流内的 hljs 暗色覆盖，
+   这里补齐 github-dark 系 token 颜色，避免亮色主题 token 落在深底上不可读 */
+:root[data-theme="dark"] .artifact-code-preview.hljs {
+  color: #c9d1d9;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-comment),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-quote),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-meta) {
+  color: #8b949e;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-keyword),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-selector-tag),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-deletion) {
+  color: #ff7b72;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-string),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-regexp),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-addition) {
+  color: #a5d6ff;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-number),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-literal),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-attr),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-attribute),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-variable),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-template-variable),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-type),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-selector-class),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-selector-id) {
+  color: #79c0ff;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-title),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-section),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-function) {
+  color: #d2a8ff;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-built_in) {
+  color: #ffa657;
+}
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-name),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-selector-attr),
+:root[data-theme="dark"] .artifact-code-preview.hljs :deep(.hljs-selector-pseudo) {
+  color: #7ee787;
+}
+
 .artifact-sheet-preview + .artifact-sheet-preview {
   margin-top: var(--space-lg, 16px);
 }
@@ -616,7 +661,8 @@ onBeforeUnmount(clearPreviews)
 .artifact-sheet-preview__scroll th {
   position: sticky;
   top: 0;
-  background: var(--bg-secondary);
+  /* --bg-secondary 未在全局令牌中定义，兜底到卡片底色（亮色同为白，暗色为深色卡片面） */
+  background: var(--bg-secondary, var(--bg-card));
 }
 
 .message-artifacts__download:hover {
@@ -639,7 +685,7 @@ onBeforeUnmount(clearPreviews)
 
 @media (prefers-reduced-transparency: reduce) {
   .message-artifacts__preview {
-    background: var(--bg-secondary);
+    background: var(--bg-secondary, var(--bg-card));
   }
 }
 </style>

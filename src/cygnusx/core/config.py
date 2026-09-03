@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     llm_stream_transient_retries: int = 3
     # LLM 瞬时失败自动重试的基础退避时间；第 N 次重试等待 N × 此值，避免瞬时 5xx 时立刻重压上游。
     llm_stream_retry_base_delay_seconds: float = 0.8
+    # 429 限流单独的重试上限（独立计数，不占用瞬时重试额度）；优先尊重响应的 Retry-After 头，
+    # 没有该头时退化为与瞬时重试相同的线性退避。上限刻意低于瞬时重试，避免限流时雪崩。
+    llm_stream_rate_limit_retries: int = 2
     # ===== 联网检索优化 =====
     web_search_refinement_cache_ttl_seconds: int = 86400
     web_search_semantic_rerank_enabled: bool = True
@@ -425,6 +428,9 @@ class Settings(BaseSettings):
     # ===== MCP 集成 =====
     mcp_enabled: bool = True
     mcp_default_timeout: int = 30
+    # 外部 MCP server:tool 连续失败 3 次进入 degraded 后的熔断冷却窗口：
+    # 窗口内调用直接短路走兜底链；窗口过后放行一次半开试探，成功恢复 healthy，失败重新冷却。
+    mcp_circuit_breaker_cooldown_seconds: float = 60.0
 
     # ===== MCP Builder（AI 自生成 MCP）=====
     mcp_builder_enabled: bool = True  # 是否启用 MCP Builder 功能

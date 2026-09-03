@@ -97,7 +97,12 @@ class StudioSandboxConfig(BaseModel):
     read_only_rootfs: bool = True
     tmpfs_size: str = "512m"
     container_user: str = "10001:10001"
+    # default=使用 daemon 内置默认 profile（不下发 seccomp security_opt）；
+    # unconfined=显式禁用；其余值按字面 JSON profile 内容透传。
     seccomp_profile: str = "default"
+    # 只读根文件系统下需要可写 tmpfs 的容器内缓存目录（micromamba 进程锁等），
+    # 挂载属主取 container_user；留空则不挂载。
+    agent_cache_dir: str = "/home/mambauser/.cache"
     workspace_quota_bytes: int = Field(default=10 * 1024**3, ge=0)
     workspace_quota_check_interval_seconds: int = Field(default=30, ge=5, le=3600)
     network: StudioNetworkConfig = Field(default_factory=StudioNetworkConfig)
@@ -189,7 +194,7 @@ class StudioConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    default_image: str = "cygnusx-sandbox-browser-office:v0.0.2dev"
+    default_image: str = "cygnusx-analysis:core-v0.0.2dev"
     session: StudioSessionConfig = Field(default_factory=StudioSessionConfig)
     sandbox: StudioSandboxConfig = Field(default_factory=StudioSandboxConfig)
     ui: StudioUiConfig = Field(default_factory=StudioUiConfig)

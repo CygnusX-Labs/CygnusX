@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -13,7 +14,13 @@ from cygnusx.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
 from cygnusx.application.services.agentteams_case_tool_service import agentteams_next_actor
-from cygnusx.application.services.agentteams_service import AgentTeamsService
+from cygnusx.application.services.agentteams_quality_gate_service import (
+    AgentTeamsQualityGateService,
+)
+from cygnusx.application.services.agentteams_service import (
+    CASE_LEVEL_WORK_ITEM_ID,
+    AgentTeamsService,
+)
 from cygnusx.application.services.case_room_projector import CaseRoomProjector
 from cygnusx.application.services.site_settings_service import SiteSettingsService
 from cygnusx.core.config import get_settings
@@ -105,6 +112,7 @@ class AgentTeamsCaseWatchService:
         titles = dict(meta.get("agentteams_case_titles") or {})
         failure_counts = dict(meta.get("agentteams_case_watch_failures") or {})
         handoff_notifications = dict(meta.get("agentteams_case_handoff_notifications") or {})
+        delivery_gates = dict(meta.get("agentteams_case_delivery_gate") or {})
         changed = False
         cursor_mismatches = 0
         scanned = notified = failed = 0
@@ -174,6 +182,16 @@ class AgentTeamsCaseWatchService:
             previous = str(statuses.get(case_id) or "")
             statuses[case_id] = status
             titles[case_id] = title
+            gate_reason = ""
+            if status == "delivery_ready" and status != previous:
+                # 交付门（quality.light_gate）：文件可打开性 + 引用完整性轻量校验。
+                # 判定不通过转到既有 quality_blocked 路径（不发明新状态），
+                # 结构化原因随通知与 Bridge 审计事件留痕；通过才放行交付通知。
+                gate = await self._run_delivery_gate(agentteams, session, case_id, delivery_gates)
+                if gate and gate.get("decision") == "BLOCKED":
+                    status = "quality_blocked"
+                    statuses[case_id] = status
+                    gate_reason = str((gate.get("audit_event") or {}).get("reason") or "")
             try:
                 events_page = await agentteams.get_case_events(
                     case_id,
@@ -234,6 +252,7 @@ class AgentTeamsCaseWatchService:
                     title,
                     status,
                     flow_id=str(case.get("flow_id") or ""),
+                    status_reason=gate_reason,
                 )
                 seen.add(status)
                 if migration_mode != "legacy_only":
@@ -273,9 +292,60 @@ class AgentTeamsCaseWatchService:
             meta["agentteams_case_titles"] = titles
             meta["agentteams_case_watch_failures"] = failure_counts
             meta["agentteams_case_handoff_notifications"] = handoff_notifications
+            meta["agentteams_case_delivery_gate"] = delivery_gates
             session.sandbox_meta = meta
             session.updated_at = datetime.now(UTC)
         return {"scanned": scanned, "notified": notified, "failed": failed}
+
+    async def _run_delivery_gate(
+        self,
+        agentteams: AgentTeamsService,
+        session: ChatSessionModel,
+        case_id: str,
+        delivery_gates: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """delivery_ready 交付门：物化交付产物后跑 evaluate_report_delivery 轻量校验。
+
+        判定按 case 缓存（同一 delivery_ready 只评一次，避免每个 tick 重复物化并
+        重复投影 Bridge 审计事件）；门判定本身与审计事件都是结构化留痕，
+        物化/投影失败返回 None 放行既有通知路径，不阻断 watch 主流程。
+        """
+        cached = delivery_gates.get(case_id)
+        if isinstance(cached, dict) and cached.get("status") == "delivery_ready":
+            gate = cached.get("gate")
+            return gate if isinstance(gate, dict) else None
+        try:
+            materialized = await agentteams.materialize_case_delivery(
+                case_id, session.user_id, self._db
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("AgentTeams delivery gate materialize failed for %s: %s", case_id, exc)
+            return None
+        deliverables = [
+            {"path": path, "kind": Path(path).suffix.lstrip(".").lower()}
+            for path in materialized.get("files") or []
+        ]
+        gate = AgentTeamsQualityGateService().evaluate_report_delivery(deliverables)
+        try:
+            await agentteams.post_case_evidence(
+                case_id,
+                work_item_id=CASE_LEVEL_WORK_ITEM_ID,
+                event_type=str(gate["audit_event"]["event_type"]),
+                summary=f"交付门判定 {gate['decision']}：{gate['audit_event']['reason']}",
+                payload={**gate["audit_event"], "checks": gate["checks"][:100]},
+            )
+        except Exception as exc:  # noqa: BLE001 - 审计事件投影失败不影响门判定
+            logger.warning(
+                "AgentTeams delivery gate evidence projection failed for %s: %s", case_id, exc
+            )
+        delivery_gates[case_id] = {"status": "delivery_ready", "gate": gate}
+        if gate["decision"] == "BLOCKED":
+            logger.warning(
+                "AgentTeams delivery gate BLOCKED for %s: %s",
+                case_id,
+                gate["audit_event"]["reason"],
+            )
+        return gate
 
     async def _get_or_create_cursor_state(
         self,
@@ -315,6 +385,7 @@ class AgentTeamsCaseWatchService:
         status: str,
         *,
         flow_id: str = "",
+        status_reason: str = "",
     ) -> dict[str, str]:
         next_actor = agentteams_next_actor(status)
         message_id = str(uuid.uuid4())
@@ -332,6 +403,8 @@ class AgentTeamsCaseWatchService:
                 f"协作 Case「{title}」已进入「{status}」，"
                 f"下一步请由 {next_actor} 处理。"
             )
+            if status_reason:
+                content += f"原因：{status_reason[:200]}"
         self._db.add(
             ChatMessageModel(
                 id=uuid.uuid4(),
@@ -348,6 +421,7 @@ class AgentTeamsCaseWatchService:
                     "title": title,
                     "status": status,
                     "next_actor": next_actor,
+                    "status_reason": status_reason or None,
                     "completion_kind": completion_kind if status == "closed" else None,
                     "case_url": case_url,
                     "session_id": session_id,

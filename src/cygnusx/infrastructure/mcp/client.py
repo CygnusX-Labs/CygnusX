@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
+from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.domain.mcp.entities import MCPServer
 from cygnusx.domain.mcp.value_objects import ServerStatus, Transport
@@ -213,6 +214,9 @@ class MCPClient:
 
     def __init__(self, health_registry: MCPHealthRegistry | None = None) -> None:
         self.health_registry = health_registry or get_default_health_registry()
+        self.health_registry.circuit_cooldown_seconds = (
+            get_settings().mcp_circuit_breaker_cooldown_seconds
+        )
         self.retry_policy = ToolRetryPolicy()
 
     async def call_tool(
@@ -286,23 +290,45 @@ class MCPClient:
     ) -> dict[str, Any]:
         key = health_key(server.name, tool_name)
         policy = ToolRetryPolicy(max_attempts=1) if server.transport == Transport.BUILTIN else self.retry_policy
+        # 熔断门控：degraded 的外部 server:tool 在冷却窗口内直接短路走兜底链，
+        # 不再打满重试；窗口过后放行一次单发半开试探。builtin 本地工具不受影响。
+        short_circuited = False
+        if server.transport != Transport.BUILTIN:
+            circuit_state = self.health_registry.try_acquire_call(key)
+            if circuit_state == "open":
+                short_circuited = True
+            elif circuit_state == "half_open":
+                policy = ToolRetryPolicy(max_attempts=1)
+
         last_result: dict[str, Any] = {"success": False, "error": "工具调用失败"}
-        for attempt in range(1, policy.max_attempts + 1):
-            started = time.perf_counter()
-            try:
-                result = await self._call_tool_inner(server, tool_name, arguments, user_id, context)
-            except Exception as exc:  # noqa: BLE001
-                result = {"success": False, "error": str(exc)}
-            latency_ms = (time.perf_counter() - started) * 1000
-            if result.get("success"):
-                self.health_registry.record_success(key, latency_ms)
-                if attempt > 1:
-                    result["reliability"] = {"attempts": attempt, "recovered": True}
-                return result
-            self.health_registry.record_failure(key, latency_ms)
-            last_result = result
-            if attempt < policy.max_attempts:
-                await asyncio.sleep(policy.delay_for(attempt))
+        attempts_made = policy.max_attempts
+        if short_circuited:
+            attempts_made = 0
+            logger.warning(f"MCP 熔断短路：{key} 处于 degraded 冷却期，跳过远程调用")
+            last_result = {
+                "success": False,
+                "error": "外部服务连续失败，已进入熔断冷却",
+                "failure_kind": "circuit_open",
+            }
+        else:
+            for attempt in range(1, policy.max_attempts + 1):
+                started = time.perf_counter()
+                try:
+                    result = await self._call_tool_inner(
+                        server, tool_name, arguments, user_id, context
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result = {"success": False, "error": str(exc)}
+                latency_ms = (time.perf_counter() - started) * 1000
+                if result.get("success"):
+                    self.health_registry.record_success(key, latency_ms)
+                    if attempt > 1:
+                        result["reliability"] = {"attempts": attempt, "recovered": True}
+                    return result
+                self.health_registry.record_failure(key, latency_ms)
+                last_result = result
+                if attempt < policy.max_attempts:
+                    await asyncio.sleep(policy.delay_for(attempt))
 
         fallback = next(
             (
@@ -320,18 +346,20 @@ class MCPClient:
             )
             if fallback_result.get("success"):
                 fallback_result["reliability"] = {
-                    "attempts": policy.max_attempts,
+                    "attempts": attempts_made,
                     "fallback_used": fallback.name,
                     "primary_status": self.health_registry.snapshot(key)["status"],
+                    "short_circuited": short_circuited,
                 }
                 return fallback_result
 
         local_result = await execute_local_fallback(tool_name, arguments)
         if local_result is not None and local_result.get("success"):
             local_result["reliability"] = {
-                "attempts": policy.max_attempts,
+                "attempts": attempts_made,
                 "fallback_used": "local",
                 "primary_status": self.health_registry.snapshot(key)["status"],
+                "short_circuited": short_circuited,
             }
             return local_result
 
@@ -345,9 +373,10 @@ class MCPClient:
             **last_result,
             "error": "当前外部服务暂时不可用，备用计算方式也不可用，请稍后重试。",
             "reliability": {
-                "attempts": policy.max_attempts,
+                "attempts": attempts_made,
                 "primary_status": self.health_registry.snapshot(key)["status"],
                 "failure_kind": failure_kind or "unknown",
+                "short_circuited": short_circuited,
             },
         }
 

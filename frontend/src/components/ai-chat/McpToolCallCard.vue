@@ -376,6 +376,13 @@ function handleOpenToolPage() {
   display: flex;
   justify-content: flex-end;
 }
+/* 深色模式：确认卡边框/标题由硬编码浅色改为状态色变量 */
+:root[data-theme="dark"] .confirm-card {
+  border-color: color-mix(in srgb, var(--chat-warning, #faad14) 40%, transparent);
+}
+:root[data-theme="dark"] .confirm-title {
+  color: var(--chat-warning, #faad14);
+}
 
 /* open_page 引导卡 */
 .open-page-card {
@@ -398,6 +405,13 @@ function handleOpenToolPage() {
 .open-page-actions {
   display: flex;
   justify-content: flex-end;
+}
+/* 深色模式：引导卡边框/标题由硬编码浅色改为 info 状态色变量 */
+:root[data-theme="dark"] .open-page-card {
+  border-color: color-mix(in srgb, var(--chat-info, #4f8ef7) 40%, transparent);
+}
+:root[data-theme="dark"] .open-page-title {
+  color: var(--chat-info, #4f8ef7);
 }
 
 @media (prefers-reduced-motion: reduce) {

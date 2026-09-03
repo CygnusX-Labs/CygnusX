@@ -11,8 +11,12 @@ settings = get_settings()
 setup_logging()
 
 from cygnusx.core.telemetry import setup_telemetry  # noqa: E402
+from cygnusx.infrastructure.celery_app.tracing import wire_celery_tracing  # noqa: E402
 
 setup_telemetry("worker")
+# 集中接线 trace context 传播：发布方注入 traceparent/session_id，worker 侧提取恢复，
+# 无需改动各 apply_async/delay 派发点。
+wire_celery_tracing()
 
 celery_app = Celery(
     "cygnusx",

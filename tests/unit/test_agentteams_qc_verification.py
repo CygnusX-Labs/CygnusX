@@ -374,3 +374,146 @@ def test_build_instruction_quality_gate_includes_verification_contract() -> None
         hard_gate=None,
     )
     assert '"verification"' not in other
+
+
+def _db_with_known_evidence(rows: list[tuple]) -> SimpleNamespace:
+    """带 execute 的最小 db：_known_evidence_ids 查询返回给定的 (version_id, producing_event_id) 行。"""
+    result = SimpleNamespace(all=lambda: list(rows))
+    return SimpleNamespace(
+        add=Mock(), flush=AsyncMock(), execute=AsyncMock(return_value=result)
+    )
+
+
+def test_enforce_verifiable_evidence_downgrades_fake_pointers() -> None:
+    asyncio.run(_test_enforce_verifiable_evidence_downgrades())
+
+
+async def _test_enforce_verifiable_evidence_downgrades() -> None:
+    known_version_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    db = _db_with_known_evidence([(known_version_id, "evt-real")])
+    service = AgentTeamsQcVerificationService(db)
+    report = _report(
+        {
+            "claims": [
+                {"statement": "已查询 ClinVar，rs123456 频率 0.003", "claim_type": "external_lookup"},
+                {"statement": "常规事实断言", "claim_type": "factual"},
+                {"statement": "指标达标", "claim_type": "metric"},
+            ],
+            "checks": [
+                {
+                    "claim_index": 0,
+                    "verdict": "pass",
+                    "evidence_event_id": "evt-fabricated",
+                    "reason": "内容看起来合理",
+                },
+                {
+                    "claim_index": 1,
+                    "verdict": "pass",
+                    "evidence_event_id": "evt-fabricated-2",
+                    "reason": "无矛盾",
+                },
+                {
+                    "claim_index": 2,
+                    "verdict": "pass",
+                    "evidence_event_id": known_version_id,
+                    "reason": "血缘 version 可复核",
+                },
+            ],
+        }
+    )
+
+    downgrades = await service.enforce_verifiable_evidence(case_id="case-1", report=report)
+
+    assert len(downgrades) == 2
+    # external_lookup 伪造指针 → fail（视同绕过编造引用条款）
+    assert report.checks[0].verdict == "fail"
+    assert "证据指针验真失败" in report.checks[0].reason
+    assert "原判 pass" in report.checks[0].reason
+    # 其它类型伪造指针 → inconclusive，不按 pass 放行
+    assert report.checks[1].verdict == "inconclusive"
+    # 指向真实 version_id 的指针维持原判
+    assert report.checks[2].verdict == "pass"
+    assert aggregate_qc_decision(report.checks) == "BLOCKED"
+
+
+def test_enforce_verifiable_evidence_accepts_producing_event_id() -> None:
+    asyncio.run(_test_enforce_verifiable_evidence_accepts())
+
+
+async def _test_enforce_verifiable_evidence_accepts() -> None:
+    db = _db_with_known_evidence([("ver-1", "evt-real")])
+    service = AgentTeamsQcVerificationService(db)
+    report = _report(
+        {
+            "claims": [{"statement": "指标达标", "claim_type": "metric"}],
+            "checks": [
+                {
+                    "claim_index": 0,
+                    "verdict": "pass",
+                    "evidence_event_id": "evt-real",
+                    "reason": "已读取审计事件核对",
+                }
+            ],
+        }
+    )
+
+    downgrades = await service.enforce_verifiable_evidence(case_id="case-1", report=report)
+
+    assert downgrades == []
+    assert report.checks[0].verdict == "pass"
+
+
+def test_apply_qc_verification_downgrades_fake_evidence_pointer() -> None:
+    asyncio.run(_test_apply_qc_verification_fake_pointer())
+
+
+async def _test_apply_qc_verification_fake_pointer() -> None:
+    """端到端：qc 编造不存在的 evidence_event_id → 验真降级 fail → 聚合 BLOCKED 并留痕。"""
+    agentteams = SimpleNamespace(
+        available=True, post_case_evidence=AsyncMock(return_value={"event_id": "evt-1"})
+    )
+    db = _db_with_known_evidence([])  # 本 Case 无任何已登记指针
+    service = AgentConsultationService(
+        db,
+        agent_service=SimpleNamespace(),
+        parallel_service=SimpleNamespace(),
+        agentteams_service=agentteams,
+    )
+    envelope = ConsultationEnvelope(
+        conclusion="PASSED\n已核查",
+        verification={
+            "claims": [
+                {"statement": "已查询 ClinVar，rs123456 频率 0.003", "claim_type": "external_lookup"}
+            ],
+            "checks": [
+                {
+                    "claim_index": 0,
+                    "verdict": "pass",
+                    "evidence_event_id": "evt-does-not-exist",
+                    "reason": "内容看起来合理",
+                }
+            ],
+        },
+    )
+
+    await service._apply_qc_verification(
+        envelope, case_id="case-1", agent_id="agent-qc",
+        work_item_id=None, causation_event_id=None,
+    )
+
+    assert envelope.hard_gate["decision"] == "BLOCKED"
+    assert envelope.hard_gate["qc_verdict"]["evidence_downgrades"] == 1
+    assert envelope.hard_gate["qc_verdict"]["evidence_verify_failed"] is False
+    assert envelope.conclusion.splitlines()[0] == "BLOCKED"
+    # 落库行携带降级后的 verdict 与验真失败原因（留痕）
+    row = db.add.call_args.args[0]
+    assert row.verdict == "fail"
+    assert "证据指针验真失败" in row.reason
+    assert row.evidence_event_id == "evt-does-not-exist"
+    event_types = [c.kwargs["event_type"] for c in agentteams.post_case_evidence.await_args_list]
+    assert "consultation.verification_recorded" in event_types
+    recorded = next(
+        c for c in agentteams.post_case_evidence.await_args_list
+        if c.kwargs["event_type"] == "consultation.verification_recorded"
+    )
+    assert recorded.kwargs["payload"]["evidence_downgrade_details"]

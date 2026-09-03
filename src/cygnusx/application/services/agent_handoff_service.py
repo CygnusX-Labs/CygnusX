@@ -74,7 +74,12 @@ class AgentHandoffService:
             )
         )
         if target is None:
-            raise BusinessError("目标 Agent 不存在或已停用")
+            hint = await self._allowed_targets_hint(source)
+            message = (
+                "目标 Agent 不存在或已停用；target_agent 必须填运行时目录中的 agent_id，"
+                "不能填显示名称"
+            )
+            raise BusinessError(f"{message}。{hint}" if hint else message)
         if target_agent_id == source_agent_id:
             raise BusinessError("不能转交给当前 Agent")
 
@@ -82,9 +87,13 @@ class AgentHandoffService:
         allowed_targets = {str(item) for item in handoff_config.get("allowed_targets", [])}
         allow_all_active_targets = "*" in allowed_targets
         if not allow_all_active_targets and target_agent_id not in allowed_targets:
-            raise BusinessError("目标 Agent 不在当前 Agent 的转交白名单中")
+            hint = await self._allowed_targets_hint(source)
+            message = "目标 Agent 不在当前 Agent 的转交白名单中"
+            raise BusinessError(f"{message}。{hint}" if hint else message)
         if allow_all_active_targets and (target.features or {}).get("router"):
-            raise BusinessError("不能转交给路由 Agent")
+            hint = await self._allowed_targets_hint(source)
+            message = "不能转交给路由 Agent"
+            raise BusinessError(f"{message}。{hint}" if hint else message)
         max_hops = self._parse_max_hops(handoff_config.get("max_hops_per_session"))
 
         history = list(
@@ -130,6 +139,29 @@ class AgentHandoffService:
             "hop_index": next_hop,
             "packet": packet,
         }
+
+    async def _allowed_targets_hint(self, source: AgentTemplateModel) -> str:
+        """列出源 Agent 当前可转交的合法目标（agent_id（名称）），供报错回灌自我纠正。"""
+        handoff_config = dict((source.features or {}).get("handoff") or {})
+        allowed_targets = {str(item) for item in handoff_config.get("allowed_targets", [])}
+        if not allowed_targets:
+            return ""
+        allow_all = "*" in allowed_targets
+        candidates = (
+            await self._db.scalars(
+                select(AgentTemplateModel)
+                .where(AgentTemplateModel.is_active == True)  # noqa: E712
+                .order_by(AgentTemplateModel.category, AgentTemplateModel.name)
+            )
+        ).all()
+        entries = [
+            f"{candidate.agent_id}（{candidate.name}）"
+            for candidate in candidates
+            if candidate.agent_id != source.agent_id
+            and not (candidate.features or {}).get("router")
+            and (allow_all or candidate.agent_id in allowed_targets)
+        ]
+        return f"当前可转交的 Agent：{'、'.join(entries)}" if entries else ""
 
     async def record_handoff(
         self, *, user_id: str, session_id: str, directive: dict[str, Any]

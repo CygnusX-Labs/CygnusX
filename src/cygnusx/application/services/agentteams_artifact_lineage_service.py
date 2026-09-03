@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy import func, select
@@ -220,6 +221,60 @@ class AgentTeamsArtifactLineageService:
     def verify_checksum(row: CaseArtifactVersionModel, content: bytes) -> bool:
         """篡改检测：对 storage_uri 指向的内容重算 sha256 与登记值比对。"""
         return hashlib.sha256(content).hexdigest() == row.checksum_sha256
+
+    async def verify_case_checksums(
+        self,
+        case_id: str,
+        content_resolver: Callable[[str], Awaitable[bytes | None]],
+    ) -> list[dict[str, Any]]:
+        """交付前批量篡改检测：对本 Case 每个产物最新版本重算 sha256 并比对登记值。
+
+        ``content_resolver(storage_uri)`` 返回内容字节；无法解析（对象不存在 /
+        读取失败）返回 None，该版本记 ``unverified`` 而非静默跳过。比对不通过记
+        ``mismatch``。本方法不抛异常——逐条返回结构化结果，由调用方留痕/告警。
+        """
+        rows = (
+            (
+                await self._db.execute(
+                    select(CaseArtifactVersionModel)
+                    .where(CaseArtifactVersionModel.case_id == case_id)
+                    .order_by(
+                        CaseArtifactVersionModel.artifact_id,
+                        CaseArtifactVersionModel.version_no.desc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        latest: dict[str, CaseArtifactVersionModel] = {}
+        for row in rows:
+            latest.setdefault(row.artifact_id, row)
+        results: list[dict[str, Any]] = []
+        for artifact_id, row in sorted(latest.items()):
+            entry: dict[str, Any] = {
+                "artifact_id": artifact_id,
+                "version_id": str(row.id),
+                "version_no": row.version_no,
+                "storage_uri": row.storage_uri,
+            }
+            content = await content_resolver(row.storage_uri)
+            if content is None:
+                results.append(
+                    {**entry, "status": "unverified", "reason": "无法读取登记内容，未做比对"}
+                )
+                continue
+            if self.verify_checksum(row, content):
+                results.append({**entry, "status": "verified", "reason": "sha256 与登记值一致"})
+            else:
+                results.append(
+                    {
+                        **entry,
+                        "status": "mismatch",
+                        "reason": "sha256 与登记值不一致，产物可能在登记后被篡改",
+                    }
+                )
+        return results
 
 
 __all__ = [

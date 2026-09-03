@@ -14,6 +14,7 @@ from cygnusx.core.telemetry import get_tracer
 from cygnusx.domain.ai_provider.entities import AIProviderConfig
 from cygnusx.infrastructure.ai_provider.base import StreamEvent
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
+    _dedupe_tools,
     normalize_token_usage,
     record_ai_call_metrics,
 )
@@ -135,7 +136,9 @@ class LiteLLMProvider:
             "stream_options",
         ):
             if key in overrides:
-                kwargs[key] = overrides[key]
+                # 工具按 function.name 去重：多来源组装可能重名，
+                # DeepSeek 等供应商会因 Tool names must be unique 直接拒请求
+                kwargs[key] = _dedupe_tools(overrides[key]) if key == "tools" else overrides[key]
 
         kwargs.setdefault("num_retries", 2)
         if kwargs.get("stream"):

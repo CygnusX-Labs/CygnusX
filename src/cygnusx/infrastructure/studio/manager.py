@@ -1,13 +1,14 @@
 """OmicStudio 沙盒管理器 —— 每会话一个容器，经 sandbox-agent HTTP 交互。
 
 设计（架构设计 §5/§6，按仓库现状适配：纯 docker SDK，无 Swarm）：
-- 懒启动：会话首次执行时 ensure_running 拉起容器，名 studio-{session_id[:8]}；
+- 懒启动：会话首次执行时 ensure_running 拉起容器，UUID 会话名 studio-{session_id[:8]}，
+  非 UUID 会话 ID（如 agentteams:{case_id}）用哈希后缀避免前缀碰撞共享容器；
 - 交互：Web 通过共享工作区 Unix Socket 直连 sandbox-agent，不依赖沙盒网络、不发布端口、不 docker exec；
 - 工作区：bind-mount {workspace_root}/{session_id} -> /workspace，预建 input/output/ref/.logs；
 - 平台数据（P1 数据不搬家）：新建容器时把 {storage_path}/users/{user_id} 只读挂到
   /data/platform，input/ 软链经它解析；按用户目录挂载是多租户隔离红线
-  （整根挂载会让沙盒内代码可读全部用户数据）。仅新建容器生效：已在运行的旧容器
-  无此挂载（其内 input 软链不可读），回收重建后自动获得；
+  （整根挂载会让沙盒内代码可读全部用户数据）。复用旧容器时校验该挂载，
+  缺失或源不匹配（如挂载功能上线前创建的陈旧容器）即自动重建；
 - 回收：Redis ZSET 记录跨进程 last_activity，Celery beat 每 5 分钟回收超 TTL 容器；
   每次执行/文件请求持有独立 Redis 租约，避免长任务或并发请求被误回收。
 - 预热：会话创建后后台启动其专属容器；plain Docker 无法安全重绑 per-user bind mount，
@@ -67,6 +68,35 @@ _studio_mcp_count = _studio_meter.create_counter(
 
 class StudioSandboxUnavailableError(Exception):
     """沙盒不可用（Docker 未就绪 / Studio 未启用 / 镜像缺失）"""
+
+
+def _seccomp_security_opt(profile: str) -> str | None:
+    """把 seccomp_profile 配置转换为 Docker security_opt 条目。
+
+    Docker daemon 的 seccomp 选项只接受 ``unconfined`` 或字面 JSON profile 内容；
+    ``default`` 不是合法值（daemon 会尝试按 JSON 解码并拒绝启动容器）。
+    省略 seccomp 选项时 daemon 自动应用其内置默认 profile，语义即“default”，
+    因此该配置返回 None（不追加 security_opt 条目）。
+    """
+    normalized = (profile or "").strip()
+    if normalized.lower() in {"", "default"}:
+        return None
+    if normalized.lower() == "unconfined":
+        return "seccomp=unconfined"
+    return f"seccomp={normalized}"
+
+
+def _tmpfs_mounts(config: StudioConfig) -> dict[str, str]:
+    """只读根文件系统下的可写 tmpfs 挂载表。
+
+    除 /tmp 外，按容器用户属主挂载 agent 缓存目录（micromamba 进程锁等）。
+    """
+    tmpfs = {"/tmp": f"rw,nosuid,nodev,noexec,size={config.sandbox.tmpfs_size}"}
+    cache_dir = config.sandbox.agent_cache_dir.strip()
+    if cache_dir:
+        uid, _, gid = config.sandbox.container_user.partition(":")
+        tmpfs[cache_dir] = f"rw,uid={uid},gid={gid or uid},size=256m"
+    return tmpfs
 
 
 @dataclass
@@ -167,6 +197,14 @@ class StudioSandboxManager:
 
     @staticmethod
     def container_name(session_id: str) -> str:
+        """容器命名：UUID 会话沿用前 8 位（兼容存量容器）；非 UUID 会话 ID
+        （如 agentteams:{case_id}）改用哈希后缀——其短前缀恒相同
+        （"agentteams:"[:8]="agenttea"），直接用前缀会让多会话共享同一容器。"""
+        try:
+            uuid.UUID(session_id)
+        except ValueError:
+            suffix = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+            return f"studio-{suffix}"
         return f"studio-{session_id[:8]}"
 
     @staticmethod
@@ -384,8 +422,9 @@ class StudioSandboxManager:
     ) -> SandboxHandle:
         """确保会话容器运行中（懒启动 + 复用），返回句柄。
 
-        user_id 仅在新建容器时用到：决定 /data/platform 只读挂载的宿主源目录
-        （{storage_path}/users/{user_id}）；复用已运行容器时忽略。
+        user_id 决定 /data/platform 只读挂载的宿主源目录
+        （{storage_path}/users/{user_id}）；复用已运行容器时会校验该挂载，
+        缺失或源不匹配（如陈旧容器无此挂载）即重建容器。
         """
         config = self._config()
         if not config.enabled:
@@ -415,6 +454,8 @@ class StudioSandboxManager:
                 self._scratch_volumes[session_id] = scratch_mgr
             workspace = scratch_mgr.volume.workspace
             volumes = scratch_mgr.volumes_for_container()
+            # cloud scratch 卷自行管理挂载，平台只读挂载基线校验不适用
+            expected_platform_source: str | None = None
         else:
             workspace = persistent_workspace
             volumes: dict[str, dict[str, str]] = {
@@ -422,6 +463,7 @@ class StudioSandboxManager:
             }
             # P1 数据不搬家：当前用户数据目录只读挂入容器，input/ 软链经它解析。
             # 多租户红线：只挂 users/{user_id}，绝不整根挂 storage_path。
+            expected_platform_source = None
             if user_id:
                 user_root = Path(get_settings().storage_path) / "users" / str(user_id)
                 if user_root.is_dir():
@@ -429,6 +471,7 @@ class StudioSandboxManager:
                         "bind": PLATFORM_CONTAINER_MOUNT,
                         "mode": "ro",
                     }
+                    expected_platform_source = str(user_root)
                 else:
                     logger.warning(
                         f"[Studio] 用户数据目录不存在，跳过平台只读挂载: {user_root}"
@@ -458,6 +501,19 @@ class StudioSandboxManager:
                         with contextlib.suppress(Exception):
                             container.remove(force=True)
                         container = None
+                if container is not None and not self._container_mounts_match(
+                    container, expected_platform_source
+                ):
+                    # 挂载功能上线前创建的陈旧容器没有 /data/platform 挂载，
+                    # 或其源指向其他用户目录；复用会让 input/ 软链不可读，直接重建。
+                    logger.warning(
+                        "[Studio] 旧容器平台只读挂载缺失或源不匹配，重建沙箱 {}", name
+                    )
+                    with contextlib.suppress(Exception):
+                        container.stop(timeout=5)
+                    with contextlib.suppress(Exception):
+                        container.remove(force=True)
+                    container = None
                 if container is not None:
                     if container.status != "running":
                         container.start()
@@ -506,6 +562,11 @@ class StudioSandboxManager:
                 with contextlib.suppress(OSError):
                     socket_path.unlink()
                 capabilities = config.capabilities_for_image(image)
+                security_opt = ["no-new-privileges:true"]
+                seccomp_opt = _seccomp_security_opt(config.sandbox.seccomp_profile)
+                if seccomp_opt is not None:
+                    security_opt.append(seccomp_opt)
+                tmpfs = _tmpfs_mounts(config)
                 run_kwargs: dict[str, Any] = {
                     "image": image,
                     "name": name,
@@ -516,14 +577,9 @@ class StudioSandboxManager:
                     "pids_limit": config.sandbox.pids_limit,
                     "cap_drop": ["ALL"],
                     "user": config.sandbox.container_user,
-                    "security_opt": [
-                        "no-new-privileges:true",
-                        f"seccomp={config.sandbox.seccomp_profile}",
-                    ],
+                    "security_opt": security_opt,
                     "read_only": config.sandbox.read_only_rootfs,
-                    "tmpfs": {
-                        "/tmp": f"rw,nosuid,nodev,noexec,size={config.sandbox.tmpfs_size}",
-                    },
+                    "tmpfs": tmpfs,
                     "volumes": volumes,
                     "labels": {"cygnusx.studio": "1", "cygnusx.studio.session": session_id},
                     "environment": {
@@ -633,6 +689,21 @@ class StudioSandboxManager:
             )
 
     @staticmethod
+    def _container_mounts_match(container: Any, expected_platform_source: str | None) -> bool:
+        """复用前校验挂载基线：期望的平台只读挂载必须存在且源为当前用户数据目录。
+
+        expected_platform_source 为 None（无用户上下文或 cloud scratch 模式）时不强制。
+        """
+        if expected_platform_source is None:
+            return True
+        mounts = (getattr(container, "attrs", {}) or {}).get("Mounts") or []
+        return any(
+            str(mount.get("Destination")) == PLATFORM_CONTAINER_MOUNT
+            and str(mount.get("Source")) == expected_platform_source
+            for mount in mounts
+        )
+
+    @staticmethod
     def _validate_container_security(container: Any, config: StudioConfig) -> None:
         """拒绝复用不满足当前 Studio 安全基线的旧容器。"""
         host_config = container.attrs.get("HostConfig", {})
@@ -651,7 +722,8 @@ class StudioSandboxManager:
         actual_user = str(container.attrs.get("Config", {}).get("User", ""))
         if actual_user != config.sandbox.container_user:
             raise StudioSandboxUnavailableError("Studio 沙盒运行用户不是固定非 root 用户")
-        if f"seccomp={config.sandbox.seccomp_profile}" not in security_opts:
+        seccomp_opt = _seccomp_security_opt(config.sandbox.seccomp_profile)
+        if seccomp_opt is not None and seccomp_opt.lower() not in security_opts:
             raise StudioSandboxUnavailableError("Studio 沙盒未显式启用 seccomp profile")
 
     @staticmethod
