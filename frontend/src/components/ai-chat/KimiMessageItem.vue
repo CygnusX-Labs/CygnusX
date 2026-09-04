@@ -29,12 +29,14 @@ import AskUserCard from './AskUserCard.vue'
 import PlanConfirmationCard from './PlanConfirmationCard.vue'
 import OverdriveApprovalCard from './OverdriveApprovalCard.vue'
 import OverdriveProgressCard from './OverdriveProgressCard.vue'
+import SuggestionChips from './SuggestionChips.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import apiClient from '@/api/client'
 import { chatApi } from '@/api/chat'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
+import { parseNextStepSuggestions } from '@/utils/nextStepSuggestions'
 import type {
   ChatMessage,
   CollaborationRouteInfo,
@@ -62,6 +64,10 @@ interface Props {
   agentColor?: string
   modelName?: string
   sessionId?: string
+  /** 建议追问 Chips 总开关（默认关闭，页面侧显式开启，出问题时一行即可隐藏） */
+  suggestionsEnabled?: boolean
+  /** 由消息列表判定：本条是最后一条已完成的 assistant 消息且当前无流式输出 */
+  showSuggestions?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -75,6 +81,8 @@ const props = withDefaults(defineProps<Props>(), {
   agentColor: '#4f8ef7',
   modelName: 'AI 助手',
   sessionId: '',
+  suggestionsEnabled: false,
+  showSuggestions: false,
 })
 
 const emit = defineEmits<{
@@ -89,6 +97,8 @@ const emit = defineEmits<{
   openToolPage: [route: string, args: Record<string, unknown>]
   createCaseFromConsultation: [summary: string, consultationId?: string]
   correctCollaborationRoute: [route: CollaborationRouteInfo]
+  suggestionSend: [prompt: string]
+  suggestionPrefill: [prompt: string]
 }>()
 
 const router = useRouter()
@@ -273,6 +283,18 @@ const isRoomStreaming = computed(() =>
   !props.isStreaming && !!props.message.senderAgent && props.message.status === 'streaming',
 )
 const streamingActive = computed(() => props.isStreaming || isRoomStreaming.value)
+
+/** 建议追问 Chips：仅在回复流式输出完成后展示。数据源优先级：
+ *  消息上的结构化 suggestions（后端 done 事件下发/历史持久化恢复）>
+ *  "可选下一步"编号列表正则解析兜底；两者皆空时 SuggestionChips 不渲染、不留占位。 */
+const followUpSuggestions = computed(() => {
+  if (!props.suggestionsEnabled || !props.showSuggestions) return []
+  if (props.message.role !== 'assistant' || streamingActive.value) return []
+  if (props.message.status && props.message.status !== 'complete') return []
+  const structured = props.message.suggestions
+  if (structured?.length) return structured
+  return parseNextStepSuggestions(props.message.content)
+})
 const isWorkerSpeech = computed(() => props.message.senderAgent?.role === 'worker')
 const isWorkerCollapsed = computed(() =>
   isWorkerSpeech.value && !workerExpanded.value,
@@ -1265,6 +1287,15 @@ function handleEdit() {
           </details>
           </template>
         </div>
+
+        <!-- 建议追问 Chips：回复完成后展示"可选下一步"胶囊，独立于消息主链路，
+             出问题把父级 suggestionsEnabled 关掉即可整体隐藏 -->
+        <SuggestionChips
+          v-if="followUpSuggestions.length"
+          :suggestions="followUpSuggestions"
+          @send="(prompt) => emit('suggestionSend', prompt)"
+          @prefill="(prompt) => emit('suggestionPrefill', prompt)"
+        />
 
         <!-- Studio ask_user 澄清卡片：分页交互收集（选项/自由输入/跳过），回答后折叠为工具卡片样式 -->
         <PlanConfirmationCard

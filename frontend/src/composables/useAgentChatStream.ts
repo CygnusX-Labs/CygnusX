@@ -8,6 +8,7 @@
  */
 import { ref } from 'vue'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
+import { normalizeSuggestions, type SuggestedFollowUp } from '@/utils/nextStepSuggestions'
 import type { PlanAgentSummary, PlanConfirmation } from '@/components/ai-chat/types'
 
 export interface AgentChatStreamOptions {
@@ -347,6 +348,7 @@ export interface AgentStreamCallbacks {
     finishReason?: string,
     finalContent?: string,
     finalReasoning?: string,
+    suggestions?: SuggestedFollowUp[],
   ) => void
 }
 
@@ -1080,6 +1082,9 @@ export function useAgentChatStream() {
           if (sessionId && messageId) cb.onSessionCreated?.(sessionId, messageId)
           const usage = data.usage as TokenUsage | undefined
           const finishReason = data.finish_reason as string | undefined
+          // 建议追问 Chips（阶段 2 结构化通道）：done 事件 metadata 透传的
+          // suggestions 原样下发，缺失/空数组时由消息渲染层回退正则解析兜底
+          const suggestions = normalizeSuggestions(data.suggestions)
           cb.onDone?.(
             sessionId || '',
             messageId || '',
@@ -1087,6 +1092,7 @@ export function useAgentChatStream() {
             finishReason,
             content,
             reasoning,
+            suggestions.length ? suggestions : undefined,
           )
         }
         break

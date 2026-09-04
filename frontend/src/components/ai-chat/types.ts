@@ -1,5 +1,6 @@
 import type { DataFile } from '@/types'
 import type { AgentTemplate, SkillItem } from '@/types/agent'
+import type { SuggestedFollowUp } from '@/utils/nextStepSuggestions'
 
 // ===== Token 统计 =====
 export interface TokenInfo {
@@ -191,6 +192,9 @@ export interface ChatMessage {
   tokens?: TokenInfo
   /** 消息状态，用于流式错误/空内容识别 */
   status?: 'complete' | 'streaming' | 'error' | 'empty'
+  /** 建议追问 Chips（AI 消息专属）：后端 done 事件下发的结构化建议，
+   *  随消息 metadata 持久化；存在时优先于"可选下一步"正则解析兜底 */
+  suggestions?: SuggestedFollowUp[]
   /** 错误原因（AI 消息专属）：出错时 content 保留已累计正文，错误信息单独存放于此 */
   error?: string
   /** 模型结束原因（done 事件透传），length 表示输出预算耗尽 */

@@ -58,6 +58,7 @@ from cygnusx.application.services.chat.assistant_service import AssistantService
 from cygnusx.application.services.chat.assistant_management import ChatAssistantManagement
 from cygnusx.application.services.chat.runtime_support import ChatRuntimeSupport
 from cygnusx.application.services.chat.persistence_support import ChatPersistenceSupport
+from cygnusx.application.services.chat.next_step_suggestions import suggestions_metadata
 from cygnusx.application.services.chat.request_preparation import (
     AgentRequestPreparationFailure,
     prepare_agent_request,
@@ -4246,6 +4247,8 @@ class ChatService(
                         **({"usage": last_usage} if last_usage else {}),
                         **({"web_sources": web_sources} if web_sources else {}),
                         **({"timeline": timeline} if timeline else {}),
+                        # 建议追问 Chips：解析"可选下一步"列表，随消息落库供历史重载
+                        **suggestions_metadata(full_content),
                     }
                     await self.update_message_content(
                         ai_message.message_id,
@@ -4258,6 +4261,7 @@ class ChatService(
                         "session_id": current_session_id,
                         "message_id": ai_message.message_id,
                         "usage": last_usage,
+                        **suggestions_metadata(full_content),
                     }
                     if last_finish_reason:
                         done_meta["finish_reason"] = last_finish_reason
@@ -5392,6 +5396,7 @@ class ChatService(
                         **({"usage": last_usage} if last_usage else {}),
                         **({"web_sources": web_sources} if web_sources else {}),
                         **({"timeline": timeline} if timeline else {}),
+                        **suggestions_metadata(full_content),
                     }
                     await self.update_message_content(
                         ai_message.message_id,
@@ -5416,6 +5421,7 @@ class ChatService(
                             "session_id": current_session_id,
                             "message_id": ai_message.message_id,
                             "usage": last_usage,
+                            **suggestions_metadata(full_content),
                         },
                     )
                     return

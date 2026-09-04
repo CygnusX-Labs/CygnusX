@@ -59,6 +59,7 @@ import {
 import { studioApi, type StudioPermissionMode, type StudioRuntimeProfile } from '@/api/studio'
 import { useChatStore } from '@/stores/chat'
 import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
+import { normalizeSuggestions } from '@/utils/nextStepSuggestions'
 import { resolveRoleIdentity } from '@/utils/roleIdentity'
 import { filterUserVisibleMessages, isUserVisibleMessage } from '@/utils/userVisibleMessage'
 import type {
@@ -1641,6 +1642,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         if (m.role === 'assistant' && typeof m.metadata_json?.thought === 'string') {
           msg.thought = m.metadata_json.thought
         }
+        // 建议追问 Chips：恢复随消息落库的结构化 suggestions（刷新后历史消息 chips 仍在）
+        if (m.role === 'assistant') {
+          const restoredSuggestions = normalizeSuggestions(m.metadata_json?.suggestions)
+          if (restoredSuggestions.length) msg.suggestions = restoredSuggestions
+        }
         if (m.role === 'assistant' && typeof m.metadata_json?.summary === 'string') {
           msg.overdriveSummary = m.metadata_json.summary
         }
@@ -2654,13 +2660,21 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           streamingThought.value = ''
           releaseSessionIdLock()
         },
-        onDone: (_, messageId, usage, finishReason, finalContent, finalReasoning) => {
+        onDone: (_, messageId, usage, finishReason, finalContent, finalReasoning, suggestions) => {
           cleanupStreamRetryNotices(session)
           if (session.overdrive || effectiveOverdrive) {
             finalizeRoomSpeeches()
             isStreaming.value = false
             releaseSessionIdLock()
             return
+          }
+          if (suggestions?.length) {
+            // 结构化建议追问落到消息模型（与 tokens 相同的定位策略）
+            const targetId = messageId || aiMsg.backendMessageId || aiMsg.id
+            const target = session.messages.find(
+              (item) => (item.id === targetId || item.backendMessageId === targetId) && item.role === 'assistant',
+            )
+            ;(target || aiMsg).suggestions = suggestions
           }
           if (!streamingContent.value && finalContent) {
             streamingContent.value = finalContent

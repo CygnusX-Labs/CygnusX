@@ -125,11 +125,7 @@ async def _cleanup_expired() -> dict:
                 await session.delete(fm)
                 expired_files += 1
             else:  # archive
-                archive_dir = storage_root / "archive" / str(fm.user_id)
-                archive_dir.mkdir(parents=True, exist_ok=True)
-                src = storage_root / fm.storage_path
-                if src.exists():
-                    shutil.move(str(src), str(archive_dir / src.name))
+                _archive_file(storage_root, str(fm.user_id), fm.storage_path)
                 fm.status = "archived"
                 archived_files += 1
 
@@ -141,6 +137,36 @@ async def _cleanup_expired() -> dict:
         "expired_files": expired_files,
         "archived_files": archived_files,
     }
+
+
+def _archive_file(storage_root: Path, user_id: str, storage_path: str) -> bool:
+    """把单个冷数据文件移入 archive/{user_id}/，返回是否实际移动。
+
+    保留 users/{uid}/ 之后的相对目录结构，避免按裸文件名平铺时
+    不同目录的同名文件静默互相覆盖；目标已存在（同一路径二次归档）
+    时追加 " (N)" 序号。
+    """
+    src = storage_root / storage_path
+    if not src.exists():
+        return False
+    archive_dir = storage_root / "archive" / user_id
+    dst = _archive_destination(archive_dir, user_id, storage_path)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+    return True
+
+
+def _archive_destination(archive_dir: Path, user_id: str, storage_path: str) -> Path:
+    rel = Path(storage_path)
+    parts = rel.parts
+    if len(parts) > 2 and parts[0] == "users" and parts[1] == user_id:
+        rel = Path(*parts[2:])
+    dst = archive_dir / rel
+    counter = 2
+    while dst.exists():
+        dst = archive_dir / rel.parent / f"{rel.stem} ({counter}){rel.suffix}"
+        counter += 1
+    return dst
 
 
 def _dir_size(path: Path) -> int:

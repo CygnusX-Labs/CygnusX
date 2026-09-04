@@ -12,6 +12,8 @@ from cygnusx.application.services.chat.configuration import (
     RESEARCH_TOOL_CHANNEL,
     RESEARCH_TOOL_NAMES,
 )
+from cygnusx.application.services.chat.next_step_suggestions import suggestions_metadata
+from cygnusx.application.services.chat.runtimes.delegating_runtime import DelegatingAgentRuntime
 from cygnusx.application.services.chat.utils import (
     _cap_tool_invocation_payload,
     _fanout_ask_request,
@@ -29,8 +31,6 @@ from cygnusx.infrastructure.ai_provider.openai_compatible import (
     merge_token_usage,
     provider_manager,
 )
-
-from cygnusx.application.services.chat.runtimes.delegating_runtime import DelegatingAgentRuntime
 
 
 class LangGraphChatRuntime(DelegatingAgentRuntime):
@@ -531,6 +531,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 **({"usage": last_usage} if last_usage else {}),
                 **({"web_sources": persisted_web_sources} if persisted_web_sources else {}),
                 **({"timeline": timeline} if timeline else {}),
+                **suggestions_metadata(full_content),
             }
             or None,
         )
@@ -567,5 +568,6 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 "session_id": session_id,
                 "message_id": ai_message_id,
                 "usage": last_usage,
+                **suggestions_metadata(full_content),
             },
         )

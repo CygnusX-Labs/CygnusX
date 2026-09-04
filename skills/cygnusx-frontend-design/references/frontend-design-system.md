@@ -462,6 +462,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - [ ] 进度/百分比/计数等派生数值是否在任何数据尺度下都正确（§33.2 进度尺度归一化），而非依赖单一写死约定？
 - [ ] 设计是否规避 §33.1 的「AI 默认」清单（纯白无氛围、三列等宽 hero、统一间距/圆角、通用无衬线、对称留白），在不破坏 §1 克制原则的前提下具备品牌辨识度与层次？
 - [ ] 涉及流式/连接类组合式函数（`useChatStream`、`useAgentChatStream`、WebSocket 等）改动时：`isStreaming`/`status` 等入口守卫标志位是否在 `try/finally` 中对**所有**退出路径复位（§18.2 流式状态机纪律）？是否有"同一实例连续第二次调用"的回归测试？diff 中删除 `finally` 一律打回。
+- [ ] 涉及图片/PDF 预览时：是否符合 §17.3/§18.4.4 —— PDF 不内嵌原生查看器（弹窗内 `#toolbar=0&navpanes=0`）、图片可点击放大（25%–500% 缩放）、工具条走语义令牌、打印统一用 `printBlobUrl()`？
 
 ### 10.1 Dark Mode Checklist
 
@@ -690,10 +691,25 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 
 ### 17.3 文件预览
 
-- 文本类（FASTA、CSV、日志）：前 100 行预览 + "查看完整文件"。
-- 图片（PNG、SVG）：`NImage` 预览。
-- 不支持预览的格式：显示文件图标 + 元信息（大小、修改时间）+ 下载按钮。
-- 预览不加载完整文件到内存；使用 Range 请求或后端截断。
+#### 17.3.1 预览能力矩阵
+
+| 类型 | 内联/列表态 | 点击放大弹窗 |
+| --- | --- | --- |
+| 图片（PNG、JPG、SVG、WebP 等） | 可点击缩略图（`cursor: zoom-in`，hover 显示"点击放大"提示） | 大图 + 缩放工具（缩小 / 百分比 / 放大 / 重置，25%–500%，支持滚轮）+ 下载、打印 |
+| PDF | **禁止内嵌 `<iframe>`**；使用"图标 + 点击放大预览"占位按钮 | 弹窗内嵌查看器 + 自定义工具条（下载、打印） |
+| 文本/代码（FASTA、CSV、日志、脚本等） | 列表 + "预览"按钮 | 前 100 行或前 200K 字符 + 高亮 + 截断提示 |
+| 表格（XLSX、XLS） | 列表 + "预览"按钮 | 前 100 行 / 前 3 个 sheet + 截断提示 |
+| 不支持的格式 | 文件图标 + 元信息（大小、修改时间）+ 下载按钮 | — |
+
+#### 17.3.2 图片与 PDF 预览规则（强制）
+
+- **PDF 不得以前台 `<iframe>` 直接内嵌**：浏览器原生 PDF 查看器自带深色工具栏（保存到网盘/下载/打印），与卡片浅色设计冲突且造成视觉错位。内联位置一律使用占位按钮，点击查看进入弹窗。
+- **弹窗内嵌 PDF 查看器时**，Object URL 必须追加 `#toolbar=0&navpanes=0` 隐藏原生工具栏；下载、打印由弹窗内的自定义工具条接管。
+- **弹窗工具条**使用语义令牌：`--bg-secondary` / `--stardust-border-soft` 底与边框，`--brand-primary` / `--brand-primary-light` 动作按钮；不得硬编码黑/白底。
+- **打印**统一使用 `frontend/src/utils/blobPrint.ts` 的 `printBlobUrl()`（隐藏 iframe 触发打印，最长 60s 后移除）；不要在业务组件内重复实现。
+- 打印/下载按钮使用图标 + 文字，提供 `aria-label` 或可读文本；缩放百分比用 `aria-live="polite"` 播报；缩放/hover 过渡在 `prefers-reduced-motion` 下关闭。
+- 预览不加载完整文件到内存；大文件使用 Range 请求或后端截断。
+- **权威实现**：`frontend/src/components/ai-chat/MessageArtifactGallery.vue`（AI 消息产物画廊）、`frontend/src/components/studio/StudioArtifactsPanel.vue`（Studio 产物面板）；AI 场景细则见 §18.4.4。文件管理预览（`FilePreviewModal`）等其余入口新增图片/PDF 预览时必须按本节对齐。
 
 ## 18. AI 对话与流式界面
 
@@ -713,6 +729,59 @@ AI 消息区内嵌的状态提示、路由转交、协作决策等卡片（如 `
 - **内部排列**：标题/标签与说明文字在同一行自然左对齐排列（用 `gap` 连接），**禁止**使用 `justify-content: space-between` 把说明文字推到最右侧；说明文字过长时以省略号截断。
 - **权威实现**：`frontend/src/components/ai-chat/RouteTransitionCard.vue`、`frontend/src/components/ai-chat/CollaborationRouteNotice.vue`。
 - **新增组件**：凡是在 AI 消息流中水平排列、非浮动/非模态的内联信息卡，默认复用上述尺寸与排列规则；需要特殊宽度时必须在前端设计文档中说明理由。
+
+#### 18.1.2 Plan 分析计划卡片规范（强制）
+
+Plan 分析计划卡片（`PlanCard`）是 Plan 模式下展示任务步骤与执行进度的**输入框附着面板**，不是普通 AI 消息气泡。它必须与底部输入框形成视觉整体，同时保持独立容器与独立生命周期。
+
+**权威实现**：`frontend/src/components/studio/StudioPlanTimeline.vue`；工作台挂载位置为 `frontend/src/views/StudioView.vue` 的输入区上方。相关视觉基线见 `docs/info/26.8.22/前端组件规范-Plan分析计划卡片.md`。
+
+##### 结构与布局
+
+- 卡片由标题行、进度 chip、折叠 chevron 和纵向步骤时间线组成；标题行整行可点击。
+- 卡片左右边界必须与同一页面的 `KimiChatInput` 输入框完全对齐。优先复用同一 wrapper；若卡片与输入框是兄弟节点，使用相同的水平 padding 与 `box-sizing: border-box`，不得单独套用消息气泡宽度。
+- 卡片与输入框保持 `8px` 间距；卡片使用独立容器，不得叠入、遮挡或改变输入框组件的生命周期。
+- 容器使用 `12px` 圆角、`1px` 语义边框、`var(--chat-ai-card)` 或等价 Surface 背景，以及 `var(--chat-shadow-sm)` / `var(--shadow-card)` 柔和阴影。
+- 桌面与移动端均须保持输入框边界对齐，移动端不得出现横向滚动；步骤标题过长使用省略号，不允许撑破卡片。
+
+##### 尺寸与视觉层级
+
+| 元素 | 规范 |
+| --- | --- |
+| 标题 | `14px`、字重 `600` |
+| 步骤文字 | `13px`～`14px`；进行中步骤 `500`，其余 `400` |
+| 步骤行 | `padding: 8px 12px`；状态标签与步骤文字同行右对齐 |
+| 连接线 | `2px`，使用 `--chat-border` / `--neutral-border` 等语义令牌 |
+| 时间线节点 | 与步骤文字首行基线对齐；进行中节点显示主色外环 |
+| 进度 chip | 文案为 `X/N`，`12px`，圆角 `999px`，水平 padding `8px` |
+| 折叠按钮 | 可点击区域不小于 `24×24px`；hover 使用 Surface Hover，不新造颜色 |
+
+颜色必须来自 `--chat-*`、`--neutral-*`、`--arco-primary` 或现有成功/错误语义变量。待执行文字不能使用低对比度浅灰；浅色和深色主题均须满足 WCAG AA，正文对比度不低于 `4.5:1`。禁止在组件样式中新增孤立的 hex 色值。
+
+##### 状态与数据契约
+
+- 计划步骤数据结构与状态流转由业务层维护；卡片只消费步骤列表，不在视觉组件内重写轮询、流式更新或状态机。
+- 三种状态必须同时体现为文字、节点视觉和必要的颜色语义：`in_progress`（进行中）、`pending`（待执行）、`done`（已完成）。
+- 步骤状态从进行中推进到已完成时，卡片应实时更新节点、状态标签和 `X/N` 进度，不得因折叠动画或组件重渲染丢失数据。
+- `done` 步骤可使用实心主色节点与“已完成”标签；`in_progress` 使用主色节点、当前步骤字重 `500` 和低频脉冲；`pending` 使用空心弱化节点，但文字仍需达到可读对比度。
+
+##### 折叠与摘要
+
+- 默认展示步骤列表；折叠后只保留一行摘要和 chevron。
+- 执行中摘要格式：`分析计划 · 已完成 X/N · 当前：{当前步骤标题}`。
+- 全部完成摘要格式：`分析计划 · N/N 已完成 ✓`。
+- 当前步骤优先取 `in_progress`，没有进行中步骤时取下一条 `pending`；没有可执行步骤时显示“等待执行”。标题过长必须省略截断。
+- 折叠/展开使用 `grid-template-rows: 0fr ↔ 1fr` 或等价高度过渡，默认 `250ms ease-out`；不支持时降级为可控的 `max-height`，不得用突兀的 `display: none` 代替动画。
+- 计划全部完成后只自动折叠一次。用户手动展开后，后续状态更新不得再次自动收起；折叠状态保持在组件会话生命周期内即可，不要求持久化。
+- 折叠控制必须提供 `aria-expanded` 与 `aria-controls`；摘要文字应在折叠态对屏幕阅读器可感知。
+
+##### 动效、响应式与验收
+
+- chevron 使用 `transform` 旋转约 `180°`，过渡 `200ms`～`250ms`。
+- 进行中节点呼吸效果只允许使用 `opacity`，周期 `1.2s`、`ease-in-out`；禁止使用会引起布局抖动的宽高或 margin 动画。
+- 所有过渡控制在 `200ms`～`300ms`；必须提供 `@media (prefers-reduced-motion: reduce)`，关闭循环动画并让折叠直接切换。
+- 新增或修改 Plan 卡片时，至少验证：桌面与窄屏边界对齐、折叠摘要、全部完成自动折叠、手动展开后不再自动收起、深浅主题对比度、状态实时推进和无横向滚动。
+- 组件测试应覆盖标题行折叠/展开、`X/N` 进度更新和自动折叠护栏；不得只验证静态文案。
 
 ### 18.2 流式输出
 
@@ -786,6 +855,16 @@ AI 消息区内嵌的状态提示、路由转交、协作决策等卡片（如 `
 > **后端双执行路径陷阱**：`ChatService` 有两套并行的 Agent 执行路径——legacy 手写 `for _round` 循环和 LangGraph 引擎（`_stream_agent_chat_langgraph`，普通 `mode=chat` 会话默认走它）。工具调用落库、`timeline`、`ask_request`、handoff 等副作用在两条路径里**各自独立实现**。任何"工具结果要持久化/要随消息返回"的改动，**必须同时改两条路径**；只改 legacy 会让普通 chat 会话重开后卡片与图全部丢失（此问题真实发生过：LangGraph 路径只把 tool_call/tool_result yield 透传，从未写 `tool_invocations`）。
 >
 > 已经丢失的历史消息无法事后恢复（数据当时没落库）；修复只对新产生的消息生效。
+
+#### 18.4.4 产物媒体预览（图片放大 / PDF 弹窗）规范（强制）
+
+AI 消息流中的产物画廊（`MessageArtifactGallery`）与 Studio 右栏产物面板（`StudioArtifactsPanel`）遵循同一套媒体预览模式（通用规则与权威实现见 §17.3，本节为 AI 对话场景的落地细则）：
+
+- **消息内只显示轻量预览**：图片渲染为可点击缩略图（`cursor: zoom-in`，hover 显示"点击放大"提示）；**PDF 不得内嵌 `<iframe>`** —— 浏览器原生 PDF 查看器自带深色工具栏（保存/下载/打印），与卡片浅色设计冲突且造成视觉错位，一律改为"图标 + 点击放大预览"占位按钮。
+- **点击放大弹窗**：图片与 PDF 均在 `NModal preset="card"` 弹窗中查看；弹窗顶部提供统一的语义令牌工具条（`--bg-secondary` / `--stardust-border-soft` / `--brand-primary`），包含图片缩放（缩小 / 百分比 / 放大 / 重置，范围 25%–500%，支持滚轮）与下载、打印按钮。
+- **PDF 弹窗内嵌查看器时**，Object URL 必须追加 `#toolbar=0&navpanes=0` 隐藏原生工具栏，下载/打印由自定义工具条接管。
+- **打印**统一使用 `frontend/src/utils/blobPrint.ts` 的 `printBlobUrl()`（隐藏 iframe 触发打印，最长 60s 后移除）；不要在业务组件内重复实现。
+- 打印/下载按钮使用图标 + 文字，提供 `aria-label` 或可读文本，缩放百分比用 `aria-live="polite"` 播报；缩放过渡在 `prefers-reduced-motion` 下关闭。
 
 ## 19. 终端与代码沙箱
 

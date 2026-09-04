@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import tarfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -218,3 +221,94 @@ async def test_initialize_destroys_stopped_orphans() -> None:
     assert client.containers.get("dead-1").removed
     assert pool._warm_pool.qsize() == 1
     assert pool._warm_pool.get_nowait() == "sandbox-2"
+
+
+# ===== copy_dir_out 产物落盘 =====
+
+
+def _tar_bytes(top: str, entries: dict[str, bytes | None]) -> bytes:
+    """模拟 docker get_archive 的输出：tar 以目录 basename 为顶层。"""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(f"{top}/{name}")
+            if content is None:
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
+            else:
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+    return buf.getvalue()
+
+
+class _FakeArchiveAPI:
+    def __init__(self, archives: dict[str, bytes]) -> None:
+        self._archives = archives
+
+    def get_archive(self, container_id: str, path: str):
+        return iter([self._archives[path]]), {}
+
+
+class _FakeArchiveClient:
+    def __init__(self, archives: dict[str, bytes]) -> None:
+        self.api = _FakeArchiveAPI(archives)
+
+
+@pytest.mark.unit
+async def test_copy_dir_out_second_empty_source_does_not_delete_first_outputs(
+    tmp_path: Path,
+) -> None:
+    """回归：/tmp/chat_output 的产物先落盘后，/workspace/output 里的空
+    figures/results 子目录上提时不得把同名目录连同文件一起删掉。"""
+    archives = {
+        "/tmp/chat_output": _tar_bytes(
+            "chat_output",
+            {"figures/a.png": b"png-bytes", "results": None},
+        ),
+        "/workspace/output": _tar_bytes(
+            "output",
+            {"figures": None, "results": None},
+        ),
+    }
+    pool = SandboxPool()
+    pool._client = _FakeArchiveClient(archives)
+    host_dest = tmp_path / "host" / "output"
+
+    first = await pool.copy_dir_out("container-1", "/tmp/chat_output", host_dest)
+    assert [item["path"] for item in first] == ["figures/a.png"]
+
+    second = await pool.copy_dir_out("container-1", "/workspace/output", host_dest)
+
+    # 第一次落盘的文件必须仍在，且出现在第二次的全量清单里
+    assert (host_dest / "figures" / "a.png").read_bytes() == b"png-bytes"
+    assert [item["path"] for item in second] == ["figures/a.png"]
+
+
+@pytest.mark.unit
+async def test_copy_dir_out_merges_files_from_both_sources(tmp_path: Path) -> None:
+    """两个来源目录的同名子目录应合并，同名文件以后到者为准。"""
+    archives = {
+        "/tmp/chat_output": _tar_bytes(
+            "chat_output",
+            {"figures/a.png": b"old", "results/t1.tsv": b"t1"},
+        ),
+        "/workspace/output": _tar_bytes(
+            "output",
+            {"figures/b.png": b"new-file", "results/t1.tsv": b"t1-v2"},
+        ),
+    }
+    pool = SandboxPool()
+    pool._client = _FakeArchiveClient(archives)
+    host_dest = tmp_path / "host" / "output"
+
+    await pool.copy_dir_out("container-1", "/tmp/chat_output", host_dest)
+    items = await pool.copy_dir_out("container-1", "/workspace/output", host_dest)
+
+    assert (host_dest / "figures" / "a.png").read_bytes() == b"old"
+    assert (host_dest / "figures" / "b.png").read_bytes() == b"new-file"
+    assert (host_dest / "results" / "t1.tsv").read_bytes() == b"t1-v2"
+    assert sorted(item["path"] for item in items) == [
+        "figures/a.png",
+        "figures/b.png",
+        "results/t1.tsv",
+    ]

@@ -22,6 +22,8 @@ interface Props {
   sessionId?: string
   targetMessageId?: string
   taskUnderstanding?: TaskUnderstanding | null
+  /** 建议追问 Chips 总开关（默认关闭；开启后由本列表决定哪条 assistant 消息展示 chips） */
+  suggestionsEnabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -37,6 +39,7 @@ const props = withDefaults(defineProps<Props>(), {
   sessionId: '',
   targetMessageId: '',
   taskUnderstanding: null,
+  suggestionsEnabled: false,
 })
 
 const firstUserMessageIndex = computed(() => props.messages.findIndex((message) => message.role === 'user'))
@@ -53,6 +56,8 @@ const emit = defineEmits<{
   openToolPage: [route: string, args: Record<string, unknown>]
   createCaseFromConsultation: [summary: string, consultationId?: string]
   correctCollaborationRoute: [route: CollaborationRouteInfo]
+  suggestionSend: [prompt: string]
+  suggestionPrefill: [prompt: string]
 }>()
 
 interface ScrollerExpose {
@@ -75,6 +80,19 @@ const streamingMessageId = computed(() => {
     return lastMsg.id
   }
   return ''
+})
+
+/**
+ * 建议追问 Chips 的宿主消息：仅"最后一条消息是已完成的 assistant 回复且当前无流式输出"时返回其 id。
+ * 用户发送新消息（最后一条变为 user）或新回复开始流式输出时自动变为空串，
+ * 旧 chips 随之消失；新回复完成后指向新消息，chips 被新一组替换。
+ */
+const suggestionMessageId = computed(() => {
+  if (!props.suggestionsEnabled || props.isTyping) return ''
+  const lastMsg = props.messages[props.messages.length - 1]
+  if (!lastMsg || lastMsg.role !== 'assistant') return ''
+  if (lastMsg.status && lastMsg.status !== 'complete') return ''
+  return lastMsg.id
 })
 
 function getScrollerEl(): HTMLElement | undefined {
@@ -240,6 +258,7 @@ onUnmounted(() => {
             JSON.stringify(item.askRequest),
             JSON.stringify(item.overdriveArtifacts),
             index === firstUserMessageIndex ? JSON.stringify(taskUnderstanding) : '',
+            item.id === suggestionMessageId ? 'with-suggestion-chips' : '',
           ]"
           :data-index="index"
           :class="{ 'message-target': targetMessageId === item.id }"
@@ -256,6 +275,8 @@ onUnmounted(() => {
             :agent-avatar="agentAvatar"
             :agent-color="agentColor"
             :session-id="sessionId"
+            :suggestions-enabled="suggestionsEnabled"
+            :show-suggestions="item.id === suggestionMessageId"
             @feedback="(id, type) => emit('feedback', id, type)"
             @copy="(mode) => emit('copy', mode)"
             @regenerate="(id) => emit('regenerate', id)"
@@ -267,6 +288,8 @@ onUnmounted(() => {
             @open-tool-page="(route, args) => emit('openToolPage', route, args)"
             @create-case-from-consultation="(summary, consultationId) => emit('createCaseFromConsultation', summary, consultationId)"
             @correct-collaboration-route="(route) => emit('correctCollaborationRoute', route)"
+            @suggestion-send="(prompt) => emit('suggestionSend', prompt)"
+            @suggestion-prefill="(prompt) => emit('suggestionPrefill', prompt)"
           />
           <StudioTaskUnderstanding
             v-if="index === firstUserMessageIndex && taskUnderstanding"

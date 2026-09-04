@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from sqlalchemy import select
 
+from cygnusx.application.services.chat.next_step_suggestions import suggestions_metadata
 from cygnusx.application.services.chat.runtimes.base import ChatRuntime, ChatRuntimeRequest
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk, provider_manager
@@ -315,6 +316,7 @@ class DirectChatRuntime(ChatRuntime):
                         {
                             **({"usage": last_usage} if last_usage else {}),
                             **({"web_sources": web_sources} if web_sources else {}),
+                            **suggestions_metadata(full_content),
                         }
                         or None,
                     )
@@ -323,6 +325,7 @@ class DirectChatRuntime(ChatRuntime):
                     done_chunk = done_chunk or ChatChunk(type="done")
                     done_chunk.metadata["session_id"] = current_session_id
                     done_chunk.metadata["message_id"] = ai_message.message_id
+                    done_chunk.metadata.update(suggestions_metadata(full_content))
                     yield done_chunk
                     return
 

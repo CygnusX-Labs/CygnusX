@@ -161,4 +161,84 @@ describe('MessageArtifactGallery', () => {
     )
     app.unmount()
   })
+
+  it('图片缩略图点击后打开放大弹窗，含缩放与下载/打印操作', async () => {
+    apiGet.mockResolvedValue({ data: new Blob(['png'], { type: 'image/png' }) })
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp(MessageArtifactGallery, {
+      sessionId: 'chat-session-id',
+      tools: [{
+        id: 'tool-1',
+        name: 'chat_sandbox_execute',
+        arguments: {},
+        status: 'success',
+        result: { artifacts: ['plot.png'] },
+        uiPayload: {
+          artifacts: [{
+            path: 'plot.png',
+            url: '/api/v1/chat/sandbox-sessions/sandbox-1/artifacts/download?path=plot.png',
+          }],
+        },
+      }],
+    })
+    app.mount(host)
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__zoom-trigger')
+    expect(trigger).toBeTruthy()
+    trigger?.click()
+    await nextTick()
+
+    const modalImage = document.body.querySelector<HTMLImageElement>('.artifact-media__image')
+    expect(modalImage?.getAttribute('src')).toBe('blob:artifact')
+    const toolbarText = document.body.querySelector('.artifact-media__toolbar')?.textContent || ''
+    expect(toolbarText).toContain('100%')
+    expect(toolbarText).toContain('打印')
+    expect(toolbarText).toContain('下载')
+    expect(document.body.querySelector('[aria-label="放大"]')).toBeTruthy()
+    expect(document.body.querySelector('[aria-label="缩小"]')).toBeTruthy()
+    app.unmount()
+  })
+
+  it('PDF 产物不再内嵌浏览器查看器，点击占位按钮打开带自定义工具条的弹窗', async () => {
+    apiGet.mockResolvedValue({ data: new Blob(['pdf'], { type: 'application/pdf' }) })
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const app = createApp(MessageArtifactGallery, {
+      sessionId: 'chat-session-id',
+      tools: [{
+        id: 'tool-1',
+        name: 'chat_sandbox_execute',
+        arguments: {},
+        status: 'success',
+        result: { artifacts: ['tree.pdf'] },
+        uiPayload: {
+          artifacts: [{
+            path: 'tree.pdf',
+            url: '/api/v1/chat/sandbox-sessions/sandbox-1/artifacts/download?path=tree.pdf',
+          }],
+        },
+      }],
+    })
+    app.mount(host)
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    expect(host.querySelector('iframe')).toBeNull()
+    const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__pdf-trigger')
+    expect(trigger?.textContent).toContain('PDF 文档')
+    trigger?.click()
+    await nextTick()
+
+    const modalFrame = document.body.querySelector<HTMLIFrameElement>('.artifact-media__pdf')
+    expect(modalFrame?.getAttribute('src')).toBe('blob:artifact#toolbar=0&navpanes=0')
+    const toolbarText = document.body.querySelector('.artifact-media__toolbar')?.textContent || ''
+    expect(toolbarText).toContain('打印')
+    expect(toolbarText).toContain('下载')
+    app.unmount()
+  })
 })

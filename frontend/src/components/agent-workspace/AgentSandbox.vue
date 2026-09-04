@@ -218,6 +218,17 @@ function handleQuickAction(action: (typeof quickActions)[number]) {
   nextTick(() => composerRef.value?.focus())
 }
 
+/** 建议追问 Chips：send 直接走与输入框回车完全相同的发送链路 */
+function handleSuggestionSend(prompt: string) {
+  handleSend(prompt)
+}
+
+/** 建议追问 Chips：prefill 只写入输入框并聚焦、光标置于文末，不发送 */
+function handleSuggestionPrefill(prompt: string) {
+  input.value = prompt
+  nextTick(() => composerRef.value?.focusWithCursorAtEnd())
+}
+
 const userDisplayName = computed(() => displayName(authStore.user) || '我')
 const userAvatarUrl = computed(() => authStore.user?.avatar_url || '')
 
@@ -505,6 +516,7 @@ onUnmounted(() => {
           :session-id="session.id"
           :target-message-id="targetMessageId"
           :task-understanding="overdriveTaskUnderstanding"
+          suggestions-enabled
           @copy="handleCopy"
           @feedback="(id, type) => store.submitMessageFeedback(id, type)"
           @regenerate="handleRegenerate"
@@ -515,6 +527,8 @@ onUnmounted(() => {
           @open-tool-page="handleOpenToolPage"
           @create-case-from-consultation="handleCreateCaseFromConsultation"
           @correct-collaboration-route="handleCorrectCollaborationRoute"
+          @suggestion-send="handleSuggestionSend"
+          @suggestion-prefill="handleSuggestionPrefill"
         />
 
         <transition name="progress-dock">

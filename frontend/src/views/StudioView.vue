@@ -453,6 +453,7 @@ const overdriveEnabled = computed({
 
 // ---------- Studio HITL：待审批 / 待澄清浮动条 ----------
 const messageListRef = ref<InstanceType<typeof KimiMessageList> | null>(null)
+const composerRef = ref<InstanceType<typeof KimiChatInput> | null>(null)
 
 /** 当前会话所有待审批的工具调用（状态源为消息的 tool.approval，此处仅派生） */
 const pendingApprovals = computed<PendingApprovalItem[]>(() => {
@@ -663,6 +664,17 @@ function handleCreateCaseFromConsultation(summary: string, consultationId?: stri
 
 function handleCorrectCollaborationRoute(route: CollaborationRouteInfo) {
   input.value = `我不想走“${route.label}”这条路径。请改为：`
+}
+
+/** 建议追问 Chips：send 直接走与输入框回车完全相同的发送链路 */
+function handleSuggestionSend(prompt: string) {
+  void handleSend(prompt)
+}
+
+/** 建议追问 Chips：prefill 只写入输入框并聚焦、光标置于文末，不发送 */
+function handleSuggestionPrefill(prompt: string) {
+  input.value = prompt
+  nextTick(() => composerRef.value?.focusWithCursorAtEnd())
 }
 
 function handleInsertArtifact(path: string) {
@@ -1170,6 +1182,7 @@ function formatSessionTime(iso: string): string {
               :session-id="sessionId"
               :target-message-id="String(route.query.message || '')"
               :task-understanding="taskUnderstanding"
+              suggestions-enabled
               @copy="handleCopy"
               @feedback="(id, type) => store.submitMessageFeedback(id, type)"
               @regenerate="handleRegenerate"
@@ -1178,6 +1191,8 @@ function formatSessionTime(iso: string): string {
               @edit="handleEditMessage"
               @create-case-from-consultation="handleCreateCaseFromConsultation"
               @correct-collaboration-route="handleCorrectCollaborationRoute"
+              @suggestion-send="handleSuggestionSend"
+              @suggestion-prefill="handleSuggestionPrefill"
             />
             <PendingApprovalBar
               :approvals="pendingApprovals"
@@ -1192,6 +1207,7 @@ function formatSessionTime(iso: string): string {
             <StudioPlanTimeline v-if="store.currentPlan.length" :steps="store.currentPlan" />
             <div class="input-area">
               <KimiChatInput
+                ref="composerRef"
                 v-model="input"
                 :is-streaming="store.isStreaming"
                 :placeholder="longRunPlaceholder"

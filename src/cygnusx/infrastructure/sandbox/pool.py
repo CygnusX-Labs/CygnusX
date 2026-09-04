@@ -37,6 +37,26 @@ class SandboxUnavailableError(Exception):
     """沙盒不可用（Docker 未就绪或镜像缺失）"""
 
 
+def _merge_into_host(src: Path, dst: Path) -> None:
+    """把 src 合并移动到 dst：目录递归合并，文件直接覆盖。
+
+    与"先 rmtree 再 replace"不同，目录对目录时只覆盖同名文件、
+    保留 dst 里 src 没有的产物——同一 host_dest 会被多次 copy_dir_out
+    平铺写入（/tmp/chat_output 与 /workspace/output 并行收集）。
+    """
+    if src.is_dir() and dst.is_dir():
+        for item in src.iterdir():
+            _merge_into_host(item, dst / item.name)
+        src.rmdir()
+        return
+    if dst.is_dir() and not dst.is_symlink():
+        # 类型冲突（src 是文件、dst 是目录）：目录让位给文件
+        shutil.rmtree(dst)
+    elif dst.exists() or dst.is_symlink():
+        dst.unlink()
+    src.replace(dst)
+
+
 class SandboxPool:
     """Docker 沙盒容器池"""
 
@@ -277,15 +297,12 @@ class SandboxPool:
             nested = host_dest / base
             if not nested.is_dir():
                 return []
-            # get_archive 的 tar 以目录 basename 为顶层，上提一层方便调用方直接使用
+            # get_archive 的 tar 以目录 basename 为顶层，上提一层方便调用方直接使用。
+            # 多个容器目录（/tmp/chat_output、/workspace/output）会平铺到同一
+            # host_dest，必须合并而不是整体替换：否则后一次复制的空 figures/
+            # results 子目录会把前一次已落盘的同名目录连同产物一起删掉。
             for child in nested.iterdir():
-                target = host_dest / child.name
-                if target.exists():
-                    if target.is_dir():
-                        shutil.rmtree(target)
-                    else:
-                        target.unlink()
-                child.replace(target)
+                _merge_into_host(child, host_dest / child.name)
             nested.rmdir()
             items: list[dict[str, Any]] = []
             for file in sorted(host_dest.rglob("*")):

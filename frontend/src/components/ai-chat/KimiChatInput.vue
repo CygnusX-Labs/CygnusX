@@ -357,7 +357,16 @@ function getTextareaElement() {
 function focus() {
   getTextareaElement()?.focus()
 }
-defineExpose({ focus })
+
+/** 预填文案后聚焦并把光标置于文末（建议追问 Chips 的 prefill 行为使用） */
+function focusWithCursorAtEnd() {
+  const el = getTextareaElement()
+  if (!el) return
+  el.focus()
+  const end = el.value.length
+  el.setSelectionRange(end, end)
+}
+defineExpose({ focus, focusWithCursorAtEnd })
 
 const agentTeamsCaseVisible = ref(false)
 const agentTeamsCaseSubmitting = ref(false)
