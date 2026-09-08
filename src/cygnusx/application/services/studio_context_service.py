@@ -234,6 +234,8 @@ async def create_session_from_report(
         agent_id=agent_id,
         mode="studio",
         sandbox_meta={"image": image} if image else None,
+        # 从报告一键优化由系统代建会话，报告本身不一定落在项目内，走内部豁免
+        require_project=False,
     )
 
     # 报告产物软链进工作区（数据不搬家），再回填 context_pack
@@ -615,6 +617,26 @@ async def register_artifact_report(
         return report, file_model
 
     if not isinstance(db, AsyncSession):
-        return await persist(db)
-    async with get_session_factory()() as anchor_db:
-        return await persist(anchor_db)
+        result = await persist(db)
+    else:
+        async with get_session_factory()() as anchor_db:
+            result = await persist(anchor_db)
+    # 平台级归档文档：补写 run README / environment.json 并更新项目 AGENTS.md。
+    # 失败不阻断登记主流程（报告已提交，文档可后续补生成）。
+    report, file_model = result
+    try:
+        from cygnusx.application.services.project_archive_service import archive_studio_run
+
+        await archive_studio_run(
+            user_id=user_id,
+            session=session,
+            run_dir=run_dir,
+            report=report,
+            artifact=file_model,
+            factory=path_factory,
+            backend=backend,
+            db=db if isinstance(db, AsyncSession) else None,
+        )
+    except Exception as exc:  # noqa: BLE001 - 归档文档失败不阻断产物登记
+        logger.error("Studio 产物归档文档生成失败（非阻塞）: {}", exc)
+    return report, file_model

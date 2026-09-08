@@ -102,6 +102,7 @@ class AgentTeamsRoomModel(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     origin: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
     origin_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     case_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     matrix_room_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     proposal: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

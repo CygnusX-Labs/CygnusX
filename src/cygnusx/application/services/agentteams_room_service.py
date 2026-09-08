@@ -212,17 +212,46 @@ class AgentTeamsRoomService:
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
+    async def _validate_project_binding(self, owner_id: str, project_id: str) -> None:
+        """校验房间绑定的项目存在且属于 owner（与聊天会话同一口径）。"""
+        from cygnusx.core.exceptions import NotFoundError
+        from cygnusx.infrastructure.database.models.project import ProjectModel
+
+        try:
+            project_uuid = UUID(project_id)
+        except ValueError as exc:
+            raise NotFoundError(f"项目不存在：{project_id}") from exc
+        project = await self._db.scalar(
+            select(ProjectModel).where(ProjectModel.id == project_uuid)
+        )
+        if project is None:
+            raise NotFoundError(f"项目不存在：{project_id}")
+        if str(project.user_id) != str(owner_id):
+            raise AuthorizationError("无权绑定其他用户的项目")
+
     async def create_room(
-        self, *, owner_id: str, title: str | None = None, origin: str = "manual"
+        self,
+        *,
+        owner_id: str,
+        title: str | None = None,
+        origin: str = "manual",
+        project_id: str | None = None,
     ) -> AgentTeamsRoomModel:
-        """创建房间：主库行 + Bridge 房间命名空间记录 +（best-effort）Matrix 房间。"""
+        """创建房间：主库行 + Bridge 房间命名空间记录 +（best-effort）Matrix 房间。
+
+        ``project_id`` 将房间纳入项目维度（项目总览按它聚合房间）；显式传入时
+        校验项目存在且属于 owner，来源会话升级路径由调用方传入会话的 project_id。
+        """
         if not self._agentteams.available:
             raise BusinessError("Agent 协作中心尚未接通")
+        if project_id:
+            await self._validate_project_binding(owner_id, project_id)
         room = AgentTeamsRoomModel(
             room_id=uuid4().hex,
             owner_id=owner_id,
             title=(title or "").strip()[:200] or "和你的生物信息团队聊聊",
             origin=origin.strip()[:20] or "manual",
+            project_id=project_id,
         )
         self._db.add(room)
         await self._db.flush()

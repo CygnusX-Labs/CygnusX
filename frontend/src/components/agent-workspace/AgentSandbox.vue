@@ -11,6 +11,8 @@ import {
   GridOutline,
   DocumentTextOutline,
   AnalyticsOutline,
+  AddOutline,
+  CheckmarkCircle,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import OverdriveProgressCard from '@/components/ai-chat/OverdriveProgressCard.vue'
@@ -24,9 +26,11 @@ import KimiChatInput from '@/components/ai-chat/KimiChatInput.vue'
 import AgentCapabilityDrawer from './AgentCapabilityDrawer.vue'
 import ShaniaChatBackground from './ShaniaChatBackground.vue'
 import StardustHero from './StardustHero.vue'
+import CreateProjectModal from '@/components/project/CreateProjectModal.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
 import { studioApi } from '@/api/studio'
+import { projectsApi, type ProjectItem } from '@/api/projects'
 import type { ChatMessage, FileAttachment } from '@/components/ai-chat/types'
 import { displayName } from '@/utils/displayName'
 import { parseTaskUnderstanding } from '@/utils/studioPresentation'
@@ -103,6 +107,7 @@ watch(
         const created = await studioApi.createSession({
           agent_id: target.agentId,
           runtime_profile: store.currentSession?.runtime_profile || undefined,
+          project_id: store.currentSession?.project_id || undefined,
         })
         sessionId = created.session_id
       }
@@ -125,6 +130,53 @@ let noticeTimer: ReturnType<typeof setTimeout> | null = null
 
 const agent = computed(() => store.currentAgent)
 const session = computed(() => store.currentSession)
+
+// ===== 项目选择（新建会话必选；会话落库后项目边界固定不可改） =====
+const projects = ref<ProjectItem[]>([])
+const loadingProjects = ref(false)
+
+const isNewSession = computed(() => Boolean(session.value?.id.startsWith('sess-')))
+const selectedProjectId = computed<string | null>({
+  get: () => session.value?.project_id || null,
+  set: (value) => {
+    if (session.value && isNewSession.value) session.value.project_id = value
+  },
+})
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({
+    label: p.customer ? `${p.name}（${p.customer}）` : p.name,
+    value: p.id,
+  })),
+)
+
+async function loadProjects() {
+  loadingProjects.value = true
+  try {
+    projects.value = await projectsApi.listProjects()
+  } catch {
+    projects.value = []
+  } finally {
+    loadingProjects.value = false
+  }
+}
+
+/** 下拉底部的「+ 创建新项目」入口；创建成功后刷新列表并自动选中新项目 */
+const showCreateProject = ref(false)
+
+async function handleProjectCreated(project: ProjectItem) {
+  await loadProjects()
+  selectedProjectId.value = project.id
+  message.success(`已选中项目「${project.name}」，可以开始分析了`)
+}
+
+/** 新会话尚未落库且未选项目时拦截提交（与后端强制 project_id 校验对应） */
+function requireProjectForNewSession(): boolean {
+  if (isNewSession.value && !session.value?.project_id) {
+    message.warning('请先选择所属项目，再开始新的分析会话')
+    return false
+  }
+  return true
+}
 const overdriveEnabled = computed({
   get: () => Boolean(session.value?.overdrive),
   set: (value: boolean) => {
@@ -252,6 +304,7 @@ function handleSkillInvokedNotice(e: Event) {
 
 onMounted(() => {
   window.addEventListener('cygnusx:skill-invoked', handleSkillInvokedNotice)
+  void loadProjects()
 })
 
 onUnmounted(() => {
@@ -320,6 +373,7 @@ function handleSend(
 ) {
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
+  if (!requireProjectForNewSession()) return
   void store.sendMessage(content, options)
   input.value = ''
 }
@@ -399,9 +453,15 @@ function handleBack() {
 /** 以当前智能体发起 Studio 工作台会话并跳转 /studio/:sessionId */
 async function handleEnterStudio() {
   if (!agent.value || creatingStudio.value) return
+  const sid = store.currentSessionId
+  const projectId = store.currentSession?.project_id || undefined
+  // 需要新建工作台会话（无会话或临时会话）时必须先选项目，与后端强制校验对应
+  if ((!sid || sid.startsWith('sess-')) && !projectId) {
+    message.warning('请先选择所属项目，再进入 AI 工作台')
+    return
+  }
   creatingStudio.value = true
   try {
-    const sid = store.currentSessionId
     let sessionId = ''
     if (sid && !sid.startsWith('sess-')) {
       try {
@@ -421,6 +481,7 @@ async function handleEnterStudio() {
       const created = await studioApi.createSession({
         agent_id: agent.value.id,
         runtime_profile: store.currentSession?.runtime_profile || undefined,
+        project_id: projectId,
       })
       sessionId = created.session_id
     }
@@ -549,6 +610,44 @@ onUnmounted(() => {
 
         <!-- 输入区：单实例避免草稿/附件丢失；空会话在说明下方、活跃会话底部吸附（fontend.md §35.3） -->
         <div class="composer-slot">
+          <!-- 新建会话必选所属项目；会话落库后项目边界固定，选择器不再显示。
+               视觉上是输入框上方的一枚紧凑 pill：图标 + 项目名/占位文案 + 下拉箭头，不再用生硬的 label 行 -->
+          <div v-if="isEmpty" class="project-select-row">
+            <div
+              class="project-pill"
+              :class="{ 'project-pill--selected': selectedProjectId }"
+              role="group"
+              aria-label="所属项目（必选）"
+            >
+              <NIcon :size="14" class="project-pill-icon" aria-hidden="true">
+                <CheckmarkCircle v-if="selectedProjectId" />
+                <FolderOpenOutline v-else />
+              </NIcon>
+              <n-select
+                :value="selectedProjectId"
+                :options="projectOptions"
+                :loading="loadingProjects"
+                :disabled="!isNewSession"
+                :consistent-menu-width="false"
+                placeholder="选择所属项目（必选）"
+                filterable
+                size="small"
+                class="project-select"
+                @update:value="(value: string | null) => (selectedProjectId = value)"
+              >
+                <template v-if="!loadingProjects && !projects.length" #empty>
+                  <span class="project-select-empty">暂无项目，点击下方「创建新项目」开始</span>
+                </template>
+                <template #action>
+                  <button type="button" class="project-create-entry" @click="showCreateProject = true">
+                    <NIcon :size="14" aria-hidden="true"><AddOutline /></NIcon>
+                    创建新项目
+                  </button>
+                </template>
+              </n-select>
+            </div>
+          </div>
+          <CreateProjectModal v-model:show="showCreateProject" @created="handleProjectCreated" />
           <KimiChatInput
             ref="composerRef"
             v-model="input"
@@ -723,6 +822,83 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* 项目选择：空会话首屏输入框上方的一枚紧凑 pill（必选，与后端强制 project_id 校验对应）。
+   pill 与 quick-chip 共用边框/底色 token，选中后描边转主题蓝作为轻量确认反馈 */
+.project-select-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(420px, 100%);
+  padding: 2px 8px 2px 14px;
+  border: 1px solid var(--stardust-border-soft, var(--neutral-border));
+  border-radius: 999px;
+  background: var(--chat-surface, var(--bg-card));
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.project-pill:hover {
+  border-color: color-mix(in srgb, var(--stardust-blue, #4c6fff) 35%, transparent);
+  box-shadow: 0 6px 18px rgba(30, 111, 255, 0.08);
+}
+.project-pill:focus-within {
+  border-color: color-mix(in srgb, var(--stardust-blue, #4c6fff) 55%, transparent);
+}
+.project-pill--selected {
+  border-color: color-mix(in srgb, var(--stardust-blue, #4c6fff) 45%, transparent);
+}
+.project-pill-icon {
+  flex: 0 0 auto;
+  color: var(--stardust-text-secondary, var(--neutral-text-secondary, #5f6b7a));
+}
+.project-pill--selected .project-pill-icon {
+  color: var(--stardust-blue, #4c6fff);
+}
+/* 选择器本体透明无边框，视觉并入 pill；宽度随内容收缩，下拉浮层放宽上限 */
+.project-select {
+  min-width: 200px;
+  max-width: 340px;
+}
+.project-select :deep(.n-base-selection) {
+  --n-border: none !important;
+  --n-border-hover: none !important;
+  --n-border-active: none !important;
+  --n-border-focus: none !important;
+  --n-box-shadow-active: none !important;
+  --n-box-shadow-focus: none !important;
+  --n-box-shadow-hover: none !important;
+  background: transparent;
+}
+.project-select :deep(.n-base-selection .n-base-selection-label) {
+  background: transparent;
+}
+.project-select-empty {
+  display: block;
+  padding: 10px 12px;
+  color: var(--stardust-text-secondary, var(--neutral-text-secondary, #5f6b7a));
+  font-size: 12px;
+}
+/* 下拉浮层底部的创建入口：与选项同宽的满宽文字按钮，hover 高亮 */
+.project-create-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-top: 1px solid var(--divider-color, var(--neutral-border));
+  background: transparent;
+  color: var(--stardust-blue, var(--primary-color, #4c6fff));
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.project-create-entry:hover {
+  background: color-mix(in srgb, var(--stardust-blue, #4c6fff) 8%, transparent);
 }
 /* 快捷任务：居中胶囊芯片行；描述收进 title 提示，保持首页轻量（fontend.md §35.6） */
 .quick-actions {
@@ -902,6 +1078,7 @@ onUnmounted(() => {
 :root[data-theme="dark"] .overdrive-progress-dock { background: transparent; }
 :root[data-theme="dark"] .is-empty .composer-slot { background: transparent; }
 :root[data-theme="dark"] .quick-chip { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }
+:root[data-theme="dark"] .project-pill { background: var(--chat-surface, var(--neutral-card)); border-color: var(--neutral-border, #2a3040); }
 :root[data-theme="dark"] .model-selector :deep(.n-base-selection) { background: rgba(255, 255, 255, 0.08); }
 :root[data-theme="dark"] .capability-btn { border-color: rgba(118, 145, 255, 0.35); }
 </style>

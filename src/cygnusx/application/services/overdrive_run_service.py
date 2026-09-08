@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -693,6 +694,29 @@ class OverdriveRunService:
                         "status": "succeeded",
                     },
                 ]
+                # 项目归档：会话绑定 project_id 时把方案交付物复制进项目 runs 目录
+                # 并生成 AGENTS.md/README/environment.json；失败不阻断计划确认。
+                try:
+                    from cygnusx.application.services.project_archive_service import (
+                        archive_overdrive_delivery,
+                    )
+
+                    await archive_overdrive_delivery(
+                        self._db,
+                        run,
+                        delivery_paths=[
+                            delivery["path"],
+                            str(current_plan.get("path") or ""),
+                            str(current_plan.get("version_path") or ""),
+                        ],
+                        planning_only=True,
+                    )
+                except Exception as exc:  # noqa: BLE001 - 归档失败不阻断主流程
+                    logger.error(
+                        "Overdrive planning_only 项目归档失败（非阻塞）: run={} error={}",
+                        run.run_id,
+                        exc,
+                    )
             result = {"status": run.status, "plan": deepcopy(current_plan)}
             if delivery is not None:
                 result["delivery"] = {"path": delivery["path"]}

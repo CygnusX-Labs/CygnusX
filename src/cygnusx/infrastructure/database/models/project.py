@@ -36,3 +36,5 @@ class ProjectModel(Base, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     # 可选描述
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # 可选客户名（项目归属客户/课题组）
+    customer: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")

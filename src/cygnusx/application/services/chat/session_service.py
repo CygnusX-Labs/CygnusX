@@ -85,13 +85,22 @@ class SessionService:
         return result.scalar_one_or_none()
 
     async def list(
-        self, user_id: str, mode: str | None, *, limit: int, offset: int
+        self,
+        user_id: str,
+        mode: str | None,
+        *,
+        limit: int,
+        offset: int,
+        status: str = "active",
+        project_id: str | None = None,
     ) -> list[ChatSessionModel]:
         query = select(ChatSessionModel).where(
-            ChatSessionModel.user_id == user_id, ChatSessionModel.status == "active"
+            ChatSessionModel.user_id == user_id, ChatSessionModel.status == status
         )
         if mode is not None:
             query = query.where(ChatSessionModel.mode == mode)
+        if project_id is not None:
+            query = query.where(ChatSessionModel.project_id == project_id)
         result = await self._db.execute(
             query.order_by(desc(ChatSessionModel.updated_at)).limit(limit).offset(offset)
         )

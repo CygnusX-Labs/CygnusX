@@ -230,12 +230,13 @@ export const studioApi = {
     return res.data || []
   },
 
-  /** 创建 Studio 会话（mode="studio"，workspace_id = session id）；runtime_profile 固定沙箱镜像 */
+  /** 创建 Studio 会话（mode="studio"，workspace_id = session id）；runtime_profile 固定沙箱镜像；project_id 后端必填 */
   async createSession(payload: {
     agent_id: string
     title?: string
     model_id?: string
     runtime_profile?: string
+    project_id?: string
   }): Promise<StudioSessionDTO> {
     const res = await apiClient.post<StudioSessionDTO>('/studio/sessions', payload)
     return res.data

@@ -2858,6 +2858,8 @@ class ChatService(
                     "overdrive_used": effective_overdrive,
                 },
                 project_id=project_id,
+                # 流式聊天首条消息隐式建会话：project_id 可选，走内部豁免
+                require_project=False,
             )
             current_session_id = dto.session_id
             if studio_mode:

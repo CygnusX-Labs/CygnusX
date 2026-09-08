@@ -153,7 +153,7 @@ class CreateSessionRequest(BaseModel):
     title: str | None = "新对话"
     assistant_id: str | None = None
     model_id: UUID
-    project_id: str | None = Field(None, max_length=64)
+    project_id: str = Field(..., max_length=64)
 
 
 class UpdateSessionRequest(BaseModel):

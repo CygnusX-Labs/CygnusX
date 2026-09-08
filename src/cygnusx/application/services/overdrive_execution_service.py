@@ -605,12 +605,15 @@ class DeliveryAssembler:
         delivery: dict[str, Any],
         *,
         manager_summary: str = "",
+        environment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """生成项目 README:交付清单、下载方式与 Manager 总结。
 
         沿用工作台 output/README 索引的约定,让每轮超频协作都有
         “最终结果在哪、从哪里下载”的权威说明。Manager 总结后补时
-        可用同一方法重写(幂等覆盖)。
+        可用同一方法重写(幂等覆盖)。软件与版本/分析环境段由
+        project_archive_service 统一渲染(与 run 归档的 environment.json
+        同一来源);调用方未传 environment 时退化为仅平台/Python 信息。
         """
         plan = run.plan or {}
         summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
@@ -647,6 +650,13 @@ class DeliveryAssembler:
                 f"- {task.get('task_id')}: {task.get('error_summary') or task.get('status')}"
                 for task in failures
             )
+        from cygnusx.application.services.project_archive_service import (
+            collect_environment,
+            render_environment_markdown,
+        )
+
+        env = environment or collect_environment()
+        lines.extend(["", *render_environment_markdown(env)])
         content = "\n".join(lines).rstrip() + "\n"
         factory = get_path_factory()
         backend = get_storage_backend()

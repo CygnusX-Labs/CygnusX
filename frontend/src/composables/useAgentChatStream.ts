@@ -21,6 +21,8 @@ export interface AgentChatStreamOptions {
   runtimeProfile?: string | null
   /** 当前请求强制使用的模型配置 ID（覆盖 Agent 默认模型） */
   modelId?: string
+  /** 新建会话的项目边界（仅会话尚未落库时生效，创建后固定） */
+  projectId?: string
   /** 温度（0-1），后端 Agent 编排层可透传给底层模型 */
   temperature?: number
   /** 单次回复最大 token 数 */
@@ -575,6 +577,7 @@ export function useAgentChatStream() {
             mode: options.mode,
             runtime_profile: options.runtimeProfile ?? undefined,
             model_id: options.modelId,
+            project_id: options.projectId || undefined,
             messages: options.messages,
             stream: true,
             temperature: options.temperature,

@@ -124,7 +124,8 @@ class DirectChatRuntime(ChatRuntime):
                 if ast:
                     title = f"与 {ast.name} 的对话"
             dto = await self.create_session(
-                user_id, model_id, title, assistant_id, project_id=project_id
+                user_id, model_id, title, assistant_id, project_id=project_id,
+                require_project=False,
             )
             current_session_id = dto.session_id
 

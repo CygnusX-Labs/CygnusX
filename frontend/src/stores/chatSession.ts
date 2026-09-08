@@ -91,13 +91,14 @@ export const useChatSessionStore = defineStore('chatSession', () => {
     }
   }
 
-  /** 创建新会话 */
-  async function createSession(modelId: string, assistantId?: string): Promise<string | null> {
+  /** 创建新会话（projectId 为后端必填的项目边界，调用方需先让用户选择项目） */
+  async function createSession(modelId: string, assistantId?: string, projectId?: string): Promise<string | null> {
     try {
       const res = await apiClient.post<ChatSessionDTO>('/chat/sessions', {
         model_id: modelId,
         assistant_id: assistantId,
         title: '新对话',
+        project_id: projectId || undefined,
       })
       sessions.value.unshift(res.data)
       currentSessionId.value = res.data.session_id

@@ -526,8 +526,11 @@ class ToolBridgeService:
         # 保证 llm_payload 不超过 3KB
         llm_json = json.dumps(llm_payload, ensure_ascii=False, default=str)
         if len(llm_json.encode("utf-8")) > self._MAX_LLM_PAYLOAD_BYTES:
+            summary = raw.get("summary")
             llm_payload = {
-                "summary": "工具执行结果较大，已省略细节。",
+                "summary": summary
+                if isinstance(summary, str) and len(summary.encode("utf-8")) <= 500
+                else "工具执行结果较大，已省略细节。",
                 "success": success,
             }
 
@@ -537,6 +540,10 @@ class ToolBridgeService:
             "llm_payload": llm_payload,
             "ui_payload": ui_payload,
         }
+        if isinstance(raw.get("handoff"), dict):
+            # 交接指令是控制面数据，置于 envelope 顶层透传，不随 llm_payload
+            # 的 3KB 截断丢弃（否则大包场景下转交静默失败：指令丢失但成功标志保留）。
+            envelope["handoff"] = raw["handoff"]
         if is_error:
             # 失败路径补机器可读错误码（成功路径不动）；字段白名单之外的
             # error/code/retryable 也在此透传，保证下游总能拿到分类信息。

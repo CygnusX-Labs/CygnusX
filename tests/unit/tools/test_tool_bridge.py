@@ -348,26 +348,13 @@ async def test_open_page_payload() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="系统发育树工具 schema 描述文案与断言不一致")
-async def test_phylogenetic_tree_schema_uses_unified_page_entry() -> None:
-    """发育树 AI 工具只负责打开页面，实际计算统一走页面的 Celery API。"""
+async def test_phylogenetic_tree_tool_temporarily_offline() -> None:
+    """系统发育树工具已暂时下线：LLM schema 中不再暴露 cygnusx_build_phylogenetic_tree。
+
+    恢复上线时需同步还原 tools_schema.yaml 中被注释的 phylogenetic-tree 条目。
+    """
     loader = ToolsSchemaLoader("tool_configs/tools_schema.yaml")
-    schema = loader.get_tool("cygnusx_build_phylogenetic_tree")
-
-    assert schema is not None
-    assert schema.invocation_mode == "open_page"
-    assert schema.route == "/tools/phylogenetic-tree"
-    assert "生物信息工具箱 · 系统发育树构建" in schema.description
-    assert "系统发育树工作台" not in schema.description
-
-    service = ToolBridgeService(loader)
-    result = await service.execute(
-        "u1", "cygnusx_build_phylogenetic_tree", {"layout": "circular"}
-    )
-
-    assert result["success"] is True
-    assert result["ui_payload"]["route"] == "/tools/phylogenetic-tree"
-    assert result["ui_payload"]["arguments"] == {"layout": "circular"}
+    assert loader.get_tool("cygnusx_build_phylogenetic_tree") is None
 
 
 @pytest.mark.asyncio

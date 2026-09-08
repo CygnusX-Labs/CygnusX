@@ -141,6 +141,49 @@ def test_handoff_directive_is_extracted_from_toolbridge_envelope() -> None:
     )
 
 
+def test_handoff_directive_survives_llm_payload_compaction() -> None:
+    """llm_payload 超 3KB 被压缩成摘要后，envelope 顶层的 handoff 仍可提取。"""
+    directive = {"target_agent_id": "agent-rnaseq", "hop_index": 1, "packet": "x" * 2000}
+    compacted_envelope = {
+        "success": True,
+        "is_error": False,
+        "llm_payload": {"summary": "工具执行结果较大，已省略细节。", "success": True},
+        "ui_payload": {},
+        "handoff": directive,
+    }
+    assert (
+        extract_handoff_directive({"success": True, "result": compacted_envelope}) == directive
+    )
+    assert extract_handoff_directive(compacted_envelope) == directive
+
+
+def test_package_preserves_handoff_directive_when_payload_oversized() -> None:
+    """_package 截断 llm_payload 时必须把 handoff 指令透传到 envelope 顶层。"""
+    from cygnusx.application.services.tool_bridge_service import ToolBridgeService
+    from cygnusx.tools.schema_loader import ToolSchema
+
+    schema = ToolSchema(
+        key="agent-handoff-transfer",
+        name="transfer_to_agent",
+        description="交接",
+        invocation_mode="backend_sync",
+        llm_result_fields=["summary", "handoff", "success", "error"],
+    )
+    directive = {
+        "target_agent_id": "agent-rnaseq",
+        "handoff_summary": "已完成差异分析指导。" * 200,
+        "packet": "p" * 2000,
+    }
+    raw = {"success": True, "handoff": directive, "summary": "已准备转交给 RNA-seq 分析师。"}
+
+    bridge = ToolBridgeService.__new__(ToolBridgeService)
+    envelope = bridge._package(schema, raw)
+
+    assert envelope["handoff"] == directive
+    assert "handoff" not in envelope["llm_payload"]
+    assert envelope["llm_payload"]["summary"] == "已准备转交给 RNA-seq 分析师。"
+
+
 @pytest.mark.asyncio
 async def test_prepare_handoff_enforces_agent_whitelist_and_builds_packet() -> None:
     db = AsyncMock()

@@ -34,6 +34,18 @@ class ProjectService:
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
+    @staticmethod
+    def _to_dict(model: ProjectModel) -> dict:
+        return {
+            "id": str(model.id),
+            "name": model.name,
+            "slug": model.slug,
+            "description": model.description,
+            "customer": model.customer,
+            "created_at": model.created_at.isoformat() if model.created_at else None,
+            "updated_at": model.updated_at.isoformat() if model.updated_at else None,
+        }
+
     async def list_projects(self, user_id: UUID) -> list[dict]:
         """列出用户的所有项目（先回填磁盘已存在但 DB 缺失的项目）。"""
         await self._backfill_from_disk(user_id)
@@ -43,17 +55,7 @@ class ProjectService:
             .order_by(ProjectModel.updated_at.desc())
         )
         result = await self._session.execute(stmt)
-        return [
-            {
-                "id": str(m.id),
-                "name": m.name,
-                "slug": m.slug,
-                "description": m.description,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-                "updated_at": m.updated_at.isoformat() if m.updated_at else None,
-            }
-            for m in result.scalars().all()
-        ]
+        return [self._to_dict(m) for m in result.scalars().all()]
 
     async def count_projects(self, user_id: UUID) -> int:
         """返回用户项目总数（回填后计数）。"""
@@ -71,19 +73,14 @@ class ProjectService:
         model = result.scalar_one_or_none()
         if model is None:
             raise NotFoundError(f"项目不存在：{project_id}")
-        return {
-            "id": str(model.id),
-            "name": model.name,
-            "slug": model.slug,
-            "description": model.description,
-            "created_at": model.created_at.isoformat() if model.created_at else None,
-            "updated_at": model.updated_at.isoformat() if model.updated_at else None,
-        }
+        return self._to_dict(model)
 
     # ------------------------------------------------------------------
     # 写操作
     # ------------------------------------------------------------------
-    async def create_project(self, user_id: UUID, name: str, description: str = "") -> dict:
+    async def create_project(
+        self, user_id: UUID, name: str, description: str = "", customer: str = ""
+    ) -> dict:
         """创建新项目。
 
         - ``slug`` 由 ``project_slug(name)`` 自动生成，保证路径安全
@@ -94,6 +91,9 @@ class ProjectService:
             raise ValidationError("项目名不能为空")
         if len(name) > 200:
             raise ValidationError("项目名最长 200 字符")
+        customer = (customer or "").strip()
+        if len(customer) > 200:
+            raise ValidationError("客户名最长 200 字符")
 
         slug = project_slug(name)
         if not slug:
@@ -107,7 +107,9 @@ class ProjectService:
         if exists.scalar_one_or_none() is not None:
             raise ConflictError(f"同名项目已存在：{slug}")
 
-        model = ProjectModel(user_id=user_id, name=name, slug=slug, description=description)
+        model = ProjectModel(
+            user_id=user_id, name=name, slug=slug, description=description, customer=customer
+        )
         self._session.add(model)
 
         # 同步创建目录记录
@@ -132,14 +134,7 @@ class ProjectService:
 
         await self._session.commit()
         await self._session.refresh(model)
-        return {
-            "id": str(model.id),
-            "name": model.name,
-            "slug": model.slug,
-            "description": model.description,
-            "created_at": model.created_at.isoformat() if model.created_at else None,
-            "updated_at": model.updated_at.isoformat() if model.updated_at else None,
-        }
+        return self._to_dict(model)
 
     async def get_or_create_project_by_name(self, user_id: UUID, name: str) -> dict:
         """按名称复用或创建项目（AgentTeams 聊天 Case 建单场景）。
@@ -158,14 +153,7 @@ class ProjectService:
             )
             model = result.scalar_one_or_none()
             if model is not None:
-                return {
-                    "id": str(model.id),
-                    "name": model.name,
-                    "slug": model.slug,
-                    "description": model.description,
-                    "created_at": model.created_at.isoformat() if model.created_at else None,
-                    "updated_at": model.updated_at.isoformat() if model.updated_at else None,
-                }
+                return self._to_dict(model)
         return await self.create_project(user_id, name)
 
     async def delete_project(self, user_id: UUID, project_id: UUID) -> bool:

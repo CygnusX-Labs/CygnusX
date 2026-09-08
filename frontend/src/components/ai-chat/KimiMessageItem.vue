@@ -1288,7 +1288,7 @@ function handleEdit() {
           </template>
         </div>
 
-        <!-- 建议追问 Chips：回复完成后展示"可选下一步"胶囊，独立于消息主链路，
+        <!-- 建议追问：回复完成后展示"可选下一步"竖向卡片（行尾带 ↵ Enter 提示），独立于消息主链路，
              出问题把父级 suggestionsEnabled 关掉即可整体隐藏 -->
         <SuggestionChips
           v-if="followUpSuggestions.length"

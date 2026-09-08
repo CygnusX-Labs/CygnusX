@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
- * 建议追问 Chips（Suggested Follow-ups）。
- * 渲染在 assistant 回复气泡/产物卡片下方的一行可点击胶囊：
- * - action='send'：emit('send', prompt)，由页面侧走与输入框相同的发送 action；
- * - action='prefill'：emit('prefill', prompt)，由页面侧写入输入框并聚焦。
+ * 建议追问卡片（Suggested Follow-ups）。
+ * 渲染在 assistant 回复气泡/产物卡片下方的竖向可点击卡片列表：
+ * - action='send'：emit('send', prompt)，由页面侧走与输入框相同的发送 action，
+ *   行尾显示 ↵ Enter 键位提示，示意"点击即发送"；
+ * - action='prefill'：emit('prefill', prompt)，由页面侧写入输入框并聚焦，
+ *   行尾显示 ✎ 提示"填入输入框待补充"。
  * suggestions 为空时不渲染任何占位；组件独立挂载，出问题一行 v-if 即可隐藏。
- * 可访问性：每个 chip 为原生 button（Tab 聚焦、Enter/Space 触发），带 aria-label；
- * 长 label CSS 截断，完整 prompt 入 title；动画仅 transform/opacity 且 ≤200ms，
- * 尊重 prefers-reduced-motion；窄屏横向滚动并以边缘渐隐遮罩提示可滑动。
+ * 卡片整行展示完整 label（不截断），完整 prompt 同时入 title/aria-label；
+ * 可访问性：每个条目为原生 button（Tab 聚焦、Enter/Space 触发）；
+ * 动画仅 transform/opacity 且 ≤200ms，尊重 prefers-reduced-motion。
  */
 import type { SuggestedFollowUp } from '@/utils/nextStepSuggestions'
 
@@ -30,7 +32,7 @@ function handleClick(item: SuggestedFollowUp) {
   }
 }
 
-function chipAriaLabel(item: SuggestedFollowUp): string {
+function cardAriaLabel(item: SuggestedFollowUp): string {
   return item.action === 'prefill'
     ? `建议追问（填入输入框待补充）：${item.prompt}`
     : `建议追问（直接发送）：${item.prompt}`
@@ -38,92 +40,100 @@ function chipAriaLabel(item: SuggestedFollowUp): string {
 </script>
 
 <template>
-  <div v-if="props.suggestions.length" class="suggestion-chips" role="group" aria-label="建议追问">
+  <div v-if="props.suggestions.length" class="suggestion-cards" role="group" aria-label="建议追问">
     <button
       v-for="(item, index) in props.suggestions"
       :key="index"
       type="button"
-      class="suggestion-chip"
+      class="suggestion-card"
       :class="{ 'is-prefill': item.action === 'prefill' }"
       :title="item.prompt"
-      :aria-label="chipAriaLabel(item)"
+      :aria-label="cardAriaLabel(item)"
       @click="handleClick(item)"
     >
-      <span class="suggestion-chip__label">{{ item.label }}</span>
-      <span v-if="item.action === 'prefill'" class="suggestion-chip__hint" aria-hidden="true">✎</span>
+      <span class="suggestion-card__label">{{ item.label }}</span>
+      <span
+        v-if="item.action === 'prefill'"
+        class="suggestion-card__key"
+        aria-hidden="true"
+        title="填入输入框待补充"
+      >✎</span>
+      <span v-else class="suggestion-card__key" aria-hidden="true"><span class="suggestion-card__enter">↵</span> Enter</span>
     </button>
   </div>
 </template>
 
 <style scoped lang="scss">
-.suggestion-chips {
+.suggestion-cards {
   display: flex;
-  flex-wrap: nowrap;
+  flex-direction: column;
   gap: 8px;
   margin-top: 10px;
-  padding-bottom: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb, rgba(29, 33, 41, 0.15)) transparent;
-  animation: suggestion-chips-in 0.18s ease-out both;
-  /* 窄屏横向滚动时的边缘渐隐遮罩，提示两侧还有内容可滑 */
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
+  animation: suggestion-cards-in 0.18s ease-out both;
 }
 
-.suggestion-chip {
-  flex: 0 0 auto;
-  display: inline-flex;
+.suggestion-card {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 260px;
-  padding: 5px 12px;
-  border: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.08));
-  border-radius: 999px;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.12));
+  border-radius: 10px;
   background: var(--bg-card, #fff);
-  color: var(--stardust-blue, #2e5bff);
-  font-size: 12px;
-  line-height: 1.4;
+  color: var(--chat-text-primary, var(--n-text-color));
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
   cursor: pointer;
-  white-space: nowrap;
   transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
-.suggestion-chip:hover {
+.suggestion-card:hover {
   background: var(--brand-primary-light, #eef1ff);
-  border-color: rgba(46, 91, 255, 0.2);
+  border-color: var(--stardust-blue, #2e5bff);
 }
 
-.suggestion-chip:focus-visible {
+.suggestion-card:focus-visible {
   outline: 2px solid var(--stardust-blue, #2e5bff);
   outline-offset: 1px;
 }
 
-/* label 超过约 20 字截断为省略号，完整 prompt 见 button 的 title/aria-label */
-.suggestion-chip__label {
-  max-width: 20ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 整行展示完整文案，不截断 */
+.suggestion-card__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.suggestion-chip__hint {
+/* 行尾键位提示：示意"点击即发送/填入"，kbd 风格 */
+.suggestion-card__key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.16));
+  border-radius: 6px;
+  background: var(--chat-surface, rgba(128, 128, 128, 0.06));
+  color: var(--chat-text-secondary, rgba(128, 128, 128, 0.9));
   font-size: 11px;
-  opacity: 0.7;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
-@keyframes suggestion-chips-in {
+.suggestion-card__enter {
+  font-size: 12px;
+}
+
+.suggestion-card:hover .suggestion-card__key {
+  border-color: var(--stardust-blue, #2e5bff);
+  color: var(--stardust-blue, #2e5bff);
+}
+
+@keyframes suggestion-cards-in {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -135,11 +145,11 @@ function chipAriaLabel(item: SuggestedFollowUp): string {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .suggestion-chips {
+  .suggestion-cards {
     animation: none;
   }
 
-  .suggestion-chip {
+  .suggestion-card {
     transition: none;
   }
 }

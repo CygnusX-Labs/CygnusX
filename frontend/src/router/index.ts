@@ -101,6 +101,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '结果报告中心', requiresAuth: true }
       },
       {
+        path: 'projects',
+        name: 'projects',
+        component: () => import('@/views/ProjectsView.vue'),
+        meta: { title: '项目管理', requiresAuth: true }
+      },
+      {
+        path: 'projects/:projectId',
+        name: 'project-detail',
+        component: () => import('@/views/ProjectDetailView.vue'),
+        meta: { title: '项目详情', requiresAuth: true }
+      },
+      {
         path: 'files',
         name: 'files',
         component: () => import('@/views/FilesView.vue'),
@@ -113,7 +125,7 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '数据下载', requiresAuth: true }
       },
       {
-        path: 'ai',
+        path: 'ai/:sessionId?',
         name: 'ai',
         component: () => import('@/views/AIChatView.vue'),
         meta: { title: 'AI 助手', requiresAuth: true, fullscreen: true }

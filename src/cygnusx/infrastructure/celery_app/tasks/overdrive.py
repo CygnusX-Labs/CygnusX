@@ -27,6 +27,14 @@ def _refresh_instance_status_line(instance: dict[str, Any], phase: str) -> None:
         instance["status_line"] = line
 
 
+def _overdrive_flow_version(run: Any) -> str:
+    """归档/交付文档中的流程版本：冻结计划版本 + hash 前缀。"""
+    plan = run.plan or {}
+    version = int(plan.get("version") or 0)
+    digest = str(plan.get("hash") or "")
+    return f"v{version}" + (f" (hash {digest[:8]})" if digest else "")
+
+
 @shared_task(name="cygnusx.infrastructure.celery_app.tasks.overdrive.advance_run")
 def advance_run(run_id: str) -> dict[str, object]:
     """Advance preflight/DAG scheduling without holding a chat SSE request open."""
@@ -376,7 +384,19 @@ async def _advance_run(run_id: str) -> dict[str, object]:
             run.status = "QUALITY_REVIEW"
             run.finished_at = datetime.now(UTC)
             delivery = await DeliveryAssembler().write(run)
-            readme = await DeliveryAssembler().write_readme(run, delivery)
+            from cygnusx.application.services.project_archive_service import (
+                archive_overdrive_delivery,
+                collect_session_environment,
+            )
+
+            environment = await collect_session_environment(
+                db,
+                str(run.session_id),
+                flow_id="overdrive",
+                flow_name="超频协作",
+                flow_version=_overdrive_flow_version(run),
+            )
+            readme = await DeliveryAssembler().write_readme(run, delivery, environment=environment)
             run.artifact_index = [
                 *run.artifact_index,
                 {
@@ -403,6 +423,21 @@ async def _advance_run(run_id: str) -> dict[str, object]:
             ]
             run.status = "COMPLETED"
             delivery_summary_pending = True
+            # 项目归档：会话绑定 project_id 时把交付物复制进项目 runs 目录并生成
+            # AGENTS.md/README/environment.json；归档失败不阻断 run 完成。
+            try:
+                await archive_overdrive_delivery(
+                    db,
+                    run,
+                    delivery_paths=[
+                        delivery["path"],
+                        str(delivery.get("archive_path") or ""),
+                        readme["path"],
+                    ],
+                    environment=environment,
+                )
+            except Exception as exc:  # noqa: BLE001 - 归档失败不阻断主流程
+                logger.error("Overdrive 项目归档失败（非阻塞）: run={} error={}", run_id, exc)
             await runs.append_event(
                 run_id,
                 "run_completed",
@@ -853,6 +888,17 @@ async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
             return {"status": "skipped", "run_id": run_id}
         _, official = DeliveryAssembler().assemble(run)
         relative_root = relative_overdrive_run_root(run.session_id, run.run_id)
+        from cygnusx.application.services.project_archive_service import (
+            collect_session_environment,
+        )
+
+        environment = await collect_session_environment(
+            db,
+            str(run.session_id),
+            flow_id="overdrive",
+            flow_name="超频协作",
+            flow_version=_overdrive_flow_version(run),
+        )
         readme = await DeliveryAssembler().write_readme(
             run,
             {
@@ -861,6 +907,7 @@ async def _run_delivery_summary_job(run_id: str) -> dict[str, object]:
                 "official_artifacts": official,
             },
             manager_summary=manager_summary,
+            environment=environment,
         )
         control = deepcopy(run.control or {})
         control["delivery_summary_ready"] = True

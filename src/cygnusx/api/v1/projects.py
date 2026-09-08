@@ -1,11 +1,13 @@
 """项目路由 —— 管理用户的分析项目。"""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from cygnusx.api.deps import CurrentUserId, DbSession
+from cygnusx.application.schemas.project import ProjectOverviewResponse
+from cygnusx.application.services.project_overview_service import ProjectOverviewService
 from cygnusx.application.services.project_service import ProjectService
 
 router = APIRouter()
@@ -15,12 +17,18 @@ def get_project_service(db: DbSession) -> ProjectService:
     return ProjectService(db)
 
 
+def get_project_overview_service(db: DbSession) -> ProjectOverviewService:
+    return ProjectOverviewService(db)
+
+
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
+ProjectOverviewServiceDep = Annotated[ProjectOverviewService, Depends(get_project_overview_service)]
 
 
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="项目名称")
     description: str = Field(default="", max_length=2000, description="项目描述（可选）")
+    customer: str = Field(default="", max_length=200, description="客户名称（可选）")
 
 
 @router.get("", summary="列出用户项目")
@@ -56,7 +64,7 @@ async def create_project(
 
     try:
         return await service.create_project(
-            UUID(current_user_id), req.name, req.description
+            UUID(current_user_id), req.name, req.description, req.customer
         )
     except Exception as exc:
         from cygnusx.core.exceptions import ConflictError, ValidationError
@@ -77,6 +85,42 @@ async def get_project(
 
     try:
         return await service.get_project(UUID(current_user_id), UUID(project_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
+    except Exception as exc:
+        from cygnusx.core.exceptions import NotFoundError
+
+        if isinstance(exc, NotFoundError):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise
+
+
+@router.get(
+    "/{project_id}/overview",
+    response_model=ProjectOverviewResponse,
+    summary="项目总览（历史分析）",
+)
+async def get_project_overview(
+    current_user_id: CurrentUserId,
+    service: ProjectOverviewServiceDep,
+    project_id: str,
+    session_limit: int = Query(50, ge=1, le=200, description="会话列表每页条数"),
+    session_offset: int = Query(0, ge=0, description="会话列表偏移"),
+    session_status: Literal["active", "archived", "deleted"] = Query(
+        "active", description="会话状态过滤：active/archived/deleted"
+    ),
+) -> dict[str, Any]:
+    """聚合项目元数据、项目下的聊天会话与磁盘 runs 目录中的历史分析运行。"""
+    from uuid import UUID
+
+    try:
+        return await service.get_overview(
+            UUID(current_user_id),
+            UUID(project_id),
+            session_limit=session_limit,
+            session_offset=session_offset,
+            session_status=session_status,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
     except Exception as exc:

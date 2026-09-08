@@ -251,21 +251,21 @@ docker-build-all-images: docker-build-sandboxes docker-build-worker ## 一键重
 	$(COMPOSE_WORKER) build
 	@echo "=> ✅ 所有镜像重建完成"
 
-docker-build-worker: docker-build-enrichment docker-build-deg ## 构建富集/DEG 运行时、通用 Worker 与系统发育 Worker 镜像
-	$(COMPOSE_WORKER) build worker phylo-worker
+docker-build-worker: docker-build-enrichment docker-build-deg ## 构建富集/DEG 运行时与通用 Worker 镜像（系统发育 phylo-worker 已暂时下线）
+	$(COMPOSE_WORKER) build worker
 
-docker-up-worker: docker-network docker-build-enrichment docker-build-deg ## 构建并启动富集/DEG 运行时、通用与系统发育 Worker 栈
+docker-up-worker: docker-network docker-build-enrichment docker-build-deg ## 构建并启动富集/DEG 运行时与通用 Worker 栈（phylo-worker 已暂时下线）
 	@python3 scripts/render_worker_config.py
 	@set -a; . data/.worker-config.env; test ! -f .env || . ./.env; set +a; \
 		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
-	$(COMPOSE_WORKER) up -d --build worker phylo-worker
+	$(COMPOSE_WORKER) up -d --build worker
 
 docker-up-cross-worker: docker-build-enrichment docker-build-deg ## 启动跨机器 Worker（要求 .env 已配置 CYGNUSX_CONTROL_HOST）
 	@python3 scripts/render_worker_config.py
 	@set -a; . data/.worker-config.env; test ! -f .env || . ./.env; set +a; \
 		$(MAKE) --no-print-directory docker-runtime-dirs DATA_ROOT="$$WORKER_SHARED_DATA_DIR"
 	CYGNUSX_WORKER_COMPOSE_OVERLAY=deploy/docker/docker-compose.cross-worker.yml \
-		$(COMPOSE_WORKER) up -d --build worker phylo-worker
+		$(COMPOSE_WORKER) up -d --build worker
 
 docker-up-all: docker-network ## 启动主栈 + Worker（一键全启）
 	@$(MAKE) --no-print-directory docker-runtime-dirs
@@ -416,7 +416,7 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	@$(MAKE) --no-print-directory docker-up-matrix-dev
 	@echo ""
 	@echo "🔧 步骤 11/12：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
-	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker phylo-worker rocketmq-worker
+	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker rocketmq-worker
 	@echo ""
 	@echo "🗄️  步骤 12/12：检查数据库迁移状态、同步知识库并清理悬空镜像..."
 	@$(MAKE) --no-print-directory check-alembic-heads

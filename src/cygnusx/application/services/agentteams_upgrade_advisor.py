@@ -431,6 +431,8 @@ class AgentTeamsUpgradeService:
             owner_id=user_id,
             title=session.title,
             origin=ROOM_ORIGIN_L2_UPGRADE,
+            # 房间纳入来源会话所属项目（项目维度聚合）；会话未绑项目时为 None
+            project_id=session.project_id,
         )
         # 反向链接：房间记录来源 L2 会话 id（origin 字段仅 20 字符，放不下 session id）。
         room.origin_ref = session.session_id

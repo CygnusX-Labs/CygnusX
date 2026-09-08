@@ -124,6 +124,8 @@ export interface AgentSession {
   updated_at: string
   /** 当前会话使用的模型配置 ID（覆盖 Agent 默认模型） */
   model_id?: string
+  /** 会话所属项目 ID（新建时由用户选择，创建后固定） */
+  project_id?: string | null
   mcp_mode?: 'off' | 'auto' | 'manual'
   extra_mcp_servers?: string[]
   /** 当前会话启用 AgentTeams multi-agent 协作运行时 */
@@ -993,6 +995,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         title: string
         title_locked?: boolean
         agent_id: string | null
+        project_id?: string | null
         model_id: string
         mode?: 'chat' | 'studio'
         mcp_mode?: 'off' | 'auto' | 'manual'
@@ -1009,6 +1012,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           title: s.title,
           title_locked: s.title_locked ?? false,
           agent_id: s.agent_id as string,
+          project_id: s.project_id ?? null,
           mode: s.mode || 'chat',
           messages: [] as ChatMessage[],
           created_at: s.created_at,
@@ -2084,6 +2088,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         sessionId: backendSessionId,
         mode: session.mode,
         runtimeProfile,
+        projectId: session.project_id || undefined,
         modelId: session.model_id,
         temperature: chatStore.conversationSettings.temperature,
         maxTokens: chatStore.conversationSettings.maxTokens,

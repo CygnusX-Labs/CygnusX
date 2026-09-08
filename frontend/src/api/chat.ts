@@ -131,6 +131,28 @@ export const chatApi = {
     )
     return response.data
   },
+  async renameSession(
+    sessionId: string,
+    title: string,
+  ): Promise<{ session_id: string; title: string; title_locked?: boolean }> {
+    const response = await apiClient.patch(`/chat/sessions/${sessionId}`, { title })
+    return response.data
+  },
+  async deleteSession(sessionId: string): Promise<void> {
+    await apiClient.delete(`/chat/sessions/${sessionId}`)
+  },
+  /** 会话生命周期：active → archived（归档后可从活跃列表隐藏） */
+  async archiveSession(sessionId: string): Promise<void> {
+    await apiClient.post(`/chat/sessions/${sessionId}/archive`)
+  },
+  /** 会话生命周期：archived → active */
+  async unarchiveSession(sessionId: string): Promise<void> {
+    await apiClient.post(`/chat/sessions/${sessionId}/unarchive`)
+  },
+  /** 会话生命周期：deleted → active（回收站恢复） */
+  async restoreSession(sessionId: string): Promise<void> {
+    await apiClient.post(`/chat/sessions/${sessionId}/restore`)
+  },
   async submitMessageFeedback(
     sessionId: string,
     messageId: string,

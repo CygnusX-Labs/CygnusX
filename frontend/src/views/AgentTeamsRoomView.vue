@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -101,6 +102,7 @@ const ROOM_SIDEBAR_COLLAPSED_KEY = 'cygnusx:agentteams-room-sidebar-collapsed'
 const ROOM_MODEL_KEY = 'cygnusx:agentteams-room-model'
 
 const message = useMessage()
+const route = useRoute()
 const agentHubStore = useAgentHubStore()
 const loading = ref(false)
 const available = ref(true)
@@ -1772,7 +1774,14 @@ onMounted(() => {
       roomPreferences.setServerManagerName(metadata.manager?.display_name)
     })
     .catch(() => { roleMetadata.value = {} })
-  void loadCases(true)
+  // 外部入口深链（如项目详情页会话「打开」）：?room=<room_id> 或 ?case=<case_id> 直达目标房间/Case；
+  // 带深链时不再自动选中首个会话，列表加载完成后按 query 选中。
+  const roomQuery = typeof route.query.room === 'string' ? route.query.room.trim() : ''
+  const caseQuery = typeof route.query.case === 'string' ? route.query.case.trim() : ''
+  void loadCases(!(roomQuery || caseQuery)).then(() => {
+    if (roomQuery) void selectRoom(roomQuery)
+    else if (caseQuery) void selectCase(caseQuery)
+  })
   startPolling()
   narrowMedia = window.matchMedia('(max-width: 1024px)')
   syncViewportMode()

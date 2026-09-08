@@ -242,6 +242,7 @@ class AgentTeamsRoomCreateRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=200)
     origin: str = Field(default="manual", min_length=1, max_length=20)
+    project_id: str | None = Field(default=None, max_length=64, description="绑定的项目 ID（可选）")
 
 
 class AgentTeamsRoomRenameRequest(BaseModel):
@@ -830,7 +831,10 @@ async def create_room(
     db: DbSession,
 ) -> dict[str, Any]:
     room = await AgentTeamsRoomService(db, service).create_room(
-        owner_id=current_user_id, title=request.title, origin=request.origin
+        owner_id=current_user_id,
+        title=request.title,
+        origin=request.origin,
+        project_id=request.project_id,
     )
     return _room_payload(room)
 

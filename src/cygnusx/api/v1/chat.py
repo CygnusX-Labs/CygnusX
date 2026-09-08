@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
@@ -59,28 +59,52 @@ async def _with_sse_heartbeat(
     数据，反向代理/网关会按读超时掐断连接，前端即表现为「流式连接意外中断」。
     这里在等待下一个事件时叠加超时，超时则先产出一个心跳再继续等待原事件；
     心跳由 generate_sse 转成 SSE 注释帧（``: heartbeat``），前端会忽略它。
+
+    实现要点：整个上游流由单一固定 Task（_pump）顺序消费并写入队列，本生成器
+    只从队列取事件。上游异步生成器（AgentRuntimeGateway.stream_agent_chat 等）
+    的所有 anext 因此都在同一个 asyncio Task / contextvars Context 中执行，
+    ContextVar 的 set/reset 与 OTel span 的 attach/detach 不会因每次 anext 更换
+    Task 而跨 Context 失效（Token was created in a different Context）。
     """
-    iterator = aiter(stream)
-    pending: asyncio.Task[ChatChunk] | None = None
+    queue: asyncio.Queue[ChatChunk | Exception | None] = asyncio.Queue()
+
+    async def _pump() -> None:
+        try:
+            async for chunk in stream:
+                queue.put_nowait(chunk)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # 上游异常经队列传递给消费者，由消费者在原调用上下文中抛出
+            queue.put_nowait(exc)
+        else:
+            queue.put_nowait(None)
+
+    pump = asyncio.create_task(_pump())
+    getter: asyncio.Task[ChatChunk | Exception | None] | None = None
     try:
         while True:
-            if pending is None:
-                pending = asyncio.ensure_future(anext(iterator))
+            if getter is None:
+                getter = asyncio.ensure_future(queue.get())
             try:
-                chunk = await asyncio.wait_for(asyncio.shield(pending), timeout=interval)
+                item = await asyncio.wait_for(asyncio.shield(getter), timeout=interval)
             except TimeoutError:
-                # shield 保证超时不取消底层 anext，下次循环继续等同一个事件
+                # shield 保证超时不取消底层 get，下次循环继续等同一个事件
                 yield ChatChunk(type="heartbeat")
                 continue
-            except StopAsyncIteration:
+            getter = None
+            if item is None:
                 return
-            pending = None
-            yield chunk
+            if isinstance(item, Exception):
+                raise item
+            yield item
     finally:
-        if pending is not None and not pending.done():
-            pending.cancel()
+        if getter is not None and not getter.done():
+            getter.cancel()
+        if not pump.done():
+            pump.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await pending
+                await pump
 
 
 async def _resume_orchestrator_graph(
@@ -812,8 +836,18 @@ async def list_sessions(
     service: ChatServiceDep,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    status: Literal["active", "archived", "deleted"] = Query("active"),
+    project_id: str | None = Query(None, max_length=64),
+    mode: Literal["chat", "studio"] | None = Query(None),
 ) -> list[ChatSessionDTO]:
-    return await service.list_sessions(current_user_id, limit=limit, offset=offset)
+    return await service.list_sessions(
+        current_user_id,
+        mode,
+        status=status,
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/sessions/search", response_model=ChatSessionSearchDTO, summary="搜索会话")
@@ -1041,6 +1075,40 @@ async def delete_session(
 ) -> dict[str, bool]:
     await service.delete_session(session_id, current_user_id)
     return {"success": True}
+
+
+@router.post("/sessions/{session_id}/archive", response_model=ChatSessionDTO, summary="归档会话")
+async def archive_session(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> ChatSessionDTO:
+    """active → archived；非 active 返回 400。"""
+    return await service.archive_session(session_id, current_user_id)
+
+
+@router.post(
+    "/sessions/{session_id}/unarchive", response_model=ChatSessionDTO, summary="取消归档会话"
+)
+async def unarchive_session(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> ChatSessionDTO:
+    """archived → active；非 archived 返回 400。"""
+    return await service.unarchive_session(session_id, current_user_id)
+
+
+@router.post(
+    "/sessions/{session_id}/restore", response_model=ChatSessionDTO, summary="从回收站恢复会话"
+)
+async def restore_session(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    session_id: str,
+) -> ChatSessionDTO:
+    """deleted → active；非 deleted 返回 400。"""
+    return await service.restore_session(session_id, current_user_id)
 
 
 # ============================================================

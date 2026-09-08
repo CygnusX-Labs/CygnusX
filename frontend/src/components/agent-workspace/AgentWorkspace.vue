@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AgentSidebar from './AgentSidebar.vue'
 import AgentHub from './AgentHub.vue'
 import AgentSandbox from './AgentSandbox.vue'
@@ -11,6 +11,7 @@ import { ArrowForwardOutline, CompassOutline } from '@vicons/ionicons5'
 import { NButton, NIcon, NModal } from 'naive-ui'
 
 const store = useAgentHubStore()
+const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const error = ref('')
@@ -62,7 +63,13 @@ async function initAssets() {
   error.value = ''
   try {
     await store.initAssets()
-    ensureDefaultSession()
+    // 路由携带 sessionId 时（如从项目详情页「打开」会话）优先恢复该会话
+    const targetId = String(route.params.sessionId || '')
+    if (targetId && store.sessions.some((s) => s.id === targetId)) {
+      void store.selectSession(targetId)
+    } else {
+      ensureDefaultSession()
+    }
   } catch (e: any) {
     error.value = e?.message || '加载 Agent 数据失败'
   } finally {

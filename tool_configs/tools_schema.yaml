@@ -516,28 +516,30 @@ tools:
     llm_result_fields: [route, message, success, error]
     ui_result_fields: [route, arguments]
 
-  - key: phylogenetic-tree
-    name: cygnusx_build_phylogenetic_tree
-    description: 根据多序列比对构建系统发育树，打开可配置 NJ、UPGMA、最大似然或贝叶斯任务的工作台。适用于“建系统发育树”“比较序列亲缘关系”；序列清洗、翻译或 ORF 搜索请改用序列魔术师。输入 layout 为 rectangular、circular 或 radial；FASTA 和参数在页面上传，不支持 upload://file_id。
-    keywords: [phylogeny, phylogenetic tree, NJ, UPGMA, maximum likelihood, 系统发育树, 建树]
-    category: sequence
-    invocation_mode: open_page
-    route: /tools/phylogenetic-tree
-    requires_confirm: false
-    annotations:
-      readOnlyHint: false
-      destructiveHint: false
-      openWorld: false
-      idempotent: true
-    input_schema:
-      type: object
-      properties:
-        layout:
-          type: string
-          enum: [rectangular, circular, radial]
-          description: 希望在页面中使用的树布局；页面仍允许用户随时切换
-    llm_result_fields: [route, message, success, error]
-    ui_result_fields: [route, arguments]
+  # —— 系统发育树构建工具暂时下线（phylo-worker 镜像已停止构建，2026-09）——
+  # 恢复时取消下方注释，并将 tools_setting.yaml 中 phylogenetic-tree 的 enabled 改回 true。
+  # - key: phylogenetic-tree
+  #   name: cygnusx_build_phylogenetic_tree
+  #   description: 根据多序列比对构建系统发育树，打开可配置 NJ、UPGMA、最大似然或贝叶斯任务的工作台。适用于“建系统发育树”“比较序列亲缘关系”；序列清洗、翻译或 ORF 搜索请改用序列魔术师。输入 layout 为 rectangular、circular 或 radial；FASTA 和参数在页面上传，不支持 upload://file_id。
+  #   keywords: [phylogeny, phylogenetic tree, NJ, UPGMA, maximum likelihood, 系统发育树, 建树]
+  #   category: sequence
+  #   invocation_mode: open_page
+  #   route: /tools/phylogenetic-tree
+  #   requires_confirm: false
+  #   annotations:
+  #     readOnlyHint: false
+  #     destructiveHint: false
+  #     openWorld: false
+  #     idempotent: true
+  #   input_schema:
+  #     type: object
+  #     properties:
+  #       layout:
+  #         type: string
+  #         enum: [rectangular, circular, radial]
+  #         description: 希望在页面中使用的树布局；页面仍允许用户随时切换
+  #   llm_result_fields: [route, message, success, error]
+  #   ui_result_fields: [route, arguments]
 
   - key: manhattan
     name: cygnusx_plot_manhattan

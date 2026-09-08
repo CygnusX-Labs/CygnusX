@@ -223,6 +223,26 @@ class ChatSessionManagement:
 
     # --- 会话管理 ---
 
+    async def _validate_project_binding(self, user_id: str, project_id: str | None) -> None:
+        """校验会话的项目边界：必须显式绑定一个存在且属于当前用户的项目。"""
+        from cygnusx.core.exceptions import AuthorizationError, ValidationError
+        from cygnusx.infrastructure.database.models.project import ProjectModel
+
+        if not project_id:
+            raise ValidationError("创建会话必须绑定项目（project_id）")
+        try:
+            project_uuid = uuid.UUID(project_id)
+        except ValueError as exc:
+            raise NotFoundError(f"项目不存在：{project_id}") from exc
+        result = await self._db.execute(
+            select(ProjectModel).where(ProjectModel.id == project_uuid)
+        )
+        project = result.scalar_one_or_none()
+        if project is None:
+            raise NotFoundError(f"项目不存在：{project_id}")
+        if str(project.user_id) != str(user_id):
+            raise AuthorizationError("无权绑定其他用户的项目")
+
     async def create_session(
         self,
         user_id: str,
@@ -235,7 +255,10 @@ class ChatSessionManagement:
         workspace_id: str | None = None,
         sandbox_meta: dict[str, Any] | None = None,
         project_id: str | None = None,
+        require_project: bool = True,
     ) -> ChatSessionDTO:
+        if require_project:
+            await self._validate_project_binding(user_id, project_id)
         session = await self._sessions.create(
             user_id=user_id,
             model_id=model_id,
@@ -257,10 +280,14 @@ class ChatSessionManagement:
         user_id: str,
         mode: str | None = None,
         *,
+        status: str = "active",
+        project_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ChatSessionDTO]:
-        sessions = await self._sessions.list(user_id, mode, limit=limit, offset=offset)
+        sessions = await self._sessions.list(
+            user_id, mode, limit=limit, offset=offset, status=status, project_id=project_id
+        )
         return [self._to_session_dto(session) for session in sessions]
 
     async def update_session_title(
@@ -383,6 +410,50 @@ class ChatSessionManagement:
         await self._db.flush()
         await self._enqueue_memory_summary(session)
         return True
+
+    async def _get_owned_session_any_status(
+        self, session_id: str, user_id: str
+    ) -> ChatSessionModel:
+        """归档/恢复需要看到 archived/deleted 会话，不能复用仅查 active 的 get。"""
+        result = await self._db.execute(
+            select(ChatSessionModel).where(
+                ChatSessionModel.session_id == session_id,
+                ChatSessionModel.user_id == user_id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise NotFoundError("会话不存在或无权访问")
+        return session
+
+    async def _set_session_status(
+        self, session_id: str, user_id: str, *, expected: str, target: str, action: str
+    ) -> ChatSessionDTO:
+        from cygnusx.core.exceptions import BusinessError
+
+        session = await self._get_owned_session_any_status(session_id, user_id)
+        if session.status != expected:
+            raise BusinessError(f"仅{expected}状态的会话可{action}（当前为 {session.status}）")
+        session.status = target
+        session.updated_at = datetime.now(UTC)
+        await self._db.flush()
+        return self._to_session_dto(session)
+
+    async def archive_session(self, session_id: str, user_id: str) -> ChatSessionDTO:
+        return await self._set_session_status(
+            session_id, user_id, expected="active", target="archived", action="归档"
+        )
+
+    async def unarchive_session(self, session_id: str, user_id: str) -> ChatSessionDTO:
+        return await self._set_session_status(
+            session_id, user_id, expected="archived", target="active", action="取消归档"
+        )
+
+    async def restore_session(self, session_id: str, user_id: str) -> ChatSessionDTO:
+        """从回收站恢复（deleted → active）。Studio 沙盒由懒加载重建，无需在此处理。"""
+        return await self._set_session_status(
+            session_id, user_id, expected="deleted", target="active", action="恢复"
+        )
 
     async def add_message(
         self,

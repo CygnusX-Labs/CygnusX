@@ -19,14 +19,25 @@ MAX_HOPS_CEILING = 10
 
 
 def extract_handoff_directive(result: Any) -> dict[str, Any] | None:
-    """兼容 ToolBridge 与 builtin MCP 两层结果信封，提取交接指令。"""
+    """兼容 ToolBridge 与 builtin MCP 两层结果信封，提取交接指令。
+
+    逐层下钻 result / llm_payload 包装，每一层都检查 handoff：llm_payload
+    可能因 3KB 上限被压缩成摘要（handoff 字段丢失），而 envelope 顶层的
+    handoff 不受截断影响。
+    """
     candidate = result
-    if isinstance(candidate, dict):
-        candidate = candidate.get("result", candidate)
-    if isinstance(candidate, dict):
-        candidate = candidate.get("llm_payload", candidate)
-    directive = candidate.get("handoff") if isinstance(candidate, dict) else None
-    return dict(directive) if isinstance(directive, dict) else None
+    while isinstance(candidate, dict):
+        directive = candidate.get("handoff")
+        if isinstance(directive, dict):
+            return dict(directive)
+        for key in ("result", "llm_payload"):
+            inner = candidate.get(key)
+            if isinstance(inner, dict):
+                candidate = inner
+                break
+        else:
+            return None
+    return None
 
 
 class AgentHandoffService:

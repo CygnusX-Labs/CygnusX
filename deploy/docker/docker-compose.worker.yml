@@ -143,12 +143,16 @@ services:
       start_period: 30s
       retries: 3
 
+  # 系统发育 Worker 暂时下线（2026-09）：镜像体积大、建树任务耗时长。
+  # 通过 profile 门控，make 默认目标与裸 `build`/`up` 均不会创建；
+  # 恢复时显式执行 scripts/worker-compose.sh --profile phylo up -d --build phylo-worker。
   phylo-worker:
     image: ${CYGNUSX_PHYLO_WORKER_IMAGE:-cygnusx-phylo-worker:v0.0.2dev}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.phylo
     container_name: cygnusx-phylo-worker
+    profiles: ["phylo"]
     restart: unless-stopped
     logging: *default-logging
     env_file:

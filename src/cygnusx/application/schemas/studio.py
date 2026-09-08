@@ -16,7 +16,7 @@ class CreateStudioSessionRequest(BaseModel):
 
     agent_id: str = Field(..., description="绑定的 Agent ID")
     title: str | None = Field(None, description="会话标题，缺省为「与 <Agent名> 的工作台」")
-    project_id: str | None = Field(None, max_length=64, description="项目边界标识")
+    project_id: str = Field(..., max_length=64, description="项目边界标识（必填，会话强制绑定项目）")
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
     sandbox_capabilities: list[Literal["code", "browser", "document"]] = Field(
         default_factory=lambda: ["code", "browser", "document"],

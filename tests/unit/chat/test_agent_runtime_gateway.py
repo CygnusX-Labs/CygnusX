@@ -115,3 +115,50 @@ async def test_gateway_records_legacy_entry_when_refactor_is_disabled(
 
     assert [chunk.type for chunk in chunks] == ["error"]
     assert counter.calls == [(1, {"agent.id": "agent-1", "chat.mode": "studio"})]
+
+
+@pytest.mark.asyncio
+async def test_gateway_survives_cross_task_consumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """消费方每次 anext 换 Task（各自 copy Context）时网关也必须正常收尾。
+
+    回归：旧实现 finally 中 agent_parent_context_var.reset(token) 与
+    start_as_current_span 的 with 退出（OTel detach）跨 Context 会抛
+    "Token was created in a different Context"。
+    这里不打桩 get_tracer：未初始化遥测时返回的 noop tracer 仍会真实
+    attach/detach context，正好覆盖 OTel 一侧的跨 Context 路径。
+    """
+    import asyncio
+
+    class _Router:
+        def __init__(self, service: Any) -> None:
+            del service
+
+        async def stream(self, request: Any) -> AsyncIterator[ChatChunk]:
+            del request
+            yield ChatChunk(type="text", content="a")
+            yield ChatChunk(type="done")
+
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.ChatRouterService", _Router
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_settings",
+        lambda: SimpleNamespace(chat_runtime_refactor_enabled=True),
+    )
+
+    gen = _Gateway().stream_agent_chat(
+        user_id="user-1",
+        agent_id="agent-1",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    chunks: list[ChatChunk] = []
+    while True:
+        try:
+            chunk = await asyncio.ensure_future(anext(gen))
+        except StopAsyncIteration:
+            break
+        chunks.append(chunk)
+
+    assert [chunk.type for chunk in chunks] == ["text", "done"]
