@@ -3,6 +3,7 @@
 from fastmcp import FastMCP
 
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
+from core.config import settings
 
 
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
@@ -73,6 +74,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     @mcp.tool()
     async def cygnusx_get_task_logs(task_id: str, lines: int = 50) -> dict:
         """获取任务执行日志（最近 N 条）。用于排查失败原因或了解执行进展。"""
+        lines = max(1, min(lines, settings.max_log_lines))
         try:
             t = await api.get_task(task_id)
             logs = t.get("logs", [])

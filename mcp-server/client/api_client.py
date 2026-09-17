@@ -188,8 +188,5 @@ class CygnusXAPIClient:
     async def get_me(self) -> dict:
         return await self.get("/auth/me")
 
-    async def get_stats(self) -> dict:
-        return await self.get("/stats/overview")
-
 
 api = CygnusXAPIClient()

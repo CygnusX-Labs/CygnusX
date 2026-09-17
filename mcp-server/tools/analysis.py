@@ -18,6 +18,9 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     ) -> dict:
         """提交分析任务到平台。需要 user_confirmed=True 确认执行。
 
+        复杂流程（如 RNA-seq/ATAC-seq 有专用参数预检）可改用
+        rna_seq_prepare / atac_seq_prepare 先校验再经 rna_seq_submit 提交。
+
         Args:
             flow_id: 流程 ID (如 rna_seq, atac_seq)
             name: 任务名称

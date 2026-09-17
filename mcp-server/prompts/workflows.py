@@ -15,7 +15,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 1. 调用 cygnusx_get_flow_detail(flow_id="{flow_id}") 了解流程参数要求
 2. 调用 cygnusx_list_files() 查看我已有的数据文件
 3. 根据我的数据配置参数和样本表
-4. 调用 cygnusx_preview_analysis() 验证参数
+4. 调用 cygnusx_preview_analysis(flow_id="{flow_id}") 验证参数
 5. 调用 cygnusx_submit_analysis(user_confirmed=True) 提交分析
 6. 使用 cygnusx_get_task_progress() 轮询监控进度直到完成
 7. 完成后调用 cygnusx_get_task_outputs() 查看结果
@@ -46,12 +46,17 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
 1. 调用 cygnusx_get_task_outputs(task_id="{task_id}") 获取结果路径
 2. 创建沙箱会话: cygnusx_sandbox_create()
-3. 在沙箱中加载数据:
+3. 先在沙箱中探明实际结果文件位置（不同流程目录结构不同，勿臆测路径）:
+   ```python
+   import subprocess
+   # 列出任务结果目录，找到差异基因表 / 计数矩阵等关键文件
+   print(subprocess.run(["find", "/data/platform/tasks/{task_id}", "-name", "*.csv"],
+                        capture_output=True, text=True).stdout)
+   ```
+   再用 pandas 读取上一步确认存在的文件，例如:
    ```python
    import pandas as pd
-   import scanpy as sc
-   # 读取差异基因结果
-   degs = pd.read_csv('/data/platform/tasks/{task_id}/work/.../results/deseq2/all_degs.csv')
+   degs = pd.read_csv("<上一步确认的 all_degs.csv 实际路径>")
    ```
 4. 进行自定义分析:
    - 调整筛选阈值 (|log2FC| > 1, padj < 0.05)
@@ -74,8 +79,8 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 6. 监控分析进度直到完成
 7. 解读分析结果
 
- accession: {accession}
- 目标流程: {flow_id}"""
+accession: {accession}
+目标流程: {flow_id}"""
 
     @mcp.prompt()
     def troubleshoot_task(task_id: str) -> str:

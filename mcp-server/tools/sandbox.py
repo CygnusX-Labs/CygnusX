@@ -3,6 +3,7 @@
 from fastmcp import FastMCP
 
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
+from core.config import settings
 
 
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
@@ -43,8 +44,9 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         Args:
             code: 要执行的代码 (Python 或 R)
             session_id: 沙箱会话 ID (空则自动创建)
-            timeout: 超时秒数 (默认 300)
+            timeout: 超时秒数 (默认 300，上限受平台配置约束)
         """
+        timeout = max(1, min(timeout, settings.sandbox_timeout))
         try:
             if not session_id:
                 session = await api.sandbox_create_session("python")
@@ -85,6 +87,9 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
                     "echarts_count": len(echarts),
                     "session_id": session_id,
                 },
+                "next_steps": [
+                    f"分析完成后调用 cygnusx_sandbox_destroy(session_id='{session_id}') 释放容器资源",
+                ],
             }
         except CygnusXAPIError as e:
             return {"success": False, "summary": f"沙箱执行失败: {e.detail}"}

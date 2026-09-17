@@ -5,6 +5,8 @@ server:
   name: "CygnusX"
   description: "CygnusX 多组学分析平台 MCP Server — 任务管理、数据下载、流程分析、结果解读、沙箱执行"
   # 传输模式: stdio (默认, CLI 助手) | sse (远程访问)
+  # ⚠️ SSE 模式当前无鉴权：绑定 0.0.0.0 时任何可达本端口的人都可操作本平台 API Key。
+  #    仅在内网/本机可信环境使用，公网暴露前必须加反向代理鉴权或改为 stdio。
   transport: "stdio"
   host: "0.0.0.0"
   port: 8900

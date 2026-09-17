@@ -23,7 +23,8 @@ mcp-server/
 │   ├── files.py
 │   ├── reports.py
 │   ├── sandbox.py
-│   └── platform.py
+│   ├── platform.py
+│   └── pipelines.py
 ├── resources/           # MCP Resources (只读数据源)
 │   └── catalog.py
 ├── prompts/             # MCP Prompts (工作流引导)
@@ -143,12 +144,12 @@ async def my_endpoint(self, param: str) -> dict:
 
 | 约定 | 说明 |
 |------|------|
-| 工具命名 | `cygnusx_<group>_<action>`，全小写下划线 |
+| 工具命名 | `cygnusx_<group>_<action>`，全小写下划线；例外：与平台内部 preset 对齐的工具（`list_workspace_files`/`search_workspace_files`/`rna_seq_*`/`atac_seq_*` 等）沿用内部命名，保证内外双端同名 |
 | 确认门 | 破坏性操作 (提交/取消/删除) 必须有 `user_confirmed: bool = False` 参数 |
 | 返回格式 | `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}` |
 | 错误处理 | 捕获 `CygnusXAPIError`，返回 `{"success": False, "summary": "..."}` |
-| 文件大小 | `read_file_content` 最多 500 行，超出截断并标注 |
-| 认证 | 所有请求通过 `X-API-Key` 头，由 `api_client.py` 统一注入 |
+| 输出上限 | `cygnusx_read_file_content` 行数、`cygnusx_get_task_logs` 条数、`cygnusx_sandbox_execute` 超时均 clamp 到 `config.yaml` 的 `limits.*`（默认 50 行 / 100 条 / 300 秒） |
+| 认证 | 所有请求通过 `X-API-Key` 头，由 `api_client.py` 统一注入；SSE 传输本身无鉴权，仅可信内网使用 |
 
 ## 平台侧对应关系
 
@@ -162,6 +163,7 @@ async def my_endpoint(self, param: str) -> dict:
 | reports | `/api/v1/reports` | `ReportService` |
 | sandbox | `/api/v1/sandbox` | `SandboxService` |
 | platform | `/api/v1/auth/me` + `/api/v1/stats` | — |
+| pipelines | `/api/v1/pipelines` | Pipeline 控制器 (`prepare/submit/status/results`) |
 
 ## 内部 Builtin Preset
 

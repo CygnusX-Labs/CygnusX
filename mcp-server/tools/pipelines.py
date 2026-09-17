@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 def _failure(error: CygnusXAPIError) -> dict[str, Any]:
     return {
         "success": False,
+        "summary": f"调用失败: {error.detail}",
         "error": error.detail,
         "error_code": error.status_code,
         "guidance": "请根据错误信息修正参数或确认当前 API Key 对工作区数据具有访问权限。",
@@ -57,7 +58,11 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         project_name: str,
         extra_parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params。"""
+        """校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params。
+
+        与通用入口的关系: 本工具是 RNA-seq 专用预检（参数更强约束、逐字段校验）；
+        简单场景也可直接用 cygnusx_submit_analysis(flow_id="rna_seq") 一步提交。
+        """
         payload = locals()
         payload["extra_parameters"] = extra_parameters or {}
         return await prepare("rna_seq", payload)

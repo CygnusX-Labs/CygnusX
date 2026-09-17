@@ -47,6 +47,12 @@ def main() -> None:
     if not settings.api_key:
         logger.warning("未设置 CYGNUSX_API_KEY，API 调用将会失败")
 
+    if transport == "sse" and settings.host != "127.0.0.1":
+        logger.warning(
+            f"SSE 传输无鉴权且绑定 {settings.host}:{port}，任何可达者都能使用本服务配置的 API Key；"
+            "请确保处于可信内网，或改绑 127.0.0.1 并经由带鉴权的反向代理暴露。"
+        )
+
     logger.info(f"CygnusX MCP Server 启动 (transport={transport}, base_url={settings.base_url})")
 
     if transport == "sse":

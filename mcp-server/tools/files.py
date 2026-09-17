@@ -3,6 +3,7 @@
 from fastmcp import FastMCP
 
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
+from core.config import settings
 
 
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
@@ -40,8 +41,8 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"搜索工作区文件失败: {e.detail}"}
 
     @mcp.tool()
-    async def cygnusx_list_files(directory: str = "", file_type: str = "") -> dict:
-        """列出用户文件。可按目录和文件类型过滤。"""
+    async def cygnusx_list_files(directory: str = "") -> dict:
+        """列出用户文件。可按目录过滤。"""
         try:
             data = await api.list_files(directory=directory or None)
             files = data.get("files", data) if isinstance(data, dict) else data
@@ -125,6 +126,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
         例如: tasks/{task_id}/work/rna_seq/results/deseq2/all_degs.csv
         """
+        max_lines = max(1, min(max_lines, settings.max_file_preview_lines))
         try:
             data = await api.preview_file(file_path, max_lines=max_lines)
             lines = data.get("lines", [])
