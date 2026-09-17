@@ -484,6 +484,10 @@ class SkillService:
 
     @staticmethod
     def _to_dto(m: SkillModel) -> SkillDTO:
+        # bio- 前缀技能统一归为 analysis（历史已入库数据在读取侧归一化，免批量迁移）
+        category = m.category
+        if category != "analysis" and str(m.skill_id or "").startswith("bio-"):
+            category = "analysis"
         return SkillDTO(
             id=m.id,
             skill_id=m.skill_id,
@@ -492,7 +496,7 @@ class SkillService:
             prompt=m.prompt,
             tool_definition=m.tool_definition,
             icon=m.icon,
-            category=m.category,
+            category=category,
             is_active=m.is_active,
             is_builtin=m.is_builtin,
             version=m.version,

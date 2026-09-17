@@ -210,7 +210,9 @@ class SkillImportService:
                         name=parsed.name,
                         description=parsed.description,
                         icon=parsed.icon,
-                        category=category_map.get(folder.name, parsed.category),
+                        category=_resolve_market_category(
+                            folder.name, category_map.get(folder.name, parsed.category)
+                        ),
                         version=parsed.version,
                         author=parsed.author,
                         has_scripts=parsed.has_scripts,
@@ -234,7 +236,9 @@ class SkillImportService:
             parsed, source_type="market", source_ref=f"builtin://{skill_id}"
         )
         preview.skill_id = skill_id  # 文件夹名为规范键，保证 DB/磁盘/市场三处一致
-        preview.category = _builtin_category_map(market_dir).get(skill_id, preview.category)
+        preview.category = _resolve_market_category(
+            skill_id, _builtin_category_map(market_dir).get(skill_id, preview.category)
+        )
         return await self.confirm_import(preview, overwrite=overwrite)
 
     # ---------- 阿里云官方技能源（市场第二分组） ----------
@@ -970,6 +974,13 @@ def _builtin_category_map(market_dir: Path) -> dict[str, str]:
         skill_id = f"bio-{category}-{skill_dir.name}"
         result[skill_id] = category
     return result
+
+
+def _resolve_market_category(skill_id: str, fallback: str) -> str:
+    """bio- 前缀的技能统一归入 analysis 类别（其余沿用原解析结果）。"""
+    if skill_id.startswith("bio-"):
+        return "analysis"
+    return fallback
 
 
 def _aliyun_category(manifest: dict, skill_id: str, fallback: str = "general") -> str:
