@@ -137,6 +137,26 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# 待办计划自动推进（§5.3 agent.plan）覆盖的工具：写操作/产物产出类。
+# 模型经常只在任务开始时调用一次 update_plan（全 pending），不再更新，
+# 导致已完成任务的待办卡片长期停留在"待执行"；成功执行下列工具后自动
+# 推进 in_progress→done、pending→in_progress。查询/状态类只读工具不推进。
+PLAN_ADVANCE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "sandbox_execute",
+        "workspace_write",
+        "workspace_edit",
+        "datahub_import",
+        "platform_result_import",
+        "artifact_register",
+        "document_create",
+        "document_edit",
+        "document_convert",
+        "onlyoffice_convert",
+        "tool_orchestrate",
+    }
+)
+
 STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -967,6 +987,30 @@ def _need_context(db: AsyncSession | None, user_id: str | None) -> dict[str, Any
     if db is None or user_id is None:
         return _error_result("该工具需要登录态与数据库上下文，当前调用方式不支持")
     return None
+
+
+def advance_plan_steps(steps: list[dict[str, str]]) -> list[dict[str, str]] | None:
+    """执行一个成功工具后推进待办计划：当前 in_progress 步骤标 done、首个 pending 标 in_progress。
+
+    模型经常只在任务开始时调用一次 update_plan（全 pending），之后不再更新，
+    导致已完成任务的待办卡片长期停留在"待执行"。此推进逻辑让卡片状态跟随真实
+    执行进度；Agent 显式调用 update_plan 时仍以其返回的最新计划为准（整体覆盖）。
+    无 in_progress 步骤（计划尚未开始或已全部完成）时返回 None 表示无需推进。
+    """
+    if not steps:
+        return None
+    if not any(step.get("status") == "in_progress" for step in steps):
+        return None
+    advanced = [dict(step) for step in steps]
+    for step in advanced:
+        if step.get("status") == "in_progress":
+            step["status"] = "done"
+            break
+    for step in advanced:
+        if step.get("status") == "pending":
+            step["status"] = "in_progress"
+            break
+    return advanced
 
 
 def normalize_plan_steps(args: dict[str, Any]) -> tuple[list[dict[str, str]] | None, str | None]:

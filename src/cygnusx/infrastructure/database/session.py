@@ -15,7 +15,9 @@ from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter
 
 _engine: AsyncEngine | None = None
+_readonly_engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_readonly_session_factory: async_sessionmaker[AsyncSession] | None = None
 _meter = get_meter("cygnusx.database")
 _pool_checked_out = _meter.create_up_down_counter(
     "cygnusx.database.pool.checked_out",
@@ -109,6 +111,30 @@ def _instrument_pool(engine: AsyncEngine, *, service_name: str, pool_name: str) 
         _pool_invalidated_total.add(1, attributes)
 
 
+def get_readonly_engine() -> AsyncEngine:
+    """获取只读副本引擎（单例）；未配置 `readonly_database_url` 时回退主库。"""
+    global _readonly_engine
+    settings = get_settings()
+    if not settings.readonly_database_url:
+        return get_engine()
+    if _readonly_engine is None:
+        _readonly_engine = create_async_engine(
+            settings.readonly_database_url,
+            echo=settings.app_debug,
+            pool_pre_ping=True,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout_seconds,
+            pool_recycle=settings.database_pool_recycle_seconds,
+        )
+        _instrument_pool(
+            _readonly_engine,
+            service_name=settings.service_name,
+            pool_name="ReadonlyAsyncAdaptedQueuePool",
+        )
+    return _readonly_engine
+
+
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """获取会话工厂（单例）"""
     global _session_factory
@@ -119,6 +145,18 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
             expire_on_commit=False,
         )
     return _session_factory
+
+
+def get_readonly_session_factory() -> async_sessionmaker[AsyncSession]:
+    """获取只读会话工厂（单例）；用于报表/列表等读多场景分流到只读副本。"""
+    global _readonly_session_factory
+    if _readonly_session_factory is None:
+        _readonly_session_factory = async_sessionmaker(
+            get_readonly_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    return _readonly_session_factory
 
 
 # 别名，供 deps.py 导入
@@ -141,7 +179,11 @@ async def init_db() -> None:
 
 async def close_db() -> None:
     """关闭数据库连接"""
-    global _engine, _session_factory
+    global _engine, _session_factory, _readonly_engine, _readonly_session_factory
+    if _readonly_engine is not None:
+        await _readonly_engine.dispose()
+        _readonly_engine = None
+        _readonly_session_factory = None
     if _engine is not None:
         await _engine.dispose()
         _engine = None

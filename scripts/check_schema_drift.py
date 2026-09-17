@@ -29,7 +29,7 @@ import cygnusx.infrastructure.database.models  # noqa: F401
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.database.base import Base
 
-_IGNORED_EXTRA_TABLES = {"alembic_version"}
+_IGNORED_EXTRA_TABLES = {"alembic_version", "mem0_memories"}
 
 
 async def _collect() -> tuple[list[str], list[str], list[str]]:

@@ -23,19 +23,17 @@ CygnusX 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 | 范畴 | 当前选择 | 规则 |
 | --- | --- | --- |
 | 框架 | Vue 3 + TypeScript + Vite | 新组件使用 `<script setup lang="ts">` 与 Composition API。 |
-| 组件库 | Naive UI + Arco Design Vue | 可按页面和交互场景选择 `NButton`/`NDataTable` 或 `<a-button>`/`<a-table>`；两套组件必须共享平台令牌和状态语义。 |
+| 组件库 | Naive UI | 统一使用 `NButton`/`NDataTable` 等 Naive UI 组件；项目未引入第二套组件库。 |
 | 图标 | `@vicons/*` | 使用与现有页面一致的图标集；图标按钮必须提供 Tooltip 或可访问名称。 |
 | 样式 | CSS 变量、Tailwind CSS、Sass | 页面优先消费变量和共享工具类；不要复制常量。 |
 | 主题 | Pinia 主题状态 + Naive UI `themeOverrides` | 主题由应用层统一提供，业务页面不得覆写全局组件主题。 |
 
-### 2.2 组件库并行使用
+### 2.2 组件库统一为 Naive UI
 
-本仓库允许并行使用 `naive-ui` 与 `@arco-design/web-vue`。两套组件库服务于同一个平台，不要求每个页面只能使用其中一套；但视觉令牌、主题状态、图标策略、可访问性和交互反馈必须保持统一。
+本仓库只使用 `naive-ui` 一套组件库：`package.json` 中没有 `@arco-design/web-vue`，`frontend/src/main.ts` 只注册 Naive UI，全仓不存在 `a-config-provider`。所有页面与交互控件统一使用 Naive UI，不得再引入第二套组件库。
 
-- 现有页面可以继续使用 Naive UI，并通过 `frontend/src/App.vue` 的 `themeOverrides` 维护 Naive UI 主题。
-- 新页面、实验性页面或适合 Arco 交互模型的页面可以使用 Arco Design Vue，并通过 `a-config-provider` 与平台令牌接入统一主题。
-- 同一页面可以混用两套组件，但不应让同一个交互控件同时由两套组件叠加实现；优先保持页面内部的组件风格连续。
-- 两套组件库都必须在应用入口完成注册、样式加载、语言配置和主题配置；不得在业务页面重复初始化全局 Provider。
+- 页面通过 `frontend/src/App.vue` 的 `themeOverrides` 维护 Naive UI 主题。
+- 样式中的 `--arco-primary`、`--arco-success` 等令牌名只是**历史命名**：`frontend/src/styles/global.css` 把它们定义为 `--brand-primary` 等品牌令牌的 CSS 变量别名（如 `--arco-primary: var(--brand-primary)`），与 Arco 组件库无关。业务代码可继续消费这些别名，但不得据此断言项目集成了 Arco Design Vue。
 
 ### 2.3 权威实现位置
 
@@ -52,9 +50,8 @@ CygnusX 是面向生物信息学任务、数据资产与 AI 工作流的科学�
 
 ### 2.4 组件库应用层约定
 
-- `frontend/src/main.ts` 负责注册 Naive UI；不要为单个页面重复安装组件库或引入第二套全局初始化方式。
-- `frontend/src/main.ts` 同时负责注册 Arco Design Vue；两套组件库只在应用入口初始化一次。
-- `frontend/src/App.vue` 负责 Naive UI 的 `NConfigProvider` 与 `themeOverrides`；Arco 的 `a-config-provider` 也必须在应用壳层统一维护。语言、日期语言、明暗主题、通用色彩、圆角及组件级覆盖不得分散到业务页面。
+- `frontend/src/main.ts` 负责注册 Naive UI（项目仅此一套组件库）；不要为单个页面重复安装组件库或引入第二套全局初始化方式。
+- `frontend/src/App.vue` 负责 Naive UI 的 `NConfigProvider` 与 `themeOverrides`。语言、日期语言、明暗主题、通用色彩、圆角及组件级覆盖不得分散到业务页面。
 - `NMessageProvider`、`NDialogProvider` 与 `NNotificationProvider` 已在应用根部提供。`useMessage()`、`useDialog()`、`useNotification()` 只能在这些 Provider 的后代组件或组合式函数调用；需要新增 Provider 时，先说明其覆盖范围和全局影响。
 - 本项目当前采用显式导入与全局注册的既有方式。未经构建体积、类型声明和现有代码验证，不要仅为局部页面迁移到自动导入或实验性 Naive UI 功能。
 - Tailwind 基础样式、全局 CSS 与 Naive UI 外观发生冲突时，先检查 `global.css` 的选择器和加载顺序；不要用高优先级、深层穿透或 `!important` 批量覆盖 `n-*` 组件。确需控制 Naive UI 样式注入位置或禁用其 preflight 时，应作为应用层变更处理并验证所有页面。
@@ -123,9 +120,10 @@ CygnusX 深色工作台使用五级 Surface 空间层级，替代“页面背景
 
 #### 3.3.5 AI 对话输入区
 
-- AI 助手与 AI 工作台复用同一个 `KimiChatInput` 输入组件，外层、文本编辑区和 Naive UI `NInput` 内部背景必须使用同一组语义变量：`--chat-input-bg: var(--neutral-card)`、`--chat-input-border: var(--neutral-border)`。
-- 深色模式下禁止在业务页面为输入区写死黑色背景（例如 `#1a1a1a`）或白色半透明背景；输入区各层保持同色，避免出现“外框深蓝、内部黑色”的割裂效果。
-- 工作台页面如果不在 `.kimi-layout` 作用域内，必须在页面根容器补齐上述两个变量，再消费 `KimiChatInput` 的默认样式；按钮激活态使用 `--arco-primary` 与 `--arco-primary-light`。
+- AI 助手与 AI 工作台复用同一个 `KimiChatInput` 输入组件，外层、文本编辑区和 Naive UI `NInput` 内部背景必须使用同一组语义变量：`--chat-input-bg`、`--chat-input-border`。
+- `--chat-input-bg` / `--chat-input-border` 目前存在**两个令牌源**，现状如下：① `frontend/src/styles/chat-theme.css` 在 `:root[data-theme="dark"]` 全局定义 `--chat-input-bg: #1a1a1a`、`--chat-input-border: #333333`（浅色模式为 `#ffffff` / `#e0e0e0`），由 `main.ts` 全局加载，是全局生效的令牌源；② `frontend/src/styles/global.css` 在 `:root[data-theme="dark"] .kimi-layout` 作用域内以更高优先级把两者覆盖为 `var(--neutral-card)` / `var(--neutral-border)`。约定：**以 `chat-theme.css` 的全局定义为准**描述输入区默认表面；`.kimi-layout` 内的覆盖是既有作用域行为。新增页面若希望输入区与平台卡片同色，应把容器纳入 `.kimi-layout` 或按同样方式作用域覆盖，不得假设全局值已经是 `--neutral-card`。
+- 深色模式下输入区各层保持同色，避免出现"外框深蓝、内部黑色"的割裂效果；调整输入区表面色时必须同步两个令牌源，不让其继续漂移。
+- 工作台页面按钮激活态使用 `--arco-primary` 与 `--arco-primary-light`（历史命名的品牌色别名，见 §2.2）。
 - 输入区的边框、圆角和阴影遵循组件默认值；页面级覆盖只能用于布局尺寸，不得重新引入独立的表面色和阴影体系。
 
 ### 3.4 间距、圆角、阴影与排版
@@ -324,7 +322,7 @@ async function refreshDashboard() {
 ### 5.6 导航、弹窗与认证页
 
 - 顶部导航和侧栏是持久化空间锚点；同一导航项在所有状态下保持相同位置和高亮逻辑。
-- 折叠侧栏保持 `64px` 宽，内部左右留白为 `8px`；图标选中面必须占满可用的 `48px` 宽度并使用 `44px` 高圆角胶囊。选中态同时提供低强调主色底、连续内描边和左缘短状态条，避免只留下窄竖线或小面积底色。状态条使用 `3px` 宽、距左侧 `4px`，展开态高 `26px`、折叠态高 `30px`，始终以 `top: 50% + translateY(-50%)` 相对行内容垂直居中；不得使用 `top/bottom` 撑满整项。
+- 折叠侧栏保持 `80px` 宽（`DefaultLayout.vue` 中 `:collapsed-width="80"`，展开宽 `220px`），内部左右留白为 `8px`；图标选中面必须占满可用的 `64px` 宽度并使用 `44px` 高圆角胶囊。选中态同时提供低强调主色底、连续内描边和左缘短状态条，避免只留下窄竖线或小面积底色。状态条使用 `3px` 宽、距左侧 `4px`，展开态高 `26px`、折叠态高 `30px`，始终以 `top: 50% + translateY(-50%)` 相对行内容垂直居中；不得使用 `top/bottom` 撑满整项。
 - 菜单展开、收起、进入和退出遵循同一路径；移动端抽屉支持关闭、键盘逃逸和焦点管理。
 - 普通确认使用 `NPopconfirm`；复杂表单或需要更多上下文时使用 `NModal` 或 `NDrawer`。
 - 认证页可以使用星空、玻璃卡片、引言和低对比度装饰，但必须在减少透明度/动态模式下回退，并保证正文对比度。
@@ -427,7 +425,7 @@ Hero 区域（`HomeView.vue`）、通知条幅（`AnnouncementBanner.vue`）等�
 | 弹窗 | `NModal` / `NPopconfirm` | `<a-modal>` / `<a-popconfirm>` |
 | 全局主题 | `NConfigProvider` + `themeOverrides` | `app.use(ArcoVue)` + `<a-config-provider>` / Arco 主题变量 |
 
-Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`v-model`、`#slot`、`dayjs` 日期处理和 Arco 图标入口的约定。该对照用于保证 Naive UI 与 Arco Design Vue 并行时的实现一致性。
+Arco 项目可遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`v-model`、`#slot`、`date-fns` 日期处理等与本仓库一致的约定。本对照仅用于跨平台迁移参考：CygnusX 自身只使用 Naive UI（见 §2.2），不存在两套组件库并行；样式中的 `--arco-*` 令牌是历史命名的品牌色别名，与 Arco 组件库无关。
 
 ## 9. 实施流程
 
@@ -445,7 +443,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 ## 10. 变更验收清单
 
 - [ ] 页面是否复用 `tokens.css`、`global.css` 与 `App.vue` 的主题体系？
-- [ ] Naive UI 与 Arco Design Vue 是否共享同一套令牌、主题状态、可访问性和交互语义？
+- [ ] 是否统一使用 Naive UI 组件（未引入第二套组件库），并复用同一套令牌、主题状态、可访问性和交互语义？
 - [ ] 是否复用了 `PageHeader`，并把页面级操作放入 `#actions`？
 - [ ] 是否避免硬编码只适用于浅色模式的背景、边框、图表轨道和状态颜色？
 - [ ] 按钮、卡片、输入和表格是否具备 hover、active、focus-visible、disabled、loading 和 error 等适用状态？
@@ -508,7 +506,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 
 ## 13. 数据可视化规范
 
-本项目使用 **ECharts 5**（含 `echarts-gl`、`vue-echarts`）和 **Plotly.js** 两套图表引擎。新增图表必须遵循以下规则。
+本项目使用 **ECharts 5**（含 `echarts-gl`、`vue-echarts`）和 **Plotly**（实际依赖为 `plotly.js-dist-min`）两套图表引擎。新增图表必须遵循以下规则。
 
 ### 13.1 引擎选择
 
@@ -517,9 +515,9 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 | 交互式统计图（柱状、折线、饼图、散点） | ECharts (`vue-echarts`) | 声明式配置、主题集成好、体积可控 |
 | 火山图、曼哈顿图、热图等生信专用图 | ECharts + 自定义 processor | 已有 `volcanoProcessor`、`manhattanProcessor` 等成熟实现 |
 | 3D 曲面、GL 散点 | ECharts GL | 已安装 `echarts-gl` |
-| 系统发育树、复杂交互式树图 | Plotly.js 或专用 SVG 渲染 | 已有 `phyloProcessor` 处理 Newick → 坐标 |
+| 系统发育树、复杂交互式树图 | `plotly.js-dist-min` 或专用 SVG 渲染 | 已有 `phyloProcessor` 处理 Newick → 坐标 |
 | 富集分析气泡图、柱状图 | ECharts | 已有 `enrichmentProcessor` |
-| 需要导出为静态出版级图片 | Plotly.js (`toImage`) | 内置高清导出 |
+| 需要导出为静态出版级图片 | `plotly.js-dist-min` (`toImage`) | 内置高清导出 |
 
 **规则**：同一页面不得同时引入 ECharts 和 Plotly；若页面已有 ECharts 图表，新增图表优先使用 ECharts。
 
@@ -663,7 +661,7 @@ Arco 项目遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性、`
 - 使用 Setup Store 语法（`defineStore` + 组合式函数风格），与项目 `<script setup>` 一致。
 - Store 内不直接操作 DOM 或调用 `useMessage()`；UI 反馈由组件层处理。
 - 异步操作（API 调用）可以在 Store 中发起，但必须处理 loading 和 error 状态。
-- 需要持久化的 Store 使用 `pinia-plugin-persistedstate` 或手动 `localStorage`；token 类敏感数据使用 `sessionStorage` 或内存。
+- 需要持久化的 Store 使用手动 `localStorage`；`pinia-plugin-persistedstate` 当前未安装（未引入，按规范不新增依赖）。token 类敏感数据使用 `sessionStorage` 或内存。
 
 ### 16.3 组件间通信
 
@@ -764,6 +762,14 @@ Plan 分析计划卡片（`PlanCard`）是 Plan 模式下展示任务步骤与�
 - 三种状态必须同时体现为文字、节点视觉和必要的颜色语义：`in_progress`（进行中）、`pending`（待执行）、`done`（已完成）。
 - 步骤状态从进行中推进到已完成时，卡片应实时更新节点、状态标签和 `X/N` 进度，不得因折叠动画或组件重渲染丢失数据。
 - `done` 步骤可使用实心主色节点与“已完成”标签；`in_progress` 使用主色节点、当前步骤字重 `500` 和低频脉冲；`pending` 使用空心弱化节点，但文字仍需达到可读对比度。
+
+**状态数据流与自动推进（2026-09-15 沉淀）**：计划状态是一条跨前后端的持久化契约。模型经常只在任务开始时调用一次 `update_plan`（全部步骤为 `pending`），之后不再更新，导致已完成任务的待办卡片长期停留在「待执行」。状态推进因此不能只依赖 Agent 显式调用：
+
+- **数据流**：Agent 调用 `update_plan` → 后端 `normalize_plan_steps` 校验（非法 status 宽容降级为 `pending`）→ 写入会话 `sandbox_meta.plan`（整体重赋值触发 JSONB 变更检测）→ 补发 `plan` SSE 事件 → 前端 `agentHub.ts` 的 `onPlan` 写入 `currentPlan` → `StudioPlanTimeline` 渲染。
+- **历史重载**：会话重新打开后，前端从 `metadata_json.tool_invocations` 中最近一次 `update_plan` 的 `ui_payload.steps` 恢复计划（`agentHub.ts` 的 `loadSessionMessages()`）；流式进行中不覆盖实时计划。
+- **自动推进（强制）**：Studio 模式下成功执行一个写操作/产物产出类工具后，后端必须自动推进计划——当前 `in_progress` 步骤标 `done`、首个 `pending` 步骤标 `in_progress`，随后写回 `sandbox_meta.plan` 并补发带 `auto_advanced: true` 标记的 `plan` 事件。推进只覆盖写操作类工具（`PLAN_ADVANCE_TOOL_NAMES`），查询/状态类只读工具与 `update_plan` / `ask_user` 不推进；Agent 显式调用 `update_plan` 时仍以其返回的最新计划为准（整体覆盖）。
+- **推进函数**：`src/cygnusx/application/services/studio_tools.py` 的 `advance_plan_steps()` 返回新列表、不修改入参；无 `in_progress` 步骤（计划尚未开始或已全部完成）时返回 `None` 表示无需推进。单元测试见 `tests/unit/test_studio_plan_advance.py`。
+- **排障顺序**：待办卡片状态不动时，先确认工具执行是否成功（`tool_result.success`）、工具是否在 `PLAN_ADVANCE_TOOL_NAMES` 内，再查 `sandbox_meta.plan` 是否有 `in_progress` 步骤；全 `pending` 的计划说明 Agent 从未开始执行或从未显式更新，不是推进逻辑失效。
 
 ##### 折叠与摘要
 
@@ -907,16 +913,17 @@ frontend/src/
 │   └── {domain}/     # 按业务域分子目录（blast/、chat/）
 ├── composables/      # 组合式函数（use* 命名）
 ├── config/           # 应用配置常量
+├── directives/       # 自定义指令（如 animateList）
+├── engine/           # 领域引擎与解析器（ai/、analysis/、dna/、protein/ 等）
 ├── layouts/          # 布局组件
+├── mock/             # 开发调试用的静态数据（如 referenceGenomes）
 ├── router/           # 路由定义与守卫
 ├── stores/           # Pinia Store
 ├── styles/           # 全局样式与令牌
 ├── types/            # TypeScript 类型定义
 ├── utils/            # 工具函数与数据处理器
-└── views/            # 页面级组件（按功能域分子目录）
-    ├── BioTools/     # 生信工具页
-    ├── Dashboard/    # 仪表盘
-    └── ...
+└── views/            # 页面级组件（多数平铺，如 DashboardView.vue）
+    └── BioTools/     # 生信工具页子目录
 ```
 
 ### 20.2 命名规则
@@ -975,24 +982,23 @@ frontend/src/
 
 | 层级 | 工具 | 覆盖目标 |
 | --- | --- | --- |
-| 单元测试 | Vitest | 工具函数、Processor、Store、组合式函数 |
-| 组件测试 | Vitest + @vue/test-utils | 共享组件的交互和状态 |
-| E2E 测试 | Playwright | 关键用户路径（登录、提交任务、查看结果） |
+| 单元测试 | Vitest + jsdom | 工具函数、Processor、Store、组合式函数 |
+| 组件测试 | 暂无（未安装 `@vue/test-utils`） | 组件交互与状态目前通过组合式函数 / Store 测试间接覆盖 |
+| E2E 测试 | 暂无（未安装 Playwright） | 关键用户路径目前依靠人工验收（见 §10） |
 
 ### 22.2 测试规则
 
 - `utils/*Processor.ts` 必须有单元测试：覆盖正常数据、空数据、异常数据。
 - Store 测试覆盖：初始状态、主要 action、错误处理。
-- 组件测试覆盖：渲染、用户交互（点击、输入）、props 变化、emit 事件。
-- E2E 覆盖黄金路径：登录 → 选择工具 → 提交任务 → 查看结果 → 登出。
-- 测试文件与源文件同目录（`*.test.ts`）或放在 `tests/` 镜像目录。
-- CI 中运行 `vitest run` + `playwright test`；测试不通过不合并。
+- 组合式函数测试覆盖：状态机流转、重试/复位路径与同一实例连续调用（参考 `frontend/src/composables/__tests__/stream-retry.test.ts`）。
+- 测试文件放在源文件同级的 `__tests__/` 子目录（`*.test.ts`）。
+- CI（`.github/workflows/ci.yml`）中运行 `npx vitest run` + `npx vue-tsc --noEmit`；测试或类型检查不通过不合并。
 
 ### 22.3 Mock 策略
 
-- API Mock：使用 `msw`（Mock Service Worker）拦截请求，不在组件中条件判断 mock。
-- WebSocket Mock：使用 `mock-socket` 模拟服务端消息。
-- 开发环境可使用 `frontend/src/mock/` 中的静态数据辅助调试，但测试必须使用 msw。
+- API Mock：测试中用 `vi.fn()` 直接替换全局 `fetch`，或用 `vi.mock()` 拦截 API 模块（项目未安装 `msw`），不在组件中条件判断 mock。
+- WebSocket Mock：用 `vi.fn()` 模拟全局 `WebSocket` 的行为与消息回调（项目未安装 `mock-socket`）。
+- 开发环境可使用 `frontend/src/mock/` 中的静态数据辅助调试；测试不得依赖其中的数据，一律在测试内自建 fixture。
 
 ## 23. 安全规范
 
@@ -1029,7 +1035,7 @@ frontend/src/
 
 - UI 文案统一使用简体中文；标点使用中文标点（句号"。"、逗号"，"）。
 - 不在模板中拼接字符串表达复数或条件语句；使用完整的条件渲染。
-- 日期时间显示使用 `dayjs` + `zh-cn` locale；数字使用 `toLocaleString('zh-CN')`。
+- 日期时间显示使用 `date-fns`（项目实际依赖）；数字使用 `toLocaleString('zh-CN')`。
 - 错误提示、空状态、按钮文案写在组件内或统一的文案常量文件中，不散落在逻辑代码中。
 
 ### 24.2 未来迁移预留
@@ -1917,7 +1923,7 @@ frontend/src/components/ai/AIComposer.vue
 
 - 默认展示 3 至 5 项，不将空会话页变成完整历史列表。
 - 标题长时省略并提供 Tooltip。
-- 时间使用相对时间或统一的 `dayjs` 格式。
+- 时间使用相对时间或统一的 `date-fns` 格式。
 - 空状态提供“开始新对话”或选择快捷任务的入口。
 - 加载失败时保留欢迎区和输入区，只在本区域显示重试。
 - 删除会话使用 `NPopconfirm`，删除成功后局部刷新。
@@ -1978,7 +1984,7 @@ AI 页面可能同时处于：
 
 实现要求：
 
-- 全局折叠侧栏遵循 §5.6 的 `64px` 契约。
+- 全局折叠侧栏遵循 §5.6 的 `80px` 契约。
 - AI 侧栏允许折叠，不应只保留无法理解的重复图标。
 - 折叠后图标必须有 Tooltip。
 - 会话列表展开宽度建议 `240px` 至 `280px`。

@@ -71,7 +71,8 @@ agent-scrna（领域负责人）
 
 ```text
 用户在协作室发送消息
-  → POST /agent-teams/cases/{case_id}/messages
+  → POST /agent-teams/cases/{case_id}/messages（Case 模式）
+    或 POST /agent-teams/rooms/{room_id}/messages（房间模式，未立项房间落房间级事件流，`api/v1/agentteams.py:1061`）
   → room.user_message 审计事件
   → Celery respond_to_room_message
   → AgentTeamsRoomResponseService
@@ -95,14 +96,16 @@ agent-scrna（领域负责人）
 
 ### 3.2 当前缺口
 
+> 注：下列多数缺口已由 Phase 1/Phase 2 落地解决（详见 §3.3），表中已标注；剩余缺口为后续阶段目标。
+
 | 缺口 | 当前行为 | 目标行为 |
 | --- | --- | --- |
-| `@` 提及 | 仅高亮并引用工作区文件 | 可点名 Manager、领域 Agent、Worker 群组与文件 |
-| 房间路由 | 每条房间消息默认进入 Manager 回路 | 依据 `target_agent_id` 定向投递；无提及才交给 Manager |
-| Agent 直接回复 | 领域 Agent 完成通过事件表现，不能稳定对用户定向说话 | 被点名领域 Agent 可产生可见房间回复，并向 Manager 交接 |
-| 任务变更 | 用户消息不与正在执行的 work item 建立影响关系 | 先冻结受影响执行，再给出继续/重规划/拆分/终止决策 |
+| `@` 提及 | **已解决（Phase 1）**：`AgentTeamsMentionResolver` 统一解析 `@Manager`、领域 Agent、`@所有人` 与文件引用 | 可点名 Manager、领域 Agent、Worker 群组与文件（Worker 群组待 Phase 3） |
+| 房间路由 | **已解决（Phase 1）**：依据 `target_agent_id`/`dispatch_mode` 定向投递；无提及才交给 Manager | 同左 |
+| Agent 直接回复 | **已解决（Phase 1）**：被点名领域 Agent 可产生只读定向回复（`room.agent_message`），并经 `room.agent_handoff` 向 Manager 交接 | 同左 |
+| 任务变更 | **已解决（Phase 2 决策链路）**：定向消息通过 `work_item.interruption_requested`/`room.change_assessment` 建立影响关系，四选一决策已接入真实编排；合作式取消与安全点快照仍待深化 | 先冻结受影响执行，再给出继续/重规划/拆分/终止决策 |
 | 并行 Worker | 有 Worker 执行基础，但缺少“部门负责人→多员工”可视化与控制协议 | 每个领域 Agent 下可显示多个 Worker、依赖与占用状态 |
-| `@所有人` | 无语义 | 只交给 Manager 汇总和有序派发，禁止所有 Agent 同时无序回答 |
+| `@所有人` | **已解决（Phase 1）**：解析为 `broadcast`，只交给 Manager 汇总和有序派发 | 同左 |
 
 ### 3.3 Phase 1 已落地能力
 
@@ -115,13 +118,13 @@ agent-scrna（领域负责人）
 | 前端点名菜单 | 协作室 `@` 菜单展示 Manager 与当前运行时领域 Agent，同时保留文件引用 | Worker 群组、权限过滤和提及 chip 的结构化回填仍需继续完善 |
 | 定向只读回复 | 单个领域 Agent 被点名后，由目标 Agent 生成只读领域答复并写入 `room.agent_message` | 不执行真实计算、不修改计划、不绕过审批；多个 Agent 提及统一回 Manager 协调 |
 | 运行中任务保护 | 被点名 Agent 有运行中工作项时写入 `work_item.interruption_requested`，生成只读 `room.change_assessment`，并提供四选一决策入口 | 当前仅 `cancel` 立即调用既有取消能力；resume/replan/branch 先审计记录，后续接入真实编排 |
-| Manager 兼容入口 | 无 Agent 提及时、`@Manager`、`@所有人` 仍由 Manager 统一响应和协调；Worker 全部完成后产生 `room.agent_handoff` | Manager 自动消费交接并生成汇总仍需接入后续回路 |
+| Manager 兼容入口 | 无 Agent 提及时、`@Manager`、`@所有人` 仍由 Manager 统一响应和协调；Worker 全部完成后产生 `room.agent_handoff` | Manager 自动消费交接已实现：`AgentTeamsCaseWatchService` 收到 `room.agent_handoff` 后自动触发 `respond_to_room_message` 生成汇总（`agentteams_case_watch_service.py:215-227`） |
 
 Phase 2 当前新增：
 
 - `POST /agent-teams/cases/{case_id}/change-decisions`：提交 `resume/replan/branch/cancel`。
 - `cancel` 复用 Bridge 现有 Manager 工作项取消接口，并保留级联跳过语义。
-- `replan` 会先冻结旧工作项，再创建同一领域的新只读工作项；`branch` 创建独立并行验证支线。
+- `replan` 直接把旧工作项经 Bridge Manager 取消接口置为终态 `cancelled`，并由 Bridge 级联跳过未启动的下游依赖（`agentteams_service.py:1729-1743` → `integrations/agentteams/bridge/cygnusx_agentteams_bridge/service.py:936-952`），同时补写 `work_item.interrupted` 审计事件保留原状态与可复用产物引用，再创建同一领域的新只读工作项；`branch` 创建独立并行验证支线。
 - `resume`、`replan`、`branch` 均不会绕过人工审批启动真实计算；决策和新工作项都通过审计事件追踪。
 - Work Item 支持 `declared_inputs/declared_outputs`；相同输入/输出存在写冲突时自动加入依赖，降级为串行执行。
 
@@ -169,14 +172,14 @@ Phase 2 当前新增：
 }
 ```
 
-`dispatch_mode`：
+`dispatch_mode`（与 `agentteams_mention_resolver.py:144-152` 实际枚举一致）：
 
 - `manager`：无 Agent 提及，或 `@Manager`；Manager 是唯一首答者。
 - `direct`：单个领域 Agent 被点名；该领域 Agent 是唯一首答者，Manager 收到交接摘要但不抢答。
 - `broadcast`：`@所有人`；Manager 先解释涉及哪些部门，再生成受控派发，不直接 fan-out 给所有 Agent。
-- `clarification_reply`：用户在回答已有结构化澄清卡；必须路由回原提问 Agent/工作项，不能被普通 `@` 规则截断。
+- `multi_direct`：多个领域 Agent 同时被点名；下游统一转 Manager 协调。
 
-多个领域 Agent 同时被点名时，默认转换为 `manager` 协调消息：Manager 先生成串行或并行派发方案，避免多个 Agent 对同一问题各自输出矛盾答案。
+多个领域 Agent 同时被点名时解析为 `multi_direct`，由 Manager 先生成串行或并行派发方案，避免多个 Agent 对同一问题各自输出矛盾答案。
 
 ### 4.3 领域 Agent 完成后的交接
 
@@ -226,7 +229,7 @@ running
 当用户点名正在执行的领域 Agent，系统流程应为：
 
 1. 写入 `room.user_message`（含 `target_agent_id` 与 mentions）。
-2. 找出该 Agent 负责、且状态为 `claimed/running/awaiting_approval` 的工作项。
+2. 找出该 Agent 负责、且状态为 `claimed/running/in_progress/awaiting_approval/planning_running` 的工作项（`agentteams_interruption_coordinator.py:10`）。
 3. 写入 `work_item.interruption_requested`，阻止新 Worker 领取该 Agent 的后续工作。
 4. 对可中断工具请求取消；对不可安全中断的工具标记“将在当前原子步骤完成后停止”。
 5. 领域 Agent 在只读上下文中读取用户消息、当前进度、已有产物和依赖图，输出 `room.change_assessment`。
@@ -265,6 +268,8 @@ DomainAgentRoomResponseService
   └─ 完成 / 阶段完成 → room.agent_handoff → Manager
 ```
 
+> **落地说明**：上图为目标设计形态，其中 `ManagerRoomResponseService`、`DomainAgentRoomResponseService`、`ManagerCoordinationService` 等服务名在代码中并不存在。当前实际落地为单一 `AgentTeamsRoomResponseService`（`agentteams_room_response_service.py`）+ Celery `respond_to_room_message` 任务统一处理 `manager/direct/broadcast/multi_direct` 各分发模式；`AgentTeamsMentionResolver` 与 `AgentTeamsInterruptionCoordinator` 已按原名落地。
+
 ### 6.1 新增服务建议
 
 | 服务 | 职责 |
@@ -283,7 +288,7 @@ DomainAgentRoomResponseService
 | `room.agent_message` | Manager 或领域 Agent | 可见自然语言回复，必须带 `agent_id` |
 | `room.agent_handoff` | 领域 Agent | 向 Manager 结构化交接产物、风险和建议 |
 | `work_item.interruption_requested` | 系统 / Manager | 停止领取新工作，发起安全中断 |
-| `work_item.interrupted` | Worker / 系统 | 安全停止点已到达，含快照与可复用产物 |
+| `work_item.interrupted` | 系统 | 旧工作项被 `cancel/replan` 决策取消后的审计记录，含原状态（`previous_status`）与可复用产物引用（`reusable_artifacts`）；并非 Worker 到达安全停止点的快照 |
 | `room.change_assessment` | 领域 Agent | 变更影响、推荐操作、是否需要审批 |
 | `work_item.resume_decision` | 用户 / Manager | 继续、重规划、分支、终止的审计决定 |
 

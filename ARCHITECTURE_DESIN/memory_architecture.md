@@ -108,9 +108,14 @@ mem0。系统处于 v2 灰度阶段：
 
 | 块名 | 用途 | 默认容量 |
 | --- | --- | ---: |
-| `profile` | 用户身份、研究背景、稳定能力偏好 | 1500 字符 |
+| `profile` | 用户身份、研究背景、稳定能力偏好 | 1500 字符（仅迁移初始化时生效；ORM 列默认 `char_limit=2000`，见 `agent_memory.py` 模型定义） |
 | `preferences` | 工具、分析方法、输出格式等持久偏好 | 2000 字符 |
-| `current_focus` | 当前项目或近期持续任务焦点 | 按初始化策略 |
+| `current_focus` | 当前项目或近期持续任务焦点 | 已预留，当前无创建路径 |
+
+> `current_focus` 仅出现在 `update_memory_block` 的块名白名单中
+> （`agent_memory_service.py:330`、`agent_memory_tool_service.py:135`），存量数据迁移
+> （`tasks/memory.py:157-174`）只创建 `profile`/`preferences` 两块；对其调用更新永远命中
+> `NotFoundError("记忆块不存在，请先完成记忆迁移")`。
 
 块使用 `version` 做乐观锁。更新工具必须携带 `expected_version`，并使用条件更新：
 
@@ -134,7 +139,9 @@ WHERE id = :id AND version = :expected_version;
 - `source_session_id`、`source_message_ids`：来源溯源；
 - `content_hash`：幂等去重键；
 - `superseded_by`：事实修正关系；
-- `created_at`、`last_recalled_at`：时间排序和召回观测字段。
+- `created_at`、`last_recalled_at`：时间排序和召回观测字段（`last_recalled_at` 当前未接线——
+  `PostgresFactStore.touch_recalled` 已定义于 `fact_store.py:135`，但全仓无调用点，
+  v2 召回路径从不写该字段）。
 
 当前迁移创建 HNSW cosine 索引，并在 `(user_id, agent_id, content_hash)` 上建立唯一约束。
 
@@ -266,12 +273,16 @@ AgentTeams 合成会话（`agentteams_usage_service` 为扣费落账创建，`mo
 
 ### 6.3 记忆写入纪律
 
-v2 开启时，ChatService 会把以下规则追加到系统提示词：
+v2 开启时，ChatService 会把以下规则追加到系统提示词（`chat/configuration.py:190-195`
+`MEMORY_V2_WRITE_DISCIPLINE`，共 3 条）：
 
 - 只记录用户明确陈述的持久偏好、纠错或长期项目事实；
 - 不记录一次性任务、临时上下文、未经确认的推测、凭据和隐私；
-- 更新命名块前先读取当前内容，增量修改并携带版本；
-- 用户当前对话与旧记忆冲突时，以当前对话为准。
+- 更新命名块前先读取当前内容，增量修改并携带版本。
+
+第 4 条语义“用户当前对话与旧记忆冲突时，以当前对话为准”不在写入纪律常量中，
+实际位于 `<user_memory>` 注入头（`agent_memory_service.py:442`，v1 兼容路径见
+`agent_memory_service.py:431`），随记忆上下文一并注入。
 
 L4 会诊另有独立的三条纪律（2026-08-22 M3，装配于
 `agent_consultation_service._build_instruction`，v2 off 不追加），与 ChatService 版
@@ -423,11 +434,14 @@ settle 幂等命中和块冲突率；出现异常时关闭开关即可回到旧�
   `memory.l4_inject_degraded`（OTel 计数器，按 agent_id 维度）；
 - （2026-08-22 M3）L4 会诊 system prompt 三条记忆写入纪律（v2 on 时追加）。
 
-### 单测证据（2026-08-22 收口）
+### 单测证据（2026-08-22 收口；数字为 2026-09-11 实测复跑）
 
 命令：`pytest tests/unit/test_agent_memory_tasks.py tests/unit/test_agent_memory_service.py tests/unit/test_agentteams_room_response_service.py tests/unit/test_agent_consultation_service.py -q`，
-结果 **97 passed / 3 failed**（3 个失败为 `test_agent_consultation_service.py` 的
-evidence_projection 系列，HEAD 上即红，与本模块无关）。
+结果 **118 passed / 5 failed**（5 个失败均在 `test_agent_consultation_service.py`，与本模块无关：
+3 个为 HEAD 上即红的 evidence_projection 系列；新增 2 个 `test_workspace_consultation_*` 失败，
+即 `test_workspace_consultation_uses_scoped_workdir` 与
+`test_workspace_consultation_allowed_for_declared_expert`）。
+2026-08-22 收口时点快照为 97 passed / 3 failed。
 
 - M0（`test_agent_memory_tasks.py`）：入口排除 3 例参数化
   `test_settle_entries_skip_agentteams_synthetic_sessions`、任务体双保险

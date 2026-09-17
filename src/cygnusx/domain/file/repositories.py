@@ -7,7 +7,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from cygnusx.domain.file.entities import DataFile, Directory, ResultArchive, Sample, UploadSession
+from cygnusx.domain.file.entities import DataFile, Directory, Sample, UploadSession
 from cygnusx.domain.team.value_objects import TeamRole
 
 
@@ -83,16 +83,6 @@ class ISampleRepository(Protocol):
     async def save(self, sample: Sample) -> Sample: ...
 
     async def delete(self, user_id: UUID, sample_id: UUID) -> bool: ...
-
-
-class IResultArchiveRepository(Protocol):
-    """结果归档仓储接口"""
-
-    async def get_by_task(self, task_id: UUID) -> ResultArchive | None: ...
-
-    async def save(self, archive: ResultArchive) -> ResultArchive: ...
-
-    async def cleanup_expired(self) -> int: ...
 
 
 class IDirectoryRepository(Protocol):

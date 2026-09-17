@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Float, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,13 +32,20 @@ class AgentMemoryModel(Base, TimestampMixin):
     source_session: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_used_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
 
     __table_args__ = (
         Index("idx_agent_memories_user_agent_status", "user_id", "agent_id", "status"),
         Index("idx_agent_memories_user_scope_status", "user_id", "scope", "status"),
         Index("idx_agent_memories_project_status", "project_id", "status"),
+        Index(
+            "ix_agent_memories_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_where=text("embedding IS NOT NULL"),
+        ),
     )
 
 
@@ -79,13 +86,26 @@ class MemoryFactModel(Base):
     source_message_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.8)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
-    superseded_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)
-    last_recalled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    superseded_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("memory_facts.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+    last_recalled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "agent_id", "content_hash", name="uq_memory_facts_content"),
         Index("idx_memory_facts_user_agent_status", "user_id", "agent_id", "status"),
+        Index(
+            "idx_memory_facts_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_where=text("embedding IS NOT NULL"),
+        ),
     )
 
 
@@ -99,4 +119,6 @@ class MemorySettlementModel(Base):
     session_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     start_message_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     end_message_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )

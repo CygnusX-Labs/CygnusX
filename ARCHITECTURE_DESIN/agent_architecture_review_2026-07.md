@@ -1,5 +1,7 @@
 # CygnusX Agent 架构审核与升级方案：检索增强的计划生成
 
+> **时点说明**：本文件为 2026-07-28 时点的快照/评审稿，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 agentteams_room_current_architecture_2026-08-21.md、database_architecture.md）为准。
+
 > **审核日期**：2026-07-28
 > **依据**：本文全部内容均对照仓库当前代码核实，引用位置使用 `path:line` 格式。
 > **定位**：Part 1 供架构审核使用，描述"现状"（与 `agent_architecture_and_extension_guide.md`、`agent_framework_final_baseline.md` 术语一致，不重复其内容而是补充分层与数据流视角）；§1.6 为 2026-07-28 新增的会话上下文治理与鲁棒性机制；Part 2 为待评审的升级方案，尚未实施。

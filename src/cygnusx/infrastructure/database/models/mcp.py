@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,11 @@ class MCPServerModel(Base, TimestampMixin):
     """MCP Server 注册表"""
 
     __tablename__ = "mcp_servers"
+    __table_args__ = (
+        UniqueConstraint("name", name="mcp_servers_name_key"),
+        Index("idx_mcp_servers_pool", "pool"),
+        Index("idx_mcp_servers_expires_at", "expires_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -36,7 +41,7 @@ class MCPServerModel(Base, TimestampMixin):
     auto_restart: Mapped[bool] = mapped_column(Boolean, default=True)
     is_preset: Mapped[bool] = mapped_column(Boolean, default=False)
     # --- MCP Builder 扩展（见 alembic h6i7j8k9l1m3）---
-    pool: Mapped[str] = mapped_column(String(20), default="production", index=True)
+    pool: Mapped[str] = mapped_column(String(20), default="production")
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     current_version: Mapped[str] = mapped_column(String(20), default="1.0.0")

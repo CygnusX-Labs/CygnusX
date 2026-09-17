@@ -1,5 +1,7 @@
 # Agent 思考—工具闭环可观测性升级
 
+> **时点说明**：本文件为 2026-08-18 时点的快照/评审稿，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 agentteams_room_current_architecture_2026-08-21.md、database_architecture.md）为准。
+
 > 更新日期：2026-08-18  
 > 关联计划：`docs/info/26.8.18/CygnusX-Agent思考工具闭环优化实施计划与编码提示词.md`  
 > 关联基线：`ARCHITECTURE_DESIN/agent_current_execution_framework_2026-08.md`

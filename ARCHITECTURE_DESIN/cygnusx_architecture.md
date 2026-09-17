@@ -117,7 +117,8 @@ Agent 装配包括：
 ```text
 Studio 会话创建
   → Agent studio policy / sandbox_capabilities 校验
-  → 选择 default/base/bio/browser-office 镜像
+  → 选择 analysis-core/analysis-plot/analysis-scrna/base/bio/browser-office 镜像
+  → 默认镜像为 cygnusx-analysis:core-v0.0.2dev（default_image）
   → ChatSession.sandbox_meta 持久化 image + sandbox_capabilities
   → StudioSandboxManager 懒启动/预热
   → Docker 每会话一个容器
@@ -153,7 +154,7 @@ Studio 会话创建
 | Legacy Sandbox | `/api/v1/sandbox` | 旧代码执行沙箱的会话、REST、WebSocket |
 | MCP | `/api/v1/mcp` | MCP 注册、发现、绑定和调用 |
 | MCP Builder | `/api/v1/mcp-builder` | MCP 生成、静态检查、测试、审核和生命周期 |
-| AgentTeams | `/api/v1/agentteams` | 协作室、Case、成员、通知、审计和过程报告 |
+| AgentTeams | `/api/v1/agent-teams` | 协作室、Case、成员、通知、审计和过程报告 |
 | Reports | 相关报告路由 | 结果、产物、版本树和下载 |
 | Terminal | `/api/v1/terminal` | 云端终端会话和资源配置 |
 
@@ -370,11 +371,12 @@ Worker 镜像只包含 OS、Python、Celery、Snakemake、Micromamba 和最小�
 ### 10.2 长任务状态
 
 ```text
-queued → running → succeeded
-                 ├→ failed
-                 ├→ cancelled
-                 └→ retrying
+pending → queued → running → success
+                  ├→ failed ──重试──→ pending / queued
+                  └→ cancelled ──重新入队──→ pending
 ```
+
+成功态为 `success`（非 `succeeded`）；无独立 `retrying` 状态，重试建模为 `failed → pending/queued` 的转移（`domain/task/value_objects.py` 的 `TaskStatus` 与 `VALID_TRANSITIONS`）。`succeeded` 仅存在于 MAS 子系统的另一套状态机。
 
 任务状态、日志、输入、输出和错误必须可关联到用户、项目、流程、运行 ID 和工作区。长任务失败不能只靠 stdout 排查。
 

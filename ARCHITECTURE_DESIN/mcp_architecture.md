@@ -3,6 +3,9 @@
 > **用途**：本文件记录 CygnusX MCP（Model Context Protocol）子系统的完整架构现状，并给出"Agent 自生成 MCP"的可行性分析与实施方案。
 >
 > **最后更新**：2026-07-29
+>
+> **时点说明**：本文件为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
+
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
 
 ---
@@ -36,15 +39,22 @@ CygnusX 的 MCP 能力由三层构成：
 
 ### 1.3 内置 Preset 工具清单
 
-**cygnusx-platform**（11 个工具）：
+**cygnusx-platform**（22 个工具）：
 
 ```
 platform_list_tasks, platform_get_task, platform_list_flows,
 platform_sandbox_execute, platform_read_file,
 list_workspace_files, search_workspace_files,
 workspace_list_files, workspace_read_file, workspace_get_file_info,
-find_session_uploads
+find_session_uploads,
+europe_pmc_search, arxiv_search,
+platform_get_user_info, platform_get_current_time,
+platform_list_agent_skills, platform_admin_health_check,
+platform_submit_download, platform_list_downloads, platform_get_download_progress,
+ability_catalog_query, room_state_query
 ```
+
+（完整定义见 `infrastructure/mcp/presets.py:1389-1790`。）
 
 **cygnusx-pipelines**（10 个工具）：
 
@@ -142,7 +152,7 @@ source        VARCHAR
 |------|-----------|------|
 | cygnusx-tools preset | 部分支持 | 每次 `get_preset_by_name()` 动态构建，新 Flow 自动出现 |
 | 外部 MCP Server | 支持 | `MCPClient` 每次调用新建 session，注册后立即可用 |
-| Preset 工具定义变更 | 不支持 | 需重启（`ensure_presets()` 仅在启动时同步） |
+| Preset 工具定义变更 | 支持 | `POST /api/v1/mcp/presets/reload` 热重载（`api/v1/mcp.py:32-39`，内部 `ensure_presets(force_preset_sync=True)`），无需重启 |
 | workspace_files_prompt.md | 不支持 | import 时加载，需重启 |
 | Prompt 系统 | 支持 | mtime 检测自动重载 |
 
@@ -190,7 +200,7 @@ sandbox:
 sandbox_default_cpu: 2.0
 sandbox_default_memory: "4g"
 sandbox_exec_timeout: 300
-sandbox_session_timeout: 1800
+sandbox_session_timeout: 300
 sandbox_network_isolated: true
 ```
 
@@ -243,10 +253,9 @@ OpenAICompatible   LiteLLM         Kimi (Legacy)
 
 | 名称 | 模型 | 端点 |
 |------|------|------|
-| qdoubao-seed-evolving | qdoubao-seed-evolving | 阿里云 MaaS |
-| deepseek-v4-pro | deepseek-v4-pro | 火山方舟 |
-| doubao-seed-2.0-pro | doubao-seed-2.0-pro | 火山方舟 |
-| gpt-5.5 | gpt-5.5 | 代理端点 |
+| deepseek-v4-flash | deepseek-v4-flash | DeepSeek（`https://api.deepseek.com`） |
+| qwen3.8-flash | qwen3.8-flash | 阿里云 DashScope 兼容端点 |
+| doubao-seed-evolving（默认） | doubao-seed-evolving | 火山方舟 |
 
 ### 3.3 多模型路由
 

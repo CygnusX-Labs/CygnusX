@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,11 +18,16 @@ class MCPBuildModel(Base, TimestampMixin):
     """MCP 生成构建记录（Builder 核心表）"""
 
     __tablename__ = "mcp_builds"
+    __table_args__ = (
+        Index("idx_mcp_builds_server", "mcp_server_id"),
+        Index("idx_mcp_builds_status", "status"),
+        Index("idx_mcp_builds_user", "user_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
 
     # 需求与规划
     requirement: Mapped[str] = mapped_column(Text)
@@ -37,15 +42,19 @@ class MCPBuildModel(Base, TimestampMixin):
 
     # 版本关联
     mcp_server_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), nullable=True, index=True
+        PGUUID(as_uuid=True),
+        ForeignKey("mcp_servers.id", ondelete="SET NULL"),
+        nullable=True,
     )
     version: Mapped[str] = mapped_column(String(20), default="1.0.0")
     parent_build_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("mcp_builds.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     # 状态流转
-    status: Mapped[str] = mapped_column(String(30), default="planning", index=True)
+    status: Mapped[str] = mapped_column(String(30), default="planning")
 
     # 测试
     test_cases: Mapped[list[Any]] = mapped_column(JSON, default=list)
@@ -67,13 +76,20 @@ class MCPVersionModel(Base, TimestampMixin):
     __tablename__ = "mcp_versions"
     __table_args__ = (
         UniqueConstraint("mcp_server_id", "version", name="uq_mcp_versions_server_version"),
+        Index("idx_mcp_versions_server", "mcp_server_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    mcp_server_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
-    build_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    mcp_server_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE")
+    )
+    build_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("mcp_builds.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     version: Mapped[str] = mapped_column(String(20))
     version_tag: Mapped[str] = mapped_column(String(50), default="")
@@ -97,13 +113,17 @@ class MCPVisibilityModel(Base):
     __tablename__ = "mcp_visibility"
     __table_args__ = (
         UniqueConstraint("mcp_server_id", "user_id", name="uq_mcp_visibility_server_user"),
+        Index("idx_mcp_visibility_server", "mcp_server_id"),
+        Index("idx_mcp_visibility_user", "user_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    mcp_server_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    mcp_server_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
 
     access_level: Mapped[str] = mapped_column(String(20), default="read")
     granted_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
@@ -117,11 +137,14 @@ class MCPReviewModel(Base):
     """MCP 构建审核记录"""
 
     __tablename__ = "mcp_reviews"
+    __table_args__ = (Index("idx_mcp_reviews_build", "build_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    build_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    build_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("mcp_builds.id", ondelete="CASCADE")
+    )
     reviewer_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
 
     decision: Mapped[str | None] = mapped_column(String(20), nullable=True)

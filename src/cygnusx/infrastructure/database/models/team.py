@@ -6,13 +6,16 @@ team / team_members 表支撑工作区文件全局可见性：
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
+    DateTime,
     ForeignKey,
     Index,
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,6 +39,13 @@ class TeamModel(Base, TimestampMixin):
         index=True,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
 
 
 class TeamMemberModel(Base, TimestampMixin):
@@ -63,3 +73,10 @@ class TeamMemberModel(Base, TimestampMixin):
     )
     # owner / reader / writer
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="reader")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cygnusx.infrastructure.database.base import Base, TimestampMixin
@@ -21,14 +21,21 @@ class KbChunkModel(Base, TimestampMixin):
     __tablename__ = "kb_chunks"
     __table_args__ = (
         UniqueConstraint("document_id", "chunk_index", name="uq_kb_chunks_doc_index"),
+        Index(
+            "ix_kb_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_where=text("embedding IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     document_id: Mapped[str] = mapped_column(
         String(64),
+        ForeignKey("kb_documents.doc_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        # FK 在迁移中声明（ON DELETE CASCADE）
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     section_path: Mapped[str] = mapped_column(

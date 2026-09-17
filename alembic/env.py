@@ -24,9 +24,10 @@ target_metadata = Base.metadata
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-# 有迁移建表但无对应 ORM 模型的表（外部组件/日志表），
+# 数据库里存在但不由本项目 ORM/迁移管理的表（外部组件自建），
 # autogenerate 必须跳过，否则会生成 drop_table 误删。
-_NON_ORM_TABLES = {"mcp_logs"}
+# 注意：本项目迁移建表的都必须有对应 ORM 模型并在 models 包注册（含 mcp_logs）。
+_NON_ORM_TABLES = {"mem0_memories"}
 
 
 def include_object(object_, name, type_, reflected, compare_to):  # noqa: ANN001, ANN201

@@ -17,6 +17,7 @@
 #   fasta_kv          CDS/蛋白 FASTA 登记转录本 ID + 序列偏移
 #   gaf               gene_association GAF 2.2 → go_annotations
 #   obo               go-basic.obo → go_terms
+#   goslim            ATH_GO_GOSLIM.txt.gz（18 列 TSV）→ goslim_annotations
 #   kegg_ko           ath_ko.list（剥离 ath:/ko: 前缀）→ kegg_annotations
 #   kegg_pathway      ath_pathway.list（剥离 path: 前缀）→ kegg_annotations
 #   kegg_pathway_name ath_pathway_name.list → kegg_pathways 字典
@@ -57,6 +58,7 @@ species:
           functional:  { path: TAIR10_functional_descriptions, format: tair_functional }
           go:          { path: gene_association.tair.gz,     format: gaf }
           go_obo:      { path: go-basic.obo,                 format: obo }
+          goslim:      { path: ATH_GO_GOSLIM.txt.gz,         format: goslim }
           kegg_ko:     { path: ath_ko.list,                  format: kegg_ko }
           kegg_pathway: { path: ath_pathway.list,            format: kegg_pathway }
           kegg_pathway_name: { path: ath_pathway_name.list,  format: kegg_pathway_name }

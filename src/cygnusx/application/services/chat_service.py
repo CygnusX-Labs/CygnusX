@@ -227,6 +227,8 @@ from cygnusx.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
+    PLAN_ADVANCE_TOOL_NAMES,
+    advance_plan_steps,
     execute_studio_tool,
     normalize_plan_steps,
     stream_studio_tool,
@@ -5139,6 +5141,39 @@ class ChatService(
                         )
                         if result_trigger is not None:
                             yield await trigger_studio_loop_guard(result_trigger)
+
+                    # 待办计划自动推进（§5.3 agent.plan）：Studio 模式下成功执行一个
+                    # 沙盒/产物类工具后，把当前 in_progress 步骤标 done、首个 pending
+                    # 标 in_progress——模型经常只在任务开始时调用一次 update_plan
+                    # （全 pending），不再更新，导致已完成任务的待办卡片长期停留在
+                    # "待执行"。只推进写操作类工具；update_plan/ask_user/查询类不推进，
+                    # Agent 显式调用 update_plan 时仍以其返回的最新计划为准（整体覆盖）。
+                    if (
+                        studio_mode
+                        and tool_name != "update_plan"
+                        and tool_name != "ask_user"
+                        and tool_name in PLAN_ADVANCE_TOOL_NAMES
+                        and bool(result.get("success"))
+                        and session is not None
+                    ):
+                        meta_plan = (session.sandbox_meta or {}).get("plan") or {}
+                        current_steps = meta_plan.get("steps") if isinstance(meta_plan, dict) else None
+                        if isinstance(current_steps, list) and current_steps:
+                            advanced_steps = advance_plan_steps(
+                                [{"title": str(s.get("title") or ""), "status": str(s.get("status") or "pending")}
+                                 for s in current_steps if isinstance(s, dict)]
+                            )
+                            if advanced_steps is not None:
+                                plan_meta = dict(session.sandbox_meta or {})
+                                plan_meta["plan"] = {"steps": advanced_steps}
+                                # 整体重赋值触发 JSONB 变更检测
+                                session.sandbox_meta = plan_meta
+                                session.updated_at = datetime.now(UTC)
+                                await self._db.flush()
+                                yield ChatChunk(
+                                    type="plan",
+                                    metadata={"steps": advanced_steps, "auto_advanced": True},
+                                )
 
                     yield ChatChunk(
                         type="tool_result",

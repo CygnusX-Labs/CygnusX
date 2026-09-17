@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -77,7 +79,10 @@ class ChatSessionModel(Base, TimestampMixin):
         order_by="ChatMessageModel.created_at",
     )
 
-    __table_args__ = (Index("idx_chat_sessions_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", name="chat_sessions_session_id_key"),
+        Index("idx_chat_sessions_user_updated", "user_id", "updated_at"),
+    )
 
 
 class AgentTeamsRoomModel(Base, TimestampMixin):
@@ -107,7 +112,17 @@ class AgentTeamsRoomModel(Base, TimestampMixin):
     matrix_room_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     proposal: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
-    __table_args__ = (Index("idx_agentteams_rooms_owner_updated", "owner_id", "updated_at"),)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("room_id", name="uq_agentteams_rooms_room_id"),
+        Index("idx_agentteams_rooms_owner_updated", "owner_id", "updated_at"),
+    )
 
 
 class AgentTeamsRoomMemberModel(Base, TimestampMixin):
@@ -124,6 +139,13 @@ class AgentTeamsRoomMemberModel(Base, TimestampMixin):
     invited_by: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("room_id", "user_id", name="uq_agentteams_room_members_room_user"),
@@ -197,6 +219,13 @@ class CaseArtifactVersionModel(Base, TimestampMixin):
         JSONB, default=dict, nullable=False
     )
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "case_id",
@@ -220,6 +249,13 @@ class CaseArtifactDependencyModel(Base, TimestampMixin):
     downstream_artifact_id: Mapped[str] = mapped_column(String(512), nullable=False)
     upstream_artifact_id: Mapped[str] = mapped_column(String(512), nullable=False)
     relation: Mapped[str] = mapped_column(String(32), default="input_to", nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -261,6 +297,13 @@ class QcVerificationCheckModel(Base, TimestampMixin):
     claim_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     reason: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
+
     __table_args__ = (Index("ix_qc_verification_checks_case_verdict", "case_id", "verdict"),)
 
 
@@ -278,6 +321,13 @@ class AgentTeamsCaseCursorModel(Base, TimestampMixin):
     case_id: Mapped[str] = mapped_column(String(80), nullable=False)
     event_cursor: Mapped[str | None] = mapped_column(String(128), nullable=True)
     notified_statuses: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("session_id", "case_id", name="uq_agentteams_case_cursors_session_case"),
@@ -304,7 +354,7 @@ class ChatMessageModel(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     content_type: Mapped[str] = mapped_column(String(20), default="text", nullable=False)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="complete", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -312,7 +362,17 @@ class ChatMessageModel(Base):
         "ChatSessionModel", back_populates="messages"
     )
 
-    __table_args__ = (Index("idx_chat_messages_session_created", "session_id", "created_at"),)
+    __table_args__ = (
+        UniqueConstraint("message_id", name="chat_messages_message_id_key"),
+        Index("idx_chat_messages_session_created", "session_id", "created_at"),
+        Index(
+            "uq_chat_messages_matrix_event",
+            "session_id",
+            text("(metadata_json ->> 'matrix_event_id')"),
+            unique=True,
+            postgresql_where=text("(metadata_json ->> 'matrix_event_id') IS NOT NULL"),
+        ),
+    )
 
 
 class ChatMessageFeedbackModel(Base):
@@ -340,9 +400,11 @@ class ChatMessageFeedbackModel(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     context: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
     )
 
     __table_args__ = (
@@ -395,7 +457,9 @@ class CollaborationDegradationEventModel(Base):
     user_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     intent: Mapped[str] = mapped_column(String(20), nullable=False)
     reason: Mapped[str] = mapped_column(String(180), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
 
 
 class ChatAssistantModel(Base, TimestampMixin):
@@ -424,4 +488,7 @@ class ChatAssistantModel(Base, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    __table_args__ = (Index("idx_chat_assistants_category", "category", "is_active"),)
+    __table_args__ = (
+        UniqueConstraint("assistant_id", name="chat_assistants_assistant_id_key"),
+        Index("ix_chat_assistants_category", "category", "is_active"),
+    )

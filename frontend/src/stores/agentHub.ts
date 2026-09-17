@@ -3049,7 +3049,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   /** 切换当前 Studio 会话权限模式（调 API 后更新本地态） */
   async function setStudioPermissions(mode: StudioPermissionMode): Promise<void> {
     const sessionId = currentSessionId.value
-    if (!sessionId || sessionId.startsWith('sess-')) return
+    // 后端 _get_studio_session 只接受 studio 会话（否则 404）：
+    // 临时会话与非 studio 会话直接不发起请求
+    const session = sessions.value.find((item) => item.id === sessionId)
+    if (!sessionId || sessionId.startsWith('sess-') || session?.mode !== 'studio') return
     const prev = studioPermissions.value.mode
     studioPermissions.value = { mode }
     try {

@@ -53,6 +53,7 @@ profiles:
       r-dplyr: "installed"
       r-stringr: "installed"
       r-ggrepel: "installed"
+      r-ggpubr: "0.6.0"
       bioconductor-ggtree: "installed"
       bioconductor-treeio: "installed"
       r-ape: "installed"
@@ -63,7 +64,7 @@ profiles:
 
   analysis-scrna:
     name: 单细胞分析运行时
-    image: cygnusx-analysis:scrna-v0.0.2dev
+    image: cygnusx-analysis:scrna-v0.0.3dev
     family: cygnusx-analysis
     isolation_class: task-analysis-heavy
     runtime_uid: 10001
@@ -79,6 +80,7 @@ profiles:
       leidenalg: "0.10.2"
       python-igraph: "0.11.8"
       r-seurat: "5.1.0"
+      r-ggpubr: "0.6.0"
       bioconductor-singlecellexperiment: "1.28.1"
     resources: {cpu: 4, memory: 12g, pids: 1024}
     network_policy: none

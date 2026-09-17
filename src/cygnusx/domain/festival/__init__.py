@@ -3,7 +3,6 @@
 from cygnusx.domain.festival.entities import FestivalClaim, FestivalConfig
 from cygnusx.domain.festival.repositories import (
     FestivalClaimRepository,
-    FestivalConfigRepository,
 )
 from cygnusx.domain.festival.services import FestivalCalendarService
 from cygnusx.domain.festival.solar_term_calendar import (
@@ -30,7 +29,6 @@ __all__ = [
     "FestivalClaim",
     "FestivalConfig",
     "FestivalCalendarService",
-    "FestivalConfigRepository",
     "FestivalClaimRepository",
     "get_solar_term_date",
     "get_solar_term_date_by_name",

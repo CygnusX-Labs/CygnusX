@@ -1,5 +1,7 @@
 # CygnusX 沙箱增强架构（安全基线与 Capability 路由）
 
+> **时点说明**：本文件为 2026-08-22 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
+
 **版本**：v1.1  
 **日期**：2026-08-22  
 **状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现
@@ -54,6 +56,8 @@ StudioSandboxManager
 - `code` 是基础能力，所有请求和所有镜像定义都会自动包含它。
 - 浏览器或文档请求仅在 Agent 的 `features.studio.sandbox_capabilities` 明确授权时可创建。
 - 未授权请求返回业务错误；客户端参数不能提升会话权限。
+
+> 注意：当前代码在 Agent 未配置 `sandbox_capabilities` 时默认放行 `code`/`browser`/`document` 三种能力（`api/v1/studio.py:379-381`），与本节"明确授权才可创建"的设计契约不一致，属待确认的实现偏差。
 - `sandbox_meta.sandbox_capabilities` 专门保存运行时沙盒能力，不能和已有的 `sandbox_meta.capabilities` 混用；后者用于 MCP/Skill 的渐进加载状态。
 
 ### 3.2 配置
@@ -83,7 +87,7 @@ images:
 | PID | `pids_limit`，默认 512 | 限制 fork bomb 和进程滥用 |
 | Linux capabilities | `cap_drop=["ALL"]` | 删除容器默认 capability |
 | 特权提升 | `security_opt=["no-new-privileges:true"]` | 阻止 setuid/file capability 取得新权限 |
-| Seccomp | `security_opt` 显式加入 `seccomp=default` | 不依赖 daemon 默认值；生产仍需 `docker inspect` 核对实际 profile |
+| Seccomp | 配置为 `default` 时 `_seccomp_security_opt("default")` 返回 `None`，不下发显式 `security_opt` 条目（`manager.py:73-86`） | Docker daemon 自动应用内置默认 profile，语义等价于 `seccomp=default`；`docker inspect` 看不到 `seccomp=default` 条目 |
 | 运行用户 | `user=10001:10001`，镜像 `USER 10001` | sandbox-agent 和会话进程不以 root 运行 |
 | 根文件系统 | 默认 `read_only=true` | 避免镜像层被会话代码篡改 |
 | 临时写入 | `/tmp` tmpfs，默认 512 MiB，`nosuid,nodev,noexec` | 为 Chromium、LibreOffice 与临时文件保留受限可写空间 |
@@ -134,7 +138,7 @@ bash deploy/studio/build.sh
 
 Studio 容器现在显式设置：
 
-- `security_opt=["no-new-privileges:true", "seccomp=default"]`；代码能力镜像使用 Docker 默认 seccomp profile。
+- `security_opt=["no-new-privileges:true"]`；seccomp 配置为 `default` 时 `_seccomp_security_opt("default")` 返回 `None`（`manager.py:73-86`），不下发显式条目，由 Docker daemon 自动应用内置默认 profile（语义等价，`docker inspect` 看不到 `seccomp=default` 条目）。
 - `user=10001:10001`；镜像本身的 `USER 10001` 与编排参数双重约束。
 - `nano_cpus`、`mem_limit`、`pids_limit`、`cap_drop=["ALL"]`、只读根文件系统和 `/tmp` tmpfs。
 - 工作区创建时优先 `chown 10001:10001`，无权限时才退化为目录权限放宽，以保持本地开发环境可用。

@@ -7,7 +7,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -79,8 +79,8 @@ class AgentTemplateModel(Base, TimestampMixin):
     welcome_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     # 绑定的 MCP server UUID 字符串列表 / 技能 id 列表
-    mcp_ids: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
-    skill_ids: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
+    mcp_ids: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
+    skill_ids: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
     features: Mapped[dict[str, bool]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # 统一功能开关：联网搜索 / 代码执行 / 文件上传 / 深度思考
@@ -94,7 +94,10 @@ class AgentTemplateModel(Base, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    __table_args__ = (Index("idx_agent_templates_category", "category", "is_active"),)
+    __table_args__ = (
+        UniqueConstraint("agent_id", name="agent_templates_agent_id_key"),
+        Index("idx_agent_templates_category", "category", "is_active"),
+    )
 
 
 class UserAgentCapabilityModel(Base, TimestampMixin):

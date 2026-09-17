@@ -156,12 +156,13 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 
 | 包 | 用途 | 安装方式 |
 |---|---|---|
-| `ggpubr` | `theme_pubclean()` 来源 | `micromamba install -y -n base r-ggpubr` |
+| `ggpubr` | `theme_pubclean()` 来源 | **已预装进 analysis-plot/scrna/copilot/deg 镜像**（2026-09-16），直接 `library(ggpubr)`，勿现场安装 |
 | `scCustomize` | `DimPlot_scCustom()` 来源，**GitHub 独占包** | 沙盒白名单无法访问 GitHub，**不可现场安装**；需要时告知用户联系管理员预装进镜像 |
 | `ggrastr` | 大规模散点栅格化 | `micromamba install -y -n base r-ggrastr` |
-| `patchwork` | 多图拼版 | `micromamba install -y -n base r-patchwork` |
+| `patchwork` | 多图拼版 | 已预装，直接 `library(patchwork)` |
 
 上表未覆盖的 R 包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`。
+⚠ Studio 会话沙盒 `read_only_rootfs` 生效时 `/opt/conda` 与 HOME 只读，`micromamba install -n base` 必败——现场安装仅在工具箱任务容器（可写 base）可用；不要自带镜像 URL（如 NJU，代理白名单会 403），只用预置 USTC 源。
 装完验证：`Rscript -e "library(<Pkg>); packageVersion('<Pkg>')"`。
 不用 `install.packages()` 和 `remotes::install_github()`——CRAN/GitHub 不在沙盒 egress 白名单内，装了也装不上；GitHub 独占包（scCustomize、ProjecTILs、AnnoProbe、DoubletFinder 等）无法现场安装，换用等价实现或如实告知用户。
 
@@ -201,6 +202,12 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 
   分组名较长时适当增大 `keywidth`；连续映射（表达量、评分）改用
   `guide_colorbar()` 置底。
+  > `keywidth` / `keyheight` 的单位是 **lines**（当前字体行高），不是 mm 或 pt；
+  > `keywidth = 1` ≈ 1 行文字宽度，`keyheight = 1.5` ≈ 1.5 行文字高度。
+- **拼图（patchwork / 多子图）时图例必须统一置底**：`legend.position = "right"`
+  的子图在拼版中会各占一条竖向空间，压缩主绘图区宽度；拼版前对每个子图
+  `+ theme(legend.position = "bottom")`（或最后 `& theme(legend.position = "bottom")`
+  统一），图例数量多的拼版再合并图例（`patchwork::plot_layout(guides = "collect")`）。
   > `keywidth` / `keyheight` 的单位是 **lines**（当前字体行高），不是 mm 或 pt；
   > `keywidth = 1` ≈ 1 行文字宽度，`keyheight = 1.5` ≈ 1.5 行文字高度。
 
@@ -255,7 +262,7 @@ ggplot(deg_res, aes(x = log2FoldChange, y = -log10(padj), color = significance))
   labs(x = expression(log[2]~FoldChange), y = expression(-log[10]~adjusted~P),
        title = "火山图：Treatment vs Control") +
   theme_pubclean() +
-  theme(legend.position = "right",
+  theme(legend.position = "bottom",
         plot.title = element_text(hjust = 0.5))
 ```
 

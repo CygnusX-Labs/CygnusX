@@ -44,8 +44,8 @@
 所有 Flow 的 `execution.snakefile` 必须使用容器内绝对路径，例如：
 
 ```text
-/opt/cygnusx/pipelines/RNAFlow/Snakefile
-/opt/cygnusx/pipelines/ATACFlow/Snakefile
+/opt/cygnusx/pipelines/RNAFlow/snakefile
+/opt/cygnusx/pipelines/ATACFlow/snakefile
 ```
 
 不要使用宿主机路径（例如 `/home/zj/pipeline/...`）。
@@ -71,7 +71,7 @@
 新增 `deploy/docker/Dockerfile.worker`：
 
 1. 基于 `python:3.11-slim` 构建 CygnusX Worker Python 虚拟环境。
-2. 安装仅必需的系统工具：`ca-certificates`、`curl`、`wget`、`git`、`gosu` 和 `bzip2`。
+2. 安装仅必需的系统工具：`ca-certificates`、`curl`、`wget`、`git`、`bzip2`、`util-linux`（提供 `setpriv`，入口脚本用它降权，不再使用 `gosu`）、`btop`、`ncbi-blast+`、`unzip`、`zsh`，并从 `docker:27-cli` 复制 Docker CLI。
 3. 安装 Celery、Snakemake 和 `snakemake-logger-plugin-rich-loguru`；应用代码仍构建进镜像，确保 Worker 能执行 Celery 任务。
 4. 安装 Micromamba，并提供名为 `conda` 的兼容包装器，供 Snakemake 的 `--use-conda` 调用。
 5. 不执行以下操作：
@@ -150,10 +150,11 @@ snakemake --use-conda --conda-prefix /data/cygnusx/.conda_envs ...
 ```bash
 docker build \
   -f deploy/docker/Dockerfile.worker \
-  --build-arg SNAKEMAKE_LOGGER_PLUGIN_REF=<git-ref> \
   -t cygnusx-worker:<release>-<git-sha> \
   .
 ```
+
+`snakemake-logger-plugin-rich-loguru` 在 Dockerfile 内从 PyPI 固定安装（`>=0.3.0`），无需构建参数。
 
 启动前：
 
@@ -168,8 +169,8 @@ make docker-up-worker
 snakemake --version
 micromamba --version
 conda --version
-test -f /opt/cygnusx/pipelines/RNAFlow/Snakefile
-test -f /opt/cygnusx/pipelines/ATACFlow/Snakefile
+test -f /opt/cygnusx/pipelines/RNAFlow/snakefile
+test -f /opt/cygnusx/pipelines/ATACFlow/snakefile
 test -w /data/cygnusx/.conda_envs
 test -w /data/cygnusx/.mamba
 ```

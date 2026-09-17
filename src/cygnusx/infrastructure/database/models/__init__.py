@@ -27,7 +27,9 @@ from cygnusx.infrastructure.database.models.blast import (
 )
 from cygnusx.infrastructure.database.models.chat import (
     AgentTeamsCaseCursorModel,
+    AgentTeamsRoomMemberModel,
     AgentTeamsRoomModel,
+    AgentTeamsTurnRecordModel,
     CaseArtifactDependencyModel,
     CaseArtifactVersionModel,
     ChatAssistantModel,
@@ -74,6 +76,7 @@ from cygnusx.infrastructure.database.models.mas import (
     MASRunModel,
 )
 from cygnusx.infrastructure.database.models.mcp import MCPServerModel
+from cygnusx.infrastructure.database.models.mcp_log import MCPLogModel
 from cygnusx.infrastructure.database.models.mcp_builder import (
     MCPBuildModel,
     MCPReviewModel,
@@ -160,6 +163,7 @@ __all__ = [
     "KbIssueModel",
     "DocAuditLogModel",
     "MCPServerModel",
+    "MCPLogModel",
     "MCPBuildModel",
     "MCPVersionModel",
     "MCPVisibilityModel",

@@ -34,6 +34,7 @@ from cygnusx.reference_genomes.schema import (
     GeneTypeStatDTO,
     GoAnnotationDTO,
     GoGeneListResponse,
+    GoSlimDTO,
     GoTermDTO,
     GoTermListResponse,
     GoTermSearchHitDTO,
@@ -653,6 +654,21 @@ def get_gene_detail(version_id: str, gene_id: str) -> GeneDetailDTO:
                             exon_list.append(ExonDTO(start=int(pair[0]), end=int(pair[1]), rank=rank))
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
+            features: dict[str, list[list[int]]] = {}
+            features_raw = t["feature_ranges"] if "feature_ranges" in t.keys() else None
+            if features_raw:
+                try:
+                    parsed = json.loads(features_raw)
+                    if isinstance(parsed, dict):
+                        for key, pairs in parsed.items():
+                            if isinstance(pairs, list):
+                                features[key] = [
+                                    [int(p[0]), int(p[1])]
+                                    for p in pairs
+                                    if isinstance(p, (list, tuple)) and len(p) >= 2
+                                ]
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
             transcripts.append(TranscriptDTO(
                 transcript_id=t["transcript_id"],
                 gene_id=t["gene_id"],
@@ -664,29 +680,53 @@ def get_gene_detail(version_id: str, gene_id: str) -> GeneDetailDTO:
                 length=max(0, (t["end"] or 0) - (t["start"] or 0)),
                 exon_count=t["exon_count"] or 0,
                 exons=exon_list,
+                features=features,
                 cds_id=t["cds_id"],
                 pep_id=t["pep_id"],
                 canonical=bool(t["canonical"]),
             ))
 
-        # GO 注释（join go_terms）
+        # GO 注释（LEFT JOIN go_terms，缺失词条时保留注释行并以 go_id 兜底名称）
         go_rows = conn.execute(
-            "SELECT ga.go_id, gt.name, gt.aspect, ga.evidence, ga.source "
+            "SELECT ga.go_id, gt.name, gt.aspect, gt.definition, ga.evidence, ga.source "
             "FROM go_annotations ga "
-            "JOIN go_terms gt ON ga.go_id=gt.go_id "
-            "WHERE ga.gene_id=? LIMIT 100",
+            "LEFT JOIN go_terms gt ON ga.go_id=gt.go_id "
+            "WHERE ga.gene_id=? ORDER BY ga.go_id LIMIT 500",
             (gene_id,),
         ).fetchall()
         go_annotations = [
             GoAnnotationDTO(
                 go_id=r["go_id"],
-                term=r["name"] or "",
+                term=r["name"] or r["go_id"],
                 namespace=_aspect_to_namespace(r["aspect"]),
                 evidence_code=r["evidence"] or "",
                 source=r["source"] or "",
+                definition=r["definition"] or "",
             )
             for r in go_rows
         ]
+
+        # GO Slim 功能分类（旧库可能无此表，降级为空）
+        goslim_annotations: list[GoSlimDTO] = []
+        try:
+            slim_rows = conn.execute(
+                "SELECT go_id, name, aspect, slim_category, evidence "
+                "FROM goslim_annotations WHERE gene_id=? "
+                "ORDER BY aspect, go_id LIMIT 100",
+                (gene_id,),
+            ).fetchall()
+            goslim_annotations = [
+                GoSlimDTO(
+                    go_id=r["go_id"],
+                    name=r["name"] or "",
+                    namespace=_aspect_to_namespace(r["aspect"]),
+                    slim_category=r["slim_category"] or "",
+                    evidence=r["evidence"] or "",
+                )
+                for r in slim_rows
+            ]
+        except sqlite3.OperationalError:
+            pass
 
         # KEGG
         ko_rows = conn.execute(
@@ -758,13 +798,15 @@ def get_gene_detail(version_id: str, gene_id: str) -> GeneDetailDTO:
                 ).fetchone())
 
         seq_avail = SequenceAvailabilityDTO(
-            genomic=genomic_avail, cds=cds_avail, protein=protein_avail
+            genomic=genomic_avail, cds=cds_avail, protein=protein_avail,
+            promoter=genomic_avail,
         )
 
         return GeneDetailDTO(
             gene=gene,
             transcripts=transcripts,
             go=go_annotations,
+            goslim=goslim_annotations,
             kegg=kegg,
             sequence_available=seq_avail,
         )
@@ -784,6 +826,7 @@ def get_gene_sequence(
     gene_id: str,
     seq_type: str = "genomic",
     fmt: str = "json",
+    upstream: int = 2000,
 ) -> SequenceDTO | str:
     """GET /versions/{version_id}/genes/{gene_id}/sequence。"""
     found = config_manager.get_version(version_id)
@@ -792,7 +835,7 @@ def get_gene_sequence(
     _sp, ver = found
     conn = _open_db(ver)
     try:
-        if seq_type == "genomic":
+        if seq_type in ("genomic", "promoter"):
             row = conn.execute(
                 "SELECT gene_id, chromosome, start, end, strand FROM genes WHERE gene_id=?",
                 (gene_id,),
@@ -807,6 +850,33 @@ def get_gene_sequence(
                 _, index = open_index(unzipped)
             except FileNotFoundError:
                 raise NotFoundError("基因组 FASTA 索引不存在")
+
+            if seq_type == "promoter":
+                # 启动子：TSS 上游 upstream bp（按链方向取，返回 5'→3' 正向序列）
+                if row["strand"] == "-":
+                    p_start, p_end = row["end"] + 1, row["end"] + upstream
+                else:
+                    p_start, p_end = row["start"] - upstream, row["start"] - 1
+                if p_end < 1:
+                    raise NotFoundError(f"基因 {gene_id} 位于染色体起点，无上游启动子序列")
+                try:
+                    seq = fetch_region(unzipped, index, row["chromosome"], p_start, p_end, row["strand"])
+                except KeyError:
+                    raise NotFoundError(f"染色体不在 FASTA 索引中：{row['chromosome']}")
+                except ValueError:
+                    raise NotFoundError(f"基因 {gene_id} 上游区域越界，无启动子序列")
+                header = (
+                    f"{gene_id} promoter(upstream {upstream}bp) "
+                    f"{row['chromosome']}:{max(1, p_start)}-{p_end}({row['strand']})"
+                )
+                if fmt == "fasta":
+                    return _to_fasta(header, seq)
+                return SequenceDTO(
+                    header=header, sequence=seq, length=len(seq), seq_type="promoter",
+                    chromosome=row["chromosome"], start=max(1, p_start), end=p_end,
+                    strand=row["strand"],
+                )
+
             try:
                 seq = fetch_region(unzipped, index, row["chromosome"], row["start"], row["end"], row["strand"])
             except KeyError:

@@ -56,7 +56,7 @@
   - 星尘聊天页：`frontend/src/components/agent-workspace/AgentSandbox.vue` 的 `sandbox-header`（:334-383），`header-right` 首项是 `MultiAgentToggle`（:348），flex + gap 10px（:511 样式）。
   - 工作台页：`frontend/src/views/StudioView.vue` 的 `studio-topbar`（:812-906），`bar-right`（:828）首项 `MultiAgentToggle`（:829，compact），绑定 computed `multiAgentEnabled`（:374-378）。
   - `MultiAgentToggle.vue`（77 行）是仿写模板：`NIcon + NSwitch + NTooltip`，`v-model:boolean + disabled + compact`。
-- **关键词触发先例**：`KimiChatInput.vue:534` 发送前调 `matchWorkbenchIntent(content)`（`frontend/src/config/aiIntents.ts`）做纯前端意图切换；`/` 快捷命令（`SlashCommandMenu.vue:53-70`）只是插入文本，后端无解析。**本方案关键词判定放后端**（权威、可落库）。
+- **关键词触发先例**：`KimiChatInput.vue:534` 发送前调 `matchWorkbenchIntent(content)`（`frontend/src/config/aiIntents.ts`）做纯前端意图切换；`/` 快捷命令（`SlashCommandMenu.vue:53-70`）只是插入文本，后端无解析。**本方案关键词判定放后端**（权威、可落库）。**修订（2026-09-11）**：该先例已不存在——`KimiChatInput.vue` 不再调用 `matchWorkbenchIntent`，`frontend/src/config/aiIntents.ts` 已删除。
 
 ### 2.2 后端 chat_service
 
@@ -89,12 +89,14 @@
 
 ### 2.3 AgentTeams Bridge 现状与 Matrix 数据面缺口（第二期背景）
 
+> **修订（2026-09-11）**：本节快照为实施前基线，现状已漂移——Bridge `app.py` 已增至 837 行，并新增 `/v1/rooms/{id}/archive|unarchive` 端点（`app.py:443,454`）及 `client.py`、`room_mirror.py` 模块；静态身份由 9 个增至 11 个（`config.py:38-42`，新增 `agent-rnaseq`、`analysis-worker`）；Case 模型的 `element_room_url` 字段已移除，改用 `record_kind: case|room_namespace` 区分记录类型（`models.py:247`）；前端 `AgentTeamsChatDrawer.vue` 已不存在，由 `views/AgentTeamsRoomView.vue` 取代；`AgentTeamsService.chat_room()` 已移除，建房改走 `gateway.create_room`（`agentteams_service.py:1466`）。
+
 - Bridge 是**纯 HTTP 代理**（`integrations/agentteams/bridge/cygnusx_agentteams_bridge/app.py`，405 行单文件），端点只有 Case/WorkItem/Preflight/Approval/Task/Evidence/Health，**没有任何 rooms/messages/sync 端点，没有 Matrix 客户端**。
 - Case 模型有 `element_room_url` 纯文本字段（`models.py:170`）——只存 URL 供前端 iframe，Bridge 不创建/不读写房间。
 - 身份体系：9 个静态身份（`bioops-manager`、`data-steward`、`approval-authority`、`workflow-operator`、`quality-auditor`、`delivery-reporter`、`agent-code`、`agent-viz`、`agent-scrna`），`X-Bridge-Identity` + `X-Bridge-Token` 头认证，**≠ Matrix 账号**。
 - Worker（`integrations/agentteams/worker/worker_runner.py:65-112`）是轮询 Bridge 收件箱（`GET /v1/work-items/assigned`）的 HTTP 客户端，**不在任何 Matrix 房间里**。
 - CygnusX 侧 `AgentTeamsService.chat_room()`（`agentteams_service.py:99-129`）只返回 Element URL；前端 `AgentTeamsChatDrawer.vue:88-94` 是**纯 iframe 嵌入，无 postMessage 桥**。
-- 本地开发 homeserver 是 Synapse（`deploy/agentteams/matrix-dev/docker-compose.yml`，127.0.0.1:8008）；官方生产用 Tuwunel。设计文档 `docs/26.8.1/agent_Case.md` 8.3 节已把 Matrix Gateway 标注为"规划中"。
+- 本地开发 homeserver 是 Synapse（`deploy/agentteams/matrix-dev/docker-compose.yml`，127.0.0.1:8008）；官方生产用 Tuwunel。设计文档 `docs/26.8.1/agent_Case.md`（**失效引用：文件已不存在**）8.3 节已把 Matrix Gateway 标注为"规划中"。
 - **结论**：第二期的 Matrix 数据面（服务账号、房间读写、sync→SSE、身份映射）全部需要新建，工作量集中在 Gateway 组件本身，第一期的前端渲染与契约可以直接复用。
 
 ### 2.4 Agent 注册与发现
@@ -351,7 +353,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 > **提前实现状态**：第二期核心能力已按“默认关闭”方式提前实现；仅当 Gateway 配置完整且
 > `agentteams_gateway_enabled=true` 时启用，Gateway 不可达时自动降级为第一期内置编排。
 
-> 前置：第一期已完成。本章把"内置编排"升级为"真实 Matrix 房间"，与官方 AgentTeams 体验对齐。设计依据：`docs/26.8.1/agent_Case.md`（8.3 节 Matrix Gateway 规划）。
+> 前置：第一期已完成。本章把"内置编排"升级为"真实 Matrix 房间"，与官方 AgentTeams 体验对齐。设计依据：`docs/26.8.1/agent_Case.md`（8.3 节 Matrix Gateway 规划）（**失效引用：文件已不存在**）。
 
 ### 6.1 组件与部署 ✅ 已随第一期提前实现
 
@@ -392,9 +394,9 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 
 ### 6.5 CygnusX 与前端改造 ✅ 已随第一期提前实现
 
-> 每条 speech 经 Gateway 镜像进 Matrix 房间（`chat_service.py:_run_overdrive_turn` 的 Matrix 分支，默认关闭、降级安全）；回流通道 `GET /api/v1/chat/sessions/{id}/room-events`（SSE）已实现，前端 `startRoomEvents`（agentHub.ts）照搬 agentteams-events 的 reader 模式；无房间会话返回 404 由前端静默降级。
+> 每条 speech 经 Gateway 镜像进 Matrix 房间（`chat_service.py:_run_overdrive_turn` 的 Matrix 分支，默认关闭、降级安全）。**修订（2026-09-11）**：原回流通道 `GET /api/v1/chat/sessions/{id}/room-events`（SSE）与前端 `startRoomEvents`（agentHub.ts）**均已移除**（`tests/unit/test_overdrive_chat.py:1870` 显式断言该路由不存在）；房间回流现由 `agentteams_room_sync_service.py` / `case_room_projector.py` 承担，实时事件走 `api/v1/agentteams.py:1147` 的 `GET /api/v1/agent-teams/rooms/{room_id}/events/stream`。
 
-- 后端：`_run_overdrive_turn` 的每条 speech 增加"经 Gateway 写进 Matrix 房间"一步；新增房间消息回流通道——`GET /api/v1/chat/sessions/{id}/room-events`（SSE，内部桥接 Gateway `/sync`），把房间里**非 CygnusX 来源**的消息（如 Element 里用户的发言、Worker 自主发言）push 进会话消息流。前端照搬 `startAgentTeamsCaseEvents`（agentHub.ts:197-237）的 reader 模式。
+- 后端：`_run_overdrive_turn` 的每条 speech 增加"经 Gateway 写进 Matrix 房间"一步；新增房间消息回流通道——`GET /api/v1/chat/sessions/{id}/room-events`（SSE，内部桥接 Gateway `/sync`），把房间里**非 CygnusX 来源**的消息（如 Element 里用户的发言、Worker 自主发言）push 进会话消息流。前端照搬 `startAgentTeamsCaseEvents`（agentHub.ts:197-237）的 reader 模式。**修订（2026-09-11）**：该 room-events 设计未按此落地，实际回流通道见上方修订注记。
 - 前端：传输层仍走 `/api/v1/chat/stream`；`AgentTeamsChatDrawer` 保留为"在 Element 中打开"的旁观入口（iframe 不动）。
 - 降级：Gateway 未配置/不可达时，超频自动回落第一期内置编排，并在 mode_changed metadata 里带 `degraded: true`。
 
@@ -455,7 +457,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 - [x] G2 四类端点（6.2）—— 已随第一期提前实现
 - [~] G3 身份映射 + AppService 用户供给（6.3）—— AppService 供给与 CygnusX 代发已实现；**Worker 自主驻留房间未做**
 - [x] G4 matrix_room_id 迁移与绑定（6.4）—— 已按 sandbox_meta 过渡方案实现；alembic 列迁移未做
-- [x] G5 CygnusX 桥接 + room-events SSE + 降级（6.5）—— 已随第一期提前实现（默认关闭，降级有测试覆盖）
+- [~] G5 CygnusX 桥接 + 降级（6.5）—— 桥接镜像与降级已实现（默认关闭，降级有测试覆盖）；**修订（2026-09-11）**：原 room-events SSE（`/api/v1/chat/sessions/{id}/room-events`）已移除，房间回流改由 `agentteams_room_sync_service.py` / `case_room_projector.py` + `/api/v1/agent-teams/rooms/{room_id}/events/stream` 承担
 - [ ] G6 第二期验收（6.6）—— 端到端 Element 联调未做
 
 ### 第三期（可选）

@@ -47,6 +47,7 @@ from cygnusx.api.v1.admin import agentteams_bridge as admin_agentteams_bridge
 from cygnusx.api.v1.admin import ai_metrics as admin_ai_metrics
 from cygnusx.api.v1.admin import ai_providers as admin_ai_providers
 from cygnusx.api.v1.admin import assistants as admin_assistants
+from cygnusx.api.v1.admin import database as admin_database
 from cygnusx.api.v1.admin import festival as admin_festival
 from cygnusx.api.v1.admin import knowledge_bases as admin_knowledge_bases
 from cygnusx.api.v1.admin import platform_config as admin_platform_config
@@ -90,6 +91,9 @@ api_router.include_router(admin_users.router, prefix="/admin/users", tags=["Admi
 api_router.include_router(admin_stats.router, prefix="/admin/stats", tags=["Admin-Stats"])
 api_router.include_router(
     admin_session_logs.router, prefix="/admin/session-logs", tags=["Admin-Session-Logs"]
+)
+api_router.include_router(
+    admin_database.router, prefix="/admin/database", tags=["Admin-Database"]
 )
 api_router.include_router(
     admin_ai_metrics.router, prefix="/admin/ai-metrics", tags=["Admin-AI-Metrics"]

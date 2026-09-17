@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,9 +20,15 @@ class KbDocumentModel(Base, TimestampMixin):
     """知识库文档主表"""
 
     __tablename__ = "kb_documents"
+    __table_args__ = (
+        UniqueConstraint("doc_id", name="uq_kb_documents_doc_id"),
+        Index("ix_kb_documents_category", "category"),
+        Index("ix_kb_documents_status", "status"),
+        Index("ix_kb_documents_created_by", "created_by"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    doc_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    doc_id: Mapped[str] = mapped_column(String(64), nullable=False)
     project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(128), nullable=False)

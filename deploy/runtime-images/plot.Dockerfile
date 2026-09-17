@@ -48,6 +48,7 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
       r-dplyr \
       r-stringr \
       r-ggrepel \
+      r-ggpubr=0.6.0 \
       r-patchwork=1.3.0 \
       r-plotly=4.10.4 \
       r-cairo=1.6_2 \
@@ -56,3 +57,17 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
       bioconductor-ggtree \
       bioconductor-treeio \
     && micromamba clean --all --yes
+
+# 强制校验绘图栈必需包可加载（library 级，与 deploy/docker/Dockerfile.deg 同口径）；
+# 可视化提示词约定 ggpubr::theme_pubclean() 为 R 出图默认主题
+# （data/ai/prompts/visualization.md），缺包直接构建失败。
+RUN micromamba run -n base R -q -e '\
+      required <- c("ggplot2", "ggrepel", "ggpubr", "patchwork", "scales", "dplyr", "stringr"); \
+      failed <- character(0); \
+      for (p in required) { \
+        ok <- tryCatch({ suppressPackageStartupMessages(library(p, character.only = TRUE)); TRUE }, \
+                       error = function(e) { cat("LOAD FAIL", p, ":", conditionMessage(e), "\n"); FALSE }); \
+        if (!ok) failed <- c(failed, p); \
+      }; \
+      if (length(failed)) stop("plot image missing required R packages: ", paste(failed, collapse = ", ")); \
+      cat("plot runtime OK: all", length(required), "packages loadable, ", R.version.string, "\n")'

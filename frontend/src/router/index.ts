@@ -385,6 +385,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '会话日志排查', requiresAuth: true }
       },
       {
+        path: 'admin/database-health',
+        name: 'admin-database-health',
+        component: () => import('@/views/AdminDatabaseHealthView.vue'),
+        meta: { title: '数据库健康', requiresAuth: true }
+      },
+      {
         path: 'admin/ai-metrics',
         name: 'admin-ai-metrics',
         component: () => import('@/views/AdminAiMetricsView.vue'),

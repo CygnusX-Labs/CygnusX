@@ -5,26 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from cygnusx.domain.festival.entities import FestivalClaim, FestivalConfig
-
-
-class FestivalConfigRepository(ABC):
-    """节日配置仓库接口"""
-
-    @abstractmethod
-    async def load_all(self) -> list[FestivalConfig]:
-        """加载全部节日配置"""
-        raise NotImplementedError
-
-    @abstractmethod
-    async def save_all(self, festivals: list[FestivalConfig]) -> None:
-        """保存全部节日配置"""
-        raise NotImplementedError
-
-    @abstractmethod
-    async def reload(self) -> list[FestivalConfig]:
-        """强制重载配置"""
-        raise NotImplementedError
+from cygnusx.domain.festival.entities import FestivalClaim
 
 
 class FestivalClaimRepository(ABC):
@@ -43,4 +24,4 @@ class FestivalClaimRepository(ABC):
         raise NotImplementedError
 
 
-__all__ = ["FestivalConfigRepository", "FestivalClaimRepository"]
+__all__ = ["FestivalClaimRepository"]

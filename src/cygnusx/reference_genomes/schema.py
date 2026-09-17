@@ -192,9 +192,21 @@ class TranscriptDTO(RefGenBase):
     length: int = 0  # 外显子总长（剪接后转录本长度）
     exon_count: int = 0
     exons: list[ExonDTO] = Field(default_factory=list)
+    # 结构特征区间（GFF3 CDS/UTR）：{"cds": [[s,e],...], "five_prime_utr": [...], "three_prime_utr": [...]}
+    features: dict[str, list[list[int]]] = Field(default_factory=dict)
     cds_id: str | None = None
     pep_id: str | None = None
     canonical: bool = False
+
+
+class GoSlimDTO(RefGenBase):
+    """基因 → GO Slim 功能分类行。"""
+
+    go_id: str
+    name: str = ""
+    namespace: str = "BP"
+    slim_category: str = ""
+    evidence: str = ""
 
 
 class GoAnnotationDTO(RefGenBase):
@@ -205,6 +217,7 @@ class GoAnnotationDTO(RefGenBase):
     namespace: str = "BP"
     evidence_code: str = ""
     source: str = ""
+    definition: str = ""
 
 
 class KeggKoDTO(RefGenBase):
@@ -231,6 +244,7 @@ class SequenceAvailabilityDTO(RefGenBase):
     genomic: bool = False
     cds: bool = False
     protein: bool = False
+    promoter: bool = False
 
 
 class GeneDetailDTO(RefGenBase):
@@ -239,6 +253,7 @@ class GeneDetailDTO(RefGenBase):
     gene: GeneDTO
     transcripts: list[TranscriptDTO] = Field(default_factory=list)
     go: list[GoAnnotationDTO] = Field(default_factory=list)
+    goslim: list[GoSlimDTO] = Field(default_factory=list)
     kegg: GeneKeggDTO = Field(default_factory=GeneKeggDTO)
     sequence_available: SequenceAvailabilityDTO = Field(default_factory=SequenceAvailabilityDTO)
 

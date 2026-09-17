@@ -203,7 +203,7 @@ describe('MessageArtifactGallery', () => {
     app.unmount()
   })
 
-  it('PDF 产物不再内嵌浏览器查看器，点击占位按钮打开带自定义工具条的弹窗', async () => {
+  it('PDF 产物卡片内嵌只读预览（iframe 不可交互），点击仍打开带自定义工具条的弹窗', async () => {
     apiGet.mockResolvedValue({ data: new Blob(['pdf'], { type: 'application/pdf' }) })
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -228,9 +228,12 @@ describe('MessageArtifactGallery', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
 
-    expect(host.querySelector('iframe')).toBeNull()
+    // 卡片内嵌只读预览：iframe 存在、不可交互（pointer-events 关闭），点击穿透到放大按钮
+    const inlineFrame = host.querySelector<HTMLIFrameElement>('.message-artifacts__pdf-inline')
+    expect(inlineFrame).toBeTruthy()
+    expect(inlineFrame?.getAttribute('src')).toBe('blob:artifact#toolbar=0&navpanes=0&view=FitH&page=1')
     const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__pdf-trigger')
-    expect(trigger?.textContent).toContain('PDF 文档')
+    expect(trigger).toBeTruthy()
     trigger?.click()
     await nextTick()
 

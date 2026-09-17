@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,10 +16,14 @@ class BlastDatabaseModel(Base, TimestampMixin):
     """BLAST 数据库元数据表"""
 
     __tablename__ = "blast_databases"
+    __table_args__ = (
+        UniqueConstraint("db_key", name="blast_databases_db_key_key"),
+        Index("ix_blast_databases_db_key", "db_key"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    db_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    db_key: Mapped[str] = mapped_column(String(64), nullable=False)
     db_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # nucl | prot
     source_species: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -42,9 +46,14 @@ class BlastTaskModel(Base):
     """BLAST 查询任务记录表"""
 
     __tablename__ = "blast_tasks"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="blast_tasks_task_id_key"),
+        Index("ix_blast_tasks_task_id", "task_id"),
+        Index("ix_blast_tasks_submitted_at", "submitted_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    task_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )

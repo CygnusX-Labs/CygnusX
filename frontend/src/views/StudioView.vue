@@ -95,9 +95,11 @@ const extractSkillForm = reactive({
 const fileTreeKey = ref(0)
 const artifactsKey = ref(0)
 
-const leftCollapsed = ref(false)
-const rightCollapsed = ref(false)
-const rightSections = reactive({ artifacts: true, sandbox: true })
+// 左右栏默认折叠：中间对话/代码列获得更大宽度（问题②），顶部按钮可展开并记忆。
+const leftCollapsed = ref(true)
+const rightCollapsed = ref(true)
+// 研究结果默认展开；沙盒状态信息密度低，默认折叠（问题③），点击手风琴头可展开。
+const rightSections = reactive({ artifacts: true, sandbox: false })
 const leftWidth = ref(260)
 const RIGHT_WIDTH_KEY = 'cygnusx:studio:right-width-v2'
 function loadRightWidth(): number {
@@ -977,7 +979,8 @@ function formatSessionTime(iso: string): string {
       </div>
       <div class="bar-right">
         <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
-        <n-tooltip v-if="sessionId" trigger="hover">
+        <!-- 仅 studio 会话展示权限切换器：普通聊天会话后端一律 404，避免"切换失败"死按钮 -->
+        <n-tooltip v-if="sessionId && store.currentSession?.mode === 'studio'" trigger="hover">
           <template #trigger>
             <span class="perm-switch" :class="{ auto: isAutoMode }">
               <span class="perm-label">{{ permissionMode === 'auto' ? '放权' : permissionMode === 'plan' ? '计划' : '监督' }}</span>

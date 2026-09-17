@@ -69,10 +69,10 @@ Celery beat（每 5 分钟）
 
 | 文件 | 内容 |
 |------|------|
-| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qdoubao-seed-evolving`，temperature 0.2，max_tokens 8000，`tool_packs: [workspace, memory]`，studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.mcp_builder`（配额/TTL/产物目录元数据） |
-| `data/ai/prompts/mcp_builder.md` | 六阶段系统提示词（约 14k 字符）：规划/搜索/编码/测试/文档/注册；含两份代码模板（本地 pandas 版 + NCBI httpx 版）、安全红线、"绝不代为提交"约束（注册须用户/前端触发 API） |
+| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qdoubao-seed-evolving`，temperature 0.2，max_tokens 65536，`tool_packs: [workspace, memory, handoff]`（handoff.allowed_targets=[agent-general, agent-code]，max_hops_per_session=10），`skill_ids: [mcp-server-builder]`（六阶段工作流与代码模板由该 Skill 承载），studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.agentteams`（expert 可招募、execution_modes=[readonly_consultation, workspace_execution]、max_parallel_work_items=1 等）+ `features.mcp_builder`（配额/TTL/产物目录元数据） |
+| `data/ai/prompts/mcp_builder.md` | 六阶段系统提示词（约 5.8KB）：规划/搜索/编码/测试/文档/注册；不含代码模板——模板已迁移到 Skill `mcp-server-builder` 的 `references/`（`template_local_computation.py` 本地计算版 + `template_external_api.py` 外部 API 版），Prompt 要求接到构建需求后先加载该 Skill；保留安全红线、"绝不代为提交"约束（注册须用户/前端触发 API） |
 | `data/CygnusX.yaml` | `agents.enabled` 追加 `mcp_builder`（加载白名单） |
-| `data/ai/prompts/router.md` | 路由候选表追加构建师条目（"创建/生成 MCP Server、给 AI 加新工具"类请求分派给它） |
+| `data/ai/prompts/router.md` | 不维护静态候选名单——router 依据运行时可用 Agent 目录路由，构建师随 Agent 目录上线即可被路由（"创建/生成 MCP Server、给 AI 加新工具"类请求） |
 
 **加载链路**：`agent_loader.load_agent_configs()` → 幂等落库 `agent_templates` → 会话时 `assemble_context()` 组装模型/Prompt/工具。Agent 是纯 YAML+Markdown 配置，非 Python 包。
 
@@ -147,7 +147,7 @@ Celery beat（每 5 分钟）
 
 ---
 
-## 7. API（`/api/v1/mcp-builder`，12 条路由）
+## 7. API（`/api/v1/mcp-builder`，15 条路由）
 
 | 方法 | 路径 | 权限 | 用途 |
 |------|------|------|------|
@@ -162,6 +162,7 @@ Celery beat（每 5 分钟）
 | GET | `/servers/experimental` | User | 我的实验 MCP 列表 |
 | POST | `/servers/{id}/renew` | Owner/Admin | TTL 续期 |
 | DELETE | `/servers/{id}` | Owner/Admin | 删除实验 MCP |
+| POST | `/servers/{id}/promote` | Admin | 实验 MCP 转正为正式（清 TTL + publish 版本行） |
 | POST | `/servers/{id}/invoke` | Owner/Admin | 经沙箱 UDS 桥接调用工具 |
 | GET | `/servers/{id}/versions` | User | 版本历史 |
 | POST | `/servers/{id}/rollback` | Owner/Admin | 回滚到指定版本 |
@@ -192,9 +193,10 @@ Celery beat（每 5 分钟）
 
 ```text
 data/ai/mcp_builder.yaml                          # Agent 配置
-data/ai/prompts/mcp_builder.md                    # 六阶段 Prompt + 代码模板
+data/ai/prompts/mcp_builder.md                    # 六阶段 Prompt（约 5.8KB，不含代码模板）
+data/ai/skill_marketplace/mcp-server-builder/references/  # 代码模板（template_local_computation.py / template_external_api.py）
 data/CygnusX.yaml                                 # agents.enabled 注册
-data/ai/prompts/router.md                         # 路由候选表
+data/ai/prompts/router.md                         # 路由（依据运行时可用 Agent 目录，非静态名单）
 
 src/cygnusx/infrastructure/mcp/builder/
 ├── safety.py                                     # AST 安全检查器
@@ -204,7 +206,7 @@ src/cygnusx/infrastructure/mcp/builder/
 
 src/cygnusx/application/services/mcp_builder_service.py   # 编排中枢
 src/cygnusx/application/schemas/mcp_builder.py            # DTO
-src/cygnusx/api/v1/mcp_builder.py                         # 12 条路由
+src/cygnusx/api/v1/mcp_builder.py                         # 15 条路由
 src/cygnusx/infrastructure/celery_app/tasks/mcp_builder.py # 过期清理
 
 src/cygnusx/infrastructure/database/models/mcp_builder.py  # 4 个 ORM 模型
@@ -214,7 +216,7 @@ deploy/studio/sandbox_agent.py                    # /mcp/* 容器端点
 deploy/studio/requirements-agent.txt              # mcp>=1.2.0
 src/cygnusx/infrastructure/studio/manager.py      # host 侧 UDS 封装
 
-tests/unit/mcp/                                   # 62 个 builder 单测
+tests/unit/mcp/                                   # builder 相关 37 个单测（test_builder_safety.py 19 + test_builder_versioning.py 10 + test_builder_docs_and_generator.py 8）；目录含非 builder 测试共 58 个
 tests/unit/test_agent_loader_studio.py            # agent 加载回归测试
 ```
 
@@ -225,6 +227,6 @@ tests/unit/test_agent_loader_studio.py            # agent 加载回归测试
 | 项 | 基础已就位 | 待做 |
 |----|-----------|------|
 | 实验 MCP 的 LLM 自动路由 | generation_meta/tools 快照在库 | ChatService 工具发现纳入实验池（按 created_by 过滤） |
-| 审核"转正"为正式 MCP | mcp_versions 快照 + review 状态机 | pool experimental→production 提升流程 + 前端管理页 |
+| 审核"转正"为正式 MCP | mcp_versions 快照 + review 状态机 | ~~pool experimental→production 提升流程~~ 已实现（`mcp_builder_service.promote_server()`：置 pool=PRODUCTION、清 TTL、打 publish 版本行；API `POST /servers/{id}/promote`，Admin）；待做：前端管理页 |
 | 前端页面 | API 完备 | `/admin/mcp-builder`（仪表盘/审核队列/版本对比）、`/studio/mcp-builder`（用户构建历史） |
 | 反馈闭环 / 成本管控 | mcp_builds.tokens_consumed | mcp_feedback 表、token_budget_per_user |

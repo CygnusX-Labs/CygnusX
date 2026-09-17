@@ -212,7 +212,7 @@ Matrix 离房清理。删房遍历 owner 与所有 accepted member，不能沿�
   "agent_id": "...",
   "round_number": 3,
   "call_seq": 1,
-  "child_session_id": "agentteams:{case_id}:child:{run_id}",
+  "child_session_id": "agentteams:{case_id}:child:{run_id}:{index}",
   "requester_ref": "bridge-owner-user-id",
   "actor_user_id": "actual-platform-user-id",
   "trace_id": "...",
@@ -279,7 +279,7 @@ cases/{case_id}/turns/{work_item_id}/{round_number:04d}/call-{call_seq:02d}-{rec
 | `DELETE` | `/rooms/{room_id}/invitations/{user_id}` | owner；撤销 pending |
 | `POST` | `/rooms/{room_id}/leave` | accepted member；移除成员态并离开 Matrix |
 | `DELETE` | `/rooms/{room_id}/members/{user_id}` | owner；移除 accepted member 并离开 Matrix |
-| `GET` | `/users/lookup?q=` | 任意已登录用户；用户名/昵称前缀精确搜索，仅返回 `id/nickname/avatar`，有速率限制 |
+| `GET` | `/users/lookup?q=` | 任意已登录用户；用户名/昵称前缀精确搜索，仅返回 `id/nickname/avatar`；端点无专用限流，仅由全局每 IP 滑动窗口限流中间件兜底（`middleware/rate_limit.py:76`，默认 100 次/60 秒） |
 | `GET` | `/cases/{case_id}/turns` | owner/accepted member；DB 索引分页，可按 `work_item_id`、`round_number` 过滤 |
 | `GET` | `/cases/{case_id}/turns/{record_id}` | owner/accepted member；读取完整对象后按角色脱敏 |
 | `POST` | `/cases/{case_id}/reports/flow` | owner/accepted member；服务端读取已有 turns/events/血缘，按角色裁剪后生成并登记 HTML 产物 |
@@ -444,18 +444,18 @@ span 允许保留 `gen_ai.request.model`、`gen_ai.usage.*`（或兼容的既有
 
 - **规划**：`select_lead_planner`（`overdrive_planning_service.py:858`）在领域评分全 0 时
   兜底到 `agent-general`；Manager LLM 依据 `build_overdrive_agent_catalog`
-  （`overdrive_control.py:704`，注入各 Agent 的 `capability_scope`/`default_role`/
+  （`overdrive_control.py:702`，注入各 Agent 的 `capability_scope`/`default_role`/
   `accepts_inputs`/`produces_outputs`）自由生成阶段拆分与分派。
 - **校验**：`overdrive_run_service.py:93-133` 的结构校验与领域无关、始终生效（task_id 唯一、
   agent_id 真实存在、depends_on 合法、契约字段齐全）；但锚点校验
-  `apply_authoritative_plan`（`overdrive_plan_constraint_service.py:199`）在无权威规则时
+  `apply_authoritative_plan`（`overdrive_plan_constraint_service.py:297`）在无权威规则时
   直接放行，**没有任何能力匹配检查**——派错 Agent 会静默通过。
 - **执行与汇总**：与领域模式共用 parallel_subagents 拓扑波次分派与 DeliveryAssembler
   汇总，不依赖领域配置。
 
 ### 14.2 本期施工：通用阶段骨架提示词
 
-在 `OVERDRIVE_MANAGER_PROMPT`（`chat_service.py:410-445`）增加"未命中领域包时"的规划规则，
+在 `OVERDRIVE_MANAGER_PROMPT`（`chat_service.py:440-476`）增加"未命中领域包时"的规划规则，
 作为 `{authoritative_anchors}` 为"无。"时的补充约束：
 
 1. **通用四阶段骨架**：计划默认按 输入核验 → 核心分析/实现 → 可视化/解读 → 汇总交付

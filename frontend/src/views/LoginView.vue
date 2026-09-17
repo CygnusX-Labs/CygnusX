@@ -10,15 +10,6 @@
             <h2 class="login-title">CygnusX</h2>
             <p class="login-subtitle">欢迎登录多组学分析平台</p>
           </div>
-          <!-- Demo 模式：演示账号提示 + 一键填入 -->
-          <div v-if="step === 'credentials'" class="demo-account-hint">
-            <span class="demo-account-text">
-              演示账号 <code>demo</code> · 密码 <code>demo_cygnusx</code>
-            </span>
-            <n-button text size="tiny" type="primary" @click="fillDemoAccount">
-              一键填入
-            </n-button>
-          </div>
           <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
             <!-- 第一步：账号密码 -->
             <template v-if="step === 'credentials'">
@@ -186,12 +177,6 @@ function resetToCredentials() {
   errorMessage.value = ''
 }
 
-// Demo 模式：一键填入演示账号（与 scripts/init_demo_user.py 的默认账号一致）
-function fillDemoAccount() {
-  formData.value.username = 'demo'
-  formData.value.password = 'demo_cygnusx'
-  errorMessage.value = ''
-}
 
 function redirectHome() {
   try {
@@ -463,38 +448,6 @@ onUnmounted(() => {
   color: var(--neutral-text-2);
 }
 
-/* Demo 模式：演示账号提示条 */
-.demo-account-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(77, 124, 255, 0.08);
-  border: 1px dashed rgba(77, 124, 255, 0.35);
-  font-size: 12px;
-  color: var(--neutral-text-2);
-}
-
-.demo-account-hint code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(77, 124, 255, 0.12);
-  color: var(--brand-primary);
-  font-size: 12px;
-}
-
-:root[data-theme='dark'] .demo-account-hint {
-  background: rgba(91, 139, 255, 0.1);
-  border-color: rgba(155, 184, 255, 0.3);
-}
-
-:root[data-theme='dark'] .demo-account-hint code {
-  background: rgba(155, 184, 255, 0.14);
-  color: #b8ccff;
-}
 .login-form {
   margin-top: 0;
 }

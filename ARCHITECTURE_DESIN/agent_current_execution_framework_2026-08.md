@@ -1,5 +1,7 @@
 # CygnusX Agent 当前执行框架
 
+> **时点说明**：本文件为 2026-08-18 时点的快照/评审稿，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 agentteams_room_current_architecture_2026-08-21.md、database_architecture.md）为准。
+
 > 更新时间：2026-08-18  
 > 文档定位：记录仓库当前已经存在的 Agent 请求装配、思考—工具闭环、LangGraph、Studio、AgentTeams Worker、房间路由和前端事件投影。本文优先描述“现在代码实际怎么运行”，不把未来规划误写成已上线能力。
 

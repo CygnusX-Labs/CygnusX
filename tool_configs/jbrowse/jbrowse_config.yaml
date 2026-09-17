@@ -59,6 +59,47 @@ assemblies:
     fasta: "/data/cygnusx/cygnusx_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa"
     fai: "/data/cygnusx/cygnusx_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai"
 
+  # 拟南芥 TAIR10 —— 与 refdata/reference_genomes.yaml 的 tair10 版本通过 version_id 关联，
+  # 基因详情抽屉的「JBrowse 查看」按钮按 version_id 匹配本条目。
+  # 注意：fasta 直接复用参考基因组库的 FASTA（相对 reference_genomes.yaml 的 data_dir），
+  # 部署环境若 data_root 不是 /data/cygnusx 需同步调整（如本地为 /data/omichub/omichub_data/...）。
+  - id: arabidopsis_tair10
+    name: "拟南芥 (TAIR10)"
+    species: "Arabidopsis thaliana"
+    common_name: "拟南芥"
+    taxonomy_id: "3702"
+    version_id: "tair10"
+    version_name: "TAIR10"
+    assembly_name: "TAIR10"
+    category: "plant"
+    icon: "🌱"
+    is_default: false
+    status: "active"
+    release_date: "2010-12"
+    description: "拟南芥参考基因组 TAIR10（基因结构 + GO/KEGG 注释）"
+    stats:
+      chromosomes: 7
+      total_genes: 28775
+      protein_coding: 27655
+      genome_size: "119.7 Mb"
+      n50: "23.5 Mb"
+    data_files:
+      fasta:
+        path: "/data/cygnusx/cygnusx_data/reference/TAIR10/TAIR10_chr_all.fas"
+        index_path: "/data/cygnusx/cygnusx_data/reference/TAIR10/TAIR10_chr_all.fas.fai"
+        format: "fasta"
+        build_required: true
+        build_tool: "samtools faidx"
+        build_status: "ready"
+      gff:
+        path: "/data/cygnusx/cygnusx_data/reference/TAIR10/TAIR10_GFF3_genes.gff"
+        format: "gff3"
+        build_required: true
+        build_tool: "gffutils"
+        build_status: "ready"
+    fasta: "/data/cygnusx/cygnusx_data/reference/TAIR10/TAIR10_chr_all.fas"
+    fai: "/data/cygnusx/cygnusx_data/reference/TAIR10/TAIR10_chr_all.fas.fai"
+
 # --------------------------------------------
 # 预设轨道（公共/共享数据，所有用户可见）
 # 挂载到对应参考基因组下，自动加载。

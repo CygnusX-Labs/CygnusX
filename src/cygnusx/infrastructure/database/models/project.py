@@ -9,8 +9,9 @@
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,3 +39,10 @@ class ProjectModel(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # 可选客户名（项目归属客户/课题组）
     customer: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )

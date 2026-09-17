@@ -42,17 +42,6 @@ class Directory(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
-class ResultArchive(BaseModel):
-    """结果归档"""
-
-    id: UUID
-    task_id: UUID
-    archive_path: str
-    size: int
-    expires_at: datetime | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
 class Sample(BaseModel):
     """样本聚合根"""
 

@@ -12,11 +12,12 @@ CLI 用法::
 解析器清单（每种 format 一个函数，全部纯 Python、流式读 gzip）：
 
 - ``genomic_fasta``：解压 gz + build_fai
-- ``gff3``：gene / mRNA / exon → genes + transcripts
+- ``gff3``：gene / mRNA / exon / CDS / UTR → genes + transcripts（feature_ranges JSON）
 - ``tair_functional``：TAIR functional_descriptions TSV → genes.annotation
 - ``kegg_gene``：ath_gene.list 4 列 → genes.gene_name
 - ``gaf``：gene_association.tair.gz → go_annotations
 - ``obo``：go-basic.obo → go_terms
+- ``goslim``：ATH_GO_GOSLIM.txt.gz → goslim_annotations
 - ``kegg_ko``：ath_ko.list → kegg_annotations + kegg_kos
 - ``kegg_pathway``：ath_pathway.list → kegg_annotations
 - ``kegg_pathway_name``：ath_pathway_name.list → kegg_pathways
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import io
 import json
 import os
 import re
@@ -38,6 +40,7 @@ import shutil
 import sqlite3
 import sys
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,7 +64,7 @@ _STAGE_GROUPS: dict[str, list[str]] = {
     "fasta": ["genomic_fasta"],
     "gff3": ["gff3"],
     "functional": ["tair_functional"],
-    "go": ["gaf", "obo"],
+    "go": ["gaf", "obo", "goslim"],
     "kegg": ["kegg_ko", "kegg_pathway", "kegg_pathway_name", "kegg_gene"],
     "cds": ["fasta_kv"],
 }
@@ -74,6 +77,7 @@ _FULL_ORDER = [
     "kegg_gene",
     "gaf",
     "obo",
+    "goslim",
     "kegg_ko",
     "kegg_pathway",
     "kegg_pathway_name",
@@ -126,6 +130,7 @@ CREATE TABLE IF NOT EXISTS transcripts(
     transcript_id TEXT PRIMARY KEY, gene_id TEXT NOT NULL,
     chrom TEXT, start INT, end INT, strand TEXT,
     exon_count INT DEFAULT 0, exon_ranges TEXT,
+    feature_ranges TEXT,
     cds_id TEXT, pep_id TEXT, cds_length INT DEFAULT 0, pep_length INT DEFAULT 0,
     canonical INT DEFAULT 0
 );
@@ -139,6 +144,13 @@ CREATE TABLE IF NOT EXISTS go_annotations(
     PRIMARY KEY(gene_id, go_id)
 );
 CREATE INDEX IF NOT EXISTS idx_go_term ON go_annotations(go_id);
+
+CREATE TABLE IF NOT EXISTS goslim_annotations(
+    gene_id TEXT NOT NULL, go_id TEXT NOT NULL, name TEXT,
+    aspect TEXT, slim_category TEXT, evidence TEXT,
+    PRIMARY KEY(gene_id, go_id)
+);
+CREATE INDEX IF NOT EXISTS idx_goslim_term ON goslim_annotations(go_id);
 
 CREATE TABLE IF NOT EXISTS kegg_kos(
     ko_id TEXT PRIMARY KEY, name TEXT, definition TEXT
@@ -240,8 +252,44 @@ def _map_gene_type(note: str) -> str:
     return "other"
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    """增量构建在旧库上补列（幂等）。"""
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        conn.commit()
+
+
+def _open_text_auto(fpath: Path) -> Any:
+    """按魔数嗅探压缩格式，返回文本流（gzip / zip 首成员 / 纯文本）。
+
+    TAIR 部分 ``.gz`` 实为 ZIP 封装（如 ATH_GO_GOSLIM.txt.gz），仅看扩展名会踩坑。
+    """
+    with open(fpath, "rb") as fh:
+        magic = fh.read(4)
+    if magic[:2] == b"\x1f\x8b":
+        return gzip.open(fpath, "rt", encoding="utf-8")
+    if magic[:2] == b"PK":
+        zf = zipfile.ZipFile(fpath)
+        inner = zf.open(zf.namelist()[0], "r")
+        return io.TextIOWrapper(inner, encoding="utf-8")
+    return open(fpath, "rt", encoding="utf-8")
+
+
+# GFF3 feature → feature_ranges JSON 键
+_STRUCTURE_FEATURES = {
+    "CDS": "cds",
+    "five_prime_UTR": "five_prime_utr",
+    "three_prime_UTR": "three_prime_utr",
+}
+
+
 def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> None:
-    """解析 GFF3：gene / mRNA / exon → genes + transcripts。"""
+    """解析 GFF3：gene / mRNA / exon / CDS / UTR → genes + transcripts。
+
+    transcripts.feature_ranges 存 JSON：{"cds": [[s,e],...], "five_prime_utr": [...],
+    "three_prime_utr": [...]}，供前端绘制 UTR/CDS 分段的基因模型图。
+    """
     gff_path = resolve_file_path(version, "gff3")
     if gff_path is None or not gff_path.exists():
         _log(f"  [skip] gff3 文件不存在：{gff_path}")
@@ -252,6 +300,7 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
     # 清空目标表
     conn.execute("DELETE FROM genes")
     conn.execute("DELETE FROM transcripts")
+    _ensure_column(conn, "transcripts", "feature_ranges", "TEXT")
 
     # 两遍扫描：第一遍收集 mRNA 和 exon 信息，第二遍写库
     # 实际上一遍就够，用字典缓冲
@@ -261,6 +310,8 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
     transcripts: dict[str, dict[str, Any]] = {}
     # transcript_id → list of (exon_start, exon_end)
     exon_map: dict[str, list[tuple[int, int]]] = {}
+    # transcript_id → {feature_key: [(start, end), ...]}（cds / five_prime_utr / three_prime_utr）
+    feature_map: dict[str, dict[str, list[tuple[int, int]]]] = {}
 
     with open(gff_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -307,6 +358,14 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
                     if p in exon_map:
                         exon_map[p].append((start, end))
 
+            elif feature in _STRUCTURE_FEATURES:
+                key = _STRUCTURE_FEATURES[feature]
+                parents_str = attrs.get("Parent", "")
+                parents = [p.strip() for p in parents_str.split(",") if p.strip()]
+                for p in parents:
+                    if p in exon_map:
+                        feature_map.setdefault(p, {}).setdefault(key, []).append((start, end))
+
     # 构建 transcript rows
     tr_rows: list[tuple] = []
     for tr_id, info in transcripts.items():
@@ -314,6 +373,10 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
         exons_sorted = sorted(exons, key=lambda e: e[0])
         exon_count = len(exons_sorted)
         exon_ranges = json.dumps(exons_sorted) if exons_sorted else "[]"
+        features = feature_map.get(tr_id, {})
+        feature_ranges = (
+            json.dumps({k: sorted(v) for k, v in features.items()}) if features else ""
+        )
         tr_rows.append(
             (
                 tr_id,
@@ -324,6 +387,7 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
                 info["strand"],
                 exon_count,
                 exon_ranges,
+                feature_ranges,
                 None,  # cds_id
                 None,  # pep_id
                 0,     # cds_length
@@ -353,7 +417,7 @@ def _parse_gff3(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> 
         "INSERT INTO genes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", gene_rows
     )
     conn.executemany(
-        "INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         tr_rows,
     )
     conn.commit()
@@ -495,14 +559,12 @@ def _parse_gaf(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> N
 
     conn.execute("DELETE FROM go_annotations")
 
-    opener = gzip.open if str(fpath).endswith(".gz") else open
-
     go_rows: list[tuple[str, str, str, str]] = []  # gene_id, go_id, evidence, source
     # symbol candidates: gene_id → first non-trivial symbol
     symbol_candidates: dict[str, str] = {}
 
     count = 0
-    with opener(fpath, "rt", encoding="utf-8") as f:  # type: ignore[call-overload]
+    with _open_text_auto(fpath) as f:
         for line in f:
             if line.startswith("!") or not line.strip():
                 continue
@@ -663,6 +725,71 @@ def _parse_obo(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> N
         )
 
     _log(f"  go_terms: {count}")
+    conn.commit()
+
+
+def _parse_goslim(conn: sqlite3.Connection, version: VersionConfig, _log: Any) -> None:
+    """ATH_GO_GOSLIM.txt.gz（TAIR GOSLIM GAF 变体，18 列 TSV，可 gzip）→ goslim_annotations。
+
+    列位（0-based）：
+    第 1 列 gene_id（AT1G01010）
+    第 5 列 slim term 名（regulation of DNA-templated transcription）
+    第 6 列 slim GO ID（GO:0006355）
+    第 8 列 aspect（P/F/C）
+    第 9 列 slim 大类（other cellular processes）
+    第 10 列 evidence（IBA/...）
+    '!' 开头为注释行。
+    """
+    fpath = resolve_file_path(version, "goslim")
+    if fpath is None or not fpath.exists():
+        _log(f"  [skip] goslim 文件不存在：{fpath}")
+        return
+
+    _log(f"  解析 GOSLIM：{fpath.name}")
+
+    conn.execute("""\
+        CREATE TABLE IF NOT EXISTS goslim_annotations(
+            gene_id TEXT NOT NULL, go_id TEXT NOT NULL, name TEXT,
+            aspect TEXT, slim_category TEXT, evidence TEXT,
+            PRIMARY KEY(gene_id, go_id)
+        )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_goslim_term ON goslim_annotations(go_id)"
+    )
+    conn.execute("DELETE FROM goslim_annotations")
+
+    rows: list[tuple[str, str, str, str, str, str]] = []
+    count = 0
+    with _open_text_auto(fpath) as f:
+        for line in f:
+            if line.startswith("!") or not line.strip():
+                continue
+            cols = line.rstrip("\n\r").split("\t")
+            if len(cols) < 10:
+                continue
+            gene_id = cols[0].strip()
+            go_id = cols[5].strip()
+            if not gene_id or not go_id:
+                continue
+            rows.append(
+                (gene_id, go_id, cols[4].strip(), cols[7].strip(),
+                 cols[8].strip(), cols[9].strip())
+            )
+            count += 1
+            if len(rows) >= _BATCH:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO goslim_annotations VALUES (?, ?, ?, ?, ?, ?)",
+                    rows,
+                )
+                rows.clear()
+
+    if rows:
+        conn.executemany(
+            "INSERT OR IGNORE INTO goslim_annotations VALUES (?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    _log(f"  goslim_annotations: {count}")
     conn.commit()
 
 
@@ -943,6 +1070,7 @@ _PARSERS: dict[str, Any] = {
     "kegg_gene": _parse_kegg_gene,
     "gaf": _parse_gaf,
     "obo": _parse_obo,
+    "goslim": _parse_goslim,
     "kegg_ko": _parse_kegg_ko,
     "kegg_pathway": _parse_kegg_pathway,
     "kegg_pathway_name": _parse_kegg_pathway_name,

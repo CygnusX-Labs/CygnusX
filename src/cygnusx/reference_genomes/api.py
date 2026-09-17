@@ -124,18 +124,19 @@ def get_gene_detail(
 
 @router.get(
     "/versions/{version_id}/genes/{gene_id}/sequence",
-    summary="基因序列（genomic / cds / protein；json / fasta）",
+    summary="基因序列（genomic / cds / protein / promoter；json / fasta）",
 )
 def get_gene_sequence(
     version_id: str,
     gene_id: str,
     _user: CurrentUserId,
-    type: str = Query(default="genomic", pattern="^(genomic|cds|protein)$"),
+    type: str = Query(default="genomic", pattern="^(genomic|cds|protein|promoter)$"),
     format: str = Query(default="json", pattern="^(json|fasta)$"),
+    upstream: int = Query(default=2000, ge=100, le=100000),
 ) -> SequenceDTO:
     # format=fasta 时返回 PlainTextResponse（FastAPI 对 Response 实例直接透传，
     # 不走 response_model 序列化）；json 时返回 SequenceDTO（camelCase alias 输出）
-    result = service.get_gene_sequence(version_id, gene_id, type, format)
+    result = service.get_gene_sequence(version_id, gene_id, type, format, upstream)
     if isinstance(result, str):
         return PlainTextResponse(content=result, media_type="text/plain")
     return result

@@ -8,6 +8,7 @@
 | `cygnusx_design.md` | 项目级模块设计与接入指南，规定平台功能、分析流程、AI/Agent、异步任务及外部服务集成的分层与契约基线。 |
 | `cygnusx_studio.md` | OmicStudio AI 分析工作台的实施进度与交接文档，记录沙盒、Agent、API、前端、验证状态、运维注意事项和待办事项。 |
 | `fontend.md` | 前端视觉与交互规范，涵盖设计令牌、页面层级、组件状态、动效、响应式设计和可访问性要求。 |
+| `database_architecture.md` | 数据库基础设施模块架构基线：连接管理、模型注册契约、仓储两级分层、迁移与 schema 零漂移治理、管理端数据库健康页。 |
 | `plan_ai.md` | 多智能体编排、共享工作区与 A2A 架构实施方案，说明目标架构、状态管理、数据模型、事件协议和落地路径。 |
 | `agent_architecture_and_extension_guide.md` | 当前 Agent 运行架构、P1–P3 实施状态、灰度条件，以及修改提示词和新增内置/MCP 工具的操作指南。 |
 | `agent_framework_final_baseline.md` | 2026-07-26 最终 AI 助手基线：Agent 装配、提示词与工具契约、路由、Studio、Handoff、MAS 边界及发布验收清单。 |

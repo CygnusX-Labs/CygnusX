@@ -1611,6 +1611,7 @@ function handleEdit() {
 .kimi-message-item.assistant .message-content.ai-card {
   position: relative;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   padding: 16px 20px;
   background: var(--chat-ai-card, #ffffff);
@@ -1794,7 +1795,7 @@ function handleEdit() {
 .kimi-message-item.assistant :deep(.markdown-body table),
 .kimi-message-item.assistant :deep(.markdown-body pre) {
   overflow-x: auto;
-  min-width: 320px;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -2192,6 +2193,9 @@ function handleEdit() {
   flex-direction: column;
   gap: 12px;
   margin-top: 12px;
+}
+.timeline-tool-entry {
+  min-width: 0;
 }
 .timeline-tool-entry + .timeline-tool-entry {
   margin-top: 10px;

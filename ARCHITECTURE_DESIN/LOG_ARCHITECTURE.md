@@ -3,7 +3,7 @@
 > 本文档描述 CygnusX 平台统一日志架构。新增或修改日志相关功能时，请对照本架构保持目录、格式、挂载方式和容量保护策略一致。
 >
 > 关联文档：
-> - `docs/26.7.7/cygnusx_log_unification_plan.md`（改造计划）
+> - `docs/update_info/26.7.7/omichub_log_unification_plan.md`（改造计划）
 > - `README.md`「日志排查」章节（日常运维速查）
 
 ---
@@ -59,10 +59,12 @@
 | --- | --- | --- |
 | `SERVICE_NAME` | `app` | 服务标识，如 `web` / `beat` / `worker` |
 | `CYGNUSX_LOG_LEVEL` | `INFO`，开发环境未显式设置时为 `DEBUG` | 控制 stdout 日志级别 |
-| `CYGNUSX_LOG_DIR` | `/app/logs` | 应用日志根目录，Docker 中挂载到 `/data/cygnusx/logs/app` |
+| `CYGNUSX_LOG_DIR` | `/app/logs` | 应用日志根目录，Docker 中挂载到 `/data/cygnusx/logs/app`；目录不可写时依次回退 `./logs` 和 `/tmp/cygnusx/logs`（`core/logging.py` `_resolve_log_dir`） |
 | `CYGNUSX_LOG_ROTATION` | `50 MB` | 应用日志单文件轮转阈值 |
 | `CYGNUSX_LOG_RETENTION` | `30 days` | 应用日志保留期 |
 | `CYGNUSX_LOG_COMPRESSION` | `zip` | 轮转后压缩格式 |
+
+- **Log↔Trace 关联**：`core/logging.py` 的 `_telemetry_patch` 向每条日志注入 `trace_id`、`span_id`（取自当前 OpenTelemetry span）、`request_id`、`session_id`（取自 trace_context 的 ContextVar）；遥测缺失时仅写入空值，不影响日志本身。
 
 - **Sink**：
   1. `sys.stdout`：带颜色可读格式，便于开发和容器日志查看。
@@ -160,12 +162,14 @@ jq 'select(.record.extra.service == "audit")' /data/cygnusx/logs/app/cygnusx.jso
 
 ### 4.1 挂载矩阵
 
+> 下表宿主机路径为默认值示意：主栈 `deploy/docker/docker-compose.yml` 中实际为 `${CYGNUSX_DATA_ROOT:-/data/cygnusx}`，独立 worker 栈 `deploy/docker/docker-compose.worker.yml` 中实际为 `${WORKER_SHARED_DATA_DIR}`（由 `scripts/worker-compose.sh` 从 `data/worker_config.yaml` 加载）。
+
 | 服务 | 容器内路径 | 宿主机路径 | 用途 |
 | --- | --- | --- | --- |
 | web | `/app/logs` | `/data/cygnusx/logs/app` | 应用日志 |
 | beat | `/app/logs` | `/data/cygnusx/logs/app` | 应用日志 |
 | worker | `/app/logs` | `/data/cygnusx/logs/app` | Worker 应用日志 |
-| worker | `/data/cygnusx/logs/celery/tasks` | `/data/cygnusx/logs/celery/tasks` | Celery 单任务日志 |
+| worker | 整个共享盘挂载到 `${STORAGE_PATH:-/data/cygnusx}` | `/data/cygnusx`（共享盘根） | Celery 单任务日志（非独立 bind mount，由容器内 env `CYGNUSX_CELERY_LOG_DIR=${STORAGE_PATH:-/data/cygnusx}/logs/celery/tasks` 指向共享盘子目录间接实现） |
 | worker | `/logs` | `/data/cygnusx/logs/snakemake` | Snakemake 流程日志 |
 | nginx | `/var/log/nginx` | `/data/cygnusx/logs/nginx` | 访问/错误日志 |
 
@@ -225,7 +229,7 @@ Grafana 查询示例：
 
 | 现象 | 排查路径 |
 | --- | --- |
-| `/data/cygnusx/logs/app` 无应用日志 | 检查 `CYGNUSX_LOG_DIR=/app/logs`、目录权限、`/data/cygnusx/logs/app:/app/logs` 挂载 |
+| `/data/cygnusx/logs/app` 无应用日志 | 检查 `CYGNUSX_LOG_DIR=/app/logs`、目录权限、`/data/cygnusx/logs/app:/app/logs` 挂载；注意目录不可写时日志会依次回退到 `./logs` 和 `/tmp/cygnusx/logs`（见 stdout 中的实际落盘路径） |
 | Worker/Beat 日志没有进入 `cygnusx.log` | 检查 `src/cygnusx/infrastructure/celery_app/celery.py` 是否调用 `setup_logging()`，以及 `SERVICE_NAME` 是否设置 |
 | Celery 单任务文件不存在 | 检查 `task_cls=LoggedTask`、`CYGNUSX_CELERY_LOG_DIR`、`/data/cygnusx/logs/celery/tasks` 权限 |
 | Docker daemon 日志过大 | 检查 compose 服务是否带 `logging: *default-logging` |
@@ -263,7 +267,7 @@ Grafana 查询示例：
 
 - `tool_configs/terminal/terminal_config.yaml` 仍作为资源配置源，后端配置加载器按 mtime 热重载，无需重启服务。
 - `GET /api/v1/terminal/config` 新增运行时配置接口，向前端返回 `enabled`、`default_resources` 和 `max_resources`。
-- `frontend/src/stores/terminal.ts` 不再硬编码 4GB / 4 核上限，镜像列表和运行时配置会一起加载，资源滑块最大值跟随 `terminal_config.yaml` 的 `max_resources`。
+- `frontend/src/stores/terminal.ts` 的滑块上限跟随 `terminal_config.yaml` 的 `max_resources`（经 `GET /api/v1/terminal/config` 下发），镜像列表和运行时配置会一起加载；`DEFAULT_MAX_MEMORY_MB=4096` / `DEFAULT_MAX_CPU_CORES=4.0` 仍保留，仅作为运行时配置缺失时的兜底默认值。
 - `frontend/src/components/terminal/ResourceSettings.vue` 使用自适应刻度，避免 16GB/32GB 这类大内存上限导致滑块刻度拥挤。
 - `src/cygnusx/infrastructure/terminal/docker_manager.py` 在创建容器前按 `max_resources` 夹紧 memory、CPU、pids 和 tmpfs，保证绕过前端的请求也不会突破 YAML 硬上限。
 
@@ -272,7 +276,7 @@ Grafana 查询示例：
 - `frontend/src/mock/referenceGenomes.ts` 按 PRD 将原「单一 Genome 列表」升级为 `SpeciesDatabase -> GenomeVersion -> DataFiles` 模型，覆盖 FASTA、GFF、GO、KEGG 四类数据文件，并保留 `MOCK_GENOMES` 等兼容导出，避免旧页面一次性断裂。
 - 新模型增加基因中心视图所需的 `Gene`、`Transcript`、`GOAnnotation`、`KEGGAnnotation`、`GeneVersionMapping` 结构，支持基因检索、注释查看和跨版本 ID 映射。
 - `frontend/src/views/ReferenceGenomesView.vue` 改为数据库列表页，展示物种、版本、数据文件构建状态和汇总指标；`frontend/src/views/ReferenceGenomeDetailView.vue` 改为版本详情页，提供概览、基因、功能注释、版本映射、数据文件等标签页。
-- 当前实现仍是前端静态 mock 数据 + JBrowse YAML 配置扩展，尚未新增独立 `/api/database/*` REST 服务；后续如落库，可用同一类型结构迁移到后端接口。
+- 后续已落地为独立后端模块：新增 `src/cygnusx/reference_genomes/api.py`，在 `src/cygnusx/api/v1/router.py` 挂载到 `/api/v1/reference-genomes`（物种/版本/基因搜索/序列/GO/KEGG/统一搜索）；前端 `frontend/src/api/referenceGenomes.ts` 对接真实接口，`ReferenceGenomesView.vue` / `ReferenceGenomeDetailView.vue` 已改用真实 API，不再依赖前端静态 mock 数据。
 
 ### 9.4 前端入口与路由兼容
 
@@ -295,4 +299,4 @@ Grafana 查询示例：
 - `cygnusxtools refdb build` 用于从 FA、GFF、GO、KO、KEGG 原始文件生成 `database.sqlite`、FASTA `.fai`、`database_manifest.json`、`jbrowse_assembly_snippet.yaml` 和 `build_report.json`。
 - 该命令不挂接 Web API、Celery Worker 或前端操作，管理员应在独立计算节点、登录终端或维护窗口手动运行，避免大文件解析和索引构建给平台服务造成压力。
 - 平台侧只注册生成好的 `path`、`index_path`、`db_path` 和 `build_status=ready`，通过 `tool_configs/jbrowse/jbrowse_config.yaml` 读取现成资产；当前不在平台内执行 FA/GFF/KO/KEGG 转换。
-- `scripts/README.md` 记录 cygnusxtools 的安装方式、目录结构、扩展规范；`docs/offline_reference_database_build.md` 记录输入格式、构建命令、SQLite 表结构、注册步骤和排查清单。
+- `scripts/README.md` 记录 cygnusxtools 的安装方式、目录结构、扩展规范；`docs/update_info/26.6/offline_reference_database_build.md` 记录输入格式、构建命令、SQLite 表结构、注册步骤和排查清单。

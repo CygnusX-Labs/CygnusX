@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NIcon, NModal } from 'naive-ui'
 import {
   AddOutline,
-  DocumentTextOutline,
   DownloadOutline,
   PrintOutline,
   RefreshOutline,
@@ -281,6 +280,11 @@ const mediaPreviewSrc = computed(() => {
   return mediaPreviewKind.value === 'pdf' ? `${url}#toolbar=0&navpanes=0` : url
 })
 
+// 卡片内嵌 PDF 预览：同样隐藏浏览器自带工具栏，仅保留首页视图
+function pdfInlineSrc(url: string): string {
+  return `${url}#toolbar=0&navpanes=0&view=FitH&page=1`
+}
+
 function openMediaPreview(artifact: ArtifactItem) {
   if (!previewUrls.value[artifact.path]) return
   mediaPreviewKind.value = isImageArtifact(artifact.path) ? 'image' : 'pdf'
@@ -379,6 +383,7 @@ onBeforeUnmount(clearPreviews)
             />
             <span class="message-artifacts__zoom-hint" aria-hidden="true">点击放大</span>
           </button>
+          <!-- PDF：卡片内直接内嵌预览（blob URL 走浏览器原生 PDF 查看器），点击放大仍可用 -->
           <button
             v-else-if="isPdfArtifact(artifact.path) && previewUrls[artifact.path]"
             type="button"
@@ -386,8 +391,14 @@ onBeforeUnmount(clearPreviews)
             :aria-label="`放大预览 ${fileName(artifact.path)}`"
             @click="openMediaPreview(artifact)"
           >
-            <NIcon :size="36" aria-hidden="true"><DocumentTextOutline /></NIcon>
-            <span>PDF 文档 · 点击放大预览</span>
+            <iframe
+              class="message-artifacts__pdf-inline"
+              :src="pdfInlineSrc(previewUrls[artifact.path])"
+              :title="`${fileName(artifact.path)} PDF 预览`"
+              tabindex="-1"
+              aria-hidden="true"
+            />
+            <span class="message-artifacts__zoom-hint" aria-hidden="true">点击放大</span>
           </button>
           <span v-else class="message-artifacts__fallback" aria-live="polite">
             {{ unavailablePreviews.has(artifact.path) ? '暂时无法预览，可直接下载文件' : '正在加载预览…' }}
@@ -637,23 +648,36 @@ onBeforeUnmount(clearPreviews)
 }
 
 .message-artifacts__zoom-trigger:hover .message-artifacts__zoom-hint,
-.message-artifacts__zoom-trigger:focus-visible .message-artifacts__zoom-hint {
+.message-artifacts__zoom-trigger:focus-visible .message-artifacts__zoom-hint,
+.message-artifacts__pdf-trigger:hover .message-artifacts__zoom-hint,
+.message-artifacts__pdf-trigger:focus-visible .message-artifacts__zoom-hint {
   opacity: 1;
 }
 
 .message-artifacts__pdf-trigger {
-  display: grid;
-  place-items: center;
-  gap: var(--space-sm, 8px);
+  position: relative;
+  display: block;
   width: 100%;
   min-height: 180px;
-  padding: var(--space-md, 12px);
+  padding: 0;
   color: var(--text-secondary);
   font: inherit;
   font-size: 13px;
   background: transparent;
   border: 0;
+  overflow: hidden;
   cursor: zoom-in;
+}
+
+/* 卡片内嵌 PDF 预览：绝对定位撑满卡片，pointer-events 关闭让点击穿透到放大按钮 */
+.message-artifacts__pdf-inline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg-secondary, var(--bg-card));
+  pointer-events: none;
 }
 
 .message-artifacts__pdf-trigger:hover {

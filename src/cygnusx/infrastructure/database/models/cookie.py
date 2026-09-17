@@ -136,8 +136,8 @@ class CookiePricingModel(Base, TimestampMixin):
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     flow_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     base_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
-    per_sample_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
-    per_comparison_cost: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    per_sample_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), default=Decimal("0"), nullable=True)
+    per_comparison_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), default=Decimal("0"), nullable=True)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     effective_from: Mapped[datetime] = mapped_column(

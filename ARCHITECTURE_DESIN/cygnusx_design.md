@@ -117,6 +117,7 @@ PostgreSQL / Redis / Celery / 文件存储 / Snakemake / Docker / 外部 API
 
 1. 在 `src/cygnusx/api/v1/` 新建模块路由，使用 `APIRouter()`；按资源命名，例如 `/api/v1/<resource>`。
 2. 在 `src/cygnusx/api/v1/router.py` 统一挂载路由、前缀和 tags；不要在应用入口散落注册。
+   - 例外：生信工具路由由 `register_tool_routers` 自动发现并挂载（`src/cygnusx/tools/__init__.py`，`router.py` 统一调用一次）；新增工具只需在 `src/cygnusx/tools/<工具名>/api.py` 声明 `router`/`prefix`/`tags`，无需改 `router.py`。
 3. 路由层只负责：参数解析、依赖注入、认证/权限调用、服务调用和 HTTP 状态码映射。
 4. 所有对外请求和响应都使用 Pydantic DTO；不要将 SQLAlchemy 模型、内部配置或异常对象直接返回。
 5. 列表接口统一明确分页、排序、筛选和空结果语义；写操作明确幂等性与冲突处理。
@@ -288,8 +289,8 @@ npm run build
 - `docs/modules/03_api_design.md`：API 风格与契约设计参考。
 - `docs/modules/05_frontend_architecture.md`：前端目录、状态和页面组织参考。
 - `tool_configs/tools_design.md`：生信工具页面、工具注册表、分组展示与图形绘制专项规范（含完整标准调色板）。
-- `docs/26.7.10/platform_workflow_monitor_template_architecture.md`：复杂跨层模块的完整设计样例。
-- `docs/26.7.11/Kimi_Agent_系统发育树工具架构/`：工具模块前后端拆分与实现样例。
+- `docs/update_info/26.7.10/platform_workflow_monitor_template_architecture.md`：复杂跨层模块的完整设计样例。
+- `docs/update_info/26.7.11/Kimi_Agent_系统发育树工具架构/`：工具模块前后端拆分与实现样例。
 - 本文 **附录 A（任务中心体验增强设计）**：在既有任务/工具/报告能力上做“展示补全 + 纯前端导出 + 结果入口按类型分流”的跨模块增强样例，演示如何复用既有契约与组件、用集中映射表达 flow_id 分类约定。
 
 > 新模块若需要突破本指南中的约定，必须在模块设计文档中说明原因、替代方案、兼容性影响和回滚策略。
@@ -317,11 +318,11 @@ npm run build
 
 | 关注点 | 决策 | 文件 |
 |---|---|---|
-| 用户名列 | 后端 `GET /tasks` 列表早已通过 `task_service._attach_usernames` 按 `user_id` 回填 `username`，前端 `Task` 类型与 `TaskTable` 用户列渲染（`username \|\| user_id`）均已具备，仅由 `showUser` prop 控制且默认关闭。**只在前端开启**，零后端改动。 | `views/TasksView.vue`（传 `show-user`） |
+| 用户名列 | 后端 `GET /tasks` 列表通过 `task_service._attach_user_display_info` 按 `user_id` 回填 `username` 与 `nickname`（`TaskResponse` 已含两个字段），前端 `Task` 类型与 `TaskTable` 用户列渲染（`nickname \|\| username \|\| user_id`）均已具备，仅由 `showUser` prop 控制且默认关闭。**只在前端开启**，零后端改动。 | `views/TasksView.vue`（传 `show-user`） |
 | 导出 Excel | 纯前端生成、即时下载；列与状态/流程标签与表格**同口径**；导出对象为**当前筛选视图**。新增依赖 `xlsx`（原仅有 `papaparse`，只能出 CSV，不满足 `.xlsx` 诉求）。转换逻辑放 `utils` 纯函数（§5.1）。 | `utils/taskExport.ts`、`views/TasksView.vue`、`package.json` |
 | 工具箱结果分流 | 用**集中映射**表达 `flow_id` 分类：分析流程 → 报告页；工具箱 → 工具页 + `?taskId=` 深链。两项目前会进任务中心的工具箱工具（`kegg-enrichment`、`deg-analysis`；BLAST 走独立 `BlastTaskModel`、不进任务中心）原本**不支持**深链，需在视图补读 query 并复用既有「打开结果」路径，避免重写渲染。 | `utils/toolboxResultRoute.ts`、`components/task/TaskTable.vue`、`views/BioTools/KeggEnrichmentView.vue`、`views/BioTools/DegAnalysisView.vue` |
 
-**契约对齐（§1.2）**：`TaskResponse.username` / 前端 `Task.username?` 已存在并被列表接口回填，前端只做展示开关，不新增隐式字段。
+**契约对齐（§1.2）**：`TaskResponse.username` / `TaskResponse.nickname` 与前端 `Task.username?` / `Task.nickname?` 已存在并被列表接口回填，前端只做展示开关，不新增隐式字段。
 
 **纯函数与标签一致（§2.2 / §5.1）**：`taskExport.ts` 内状态/流程标签映射与 `TaskTable` 保持一致，
 进度按表格同口径归一化（兼容后端 `0–100` 与 `0–1` 混用，规避历史「1000%」问题），时间格式化为

@@ -4,7 +4,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,18 +14,20 @@ from cygnusx.infrastructure.database.base import Base, TimestampMixin
 
 class MASPlanModel(Base, TimestampMixin):
     __tablename__ = "mas_plans"
+    __table_args__ = (UniqueConstraint("plan_hash", name="mas_plans_plan_hash_key"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     schema_version: Mapped[str] = mapped_column(String(32), default="1.0", nullable=False)
-    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
 
 
 class MASRunModel(Base, TimestampMixin):
     __tablename__ = "mas_runs"
+    __table_args__ = (UniqueConstraint("plan_id", name="mas_runs_plan_id_key"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -38,10 +41,10 @@ class MASRunModel(Base, TimestampMixin):
         UUID(as_uuid=True), nullable=True, index=True
     )
     plan_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, unique=True, index=True
+        UUID(as_uuid=True), nullable=False
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", index=True)
-    context_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    context_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -60,11 +63,11 @@ class MASNodeModel(Base, TimestampMixin):
     node_key: Mapped[str] = mapped_column(String(64), nullable=False)
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
     intent: Mapped[str] = mapped_column(String(256), nullable=False)
-    depends_on: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    input_contract: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    output_contract: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    resources: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    depends_on: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    input_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    output_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    resources: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
@@ -94,11 +97,11 @@ class MASArtifactModel(Base, TimestampMixin):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     workspace_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     media_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     schema_version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0")
-    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="run")
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="registered", index=True)
     storage_class: Mapped[str] = mapped_column(String(32), nullable=False, default="run_local")
@@ -112,7 +115,7 @@ class MASArtifactModel(Base, TimestampMixin):
 
 class MASA2AEventModel(Base):
     __tablename__ = "mas_a2a_events"
-    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_mas_a2a_events_dedupe_key"),)
+    __table_args__ = (UniqueConstraint("dedupe_key", name="mas_a2a_events_dedupe_key_key"),)
 
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -125,7 +128,7 @@ class MASA2AEventModel(Base):
     )
     node_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(
@@ -149,8 +152,8 @@ class MASApprovalModel(Base, TimestampMixin):
     node_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    options: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
-    response: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    options: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
