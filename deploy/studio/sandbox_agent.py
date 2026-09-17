@@ -9,6 +9,7 @@
   （数据不搬家：用户数据以只读软链进沙盒）；直接拼 /data/platform 绝对路径
   仍被拒绝，只允许经工作区内软链跳转；
 - /exec 强制超时强杀；stdout/stderr 流内最多回传 10KB，溢出落 /workspace/.logs/ 文件；
+  全量运行日志（命令、逐行输出、退出码、耗时）落 /workspace/output/logs/ 工作区规范目录；
   plotly 图表经 %%PLOTLY%% 标记行走独立事件通道（单图 JSON ≤3MB），不占流内配额；
 - 沙盒内没有任何平台密钥，网络隔离由容器层保证（本服务不做鉴权，
   宿主侧保证仅宿主可达容器 IP，公网出站白名单为 P2 项）。
@@ -31,6 +32,7 @@ import termios
 import time
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -422,6 +424,57 @@ async def _stream_exec(req: ExecRequest):
     script_path = logs_dir / f"exec-{exec_id}{suffix}"
     script_path.write_text(req.code, encoding="utf-8")
 
+    # 全量运行日志落盘到工作区规范目录 output/logs/（与流内 10KB 截断、.logs 溢出机制无关）：
+    # 记录命令、逐行输出（带通道标记）、退出码与耗时，供用户在文件树中随时查阅。
+    run_logs_dir = WORKSPACE_ROOT / OUTPUT_DIR / "logs"
+    run_logs_dir.mkdir(parents=True, exist_ok=True)
+    run_log_path = run_logs_dir / f"exec-{exec_id}.log"
+    # 保留本次实际执行的脚本副本，便于复现（.logs 下的临时脚本跑完即删）
+    run_script_copy = run_logs_dir / f"exec-{exec_id}{suffix}"
+    with contextlib.suppress(OSError):
+        run_script_copy.write_text(req.code, encoding="utf-8")
+    run_log_lock = asyncio.Lock()
+    run_log = open(  # noqa: ASYNC230,SIM115 - 同溢出文件，随执行流保持打开
+        run_log_path, "wb"
+    )
+    run_footer_written = False
+    run_log.write(
+        (
+            "===== cygnusx sandbox exec =====\n"
+            f"exec_id: {exec_id}\n"
+            f"language: {language}\n"
+            f"command: {runner} {script_path}\n"
+            f"started_at: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"
+            "----------------------------------------\n"
+        ).encode("utf-8")
+    )
+    run_log.flush()
+
+    async def _write_run_log(channel: str, data: bytes) -> None:
+        """运行日志按行写入（_pump 里每次调用都是完整一行），带通道标记。"""
+        async with run_log_lock:
+            run_log.write(f"[{channel}] ".encode("utf-8") + data)
+            run_log.flush()
+
+    async def _write_run_footer(
+        code: int, duration_ms: int, was_timeout: bool, note: str | None = None
+    ) -> None:
+        nonlocal run_footer_written
+        if run_footer_written:
+            return
+        run_footer_written = True
+        lines = ["----------------------------------------"]
+        if note:
+            lines.append(f"note: {note}")
+        lines.append(f"exit_code: {code}")
+        lines.append(f"duration_ms: {duration_ms}")
+        if was_timeout:
+            lines.append("timed_out: true")
+        lines.append("")
+        async with run_log_lock:
+            run_log.write("\n".join(lines).encode("utf-8"))
+            run_log.flush()
+
     def emit(event: dict[str, Any]) -> bytes:
         return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
 
@@ -452,6 +505,7 @@ async def _stream_exec(req: ExecRequest):
                 break
             if channel == "stdout" and line.startswith(PLOTLY_PREFIX_BYTES):
                 raw = line[len(PLOTLY_PREFIX_BYTES) :].strip()
+                await _write_run_log(channel, "[plotly chart data omitted, see conversation preview]\n")
                 if len(raw) > PLOTLY_CAP_BYTES:
                     yield emit(
                         {
@@ -471,6 +525,7 @@ async def _stream_exec(req: ExecRequest):
                 continue
             budget = max(STREAM_CAP_BYTES - sent, 0)
             in_stream, overflow = line[:budget], line[budget:]
+            await _write_run_log(channel, line)
             if in_stream:
                 sent += len(in_stream)
                 streamed_prefix.extend(in_stream)
@@ -490,6 +545,8 @@ async def _stream_exec(req: ExecRequest):
         logs_dir / f"exec-{exec_id}.stderr.log", "wb"
     )
     timed_out = False
+    exit_code = -1
+    completed_normally = False
     tasks: list[asyncio.Task[None]] = []
     wait_task: asyncio.Task[int] | None = None
     try:
@@ -531,6 +588,7 @@ async def _stream_exec(req: ExecRequest):
             exit_code = -1
         else:
             exit_code = await wait_task
+        completed_normally = True
     finally:
         # StreamingResponse 在客户端断开时会关闭生成器。此时必须终止进程组，
         # 否则长任务及其派生子进程会在没有消费者的情况下继续占用沙盒资源。
@@ -546,6 +604,15 @@ async def _stream_exec(req: ExecRequest):
             await asyncio.wait({wait_task}, timeout=1)
         overflow_out.close()
         overflow_err.close()
+        # 运行日志收尾：正常完成不带 note；客户端断连等异常路径在此兜底
+        with contextlib.suppress(Exception):
+            await _write_run_footer(
+                exit_code,
+                int((time.monotonic() - started) * 1000),
+                timed_out,
+                note=None if completed_normally else "execution did not complete normally (client disconnect or error)",
+            )
+        run_log.close()
         # 空溢出日志不留存，减少噪音
         for f in logs_dir.glob(f"exec-{exec_id}.*.log"):
             with contextlib.suppress(OSError):
@@ -561,6 +628,7 @@ async def _stream_exec(req: ExecRequest):
         "exit_code": exit_code,
         "duration_ms": duration_ms,
         "artifacts": artifacts,
+        "run_log": _relative(run_log_path),
     }
     if timed_out:
         result["timed_out"] = True
