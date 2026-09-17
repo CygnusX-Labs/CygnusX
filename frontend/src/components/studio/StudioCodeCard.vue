@@ -529,6 +529,10 @@ onUnmounted(() => {
   margin-left: auto;
 }
 .diff-html {
+  /* diff2html 的 .d2h-code-linenumber 是 position:absolute 且自身无定位父级，
+     不设 relative 时会逃逸出 overflow 裁剪（上游虚拟列表项的 transform 会成为
+     包含块），导致行号列溢出卡片覆盖下方内容 */
+  position: relative;
   max-height: 360px;
   overflow: auto;
   font-size: 12px;

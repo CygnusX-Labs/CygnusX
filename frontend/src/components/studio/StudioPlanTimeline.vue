@@ -64,8 +64,9 @@ function statusLabel(status: StudioPlanStep['status']) {
 <style scoped>
 .plan-timeline {
   box-sizing: border-box;
-  width: calc(100% - 40px);
-  margin: 0 20px 8px;
+  width: 100%;
+  max-width: var(--chat-content-max-width, 860px);
+  margin: 0 auto 8px;
   overflow: hidden;
   border: 1px solid var(--chat-border, var(--neutral-border));
   border-radius: 12px;

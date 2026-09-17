@@ -826,7 +826,7 @@ function handleHistorySelect(session: { id: string }, messageId?: string) {
 }
 
 // ---------- 文件预览（按类型分流，未知二进制绝不按文本读取） ----------
-type PreviewKind = 'image' | 'table' | 'unsupported'
+type PreviewKind = 'image' | 'table' | 'html' | 'unsupported'
 const showFilePreview = ref(false)
 const previewPath = ref('')
 const previewLoading = ref(false)
@@ -847,7 +847,8 @@ function parseDelimited(content: string, delimiter: string) {
 
 async function handleSelectFile(path: string) {
   const ext = path.split('.').pop()?.toLowerCase() || ''
-  if (editableExtensions.has(ext)) {
+  // HTML 文件直接渲染预览（iframe），不进编辑器看源码；编辑可右键另行打开
+  if (ext !== 'html' && editableExtensions.has(ext)) {
     await openFileInEditor(path)
     return
   }
@@ -858,7 +859,10 @@ async function handleSelectFile(path: string) {
   previewRows.value = []
   showFilePreview.value = true
   try {
-    if (imageExtensions.has(ext)) {
+    if (ext === 'html') {
+      previewKind.value = 'html'
+      previewUrl.value = await studioApi.fetchWorkspaceBlob(sessionId.value, path)
+    } else if (imageExtensions.has(ext)) {
       previewKind.value = 'image'
       previewUrl.value = await studioApi.fetchWorkspaceBlob(sessionId.value, path)
     } else if (tableExtensions.has(ext)) {
@@ -1052,7 +1056,7 @@ function formatSessionTime(iso: string): string {
           <template #trigger>
             <n-button text @click="leftCollapsed = !leftCollapsed">
               <n-icon size="16">
-                <ChevronBackOutline v-if="!leftCollapsed" />
+                <ChevronBackOutline v-if="leftCollapsed" />
                 <ChevronForwardOutline v-else />
               </n-icon>
             </n-button>
@@ -1063,7 +1067,7 @@ function formatSessionTime(iso: string): string {
           <template #trigger>
             <n-button text @click="rightCollapsed = !rightCollapsed">
               <n-icon size="16">
-                <ChevronForwardOutline v-if="!rightCollapsed" />
+                <ChevronForwardOutline v-if="rightCollapsed" />
                 <ChevronBackOutline v-else />
               </n-icon>
             </n-button>
@@ -1327,6 +1331,14 @@ function formatSessionTime(iso: string): string {
       <div class="preview-wrap">
         <n-spin v-if="previewLoading" size="medium" />
         <img v-else-if="previewKind === 'image' && previewUrl" :src="previewUrl" :alt="previewPath" class="workspace-image-preview">
+        <iframe
+          v-else-if="previewKind === 'html' && previewUrl"
+          :src="previewUrl"
+          :title="previewPath"
+          sandbox="allow-scripts"
+          referrerpolicy="no-referrer"
+          class="workspace-html-preview"
+        />
         <div v-else-if="previewKind === 'table'" class="workspace-table-wrap">
           <table><thead><tr><th v-for="(header, index) in previewHeaders" :key="index">{{ header }}</th></tr></thead><tbody><tr v-for="(row, rowIndex) in previewRows" :key="rowIndex"><td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td></tr></tbody></table>
           <small>仅展示前 50 行</small>
@@ -1614,6 +1626,12 @@ function formatSessionTime(iso: string): string {
   padding: 12px 20px;
   border-top: 1px solid var(--chat-border);
 }
+/* 与上方消息列同宽居中（消息列受 --chat-content-max-width 约束） */
+.input-area > * {
+  max-width: var(--chat-content-max-width, 860px);
+  margin-left: auto;
+  margin-right: auto;
+}
 @keyframes task-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
 /* ---------- 右栏块 ---------- */
@@ -1772,7 +1790,7 @@ function formatSessionTime(iso: string): string {
 .chat-pane.drawer { position:absolute; right:16px; bottom:16px; z-index:8; width:min(460px,calc(100% - 32px)); height:min(70%,620px); border:1px solid var(--studio-border,#e8e8f2); border-radius:16px; background:rgba(255,255,255,.94); box-shadow:0 18px 50px rgba(43,43,61,.16); }.chat-fab { position:absolute; right:20px; bottom:20px; z-index:9; display:grid; place-items:center; width:44px; height:44px; border:0; border-radius:50%; color:#fff; background:var(--studio-primary,#6c5ce7); box-shadow:0 8px 22px rgba(108,92,231,.28); cursor:pointer; }.chat-fab.open { opacity:0; pointer-events:none; }.unread-dot { position:absolute; top:2px; right:2px; width:9px; height:9px; border:2px solid #fff; border-radius:50%; background:#e45470; }
 .col-left,.col-right { background:color-mix(in srgb, var(--studio-card) 82%, transparent); border-color:var(--studio-border,#e8e8f2); }.session-item:hover { background:var(--studio-primary-soft,#f0edff); }.session-item.active { position:relative; background:var(--studio-primary-soft,#f0edff); }.session-item.active::before { position:absolute; inset:7px auto 7px 0; width:3px; border-radius:0 2px 2px 0; background:var(--studio-primary); content:''; }.session-item.active .s-title { color:var(--studio-primary,#6c5ce7); }.resize-handle:hover { background:rgba(76,111,255,.26); }
 .plan-item.is-done { color:var(--studio-text-sub,#8a8aa3); background:rgba(108,92,231,.06); opacity:.78; }.plan-item.is-done .plan-title { text-decoration:line-through; text-decoration-thickness:1px; }.plan-item.is-done .plan-status { color:var(--studio-primary,#6c5ce7); font-weight:700; }.plan-item.is-in_progress { color:var(--studio-primary,#6c5ce7); background:var(--studio-primary-soft,#f0edff); }
-.workspace-image-preview { max-width:100%; max-height:70vh; object-fit:contain; border-radius:12px; box-shadow:0 12px 36px rgba(43,43,61,.12); }.workspace-table-wrap { width:100%; max-height:65vh; overflow:auto; }.workspace-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }.workspace-table-wrap th,.workspace-table-wrap td { padding:7px 9px; border-bottom:1px solid var(--studio-border,#e8e8f2); text-align:left; white-space:nowrap; }.workspace-table-wrap th { position:sticky; top:0; background:var(--studio-primary-soft,#f0edff); }.workspace-table-wrap small { display:block; margin-top:8px; color:var(--studio-text-sub,#8a8aa3); }.unsupported-preview { display:grid; justify-items:center; gap:8px; padding:46px 20px; text-align:center; }.unsupported-preview h3 { margin:0; }.unsupported-preview p { max-width:460px; margin:0 0 10px; color:var(--studio-text-sub,#8a8aa3); font-size:12px; }.unsupported-icon { color:var(--studio-primary,#6c5ce7); font-size:42px; }
+.workspace-image-preview { max-width:100%; max-height:70vh; object-fit:contain; border-radius:12px; box-shadow:0 12px 36px rgba(43,43,61,.12); }.workspace-html-preview { width:100%; height:65vh; border:1px solid var(--studio-border,#e8e8f2); border-radius:12px; background:#fff; }.workspace-table-wrap { width:100%; max-height:65vh; overflow:auto; }.workspace-table-wrap table { width:100%; border-collapse:collapse; font-size:12px; }.workspace-table-wrap th,.workspace-table-wrap td { padding:7px 9px; border-bottom:1px solid var(--studio-border,#e8e8f2); text-align:left; white-space:nowrap; }.workspace-table-wrap th { position:sticky; top:0; background:var(--studio-primary-soft,#f0edff); }.workspace-table-wrap small { display:block; margin-top:8px; color:var(--studio-text-sub,#8a8aa3); }.unsupported-preview { display:grid; justify-items:center; gap:8px; padding:46px 20px; text-align:center; }.unsupported-preview h3 { margin:0; }.unsupported-preview p { max-width:460px; margin:0 0 10px; color:var(--studio-text-sub,#8a8aa3); font-size:12px; }.unsupported-icon { color:var(--studio-primary,#6c5ce7); font-size:42px; }
 @media (prefers-reduced-motion: reduce) { .studio-modebar button,.node-caret { transition:none !important; }.task-status-light.is-running { animation:none; } }
 
 .accordion-header { width:100%; border:0; background:transparent; text-align:left; cursor:pointer; }.accordion-header:hover { background:var(--studio-primary-soft,#f0edff); }.accordion-chevron { margin-left:auto; color:var(--studio-text-sub,#8a8aa3); transition:transform .18s ease; }.accordion-chevron.open { transform:rotate(180deg); }

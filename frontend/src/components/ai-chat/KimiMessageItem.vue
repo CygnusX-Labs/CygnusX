@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import DOMPurify from 'dompurify'
 import { NButton, NIcon, NTag, NDataTable, useMessage } from 'naive-ui'
 import {
@@ -205,6 +205,7 @@ async function renderPlotlyCharts() {
   try {
     const Plotly = await import('plotly.js-dist-min')
     await nextTick()
+    ensurePlotlyResizeObserver()
     for (const chart of plotlyCharts.value) {
       const el = plotlyContainers.value[chart.id]
       if (!el) continue
@@ -233,6 +234,46 @@ async function renderPlotlyCharts() {
     plotlyRenderError.value = `Plotly 加载失败: ${e instanceof Error ? e.message : String(e)}`
   }
 }
+
+// 历史消息刷新 / 虚拟列表项重挂后，容器尺寸可能变化（或 newPlot 时容器尚不可见），
+// 通过 ResizeObserver 触发 Plotly.Plots.resize 补绘
+const chartResultsRef = ref<HTMLElement | null>(null)
+let plotlyResizeObserver: ResizeObserver | null = null
+let plotlyResizeRaf: number | null = null
+
+async function resizePlotlyCharts() {
+  try {
+    const Plotly = await import('plotly.js-dist-min')
+    for (const el of Object.values(plotlyContainers.value)) {
+      if (el && (el as unknown as { data?: unknown }).data) {
+        Plotly.Plots.resize(el)
+      }
+    }
+  } catch {
+    /* 忽略 resize 期间的加载失败 */
+  }
+}
+
+function ensurePlotlyResizeObserver() {
+  if (typeof ResizeObserver === 'undefined') return
+  const wrap = chartResultsRef.value
+  if (!wrap) return
+  if (!plotlyResizeObserver) {
+    plotlyResizeObserver = new ResizeObserver(() => {
+      if (plotlyResizeRaf !== null) cancelAnimationFrame(plotlyResizeRaf)
+      plotlyResizeRaf = requestAnimationFrame(() => {
+        plotlyResizeRaf = null
+        void resizePlotlyCharts()
+      })
+    })
+  }
+  plotlyResizeObserver.observe(wrap)
+}
+
+onMounted(() => {
+  // 刷新加载历史消息时数据在挂载前已就绪，watcher 不会触发，需主动渲染一次
+  void nextTick(renderPlotlyCharts)
+})
 
 watch(() => [props.message.toolCalls, props.message.charts], renderPlotlyCharts, { deep: true })
 watch(
@@ -712,6 +753,12 @@ onUnmounted(() => {
     cancelAnimationFrame(renderRafId)
     renderRafId = null
   }
+  if (plotlyResizeRaf !== null) {
+    cancelAnimationFrame(plotlyResizeRaf)
+    plotlyResizeRaf = null
+  }
+  plotlyResizeObserver?.disconnect()
+  plotlyResizeObserver = null
   if (copyBtnTimer) clearTimeout(copyBtnTimer)
   Object.values(attachmentPreviewUrls.value).forEach((url) => URL.revokeObjectURL(url))
 })
@@ -1187,7 +1234,7 @@ function handleEdit() {
           </template>
           <div v-else class="message-body markdown-body" v-html="renderedContent" @click="handleBodyClick" />
 
-          <div v-if="plotlyCharts.length" class="chart-results">
+          <div v-if="plotlyCharts.length" ref="chartResultsRef" class="chart-results">
             <div
               v-for="chart in plotlyCharts"
               :key="chart.id"
