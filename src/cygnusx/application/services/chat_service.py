@@ -3478,6 +3478,17 @@ class ChatService(
         ):
             tools.append(CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA)
         system_prompt = ctx.system_prompt or None
+        # 前端按浏览位置附加的页面上下文（如全局侧边栏）：让 Agent 知道用户当前所在页面
+        _page_context = (runtime_context or {}).get("page_context")
+        if _page_context:
+            from cygnusx.application.services.chat.configuration import (
+                build_page_context_prompt,
+            )
+
+            _page_prompt = build_page_context_prompt(str(_page_context))
+            system_prompt = (
+                f"{system_prompt}\n\n{_page_prompt}" if system_prompt else _page_prompt
+            )
         if route_prompt_suffix:
             system_prompt = (
                 f"{system_prompt}\n\n{route_prompt_suffix}"

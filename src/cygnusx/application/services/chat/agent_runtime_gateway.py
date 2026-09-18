@@ -48,6 +48,7 @@ class AgentRuntimeGateway:
         extend_max_rounds: bool = False,
         project_id: str | None = None,
         runtime_context: dict[str, Any] | None = None,
+        page_context: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Agent 编排入口（带 Trace/Log/Metrics 埋点）：作为 AI/MCP/技能 span 的父 span。"""
         tracer = get_tracer("cygnusx.chat")
@@ -72,6 +73,10 @@ class AgentRuntimeGateway:
         start = time.perf_counter()
         status = "success"
         try:
+            # 页面上下文经 runtime_context 透传给 Runtime，由系统提示词组装处统一注入
+            effective_runtime_context = dict(runtime_context or {})
+            if page_context:
+                effective_runtime_context["page_context"] = page_context
             request = ChatRuntimeRequest(
                 user_id=user_id,
                 agent_id=agent_id,
@@ -90,7 +95,7 @@ class AgentRuntimeGateway:
                 overdrive=overdrive,
                 extend_max_rounds=extend_max_rounds,
                 project_id=project_id,
-                runtime_context=runtime_context or {},
+                runtime_context=effective_runtime_context,
             )
             settings = get_settings()
             if settings.chat_runtime_refactor_enabled:
@@ -123,7 +128,7 @@ class AgentRuntimeGateway:
                     overdrive=overdrive,
                     extend_max_rounds=extend_max_rounds,
                     project_id=project_id,
-                    runtime_context=runtime_context,
+                    runtime_context=effective_runtime_context,
                 )
             async for chunk in stream:
                 if chunk.type == "error":

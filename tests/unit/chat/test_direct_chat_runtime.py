@@ -72,6 +72,7 @@ async def test_direct_runtime_maps_request_to_stream(monkeypatch: pytest.MonkeyP
         "max_tokens": 128,
         "enable_web_search": True,
         "project_id": "project-1",
+        "page_context": None,
     }
 
 

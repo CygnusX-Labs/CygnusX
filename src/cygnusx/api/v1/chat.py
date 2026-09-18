@@ -627,6 +627,7 @@ async def chat_stream(
                 multi_agent=request.multi_agent,
                 overdrive=request.overdrive,
                 extend_max_rounds=request.extend_max_rounds,
+                page_context=request.page_context,
             )
         else:
             if not request.model_id:
@@ -643,6 +644,7 @@ async def chat_stream(
                 max_tokens=request.max_tokens,
                 enable_web_search=request.enable_web_search,
                 project_id=request.project_id,
+                page_context=request.page_context,
             )
         try:
             async for chunk in _with_sse_heartbeat(gen):

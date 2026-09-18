@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 from cygnusx.application.services.chat.chat_router_service import ChatRouterService
 from cygnusx.application.services.chat.runtimes.base import ChatRuntimeRequest
@@ -25,7 +26,17 @@ class DirectChatEntrypoint:
         max_tokens: int | None = None,
         enable_web_search: bool = False,
         project_id: str | None = None,
+        page_context: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
+        runtime_context: dict[str, Any] = {
+            "runtime": "direct",
+            "assistant_id": assistant_id,
+            "system_prompt": system_prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if page_context:
+            runtime_context["page_context"] = page_context
         request = ChatRuntimeRequest(
             user_id=user_id,
             agent_id="direct-chat",
@@ -34,13 +45,7 @@ class DirectChatEntrypoint:
             session_id=session_id,
             enable_web_search=enable_web_search,
             project_id=project_id,
-            runtime_context={
-                "runtime": "direct",
-                "assistant_id": assistant_id,
-                "system_prompt": system_prompt,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
+            runtime_context=runtime_context,
         )
         async for chunk in ChatRouterService(self).stream(request):
             yield chunk

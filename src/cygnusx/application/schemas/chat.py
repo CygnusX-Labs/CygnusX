@@ -30,6 +30,12 @@ class ChatStreamRequest(BaseModel):
     session_id: str | None = Field(None, description="会话 ID，新建则传 null")
     assistant_id: str | None = Field(None, description="助手 ID")
     system_prompt: str | None = Field(None, description="自定义系统提示词")
+    page_context: str | None = Field(
+        None,
+        max_length=2000,
+        description="用户当前页面上下文（由前端按浏览位置附加，注入系统提示词，"
+        "如「页面名称：任务中心；访问路径：/tasks」）",
+    )
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = Field(True, description="是否流式返回")

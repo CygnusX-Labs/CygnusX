@@ -162,3 +162,87 @@ async def test_gateway_survives_cross_task_consumption(
         chunks.append(chunk)
 
     assert [chunk.type for chunk in chunks] == ["text", "done"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_threads_page_context_into_runtime_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """page_context 应合入 runtime_context，供 Runtime 注入系统提示词。"""
+    captured: dict[str, Any] = {}
+
+    class _Router:
+        def __init__(self, service: Any) -> None:
+            del service
+
+        async def stream(self, request: Any) -> AsyncIterator[ChatChunk]:
+            captured["request"] = request
+            yield ChatChunk(type="done")
+
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.ChatRouterService", _Router
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_settings",
+        lambda: SimpleNamespace(chat_runtime_refactor_enabled=True),
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_tracer",
+        lambda name: _Tracer(),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in _Gateway().stream_agent_chat(
+            user_id="user-1",
+            agent_id="agent-1",
+            messages=[{"role": "user", "content": "hello"}],
+            page_context="页面名称：首页；访问路径：/",
+            runtime_context={"existing": 1},
+        )
+    ]
+
+    assert [chunk.type for chunk in chunks] == ["done"]
+    assert captured["request"].runtime_context == {
+        "existing": 1,
+        "page_context": "页面名称：首页；访问路径：/",
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_threads_page_context_into_legacy_inner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """关闭 runtime 重构时，page_context 经 legacy inner 的 runtime_context 透传。"""
+    received: dict[str, Any] = {}
+
+    class _LegacyGateway(AgentRuntimeGateway):
+        async def _stream_agent_chat_inner(self, *args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+            received["kwargs"] = kwargs
+            yield ChatChunk(type="done")
+
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_settings",
+        lambda: SimpleNamespace(chat_runtime_refactor_enabled=False),
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway.get_tracer",
+        lambda name: _Tracer(),
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.chat.agent_runtime_gateway._legacy_runtime_entry_count",
+        _Counter(),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in _LegacyGateway().stream_agent_chat(
+            user_id="user-1",
+            agent_id="agent-1",
+            messages=[{"role": "user", "content": "hello"}],
+            page_context="页面名称：任务中心；访问路径：/tasks",
+        )
+    ]
+
+    assert [chunk.type for chunk in chunks] == ["done"]
+    assert received["kwargs"]["runtime_context"]["page_context"] == "页面名称：任务中心；访问路径：/tasks"

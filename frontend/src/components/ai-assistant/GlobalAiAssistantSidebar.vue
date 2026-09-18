@@ -8,7 +8,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { NButton, NIcon, NInput, NTooltip } from 'naive-ui'
+import { NButton, NIcon, NInput, NSelect, NTooltip } from 'naive-ui'
 import {
   AddOutline, AlertCircleOutline, CloseOutline, SendOutline, SparklesOutline, StopOutline,
 } from '@vicons/ionicons5'
@@ -71,6 +71,13 @@ function dismissHint() {
 const inputValue = ref('')
 const listEl = ref<HTMLElement | null>(null)
 
+const modelOptions = computed(() =>
+  store.models.map((m) => ({
+    value: m.id,
+    label: m.name === m.model ? m.name : `${m.name}（${m.model}）`,
+  })),
+)
+
 const suggestions = [
   'OmicHub 支持哪些生信分析流程？',
   '帮我解释当前页面的功能',
@@ -99,7 +106,7 @@ function onSend() {
   const text = inputValue.value
   if (!text.trim() || store.isStreaming) return
   inputValue.value = ''
-  void store.sendMessage(text)
+  void store.sendMessage(text, buildPageContext())
 }
 
 function onEnter(e: KeyboardEvent) {
@@ -109,8 +116,48 @@ function onEnter(e: KeyboardEvent) {
 }
 
 function quickSend(text: string) {
-  if (store.isStreaming) return
-  void store.sendMessage(text)
+  if (store.isStreaming || !store.modelId) return
+  void store.sendMessage(text, buildPageContext())
+}
+
+// ===== 当前页面上下文：随消息发给后端注入系统提示词，让 Agent 知道"当前页面"指哪里 =====
+function buildPageContext(): string {
+  const title = (route.meta?.title as string | undefined) || document.title || '未命名页面'
+  const parts = [`页面名称：${title}`, `访问路径：${route.fullPath}`]
+  const params = Object.entries(route.params).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '',
+  )
+  if (params.length) {
+    parts.push(`页面参数：${params.map(([key, value]) => `${key}=${value}`).join('，')}`)
+  }
+  return parts.join('；')
+}
+
+// ===== 知识库引用标记：[[citation:kb-xxx]] → 小徽章（sanitize 前注入 HTML） =====
+const CITATION_RE = /\[\[citation:([^\][\s]+)\]\]/g
+
+function citeTransform(html: string): string {
+  return html.replace(CITATION_RE, (_all, rawId: string) => {
+    // id 只允许字母数字与连字符，防止注入属性（DOMPurify 会再兜一层）
+    const id = String(rawId).replace(/[^A-Za-z0-9-]/g, '')
+    const label = id.replace(/^kb-/, '').slice(0, 6)
+    return `<span class="ai-cite" title="知识库来源：${id}">[${label}]</span>`
+  })
+}
+
+// ===== 错误展示：把后端透传的长 JSON 错误压成一行摘要 + 可折叠详情 =====
+function errorSummary(error: string): string {
+  const match = error.match(/^请求失败（模型: ([^)]+)）: (\{[\s\S]*\})$/)
+  if (match) {
+    try {
+      const payload = JSON.parse(match[2]) as { error?: { message?: string }; message?: string }
+      const message = payload?.error?.message || payload?.message
+      if (message) return `模型 ${match[1]} 请求失败：${message.slice(0, 140)}`
+    } catch {
+      // 非 JSON 详情，走通用截断
+    }
+  }
+  return error.length > 160 ? `${error.slice(0, 160)}…` : error
 }
 </script>
 
@@ -136,7 +183,7 @@ function quickSend(text: string) {
           aria-label="打开 AI 助手"
           @click="openSidebar"
         >
-          <NIcon :size="18"><SparklesOutline /></NIcon>
+          <NIcon :size="15" class="ai-dock-tab__icon"><SparklesOutline /></NIcon>
         </button>
       </template>
       AI 助手
@@ -149,7 +196,7 @@ function quickSend(text: string) {
           <span class="ai-sidebar__logo" aria-hidden="true"><NIcon :size="16"><SparklesOutline /></NIcon></span>
           <div class="ai-sidebar__title">
             <span class="ai-sidebar__name">AI 助手</span>
-            <span class="ai-sidebar__sub">随时提问，跨页面陪伴</span>
+            <span class="ai-sidebar__sub">通用助手 · 随时提问，跨页面陪伴</span>
           </div>
           <NTooltip trigger="hover">
             <template #trigger>
@@ -203,12 +250,21 @@ function quickSend(text: string) {
                     <summary>思考过程</summary>
                     <p>{{ m.reasoning }}</p>
                   </details>
-                  <MarkdownRenderer v-if="m.content" :content="m.content" />
+                  <MarkdownRenderer v-if="m.content" :content="m.content" :transform="citeTransform" />
                   <span v-else-if="m.status === 'streaming'" class="ai-msg__cursor">正在思考…</span>
-                  <span v-if="m.status === 'error'" class="ai-msg__error">
-                    <NIcon :size="14" aria-hidden="true"><AlertCircleOutline /></NIcon>
-                    {{ m.error || '生成失败，请重试' }}
-                  </span>
+                  <div v-if="m.status === 'error'" class="ai-msg__error">
+                    <span class="ai-msg__error-line">
+                      <NIcon :size="14" aria-hidden="true"><AlertCircleOutline /></NIcon>
+                      {{ errorSummary(m.error || '生成失败，请重试') }}
+                    </span>
+                    <details
+                      v-if="(m.error || '').length > errorSummary(m.error || '').length + 8"
+                      class="ai-msg__error-detail"
+                    >
+                      <summary>查看详情</summary>
+                      <pre>{{ m.error }}</pre>
+                    </details>
+                  </div>
                 </template>
               </div>
             </div>
@@ -217,13 +273,21 @@ function quickSend(text: string) {
 
         <footer class="ai-sidebar__footer">
           <div v-if="store.loadError" class="ai-sidebar__load-error">{{ store.loadError }}</div>
+          <div v-if="modelOptions.length > 1" class="ai-sidebar__model-row">
+            <NSelect
+              v-model:value="store.modelId"
+              :options="modelOptions"
+              size="tiny"
+              :disabled="store.isStreaming"
+              aria-label="选择模型"
+            />
+          </div>
           <div class="ai-sidebar__input-row">
             <NInput
               v-model:value="inputValue"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 6 }"
               placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-              :disabled="!store.modelsLoaded && !!store.loadError"
               @keydown="onEnter"
             />
             <NButton
@@ -242,7 +306,7 @@ function quickSend(text: string) {
               size="small"
               circle
               type="primary"
-              :disabled="!inputValue.trim()"
+              :disabled="!inputValue.trim() || !store.modelId"
               aria-label="发送"
               @click="onSend"
             >
@@ -257,20 +321,23 @@ function quickSend(text: string) {
 
 <style scoped>
 /* ===== 吸附右边缘的入口标签 =====
-   默认向屏幕外收回 10px 只露出边条，悬停/聚焦滑出（§1 空间一致：从右出、从右收）。 */
+   默认向屏幕外收回只露出窄边条，半透明降低存在感；悬停/聚焦滑出并恢复不透明。
+   （§1 空间一致：从右出、从右收；§6.3 减少动态下关闭俏皮动画） */
 .ai-dock-tab {
   position: fixed;
   right: 0;
   top: 50%;
   transform: translateY(-50%) translateX(10px);
-  width: 40px;
-  height: 72px;
+  width: 30px;
+  height: 56px;
   padding: 0;
   border: 1px solid var(--neutral-border);
   border-right: none;
-  border-radius: 12px 0 0 12px;
+  border-radius: 10px 0 0 10px;
   color: var(--arco-primary);
   background: var(--neutral-card);
+  background: color-mix(in srgb, var(--neutral-card) 55%, transparent);
+  opacity: 0.65;
   box-shadow: var(--shadow-card);
   display: flex;
   align-items: center;
@@ -278,23 +345,36 @@ function quickSend(text: string) {
   cursor: pointer;
   z-index: 1900;
   transition: transform var(--motion-standard) var(--motion-spring),
+    opacity var(--motion-quick) ease-out,
     box-shadow var(--motion-quick) ease-out,
-    color var(--motion-quick) ease-out;
+    background-color var(--motion-quick) ease-out;
 }
-.ai-dock-tab:hover {
+.ai-dock-tab:hover,
+.ai-dock-tab:focus-visible {
   transform: translateY(-50%) translateX(0);
+  opacity: 1;
+  background: var(--neutral-card);
   box-shadow: var(--shadow-card-hover);
 }
 .ai-dock-tab:focus-visible {
   outline: 2px solid var(--arco-primary);
   outline-offset: 3px;
-  transform: translateY(-50%) translateX(0);
+}
+/* 俏皮动画：悬停时星芒图标轻轻摇摆 */
+@keyframes ai-dock-wiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  30% { transform: rotate(-14deg) scale(1.18); }
+  65% { transform: rotate(10deg) scale(1.1); }
+}
+.ai-dock-tab:hover .ai-dock-tab__icon,
+.ai-dock-tab:focus-visible .ai-dock-tab__icon {
+  animation: ai-dock-wiggle 0.9s ease-in-out infinite;
 }
 
 /* ===== 首次提示气泡 ===== */
 .ai-hint {
   position: fixed;
-  right: 52px;
+  right: 42px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -372,7 +452,9 @@ function quickSend(text: string) {
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.85);
+  /* 玻璃浮层（§4.2.5 并行非阻塞面板），底色由令牌派生，不写死白色 */
+  background: var(--neutral-card);
+  background: color-mix(in srgb, var(--neutral-card) 88%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--neutral-border);
@@ -567,13 +649,117 @@ function quickSend(text: string) {
   50% { opacity: 1; }
 }
 
+/* ===== 消息内 Markdown 排版（§3.4：小正文 13px/20px，间距走 4/8/12 阶梯） ===== */
+/* 关键修复：气泡的 white-space: pre-wrap 会继承进 v-html，
+   markdown 块级元素之间的换行文本节点被渲染成额外空行（"段间大空白"的根因），
+   这里在 markdown 容器内还原为 normal。 */
+.ai-msg__bubble :deep(.md-body) {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+}
+.ai-msg__bubble :deep(.md-body > :first-child) {
+  margin-top: 0;
+}
+.ai-msg__bubble :deep(.md-body > :last-child) {
+  margin-bottom: 0;
+}
+.ai-msg__bubble :deep(.md-body p) {
+  margin: 8px 0;
+}
+.ai-msg__bubble :deep(.md-body h1) {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+.ai-msg__bubble :deep(.md-body h2) {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+.ai-msg__bubble :deep(.md-body h3) {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+.ai-msg__bubble :deep(.md-body h4),
+.ai-msg__bubble :deep(.md-body h5),
+.ai-msg__bubble :deep(.md-body h6) {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+.ai-msg__bubble :deep(.md-body ul),
+.ai-msg__bubble :deep(.md-body ol) {
+  margin: 8px 0;
+  padding-left: 1.2em;
+}
+.ai-msg__bubble :deep(.md-body blockquote) {
+  margin: 8px 0;
+}
+.ai-msg__bubble :deep(.md-body pre.hljs) {
+  margin: 8px 0;
+  padding: 10px 12px;
+}
+.ai-msg__bubble :deep(.md-body table) {
+  margin: 8px 0;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+.ai-msg__bubble :deep(.md-body th),
+.ai-msg__bubble :deep(.md-body td) {
+  padding: 5px 8px;
+}
+/* 知识库引用徽章：替代裸 [[citation:kb-xxx]] 文本 */
+.ai-msg__bubble :deep(.ai-cite) {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--arco-primary);
+  background: var(--arco-primary-light);
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: 0 1px;
+  white-space: nowrap;
+  cursor: help;
+  vertical-align: 1px;
+}
+
 .ai-msg__error {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   margin-top: 4px;
   font-size: 12px;
+  line-height: 18px;
   color: var(--arco-danger);
+}
+.ai-msg__error-line {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ai-msg__error-detail {
+  margin-top: 4px;
+}
+.ai-msg__error-detail summary {
+  cursor: pointer;
+  color: var(--neutral-text-3);
+}
+.ai-msg__error-detail pre {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--neutral-hover);
+  border-radius: 6px;
+  color: var(--neutral-text-2);
 }
 
 /* ===== 输入区 ===== */
@@ -586,6 +772,12 @@ function quickSend(text: string) {
   margin-bottom: 8px;
   font-size: 12px;
   color: var(--arco-danger);
+}
+.ai-sidebar__model-row {
+  margin-bottom: 8px;
+}
+.ai-sidebar__model-row :deep(.n-select) {
+  width: 100%;
 }
 .ai-sidebar__input-row {
   display: flex;
@@ -620,12 +812,17 @@ function quickSend(text: string) {
     animation: none;
     opacity: 1;
   }
+  .ai-dock-tab .ai-dock-tab__icon {
+    animation: none;
+  }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .ai-sidebar {
+  .ai-sidebar,
+  .ai-dock-tab {
     background: var(--neutral-card);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    opacity: 1;
   }
 }
 </style>

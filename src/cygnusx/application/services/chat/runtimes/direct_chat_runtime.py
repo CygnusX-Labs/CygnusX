@@ -59,6 +59,7 @@ class DirectChatRuntime(ChatRuntime):
             max_tokens=options.get("max_tokens"),
             enable_web_search=request.enable_web_search,
             project_id=request.project_id,
+            page_context=options.get("page_context"),
         ):
             yield chunk
 
@@ -74,12 +75,14 @@ class DirectChatRuntime(ChatRuntime):
         max_tokens: int | None = None,
         enable_web_search: bool = False,
         project_id: str | None = None,
+        page_context: str | None = None,
     ) -> AsyncIterator[ChatChunk]:
         from cygnusx.application.services.chat.configuration import (
             KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX,
             KNOWLEDGE_SEARCH_TOOL,
             RESEARCH_TOOL_CHANNEL,
             WEB_SEARCH_TOOL,
+            build_page_context_prompt,
         )
         from cygnusx.application.services.chat_service import (
             DEFAULT_SYSTEM_PROMPT,
@@ -158,6 +161,11 @@ class DirectChatRuntime(ChatRuntime):
         final_system_prompt = (
             f"{final_system_prompt}\n\n{USER_FACING_CHINESE_PROMPT_SUFFIX}"
         ).strip()
+        # 前端按浏览位置附加的页面上下文（如全局侧边栏）：让模型知道用户当前所在页面
+        if page_context:
+            final_system_prompt = (
+                f"{final_system_prompt}\n\n{build_page_context_prompt(page_context)}"
+            ).strip()
 
         # 4. 保存用户消息
         # 敏感信息脱敏：落库前清洗用户消息，DB 不留存原始品种名等敏感词；

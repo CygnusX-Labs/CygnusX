@@ -2,7 +2,8 @@
  * 全局 AI 助手侧边栏 Store
  *
  * 悬浮于全站（AI 助手 / AI 工作台 / 协作室页面除外）的快捷问答侧边栏，
- * 复用 /api/v1/chat/stream 直连聊天后端（与 /ai 页的 Model-first 模式同一链路）。
+ * 复用 /api/v1/chat/stream，走平台通用助手 Agent 链路（agent_id=agent-general，
+ * 与 /ai 页同一 Agent 调度中枢），模型可由用户在输入区上方切换。
  * 会话与消息持久化到 localStorage，刷新页面后上下文保留。
  */
 
@@ -23,12 +24,15 @@ export interface SidebarMessage {
 }
 
 const STORAGE_KEY = 'ai_assistant_sidebar_state'
+/** 平台通用助手（data/ai/general.yaml），侧边栏与其共用同一 Agent 链路 */
+const SIDEBAR_AGENT_ID = 'agent-general'
 /** 持久化与发送上下文各自保留的消息条数上限 */
 const MAX_PERSISTED_MESSAGES = 40
 const CONTEXT_LENGTH = 20
 
 interface PersistedState {
   sessionId: string
+  modelId?: string
   messages: SidebarMessage[]
 }
 
@@ -40,6 +44,7 @@ function loadPersisted(): PersistedState | null {
     if (!parsed || typeof parsed.sessionId !== 'string' || !Array.isArray(parsed.messages)) {
       return null
     }
+    if (typeof parsed.modelId !== 'string') delete parsed.modelId
     // 刷新恢复时把未完成的流式消息收口为 complete，避免出现「永远转圈」的脏状态
     for (const m of parsed.messages) {
       if (m.status === 'streaming') m.status = 'complete'
@@ -64,6 +69,7 @@ export const useAiAssistantSidebarStore = defineStore('aiAssistantSidebar', () =
   if (persisted) {
     messages.value = persisted.messages.slice(-MAX_PERSISTED_MESSAGES)
     sessionId.value = persisted.sessionId
+    if (persisted.modelId) modelId.value = persisted.modelId
   }
 
   const { streamChat, abortStream, isStreaming } = useChatStream()
@@ -74,6 +80,7 @@ export const useAiAssistantSidebarStore = defineStore('aiAssistantSidebar', () =
     try {
       const snapshot: PersistedState = {
         sessionId: sessionId.value,
+        modelId: modelId.value,
         messages: messages.value
           .filter((m) => m.status !== 'streaming')
           .slice(-MAX_PERSISTED_MESSAGES),
@@ -103,7 +110,7 @@ export const useAiAssistantSidebarStore = defineStore('aiAssistantSidebar', () =
     }
   }
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, pageContext?: string) {
     const text = content.trim()
     if (!text || isStreaming.value) return
     await ensureModels()
@@ -138,6 +145,8 @@ export const useAiAssistantSidebarStore = defineStore('aiAssistantSidebar', () =
       {
         messages: apiMessages,
         modelId: modelId.value,
+        agentId: SIDEBAR_AGENT_ID,
+        pageContext,
         sessionId: sessionId.value || undefined,
       },
       {
