@@ -74,6 +74,9 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 ### `cygnusx_sandbox_architecture_2026-08-22.md` — 沙箱强化架构（规范+进度，v1.1）
 不替换 OmicStudio 编排前提下的容器隔离强化与 capability 路由：`code`/`browser`/`document` 三运行能力、Agent `features.studio.sandbox_capabilities` 授权源、`sandbox_meta` 持久化与 `studio.images` 镜像选择（含"未配置默认放行"实现偏差记录）；容器安全基线表（nano_cpus、pids_limit、cap_drop=ALL、no-new-privileges、uid 10001、只读根、tmpfs、network 白名单、10GiB 配额）；独立 browser-office 镜像；阶段 0–2 施工记录（`audit.py` 六类生命周期事件、配额兜底方案）与 gVisor/Kata 升级触发条件、验收状态。沙箱安全与 capability 的唯一规范来源。
 
+### `research_loop_architecture_2026-09.md` — 科研闭环 as-built（WP0–WP4，2026-09-18）
+会话工作区生命周期（休眠打包/平台侧归档/解包恢复/到期清理/管理页）、不可变执行历史（`chat_message_events` 事件表 + 双读重建 + 信封 payload_hash + 产物 sha256 对账）、声明式环境还原（micromamba 一次性还原 + 科研模式门控）、长任务 job 三契约（先落盘/终态不可重开/reconcile-only）、科研形态（cell 投影 / .ipynb 确定性导出 / research_mode 三开关）、PTC llm_query（system 锚定 + 同窗审计）、chat warm pool 硬化对齐 Studio 基线、LangGraph 审批闸（ADR-0002）。含新增配置/迁移/beat/API 速查表与已知限制（生产只读 rootfs 下 env restore 降级等）。施工依据 `docs/info/26.9.18/OmicHub科研闭环-实施手册.md`。
+
 ---
 
 ## 5. 专项子系统
