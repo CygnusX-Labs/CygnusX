@@ -285,43 +285,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  /* 与 Hero 同色系，但饱和度降低，更柔和 */
-  background: linear-gradient(135deg, #6b7fd4 0%, #8b7fd4 35%, #a080d4 65%, #b080c8 100%);
-  background-size: 400% 400%;
-  animation: gradientShift 12s ease infinite;
-  position: relative;
-  overflow: hidden;
-}
-
-.login-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.35;
-  pointer-events: none;
-  z-index: 1;
-}
-.login-orb--1 {
-  width: 400px;
-  height: 400px;
-  background: #c5d0ff;
-  top: -100px;
-  right: -100px;
-  animation: drift 14s ease-in-out infinite;
-}
-.login-orb--2 {
-  width: 300px;
-  height: 300px;
-  background: #e0c8ff;
-  bottom: -50px;
-  left: -50px;
-  animation: drift 16s ease-in-out infinite reverse;
-}
+/* 氛围层统一走 §32 的 canvas 活氛围层（StarField + initLoginAnimation），不再保留旧 CSS orb 光晕 */
 
 .login-card-wrapper {
   position: relative;
@@ -399,9 +363,32 @@ onUnmounted(() => {
 }
 
 :root[data-theme='dark'] .login-card {
-  background: rgba(8, 23, 53, 0.78);
-  border: 1px solid rgba(165, 192, 255, 0.14);
+  /* 暗色玻璃：对齐 §3.3.1 Surface Glass 语义（--surface-glass 为白 6% 叠加层，认证卡在此基础
+     上提亮以保证星空背景上的可读性），边框对应 --border-subtle 层级 */
+  background: var(--surface-glass);
+  border: 1px solid var(--border-subtle);
   box-shadow: 0 24px 80px rgba(0, 9, 30, 0.4), inset 0 1px rgba(196, 216, 255, 0.08);
+}
+
+/* §4.2-5：减少透明度时玻璃表面回退实色并移除模糊 */
+@media (prefers-reduced-transparency: reduce) {
+  .login-card {
+    background: var(--neutral-card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: var(--shadow-card, 0 25px 60px rgba(7, 34, 82, 0.2));
+  }
+
+  :root[data-theme='dark'] .login-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* 蓝靛边框层与光晕依赖透明叠加，一并回退 */
+  :root[data-theme='dark'] .login-card-wrapper::before,
+  :root[data-theme='dark'] .login-card-wrapper::after {
+    content: none;
+  }
 }
 
 .login-page {
@@ -438,8 +425,11 @@ onUnmounted(() => {
 }
 .login-title {
   color: var(--brand-primary);
+  /* §3.4 Display 级：28px / 36px / 600 */
   font-size: 28px;
-  font-weight: 700;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin-bottom: 6px;
   filter: drop-shadow(0 4px 18px rgba(64, 120, 255, 0.25));
 }

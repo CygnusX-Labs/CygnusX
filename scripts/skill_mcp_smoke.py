@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -30,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SKILLS_DIR = Path("/data/cygnusx/skills")
+SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/data/omichub/skills"))
 WEB_CONTAINER = "cygnusx-web"
 
 # ---------------------------------------------------------------------------

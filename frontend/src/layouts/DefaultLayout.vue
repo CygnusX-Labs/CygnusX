@@ -21,6 +21,7 @@ import NotificationDrawer from '@/components/NotificationDrawer.vue'
 import OnboardingPopup from '@/components/OnboardingPopup.vue'
 import ChunkUploader from '@/components/ChunkUploader.vue'
 import UploadFloatingBall from '@/components/UploadFloatingBall.vue'
+import GlobalAiAssistantSidebar from '@/components/ai-assistant/GlobalAiAssistantSidebar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { displayName } from '@/utils/displayName'
 import { useUploadStore } from '@/stores/upload'
@@ -971,6 +972,9 @@ const UserAvatar = () => {
       <ChunkUploader />
     </NModal>
     <UploadFloatingBall />
+
+    <!-- 平台全局 AI 助手侧边栏 -->
+    <GlobalAiAssistantSidebar />
 
     <!-- 首次登录迎新弹窗 -->
     <OnboardingPopup

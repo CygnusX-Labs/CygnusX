@@ -288,3 +288,14 @@ OTel 之上还有两层业务级观测：**统一生命周期事件框架**（�
 - **模块设计**：`docs/modules/`；**命令详表**：`docs/update_info/26.6/Makefile_命令说明.md`
 - **部署细节**：`deploy/docker/README.md`、`deploy/agentteams/README.md`、`deploy/docker/POLARDB_POSTGRES.md`
 - **审查与规划报告**：`report/`（架构梳理、安全审查、任务调度、K8s、存储迁移等）
+
+## TODO · 桌面客户端（规划中）
+
+除网页端外，将推出**桌面客户端**：用户在本地服务器或云端服务器部署分析服务（Docker Compose 一键全启），安装客户端后填入服务器地址即可使用全部分析能力——客户端只做展示与交互，分析仍在服务端执行，数据不出用户自己的服务器。
+
+- [ ] 技术选型：Tauri 2.0（Rust 壳，包体小）内嵌 Vue 3 前端 dist
+- [ ] 壳工程搭建：`desktop/` Tauri 骨架，webview 加载本地 dist 或远程 URL
+- [ ] 登录页支持"服务器地址"配置（连接自建/云端部署的分析服务）
+- [ ] 壳内 webview 行为验证：JBrowse iframe/blob URL、文件下载、SSE/WS（终端、AI 流式输出）
+- [ ] 打包分发：Windows / macOS / Linux 三平台安装包（按 git SHA tag，禁 `latest` 裸推）
+- [ ] 自动更新与版本兼容提示（客户端版本 ↔ 服务端 API 版本）

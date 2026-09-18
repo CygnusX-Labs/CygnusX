@@ -226,6 +226,10 @@ const inputWrapperRef = ref<HTMLElement>()
 const composerShellRef = ref<HTMLElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const isComposing = ref(false)
+/** IME 候选确认（compositionend）时间戳：Chrome/macOS 等场景下确认候选词后
+ *  会再派发一次 isComposing=false 的真实 Enter keydown，仅靠 isComposing 守卫
+ *  拦不住，会把候选确认误判为"发送"；这里记录时间戳做短窗口抑制。 */
+const lastCompositionEndTime = ref(0)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
 const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
@@ -508,8 +512,15 @@ const canClear = computed(
     pendingSkills.value.length > 0,
 )
 
+function handleCompositionEnd() {
+  isComposing.value = false
+  lastCompositionEndTime.value = Date.now()
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (isComposing.value || e.isComposing) return
+  // compositionend 刚结束后的短窗口内忽略 Enter，拦住 IME 确认候选词后的幽灵 Enter
+  if (e.key === 'Enter' && Date.now() - lastCompositionEndTime.value < 200) return
   if (showMcpMenu.value && e.key === 'Escape') {
     e.preventDefault()
     showMcpMenu.value = false
@@ -1433,7 +1444,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           @keydown="handleKeydown"
           @paste.capture="handlePaste"
           @compositionstart="isComposing = true"
-          @compositionend="isComposing = false"
+          @compositionend="handleCompositionEnd"
         />
       </div>
 
