@@ -32,6 +32,8 @@ import OverdriveProgressCard from './OverdriveProgressCard.vue'
 import SuggestionChips from './SuggestionChips.vue'
 import ToolCallEntry from './ToolCallEntry.vue'
 import SkillInvocationCardView from './SkillInvocationCard.vue'
+import StudioCellGroup from '@/components/studio/StudioCellGroup.vue'
+import { groupToolsByCell, cellLanguageBadge } from '@/components/studio/cellTimeline'
 import { useAgentHubStore } from '@/stores/agentHub'
 import apiClient from '@/api/client'
 import { chatApi } from '@/api/chat'
@@ -730,6 +732,46 @@ const timelineView = computed<TimelineViewSegment[]>(() => {
     .filter((s): s is TimelineViewSegment => s !== null)
 })
 
+/** 科研模式（WP3 任务 1/3）：仅当当前会话开启科研模式且渲染形态为 cell 时间线时启用；
+ *  research_mode 为 null/undefined（旧会话/未开启）时恒为消息流，行为与现状一致 */
+const cellTimelineMode = computed(() => {
+  const rm = agentHubStore.currentSession?.research_mode
+  return !!rm?.enabled && rm.render_mode === 'cell_timeline'
+})
+
+type TimelineDisplaySegment =
+  | TimelineViewSegment
+  | { kind: 'cell'; cellIndex: number; language: string | null; tools: ToolCall[] }
+
+/**
+ * cell 时间线形态下的交错时间线投影：相邻且 cell_index 相同的 tool 段合并为一个
+ * cell 组（不重排顺序、不丢段，切回消息流即还原）；cell_index 为 null 的段保持原样。
+ */
+const timelineDisplay = computed<TimelineDisplaySegment[]>(() => {
+  const segs = timelineView.value
+  if (!cellTimelineMode.value) return segs
+  const out: TimelineDisplaySegment[] = []
+  for (const seg of segs) {
+    if (seg.kind !== 'tool') {
+      out.push(seg)
+      continue
+    }
+    const cellIndex = typeof seg.tool.cellIndex === 'number' ? seg.tool.cellIndex : null
+    const last = out[out.length - 1]
+    if (cellIndex !== null && last && last.kind === 'cell' && last.cellIndex === cellIndex) {
+      last.tools.push(seg.tool)
+      if (!last.language) last.language = cellLanguageBadge(seg.tool)
+      continue
+    }
+    if (cellIndex !== null) {
+      out.push({ kind: 'cell', cellIndex, language: cellLanguageBadge(seg.tool), tools: [seg.tool] })
+    } else {
+      out.push(seg)
+    }
+  }
+  return out
+})
+
 watch(
   () => [displayContent.value, webSources.value, knowledgeSources.value, props.message.timeline] as const,
   () => {
@@ -774,7 +816,9 @@ function openChartPreview(chart: ChartData) {
 }
 
 function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
-  emit('confirmTool', toolName, { ...args, _confirmed: true })
+  // 人类凭证写入已在 McpToolCallCard 点击时完成（approve POST），
+  // 这里仅透传参数（可能携带 _confirmation_id），不再注入 _confirmed 自证标志。
+  emit('confirmTool', toolName, args)
 }
 
 function handleOpenToolPage(route: string, args: Record<string, unknown>) {
@@ -823,6 +867,9 @@ const visibleToolCalls = computed(() => {
   if (props.message.askRequest) return tools.filter((t) => t.name !== 'ask_user')
   return tools
 })
+
+/** cell 时间线形态下的"底部工具列表"投影：cell_index 相同的相邻工具卡归入一个 cell 组 */
+const toolResultsView = computed(() => groupToolsByCell(visibleToolCalls.value))
 
 /** 气泡内是否有任何可渲染内容：消息只携带 askRequest（澄清弹窗）时正文为空，
  *  不渲染空气泡，避免弹窗卡片上方出现一条空白圆角长条 */
@@ -1209,13 +1256,30 @@ function handleEdit() {
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">
-            <template v-for="(seg, segIdx) in timelineView" :key="segIdx">
+            <template v-for="(seg, segIdx) in timelineDisplay" :key="segIdx">
               <div
                 v-if="seg.kind === 'text'"
                 class="message-body markdown-body"
                 v-html="seg.html"
                 @click="handleBodyClick"
               />
+              <StudioCellGroup
+                v-else-if="seg.kind === 'cell'"
+                :cell-index="seg.cellIndex"
+                :language="seg.language"
+              >
+                <div
+                  v-for="(cellTool, cellIdx) in seg.tools"
+                  :key="cellTool.id || cellIdx"
+                  class="timeline-tool-entry"
+                >
+                  <ToolCallEntry
+                    :tool="cellTool"
+                    @confirm-tool="handleConfirmTool"
+                    @open-tool-page="handleOpenToolPage"
+                  />
+                </div>
+              </StudioCellGroup>
               <div
                 v-else-if="seg.kind === 'tool'"
                 class="timeline-tool-entry"
@@ -1276,13 +1340,42 @@ function handleEdit() {
 
           <!-- 无时间线的历史消息：沿用旧的"底部工具列表"布局 -->
           <div v-if="!timelineView.length && visibleToolCalls.length" class="tool-results">
-            <ToolCallEntry
-              v-for="(tool, idx) in visibleToolCalls"
-              :key="idx"
-              :tool="tool"
-              @confirm-tool="handleConfirmTool"
-              @open-tool-page="handleOpenToolPage"
-            />
+            <template v-if="cellTimelineMode">
+              <template v-for="(item, idx) in toolResultsView" :key="idx">
+                <StudioCellGroup
+                  v-if="item.type === 'cell'"
+                  :cell-index="item.cellIndex"
+                  :language="item.language"
+                >
+                  <div
+                    v-for="(cellTool, cellIdx) in item.tools"
+                    :key="cellTool.id || cellIdx"
+                    class="timeline-tool-entry"
+                  >
+                    <ToolCallEntry
+                      :tool="cellTool"
+                      @confirm-tool="handleConfirmTool"
+                      @open-tool-page="handleOpenToolPage"
+                    />
+                  </div>
+                </StudioCellGroup>
+                <ToolCallEntry
+                  v-else
+                  :tool="item.tool"
+                  @confirm-tool="handleConfirmTool"
+                  @open-tool-page="handleOpenToolPage"
+                />
+              </template>
+            </template>
+            <template v-else>
+              <ToolCallEntry
+                v-for="(tool, idx) in visibleToolCalls"
+                :key="idx"
+                :tool="tool"
+                @confirm-tool="handleConfirmTool"
+                @open-tool-page="handleOpenToolPage"
+              />
+            </template>
           </div>
 
           <MessageArtifactGallery

@@ -242,12 +242,23 @@ export interface SkillInvocationCard {
   ts: number
 }
 
+/** tool_invocations 落库截断标记（信封层级，payload_truncated / original_bytes / truncation_note） */
+export interface PayloadTruncationMeta {
+  payload_truncated?: boolean
+  original_bytes?: number
+  truncation_note?: string
+}
+
 export interface ToolCall {
   id: string
   name: string
   arguments: Record<string, unknown>
   result?: unknown
   uiPayload?: Record<string, unknown>
+  /** 落库信封 ui_payload_truncation：历史重建时 ui_payload 曾被 200KB 护栏截断 */
+  uiPayloadTruncation?: PayloadTruncationMeta
+  /** 落库信封 result_truncation：历史重建时 result 曾被 200KB 护栏截断 */
+  resultTruncation?: PayloadTruncationMeta
   mcpServer?: string
   /** 调用理由（后端 tool_call 事件 metadata.purpose 透传） */
   purpose?: string
@@ -256,6 +267,12 @@ export interface ToolCall {
   output?: string
   /** Studio 代码卡片的语言（python / r / bash） */
   language?: string
+  /**
+   * 科研模式信封字段（metadata_json.tool_invocations 条目，WP3 任务 1）：
+   * 落库信封的 cell_index / language，与 result/ui_payload 平级；旧数据无此字段。
+   * cell_index 相同的工具卡在 cell 时间线形态下归入同一 cell 组；null=非代码工具。
+   */
+  cellIndex?: number | null
   /** Studio HITL 审批状态（内存态；刷新/断流后由 loadSessionMessages 从 Redis 重建） */
   approval?: ToolApproval
   checkpointId?: string

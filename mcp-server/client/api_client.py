@@ -43,7 +43,12 @@ class CygnusXAPIClient:
 
         if resp.status_code == 204:
             return None
-        return resp.json()
+        # 平台部分端点（如 /reports/{id}/preview）返回 PlainText HTML，
+        # 不能无条件 resp.json()，否则抛未捕获的 JSONDecodeError。
+        content_type = (resp.headers.get("content-type") or "").lower()
+        if "json" in content_type:
+            return resp.json()
+        return resp.text
 
     async def get(self, path: str, **kwargs: Any) -> Any:
         return await self._request("GET", path, **kwargs)
@@ -101,9 +106,11 @@ class CygnusXAPIClient:
         return await self.post(f"/pipelines/{pipeline_type}/prepare", json=payload)
 
     async def submit_pipeline(self, pipeline_type: str, prepared_params: dict[str, Any]) -> dict:
+        # 确认门在 MCP 工具层（user_confirmed=True 才会走到这里），
+        # 平台侧据此字段放行提交。
         return await self.post(
             f"/pipelines/{pipeline_type}/submit",
-            json={"prepared_params": prepared_params},
+            json={"prepared_params": prepared_params, "user_confirmed": True},
         )
 
     async def get_pipeline_status(self, pipeline_type: str, task_id: str) -> dict:

@@ -22,6 +22,7 @@ from cygnusx.infrastructure.mcp.reliability import (
     MCPExternalCallError,
     MCPHealthRegistry,
     ToolRetryPolicy,
+    counts_toward_circuit_breaker,
     execute_local_fallback,
     get_default_health_registry,
     health_key,
@@ -126,9 +127,15 @@ def validate_working_dir(working_dir: str | None) -> None:
 # ===== 外部 stdio/sse MCP 会话复用池 =====
 # 历史实现每次工具调用都新建子进程/连接并立即销毁（node/cmm 冷启动 + MCP initialize 握手
 # 单次可达数秒），这是外部 MCP「很堵」的主要来源。这里改为按 server 缓存长活会话：
-#   - 同一 server 的多次调用复用同一 ClientSession（顺序串行，由 per-server 锁保证）；
-#   - 会话损坏/超时后自动重建；空闲超过 _MCP_SESSION_IDLE_TIMEOUT 惰性回收；
-#   - server 连接配置变化时按 fingerprint 重建。
+#   - 同一 server 的多次调用复用同一 ClientSession。MCP Python SDK 的 ClientSession
+#     按 jsonrpc id 路由响应、天然支持并发多路复用，因此 per-server 锁只保护
+#     「建立/重建/回收会话」阶段，工具调用本身不持锁——避免 stdio 上一个 60s 超时
+#     的慢调用把同 server 的全部用户串行卡死（队头阻塞）；
+#   - 会话损坏/超时后自动关闭并重建（按连接对象身份比对，不误关他人新建的会话）；
+#   - 空闲超过 _MCP_SESSION_IDLE_TIMEOUT 惰性回收；
+#   - server 连接配置变化时按 fingerprint 重建；
+#   - 池关闭（应用退出/测试收尾）在锁内置 closing 标志、拒绝新借用后再关，
+#     避免与在途建连/回收竞态。
 # 池为模块级单例，跨 MCPClient 实例（agent 流 / 子 Agent / 管理端）共享。
 
 _MCP_SESSION_IDLE_TIMEOUT = 300.0
@@ -149,6 +156,8 @@ class _ExternalConnection:
 
 _external_connections: dict[str, _ExternalConnection] = {}
 _external_locks: dict[str, asyncio.Lock] = {}
+# 置位期间 _acquire_external_connection 拒绝新借用（见 close_external_connections）。
+_external_pool_closing = False
 
 
 def _external_fingerprint(server: MCPServer) -> str:
@@ -167,12 +176,35 @@ def _external_lock(server: MCPServer) -> asyncio.Lock:
     return lock
 
 
+def _connection_usable(conn: _ExternalConnection, fingerprint: str) -> bool:
+    """连接是否仍可借用：未关闭、配置未变、未空闲超期。"""
+    return (
+        not conn.closed
+        and conn.fingerprint == fingerprint
+        and time.monotonic() - conn.last_used <= _MCP_SESSION_IDLE_TIMEOUT
+    )
+
+
 async def close_external_connections() -> None:
-    """关闭并清空外部 MCP 会话池（应用退出/测试收尾时调用）。"""
-    for conn in list(_external_connections.values()):
-        await _close_external_connection(conn)
-    _external_connections.clear()
-    _external_locks.clear()
+    """关闭并清空外部 MCP 会话池（应用退出/测试收尾时调用）。
+
+    先置 closing 标志拒绝新借用，再逐个 server 在其建连锁下摘除并关闭连接，
+    避免与 _acquire_external_connection 的建连/回收竞态。收尾后复位标志，
+    允许后续（如测试场景）重新建池。
+    """
+    global _external_pool_closing
+    _external_pool_closing = True
+    try:
+        for key in sorted(set(_external_connections) | set(_external_locks)):
+            lock = _external_locks.setdefault(key, asyncio.Lock())
+            async with lock:
+                conn = _external_connections.pop(key, None)
+                if conn is not None:
+                    await _close_external_connection(conn)
+    finally:
+        _external_connections.clear()
+        _external_locks.clear()
+        _external_pool_closing = False
 
 
 async def _close_external_connection(conn: _ExternalConnection) -> None:
@@ -325,7 +357,19 @@ class MCPClient:
                     if attempt > 1:
                         result["reliability"] = {"attempts": attempt, "recovered": True}
                     return result
-                self.health_registry.record_failure(key, latency_ms)
+                # 熔断只统计传输层/server 级失败。tool_error/validation/file_reference
+                # 等调用方错误（典型场景：模型连续传坏参数）不计入，避免把健康
+                # server 短路。builtin 不经熔断门控，维持原有全量统计口径。
+                failure_kind = result.get("failure_kind")
+                if (
+                    server.transport == Transport.BUILTIN
+                    or counts_toward_circuit_breaker(failure_kind)
+                ):
+                    self.health_registry.record_failure(key, latency_ms)
+                else:
+                    # 半开试探收到调用方错误：server 实际已应答，必须释放试探占位，
+                    # 否则熔断永久卡死；但不计入失败统计。
+                    self.health_registry.release_probe(key)
                 last_result = result
                 if attempt < policy.max_attempts:
                     await asyncio.sleep(policy.delay_for(attempt))
@@ -368,10 +412,15 @@ class MCPClient:
             if isinstance(last_result, dict)
             else "unknown"
         )
+        # 保留真实根因：固定文案只作前缀，原始错误（server 返回/异常信息）随附回传，
+        # 便于调用方与日志定位，而非被统一文案覆盖。
+        root_cause = str(last_result.get("error") or "").strip() if isinstance(last_result, dict) else ""
+        generic_message = "当前外部服务暂时不可用，备用计算方式也不可用，请稍后重试。"
+        error_text = f"{generic_message}（根因：{root_cause}）" if root_cause else generic_message
 
         return {
             **last_result,
-            "error": "当前外部服务暂时不可用，备用计算方式也不可用，请稍后重试。",
+            "error": error_text,
             "reliability": {
                 "attempts": attempts_made,
                 "primary_status": self.health_registry.snapshot(key)["status"],
@@ -492,38 +541,63 @@ class MCPClient:
             session_cm=session_cm,
         )
 
+    async def _acquire_external_connection(self, server: MCPServer) -> _ExternalConnection:
+        """借用（或建立）该 server 的长活连接。
+
+        per-server 锁只保护「建立/重建/回收」阶段：先在锁外走快速借用路径，
+        未命中再进锁 double-check。锁内检查 closing 标志，池关闭期间拒绝新借用。
+        """
+        key = str(server.id)
+        fingerprint = _external_fingerprint(server)
+        # close_external_connections 先置标志再做任何 await：锁外快检即可让关闭在途
+        # 期间的新借用立即被拒（否则要排队等关闭放锁才看到标志）。
+        if _external_pool_closing:
+            raise MCPExternalCallError("pool_closing", "MCP 会话池正在关闭")
+        conn = _external_connections.get(key)
+        if conn is not None and _connection_usable(conn, fingerprint):
+            return conn
+        async with _external_lock(server):
+            if _external_pool_closing:
+                raise MCPExternalCallError("pool_closing", "MCP 会话池正在关闭")
+            conn = _external_connections.get(key)
+            if conn is not None and _connection_usable(conn, fingerprint):
+                return conn
+            if conn is not None:
+                # 陈旧（空闲超期/配置变更/已关闭）：锁内摘除并关闭，再重建
+                _external_connections.pop(key, None)
+                await _close_external_connection(conn)
+            conn = await self._connect_external(server)
+            _external_connections[key] = conn
+            return conn
+
+    async def _invalidate_external_connection(
+        self, server: MCPServer, conn: _ExternalConnection
+    ) -> None:
+        """按对象身份摘除并关闭一个可能已损坏的连接（锁内执行，不误关新会话）。"""
+        key = str(server.id)
+        async with _external_lock(server):
+            if _external_connections.get(key) is conn:
+                _external_connections.pop(key, None)
+            await _close_external_connection(conn)
+
     async def _with_external_session(self, server: MCPServer, fn: Any) -> Any:
         """在复用池中取一个该 server 的可用会话执行 fn(session)。
 
-        会话损坏/超时后自动关闭并重建；空闲超期惰性回收；连接配置变化按 fingerprint
-        重建。同一 server 的调用通过 per-server 锁串行执行。
+        工具调用本身不持建连锁：MCP Python SDK 的 ClientSession 按 jsonrpc id
+        路由响应、支持单会话并发多路复用，慢调用（如 stdio 60s 超时）不再把同
+        server 的其他请求排队卡死。会话损坏/超时后关闭并重建；空闲超期惰性回收
+        （回收关闭同样走建连锁）；连接配置变化按 fingerprint 重建。
         """
-        key = str(server.id)
-        async with _external_lock(server):
-            conn = _external_connections.get(key)
-            fingerprint = _external_fingerprint(server)
-            now = time.monotonic()
-            if conn is not None and (
-                conn.closed
-                or conn.fingerprint != fingerprint
-                or now - conn.last_used > _MCP_SESSION_IDLE_TIMEOUT
-            ):
-                await _close_external_connection(conn)
-                _external_connections.pop(key, None)
-                conn = None
-            if conn is None:
-                conn = await self._connect_external(server)
-                _external_connections[key] = conn
-            try:
-                out = await fn(conn.session_cm)
-            except BaseException:
-                # 连接可能已损坏（含 wait_for 超时取消导致的 CancelledError），
-                # 关闭并移除，保证下次调用重新连接而非复用坏会话。
-                await _close_external_connection(conn)
-                _external_connections.pop(key, None)
-                raise
-            conn.last_used = time.monotonic()
-            return out
+        conn = await self._acquire_external_connection(server)
+        try:
+            out = await fn(conn.session_cm)
+        except BaseException:
+            # 连接可能已损坏（含 wait_for 超时取消导致的 CancelledError），
+            # 关闭并移除，保证下次调用重新连接而非复用坏会话。
+            await self._invalidate_external_connection(server, conn)
+            raise
+        conn.last_used = time.monotonic()
+        return out
 
     async def _list_tools_external(self, server: MCPServer) -> list[dict[str, Any]]:
         """通过 MCP SDK 发现外部 stdio/sse 服务的工具（复用长活会话）"""

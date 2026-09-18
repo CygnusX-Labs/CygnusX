@@ -41,7 +41,7 @@ class MCPServerConfig(BaseSettings):
         "CygnusX 多组学分析平台 MCP Server — 任务管理、数据下载、流程分析、结果解读、沙箱执行",
     )
     transport: str = _server.get("transport", "stdio")
-    host: str = _server.get("host", "0.0.0.0")
+    host: str = _server.get("host", "127.0.0.1")
     port: int = _server.get("port", 8900)
 
     # connection

@@ -176,11 +176,16 @@ async def approve_tool_confirmation(
     db: DbSession,
     confirmation_id: UUID,
 ) -> dict[str, Any]:
-    """用户确认 AI 预检的分析流程，正式提交任务。"""
+    """用户确认 AI 预检的分析流程，正式提交任务。
+
+    JWT 人类通道：允许一步消费 PENDING（extra.human_confirmed）。
+    模型通道（builtin chat）经此消费会被确认服务拒绝，必须先点卡置 APPROVED。
+    """
     context = ToolInvocationContext(
         user_id=str(current_user_id),
         session_id="",
         db=db,
+        extra={"human_confirmed": True},
     )
     service = AnalysisFlowToolService(context=context)
     try:
@@ -193,20 +198,59 @@ async def approve_tool_confirmation(
 @router.post("/tool-confirmations/{confirmation_id}/reject", summary="拒绝分析任务提交")
 async def reject_tool_confirmation(
     current_user_id: CurrentUserId,
-    db: DbSession,
     confirmation_id: UUID,
     reason: str | None = None,
 ) -> dict[str, Any]:
     """用户拒绝 AI 预检的分析流程。"""
-    context = ToolInvocationContext(
-        user_id=str(current_user_id),
-        session_id="",
-        db=db,
-    )
     confirmation_service = get_tool_confirmation_service()
     try:
         record = await confirmation_service.reject(
-            context=context,
+            user_id=str(current_user_id),
+            confirmation_id=str(confirmation_id),
+            reason=reason,
+        )
+    except ConfirmationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+    return {"success": True, "status": record.status}
+
+
+@router.post("/tool-invocations/{confirmation_id}/approve", summary="批准待确认的工具调用")
+async def approve_tool_invocation(
+    current_user_id: CurrentUserId,
+    confirmation_id: UUID,
+) -> dict[str, Any]:
+    """人类（JWT 会话）批准 requires_confirm 工具：PENDING → APPROVED。
+
+    这是模型无法触达的凭证写入点；批准后模型携带 _confirmation_id 重试原工具，
+    桥接层校验参数哈希一致且记录一次性消费。
+    """
+    confirmation_service = get_tool_confirmation_service()
+    try:
+        record = await confirmation_service.approve_by_human(
+            user_id=str(current_user_id),
+            confirmation_id=str(confirmation_id),
+        )
+    except ConfirmationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+    return {
+        "success": True,
+        "confirmation_id": record.confirmation_id,
+        "tool_name": record.tool_name,
+        "status": record.status,
+    }
+
+
+@router.post("/tool-invocations/{confirmation_id}/reject", summary="拒绝待确认的工具调用")
+async def reject_tool_invocation(
+    current_user_id: CurrentUserId,
+    confirmation_id: UUID,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """人类拒绝一次待确认的工具调用。"""
+    confirmation_service = get_tool_confirmation_service()
+    try:
+        record = await confirmation_service.reject(
+            user_id=str(current_user_id),
             confirmation_id=str(confirmation_id),
             reason=reason,
         )

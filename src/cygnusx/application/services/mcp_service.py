@@ -287,39 +287,7 @@ class MCPService:
                 # 预设工具随代码演进（如新增工作区文件工具），需把最新工具清单同步进库，
                 # 否则已存在部署的 builtin 预设工具不会出现在 LLM 工具清单里。
                 if preset["name"] in (CYGNUSX_PIPELINES_SERVER_NAME, "cygnusx-platform"):
-                    target_tools = _preset_tools(preset, existing.id)
-                    has_tool_changes = _tool_snapshot(existing.tools) != _tool_snapshot(target_tools)
-                    metadata = dict(existing.generation_meta or {})
-                    is_version_pinned = bool(metadata.get(_PRESET_VERSION_PIN_KEY))
-
-                    if has_tool_changes and (force_preset_sync or not is_version_pinned):
-                        # 存量预设也先补齐其现有工具的 v1.0.0 初始快照，随后再写入升级版本，
-                        # 以便管理端能显示并切换回注册时的配置。
-                        await self._snapshot_config_version(
-                            existing,
-                            source="register",
-                            changelog="注册 MCP Server（初始配置）",
-                        )
-                        existing.tools = target_tools
-                        existing.current_version = await self._next_patch_version(existing)
-                        existing.version = existing.current_version
-                        metadata.pop(_PRESET_VERSION_PIN_KEY, None)
-                        existing.generation_meta = metadata
-                        await self._repo.save(existing)
-                        await self._snapshot_config_version(
-                            existing,
-                            source="preset",
-                            changelog="内置 MCP 预设升级：同步最新工具清单",
-                        )
-
-                    # 描述随代码演进（如补充「饼干余额查询」能力说明），同步进库，
-                    # 否则能力目录仍按旧描述展示，模型不知道该预设可查余额。
-                    preset_desc = str(preset.get("description") or "")
-                    if preset_desc and existing.description != preset_desc:
-                        existing.description = preset_desc
-                    existing.status = ServerStatus.ONLINE
-                    existing.is_enabled = True
-                    await self._repo.save(existing)
+                    await self._sync_preset_server(existing, preset, force_preset_sync)
                 continue
             preset_id = (
                 CYGNUSX_PLATFORM_SERVER_ID
@@ -355,34 +323,73 @@ class MCPService:
                 changelog="注册 MCP Server（初始配置）",
             )
 
-        # 动态生信工具箱 preset
+        # 动态生信工具箱 preset：工具清单来自 tools_schema.yaml + 动态 Flow 配置，
+        # 与 platform/pipelines 一样每次 ensure_presets 重同步快照——只在首建时写入
+        # 会与 Flow 配置永久漂移（同口径处理：仅更新 DB 注册表工具清单，
+        # 不动 agent 绑定白名单，被移除的工具自然不再暴露给 LLM）。
         cygnusx_preset = _build_cygnusx_tools_preset()
         existing_cygnusx = await self._repo.get_by_id(CYGNUSX_TOOLS_SERVER_ID)
         if existing_cygnusx is None:
-            tools = [
-                MCPToolRegistry(
-                    tool_name=t["name"],
-                    description=t["description"],
-                    input_schema=t["inputSchema"],
-                    server_id=CYGNUSX_TOOLS_SERVER_ID,
-                )
-                for t in cygnusx_preset["tools"]
-            ]
             server = MCPServer(
                 id=CYGNUSX_TOOLS_SERVER_ID,
                 name=CYGNUSX_TOOLS_SERVER_NAME,
                 description=cygnusx_preset["description"],
                 transport=Transport.BUILTIN,
                 status=ServerStatus.ONLINE,
-                tools=tools,
+                tools=_preset_tools(cygnusx_preset, CYGNUSX_TOOLS_SERVER_ID),
                 timeout=self._settings.mcp_default_timeout,
                 auto_restart=True,
                 is_preset=True,
             )
             await self._repo.save(server)
+        elif existing_cygnusx.name == CYGNUSX_TOOLS_SERVER_NAME:
+            await self._sync_preset_server(existing_cygnusx, cygnusx_preset, force_preset_sync)
 
         # stdio 预设：conda-meta-mcp（装包前查询 conda 元数据）
         await self._ensure_conda_meta_mcp()
+
+    async def _sync_preset_server(
+        self, existing: MCPServer, preset: dict[str, Any], force_preset_sync: bool
+    ) -> None:
+        """把 builtin 预设的最新工具清单/描述同步进库（幂等，版本 pin 保护）。
+
+        platform / pipelines / cygnusx-tools 共用同一口径：工具快照有变化且未被
+        回滚 pin（或 force 同步）时，先补齐现有工具的初始快照再 bump patch 写入
+        升级版本；只替换 server.tools 注册表，不删任何 agent 绑定。
+        """
+        target_tools = _preset_tools(preset, existing.id)
+        has_tool_changes = _tool_snapshot(existing.tools) != _tool_snapshot(target_tools)
+        metadata = dict(existing.generation_meta or {})
+        is_version_pinned = bool(metadata.get(_PRESET_VERSION_PIN_KEY))
+
+        if has_tool_changes and (force_preset_sync or not is_version_pinned):
+            # 存量预设也先补齐其现有工具的 v1.0.0 初始快照，随后再写入升级版本，
+            # 以便管理端能显示并切换回注册时的配置。
+            await self._snapshot_config_version(
+                existing,
+                source="register",
+                changelog="注册 MCP Server（初始配置）",
+            )
+            existing.tools = target_tools
+            existing.current_version = await self._next_patch_version(existing)
+            existing.version = existing.current_version
+            metadata.pop(_PRESET_VERSION_PIN_KEY, None)
+            existing.generation_meta = metadata
+            await self._repo.save(existing)
+            await self._snapshot_config_version(
+                existing,
+                source="preset",
+                changelog="内置 MCP 预设升级：同步最新工具清单",
+            )
+
+        # 描述随代码演进（如补充「饼干余额查询」能力说明），同步进库，
+        # 否则能力目录仍按旧描述展示，模型不知道该预设可查余额。
+        preset_desc = str(preset.get("description") or "")
+        if preset_desc and existing.description != preset_desc:
+            existing.description = preset_desc
+        existing.status = ServerStatus.ONLINE
+        existing.is_enabled = True
+        await self._repo.save(existing)
 
     async def _ensure_conda_meta_mcp(self) -> None:
         """种子化 conda-meta-mcp stdio 预设（幂等）。

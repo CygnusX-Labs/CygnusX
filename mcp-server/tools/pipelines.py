@@ -18,6 +18,27 @@ def _failure(error: CygnusXAPIError) -> dict[str, Any]:
     }
 
 
+def _needs_confirmation(
+    pipeline_label: str, prepared_params: dict[str, Any]
+) -> dict[str, Any]:
+    """写操作确认门 — 与 tools/analysis.py 的 needs_confirmation 摘要风格一致。"""
+    sample_sheet = prepared_params.get("sample_sheet")
+    comparisons = prepared_params.get("comparisons")
+    return {
+        "success": True,
+        "needs_confirmation": True,
+        "summary": (
+            "即将提交分析任务:\n"
+            f"  流程: {pipeline_label}\n"
+            f"  项目: {prepared_params.get('project_name') or '(未命名)'}\n"
+            f"  样本数: {len(sample_sheet) if sample_sheet else 0}\n"
+            f"  比较组: {len(comparisons) if comparisons else 0}\n"
+            "请确认参数无误后设置 user_confirmed=True 重新调用。"
+        ),
+        "data": {"prepared_params": prepared_params},
+    }
+
+
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def prepare(pipeline_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -68,8 +89,12 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         return await prepare("rna_seq", payload)
 
     @mcp.tool()
-    async def rna_seq_submit(prepared_params: dict[str, Any]) -> dict[str, Any]:
-        """提交经过 rna_seq_prepare 预检的 RNA-seq 任务。"""
+    async def rna_seq_submit(
+        prepared_params: dict[str, Any], user_confirmed: bool = False
+    ) -> dict[str, Any]:
+        """提交经过 rna_seq_prepare 预检的 RNA-seq 任务。需要 user_confirmed=True 确认执行。"""
+        if not user_confirmed:
+            return _needs_confirmation("rna_seq", prepared_params)
         return await submit("rna_seq", prepared_params)
 
     @mcp.tool()
@@ -101,8 +126,12 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         return await prepare("atac_seq", payload)
 
     @mcp.tool()
-    async def atac_seq_submit(prepared_params: dict[str, Any]) -> dict[str, Any]:
-        """提交经过 atac_seq_prepare 预检的 ATAC-seq 任务。"""
+    async def atac_seq_submit(
+        prepared_params: dict[str, Any], user_confirmed: bool = False
+    ) -> dict[str, Any]:
+        """提交经过 atac_seq_prepare 预检的 ATAC-seq 任务。需要 user_confirmed=True 确认执行。"""
+        if not user_confirmed:
+            return _needs_confirmation("atac_seq", prepared_params)
         return await submit("atac_seq", prepared_params)
 
     @mcp.tool()

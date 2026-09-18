@@ -84,26 +84,77 @@ class ToolBridgeService:
         except ValidationError as e:
             return self._error(str(e), code=code_from_exception(e))
 
-        # 二次确认占位：Phase 1 先返回提示，由前端/LLM 交互确认
-        if schema.requires_confirm and not arguments.get("_confirmed"):
-            envelope = {
-                "success": True,
-                "is_error": False,
-                "llm_payload": {
-                    "needs_confirm": True,
-                    "tool_name": tool_name,
-                    "code": ToolErrorCode.CONFIRMATION_REQUIRED,
-                    "summary": "该操作会提交计算任务，请用户确认后再执行。",
-                    "preview_args": self._safe_preview(args),
-                },
-                "ui_payload": {
-                    "confirm_card": True,
-                    "tool_name": tool_name,
-                    "args": self._safe_preview(args),
-                },
-            }
-            self._attach_ignored_params(envelope, ignored_params)
-            return envelope
+        # 二次确认门（requires_confirm 工具）：执行凭证 = 人类点卡后置入的 APPROVED 状态。
+        # 首次调用只创建 PENDING 记录并返回确认卡；用户经 REST approve（JWT 通道）后，
+        # 模型携带 _confirmation_id 重试，服务端校验归属/参数哈希/一次性消费后才执行。
+        if schema.requires_confirm:
+            from cygnusx.application.services.tool_confirmation_service import (
+                ConfirmationError,
+                get_tool_confirmation_service,
+            )
+
+            confirmation_id = str(arguments.get("_confirmation_id") or "")
+            confirmation_service = get_tool_confirmation_service()
+            if not confirmation_id:
+                if context is None:
+                    return self._error(
+                        f"工具 {tool_name} 需要受控调用上下文以进行二次确认",
+                        code=ToolErrorCode.CONFIRMATION_REQUIRED,
+                    )
+                record = await confirmation_service.create_for_tool(
+                    user_id,
+                    tool_name,
+                    args,
+                    session_id=context.session_id,
+                    agent_id=context.agent_id,
+                )
+                envelope = {
+                    "success": True,
+                    "is_error": False,
+                    "llm_payload": {
+                        "needs_confirm": True,
+                        "tool_name": tool_name,
+                        "confirmation_id": record.confirmation_id,
+                        "code": ToolErrorCode.CONFIRMATION_REQUIRED,
+                        "summary": (
+                            "该操作需要用户在确认卡上确认后才能执行。"
+                            "请提醒用户点击确认卡；用户确认后，请携带 "
+                            "_confirmation_id 使用完全相同的参数重试。"
+                        ),
+                        "preview_args": self._safe_preview(args),
+                    },
+                    "ui_payload": {
+                        "confirm_card": True,
+                        "tool_name": tool_name,
+                        "confirmation_id": record.confirmation_id,
+                        "args": self._safe_preview(args),
+                        "actions": {
+                            "approve": {
+                                "method": "POST",
+                                "url": f"/api/v1/ai/tool-invocations/{record.confirmation_id}/approve",
+                            },
+                            "reject": {
+                                "method": "POST",
+                                "url": f"/api/v1/ai/tool-invocations/{record.confirmation_id}/reject",
+                            },
+                        },
+                    },
+                }
+                self._attach_ignored_params(envelope, ignored_params)
+                return envelope
+            try:
+                await confirmation_service.consume_tool_confirmation(
+                    user_id,
+                    confirmation_id,
+                    tool_name,
+                    args,
+                    human_confirmed=bool(context.extra.get("human_confirmed")) if context else False,
+                )
+            except ConfirmationError as e:
+                return self._error(
+                    f"确认凭证校验失败({e.code}): {e.message}",
+                    code=ToolErrorCode.CONFIRMATION_REQUIRED,
+                )
 
         try:
             raw = await self._dispatch(user_id, schema, args, context)
@@ -134,7 +185,7 @@ class ToolBridgeService:
         ignored: list[str] = []
         for key, value in arguments.items():
             if key not in props:
-                # 下划线开头是桥接层控制参数（如 _confirmed），不算未声明参数。
+                # 下划线开头是桥接层控制参数（如 _confirmation_id），不算未声明参数。
                 if not key.startswith("_"):
                     ignored.append(key)
                 continue

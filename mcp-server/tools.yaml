@@ -152,8 +152,9 @@ groups:
         description: "校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params"
         read_only: true
       - name: rna_seq_submit
-        description: "提交经过 rna_seq_prepare 预检的 RNA-seq 任务"
+        description: "提交经过 rna_seq_prepare 预检的 RNA-seq 任务（需 user_confirmed=True）"
         read_only: false
+        requires_confirm: true
       - name: rna_seq_status
         description: "查询 RNA-seq 任务状态和进度"
         read_only: true
@@ -164,8 +165,9 @@ groups:
         description: "校验 ATAC-seq 参数和工作区数据，返回可提交的 prepared_params"
         read_only: true
       - name: atac_seq_submit
-        description: "提交经过 atac_seq_prepare 预检的 ATAC-seq 任务"
+        description: "提交经过 atac_seq_prepare 预检的 ATAC-seq 任务（需 user_confirmed=True）"
         read_only: false
+        requires_confirm: true
       - name: atac_seq_status
         description: "查询 ATAC-seq 任务状态和进度"
         read_only: true

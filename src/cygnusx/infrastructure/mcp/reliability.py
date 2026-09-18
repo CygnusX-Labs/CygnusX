@@ -25,6 +25,21 @@ CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
 # 熔断冷却默认值；生产上由 Settings.mcp_circuit_breaker_cooldown_seconds 覆盖。
 DEFAULT_CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60.0
 
+# ===== 熔断计分的失败分类 =====
+# 只有传输层 / server 级失败（timeout、connection_error、command_not_found、
+# server 内部错等）才说明 server 本身不健康，应计入熔断。
+# tool_error（工具按协议返回 isError，多由调用方传坏参数触发）、validation 与
+# file_reference（参数里的文件引用解析失败）都是「调用方错误」：LLM 连续幻觉几次
+# 坏参数不应把健康 server 短路，因此不计入熔断统计。
+CIRCUIT_EXCLUDED_FAILURE_KINDS = frozenset(
+    {"tool_error", "validation", "file_reference"}
+)
+
+
+def counts_toward_circuit_breaker(failure_kind: str | None) -> bool:
+    """该失败是否计入熔断。None/未知 kind 视为 server 级异常，保守计入。"""
+    return str(failure_kind or "unknown").lower() not in CIRCUIT_EXCLUDED_FAILURE_KINDS
+
 
 @dataclass(frozen=True)
 class ToolRetryPolicy:
@@ -126,6 +141,15 @@ class MCPHealthRegistry:
         if item.consecutive_failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
             # 达到 degraded 阈值（含半开试探失败），重新进入冷却窗口。
             item.circuit_open_until = time.time() + self.circuit_cooldown_seconds
+
+    def release_probe(self, key: str) -> None:
+        """释放半开试探占位，但不改动成功/失败计数与熔断窗口。
+
+        用于不计入熔断的调用方错误（tool_error/validation 等）：半开试探若收到
+        此类响应，说明请求已到达 server 并正常返回，占位必须释放，否则熔断
+        永久卡在 open；但调用方错误不应重置失败计数，健康度维持原状。
+        """
+        self._get(key).probe_in_flight = False
 
     def snapshot(self, key: str) -> dict[str, Any]:
         return self._get(key).snapshot()

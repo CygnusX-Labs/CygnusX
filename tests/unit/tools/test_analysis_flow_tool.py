@@ -203,13 +203,31 @@ async def test_analysis_flow_confirm_and_submit(bridge: ToolBridgeService) -> No
         from cygnusx.application.services.analysis_flow_tool_service import (
             AnalysisFlowToolService,
         )
+        from cygnusx.application.services.tool_confirmation_service import ConfirmationError
 
+        # 模型通道：PENDING 未经人类确认必须被拒绝（确认门不可自证）
         service = AnalysisFlowToolService(context=context)
-        submit_result = await service.confirm_and_submit(confirmation_id)
+        with pytest.raises(ConfirmationError) as exc_info:
+            await service.confirm_and_submit(confirmation_id)
+        assert exc_info.value.code == "CONFIRMATION_REQUIRED"
+
+        # 人类 JWT 通道（ai.py approve 端点语义）：一步消费 PENDING 并提交
+        human_context = ToolInvocationContext(
+            user_id="test-user",
+            session_id="test-session",
+            db=_FakeAsyncSession(),  # type: ignore[arg-type]
+            extra={"human_confirmed": True},
+        )
+        human_service = AnalysisFlowToolService(context=human_context)
+        submit_result = await human_service.confirm_and_submit(confirmation_id)
+
+        # 记录已 SUBMITTED：模型侧重发同一流水线时幂等回放，不重复建任务
+        replay_result = await service.confirm_and_submit(confirmation_id)
 
     assert submit_result["task_id"] is not None
     assert submit_result["status"] == "QUEUED"
     assert submit_result["task_card"]["type"] == "task_card"
+    assert replay_result["task_id"] == submit_result["task_id"]
 
 
 @pytest.mark.asyncio

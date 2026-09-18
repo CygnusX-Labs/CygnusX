@@ -36,7 +36,8 @@ async def _cygnusx_tools_handler(
 ) -> dict[str, Any]:
     """cygnusx-tools builtin preset 的统一 handler。"""
     if not user_id:
-        user_id = arguments.get("_user_id", "anonymous")
+        # 禁止从 arguments 里自带 _user_id 伪造身份；builtin 调用必须由网关注入真实用户
+        return {"error": "无法识别当前用户"}
     return await get_tool_bridge_service().execute(
         user_id=user_id,
         tool_name=tool_name,
@@ -51,7 +52,10 @@ CYGNUSX_PLATFORM_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "cygnusx-platform.bu
 
 # 工作区文件工具系统提示后缀 —— 外置到 data/ai/mcp/workspace_files_prompt.md，
 # 便于直接编辑提示词而无需改代码；文件缺失时回退到内置精简版。
-_WORKSPACE_FILES_PROMPT_MD = Path("data/ai/mcp/workspace_files_prompt.md")
+# 锚定仓库根目录（本文件位于 src/cygnusx/infrastructure/mcp/presets.py），不随进程 CWD 漂移。
+_WORKSPACE_FILES_PROMPT_MD = (
+    Path(__file__).resolve().parents[4] / "data" / "ai" / "mcp" / "workspace_files_prompt.md"
+)
 
 _WORKSPACE_FILES_PROMPT_FALLBACK = """## 工作区文件工具
 
@@ -1037,9 +1041,13 @@ async def _platform_submit_download(
     if not user_id:
         return {"error": "无法识别当前用户"}
 
-    payload = {k: v for k, v in arguments.items() if v is not None}
+    # 业务参数：剔除 None 值与下划线控制参数（_confirmation_id 等），
+    # 保证确认记录哈希与消费时比对的哈希来自同一形态。
+    business_args = {
+        k: v for k, v in arguments.items() if v is not None and not k.startswith("_")
+    }
     try:
-        req = DownloadRequest(**payload)
+        req = DownloadRequest(**business_args)
     except Exception as e:  # noqa: BLE001
         return {"error": f"下载参数不合法: {e}"}
 
@@ -1054,6 +1062,65 @@ async def _platform_submit_download(
             return {"error": "云存储下载功能未启用"}
     elif not (config.features.ebi or settings.enable_ebi_download):
         return {"error": "公共数据库下载功能未启用"}
+
+    # 服务端强制二次确认门：dry_run 预检免确认；正式提交必须先经人类点击确认卡
+    # （POST /api/v1/ai/tool-invocations/{id}/approve），再以完全相同参数重试。
+    if not req.dry_run:
+        from cygnusx.application.services.tool_confirmation_service import (
+            ConfirmationError,
+            get_tool_confirmation_service,
+        )
+
+        confirmation_service = get_tool_confirmation_service()
+        confirmation_id = str(arguments.get("_confirmation_id") or "").strip()
+        if not confirmation_id:
+            record = await confirmation_service.create_for_tool(
+                user_id, "platform_submit_download", business_args
+            )
+            return {
+                "success": True,
+                "is_error": False,
+                "llm_payload": {
+                    "needs_confirm": True,
+                    "tool_name": "platform_submit_download",
+                    "confirmation_id": record.confirmation_id,
+                    "code": "CONFIRMATION_REQUIRED",
+                    "summary": (
+                        "下载任务提交前需要用户在确认卡上点击确认；"
+                        "请提醒用户确认，之后携带 _confirmation_id 使用完全相同的参数重试。"
+                    ),
+                    "preview_args": business_args,
+                    "expires_at": record.expires_at.isoformat(),
+                },
+                "ui_payload": {
+                    "confirm_card": True,
+                    "tool_name": "platform_submit_download",
+                    "confirmation_id": record.confirmation_id,
+                    "args": business_args,
+                    "actions": {
+                        "approve": {
+                            "method": "POST",
+                            "url": (
+                                "/api/v1/ai/tool-invocations/"
+                                f"{record.confirmation_id}/approve"
+                            ),
+                        },
+                        "reject": {
+                            "method": "POST",
+                            "url": (
+                                "/api/v1/ai/tool-invocations/"
+                                f"{record.confirmation_id}/reject"
+                            ),
+                        },
+                    },
+                },
+            }
+        try:
+            await confirmation_service.consume_tool_confirmation(
+                user_id, confirmation_id, "platform_submit_download", business_args
+            )
+        except ConfirmationError as e:
+            return {"error": f"确认凭证校验失败({e.code}): {e.message}"}
 
     factory = get_session_factory()
     async with factory() as db:
@@ -1683,11 +1750,17 @@ PLATFORM_PRESET_TOOLS = [
             "② cloud_storage（多云服务商对象存储高速下载）：cloud_provider 取 aliyun(oss://)/volc(tos://)/huawei(obs://)，"
             "object_uri 需带对应前缀，recursive 控制是否递归。"
             "③ direct_link：links 传 HTTP/HTTPS/FTP 链接列表批量下载。"
-            "提交前必须先用 ask_user 向用户确认登录号/地址与目标目录；用户已明确给出时直接提交。"
+            "提交前服务端强制二次确认：首次调用返回确认卡（confirmation_id），"
+            "用户确认后才可携带 _confirmation_id 以完全相同参数重试提交；dry_run 试验证不需要确认。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
+                "_confirmation_id": {
+                    "type": "string",
+                    "description": "人类批准确认卡后返回的一次性凭证；缺省时本调用只产生确认卡",
+                    "default": "",
+                },
                 "source": {
                     "type": "string",
                     "enum": ["sra", "cloud_storage", "direct_link"],

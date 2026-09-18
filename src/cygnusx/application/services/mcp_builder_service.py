@@ -49,6 +49,10 @@ from cygnusx.infrastructure.mcp.builder.doc_generator import (
 )
 from cygnusx.infrastructure.mcp.builder.generator import MCPCodeGenerator
 from cygnusx.infrastructure.mcp.builder.safety import StaticSafetyChecker
+from cygnusx.infrastructure.mcp.client import (
+    validate_stdio_args,
+    validate_working_dir,
+)
 from cygnusx.infrastructure.mcp.builder.versioning import (
     CONFIG_SNAPSHOT_FIELDS,
     determine_version,
@@ -169,13 +173,26 @@ class MCPBuilderService:
         ttl_hours = req.ttl_hours or self._settings.mcp_builder_default_ttl_hours
         name = await self._unique_name(req.mcp_name or _slugify(req.requirement))
         code_path = f"mcp-builds/{name.removeprefix('exp-')}/server.py"
+        # 注册形态与平台 stdio 校验对齐：脚本路径存相对路径 + working_dir 存
+        # 沙箱工作区根（client.py 的 validate_stdio_args 禁止 args 绝对路径）。
+        # builder 的真实启动链是 Studio 沙箱桥（/mcp/start，宿主→UDS→容器内
+        # STDIO 子进程），不经过 MCPClient；但注册行仍可能被管理端 start/test
+        # 走 stdio 拉起，故在此显式复用同一校验器，杜绝绕过并拦截恶意名称。
+        server_args = [code_path]
+        server_working_dir = "/workspace"
+        try:
+            validate_stdio_args(server_args)
+            validate_working_dir(server_working_dir)
+        except ValueError as exc:
+            raise ValidationError(f"实验 MCP 注册参数不安全: {exc}") from exc
         server = MCPServer(
             id=uuid_mod.uuid4(),
             name=name,
             description=req.requirement.strip()[:300],
             transport=Transport.STDIO,
             command="python",
-            args=[f"/workspace/{code_path}"],
+            args=server_args,
+            working_dir=server_working_dir,
             status=ServerStatus.OFFLINE,
             is_enabled=True,
             timeout=self._settings.mcp_default_timeout,

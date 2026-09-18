@@ -186,7 +186,7 @@ const overdriveEnabled = computed({
 const engineLabel = computed(() => agent.value?.model_engine || '')
 const agentDisplayName = computed(() => agent.value?.features?.router ? '星尘 AI' : agent.value?.name || '星尘 AI')
 const greetingUserName = computed(() => displayName(authStore.user))
-/** 快捷任务：结构化配置驱动，语义图标 + 动词文案 + 真实 behavior（fontend.md §35.6 / §36.3）。
+/** 快捷任务：结构化配置驱动，语义图标 + 动词文案 + 真实 behavior（frontend.md §35.6 / §36.3）。
  *  当前统一 behavior=prefill：预填输入框由用户确认发送，不自动提交。 */
 const quickActions: Array<{
   id: string
@@ -204,7 +204,7 @@ const quickActions: Array<{
   { id: 'rna-seq', title: '帮我进行 RNA-seq 分析', description: '从 RNA-seq 数据开始质量控制与差异分析', icon: AnalyticsOutline, behavior: 'prefill', prompt: '帮我进行 RNA-seq 分析' },
 ]
 
-/** 空会话（无消息）与活跃会话双布局（fontend.md §35.3） */
+/** 空会话（无消息）与活跃会话双布局（frontend.md §35.3） */
 const isEmpty = computed(() => (session.value?.messages.length ?? 0) === 0)
 const conversationMessages = computed(() =>
   conversationMessagesWithoutProgress(session.value?.messages || []),
@@ -256,8 +256,24 @@ function recentSessionState(item: typeof recentSessions.value[number]): string {
   return item.mode === 'studio' || store.studioSessionIds.has(item.id) ? '工作台会话' : '已完成'
 }
 
-function openRecentSession(sessionId: string) {
-  void store.selectSession(sessionId)
+/** 正在恢复工作区的会话 ID（恢复期间对应卡片按钮 loading/禁用） */
+const restoringSessionId = ref('')
+
+async function openRecentSession(sessionId: string) {
+  const item = recentSessions.value.find((s) => s.id === sessionId)
+  if (!item?.workspace_archive) {
+    void store.selectSession(sessionId)
+    return
+  }
+  if (restoringSessionId.value) return
+  restoringSessionId.value = sessionId
+  try {
+    await store.openSessionWithRestore(sessionId)
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '恢复会话失败，请稍后重试')
+  } finally {
+    restoringSessionId.value = ''
+  }
 }
 
 async function deleteRecentSession(sessionId: string) {
@@ -422,9 +438,12 @@ function handleDeleteMessage(messageId: string) {
 }
 
 function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
+  const confirmationId = String(args._confirmation_id || '')
   const content = toolName === 'create_agentteams_case'
     ? `我确认创建协作 Case。请仅使用以下已确认参数再次调用 ${toolName}，并携带 _confirmed: true：\n${JSON.stringify(args, null, 2)}`
-    : `确认执行 ${toolName}`
+    : confirmationId
+      ? `我已在确认卡上确认该操作。请使用与确认卡完全相同的参数再次调用 ${toolName}，并携带 "_confirmation_id": "${confirmationId}"；改动或省略任何参数都会使凭证失效。`
+      : `确认执行 ${toolName}`
   store.sendMessage(content, {})
 }
 
@@ -557,7 +576,7 @@ onUnmounted(() => {
 
     <div class="sandbox-body">
       <div class="chat-content-wrapper">
-        <!-- 空会话首页：星星+AI 动画 hero + 打招呼文案 → 输入区 → 快捷任务芯片（fontend.md §35.3.1） -->
+        <!-- 空会话首页：星星+AI 动画 hero + 打招呼文案 → 输入区 → 快捷任务芯片（frontend.md §35.3.1） -->
         <StardustHero
           v-if="isEmpty"
           :title="agentDisplayName"
@@ -608,7 +627,7 @@ onUnmounted(() => {
           </div>
         </transition>
 
-        <!-- 输入区：单实例避免草稿/附件丢失；空会话在说明下方、活跃会话底部吸附（fontend.md §35.3） -->
+        <!-- 输入区：单实例避免草稿/附件丢失；空会话在说明下方、活跃会话底部吸附（frontend.md §35.3） -->
         <div class="composer-slot">
           <!-- 新建会话必选所属项目；会话落库后项目边界固定，选择器不再显示。
                视觉上是输入框上方的一枚紧凑 pill：图标 + 项目名/占位文案 + 下拉箭头，不再用生硬的 label 行 -->
@@ -664,7 +683,7 @@ onUnmounted(() => {
           />
         </div>
 
-        <!-- 快捷任务：语义图标 + 动词文案 + 预填行为，首页以居中芯片呈现（fontend.md §35.6） -->
+        <!-- 快捷任务：语义图标 + 动词文案 + 预填行为，首页以居中芯片呈现（frontend.md §35.6） -->
         <section v-if="isEmpty" class="quick-actions" aria-label="快捷任务">
           <button
             v-for="action in quickActions"
@@ -690,6 +709,7 @@ onUnmounted(() => {
                 type="button"
                 class="recent-session-main"
                 :title="item.title"
+                :disabled="restoringSessionId === item.id"
                 @click="openRecentSession(item.id)"
               >
                 <span class="recent-session-title">{{ item.title }}</span>
@@ -699,7 +719,11 @@ onUnmounted(() => {
                   <span>{{ formatRelativeTime(item.updated_at) }}</span>
                 </span>
               </button>
-              <span class="recent-session-state">{{ recentSessionState(item) }}</span>
+              <span
+                v-if="item.workspace_archive"
+                class="recent-session-state recent-session-state--archived"
+              >{{ restoringSessionId === item.id ? '恢复中…' : '已归档' }}</span>
+              <span v-else class="recent-session-state">{{ recentSessionState(item) }}</span>
               <NPopconfirm
                 positive-text="删除"
                 negative-text="取消"
@@ -779,7 +803,7 @@ onUnmounted(() => {
 .id-name { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--chat-text-primary, #1A1D33); }
 .agent-status { margin-top: 2px; color: var(--success-color, #18a058); font-size: 12px; line-height: 16px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-/* 工作台模式归为页面操作组，用次要弱化按钮，不与发送按钮竞争主层级（fontend.md §35.8.3） */
+/* 工作台模式归为页面操作组，用次要弱化按钮，不与发送按钮竞争主层级（frontend.md §35.8.3） */
 .capability-btn {
   color: var(--stardust-blue);
   border: 1px solid #d4dbf5;
@@ -900,7 +924,7 @@ onUnmounted(() => {
 .project-create-entry:hover {
   background: color-mix(in srgb, var(--stardust-blue, #4c6fff) 8%, transparent);
 }
-/* 快捷任务：居中胶囊芯片行；描述收进 title 提示，保持首页轻量（fontend.md §35.6） */
+/* 快捷任务：居中胶囊芯片行；描述收进 title 提示，保持首页轻量（frontend.md §35.6） */
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -950,6 +974,16 @@ onUnmounted(() => {
 .recent-session-meta { display: flex; min-width: 0; gap: 5px; overflow: hidden; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 12px; white-space: nowrap; }
 .recent-session-meta span:first-child { overflow: hidden; text-overflow: ellipsis; }
 .recent-session-state { flex: 0 0 auto; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 11px; white-space: nowrap; }
+.recent-session-state--archived {
+  padding: 1px 8px;
+  border: 1px solid var(--chat-border, var(--neutral-border));
+  border-radius: 999px;
+  color: var(--chat-text-muted, var(--neutral-text-3));
+  background: color-mix(in srgb, var(--neutral-text-3, #86909c) 8%, transparent);
+  font-size: 10px;
+  line-height: 16px;
+}
+.recent-session-main:disabled { cursor: progress; opacity: .72; }
 .recent-session-delete { flex: 0 0 auto; color: var(--chat-text-muted, var(--neutral-text-3)); }
 .recent-session-delete:hover { color: var(--error-color, #d03050); }
 .recent-context-empty { margin: 0; padding: 14px 16px; border: 1px dashed var(--stardust-border-soft, var(--neutral-border)); border-radius: 12px; color: var(--chat-text-muted, var(--neutral-text-3)); font-size: 13px; line-height: 20px; }
@@ -1004,7 +1038,7 @@ onUnmounted(() => {
   transform: translateY(8px);
 }
 
-/* 输入区：活跃会话底部吸附；空会话在说明下方、无边框底色（fontend.md §35.3） */
+/* 输入区：活跃会话底部吸附；空会话在说明下方、无边框底色（frontend.md §35.3） */
 .composer-slot {
   position: relative;
   z-index: 1;
@@ -1026,7 +1060,7 @@ onUnmounted(() => {
   width: 100%;
 }
 
-/* 空会话首屏：居中内容列 + 顶部留白托出 hero，wrapper 整体滚动（fontend.md §35.3.1） */
+/* 空会话首屏：居中内容列 + 顶部留白托出 hero，wrapper 整体滚动（frontend.md §35.3.1） */
 .is-empty .chat-content-wrapper {
   max-width: 1120px;
   display: block;

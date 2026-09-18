@@ -293,14 +293,30 @@ async def test_service_returned_failure_dict_gets_default_code(monkeypatch) -> N
 
 @pytest.mark.asyncio
 async def test_requires_confirm_carries_confirmation_code() -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+
+    class _FakeAsyncSession(AsyncSession):
+        def __init__(self):
+            pass
+
     schema = _volcano_schema()
     schema.requires_confirm = True
     service = ToolBridgeService(_FakeLoader([schema]))
-    result = await service.execute("u1", "cygnusx_plot_volcano", {"data_text": _SAMPLE})
+    context = ToolInvocationContext(
+        user_id="u1", session_id="s-test", db=_FakeAsyncSession()  # type: ignore[arg-type]
+    )
+    result = await service.execute(
+        "u1", "cygnusx_plot_volcano", {"data_text": _SAMPLE}, context=context
+    )
 
     assert result["success"] is True
     assert result["llm_payload"]["needs_confirm"] is True
     assert result["llm_payload"]["code"] == ToolErrorCode.CONFIRMATION_REQUIRED
+    assert result["ui_payload"]["actions"]["approve"]["url"].startswith(
+        "/api/v1/ai/tool-invocations/"
+    )
 
 
 @pytest.mark.asyncio
@@ -399,15 +415,32 @@ async def test_undeclared_param_reported_as_ignored() -> None:
 
 @pytest.mark.asyncio
 async def test_control_params_not_reported_as_ignored() -> None:
-    """下划线开头的桥接层控制参数（如 _confirmed）不算未声明参数。"""
+    """下划线开头的桥接层控制参数（_confirmation_id / _confirmed）不算未声明参数。
+
+    _confirmed 已不再是放行凭证（模型无法自证）；首次带控制参数的调用返回确认卡，
+    且不得把控制参数计入 ignored_params。
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+
+    class _FakeAsyncSession(AsyncSession):
+        def __init__(self):
+            pass
+
     schema = _volcano_schema()
     schema.requires_confirm = True
     service = ToolBridgeService(_FakeLoader([schema]))
+    context = ToolInvocationContext(
+        user_id="u1", session_id="s-test", db=_FakeAsyncSession()  # type: ignore[arg-type]
+    )
     result = await service.execute(
         "u1",
         "cygnusx_plot_volcano",
         {"data_text": _SAMPLE, "_confirmed": True},
+        context=context,
     )
 
     assert result["success"] is True
+    assert result["llm_payload"]["needs_confirm"] is True
     assert "ignored_params" not in result["llm_payload"]

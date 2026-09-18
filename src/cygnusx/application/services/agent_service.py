@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,12 @@ from cygnusx.application.services.site_settings_service import SiteSettingsServi
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import BusinessError, NotFoundError
 from cygnusx.domain.mcp.entities import MCPServer, MCPToolRegistry
-from cygnusx.domain.mcp.value_objects import ServerStatus, Transport
+from cygnusx.domain.mcp.value_objects import (
+    ReviewStatus,
+    ServerPool,
+    ServerStatus,
+    Transport,
+)
 from cygnusx.domain.skill.entities import Skill
 from cygnusx.infrastructure.config.agent_ability_catalog import agent_ability_catalog
 from cygnusx.infrastructure.config.agent_loader import load_agent_configs
@@ -74,6 +79,17 @@ _PRESET_IDS_BY_NAME: dict[str, uuid.UUID] = {
     CYGNUSX_TOOLS_SERVER_NAME: CYGNUSX_TOOLS_SERVER_ID,
     CONDA_META_MCP_SERVER_NAME: CONDA_META_MCP_SERVER_ID,
 }
+
+
+def _mcp_mount_allowed_for_agent(server: MCPServer) -> bool:
+    """审批链门禁：builder 实验池（AI 生成）MCP 未经人工审核通过不得挂载执行。
+
+    预置 preset 与非 builder 的手工注册 server 位于 production 池，且
+    ``review_status`` 默认值即为 APPROVED，不会被此条件误伤。
+    """
+    if server.pool != ServerPool.EXPERIMENTAL:
+        return True
+    return server.review_status == ReviewStatus.APPROVED
 
 AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX = """## AgentTeams 协作 Case
 
@@ -499,7 +515,14 @@ class AgentService:
                 raise BusinessError("MCP 标识无效") from exc
             result = await self._db.execute(
                 select(MCPServerModel.id).where(
-                    MCPServerModel.id.in_(mcp_uuids), MCPServerModel.is_enabled == True  # noqa: E712
+                    MCPServerModel.id.in_(mcp_uuids), MCPServerModel.is_enabled == True,  # noqa: E712
+                    # 审批链：builder 实验池 server 须审核通过方可挂载；
+                    # preset / 手工注册 server（production 池，默认 approved）不受影响。
+                    or_(
+                        MCPServerModel.pool.is_(None),
+                        MCPServerModel.pool != ServerPool.EXPERIMENTAL.value,
+                        MCPServerModel.review_status == ReviewStatus.APPROVED.value,
+                    ),
                 )
             )
             if len(set(result.scalars().all())) != len(mcp_uuids):
@@ -832,6 +855,9 @@ class AgentService:
             for server in mcp_servers:
                 # 离线/被禁用的外部 MCP 不向 LLM 暴露工具，避免模型选到必失败的慢工具。
                 if not server.is_enabled:
+                    continue
+                # 审批链：builder 实验池 MCP 未通过人工审核不得挂载执行。
+                if not _mcp_mount_allowed_for_agent(server):
                     continue
                 allowed_names = tool_pack_config["mcp_tools"].get(str(server.id))
                 if allowed_names is None:

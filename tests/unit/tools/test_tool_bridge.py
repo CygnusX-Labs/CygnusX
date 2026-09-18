@@ -6,12 +6,23 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.tool_bridge_service import ToolBridgeService
 from cygnusx.infrastructure.config.storage_config import StorageConfig
 from cygnusx.infrastructure.storage import LocalStorageBackend
 from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 from cygnusx.tools.schema_loader import ToolSchema, ToolsSchemaLoader
+
+
+class _FakeAsyncSession(AsyncSession):
+    def __init__(self):
+        pass
+
+
+def _make_context(user_id: str = "u1", session_id: str = "s-test") -> ToolInvocationContext:
+    return ToolInvocationContext(user_id=user_id, session_id=session_id, db=_FakeAsyncSession())
 
 
 class _FakeLoader(ToolsSchemaLoader):
@@ -313,17 +324,61 @@ async def test_manhattan_shim_via_bridge() -> None:
 
 @pytest.mark.asyncio
 async def test_requires_confirm_returns_confirm_card() -> None:
-    """requires_confirm 工具在未确认时返回 confirm_card。"""
+    """requires_confirm 工具首次调用返回带 confirmation_id 的 confirm_card。"""
     schema = _volcano_schema()
     schema.requires_confirm = True
     loader = _FakeLoader([schema])
     service = ToolBridgeService(loader)
-    result = await service.execute("u1", "cygnusx_plot_volcano", {"data_text": "gene\tlog2FC\tpadj\nA\t1\t0.01"})
+    args = {"data_text": "gene\tlog2FC\tpadj\nA\t1\t0.01"}
+    result = await service.execute("u1", "cygnusx_plot_volcano", args, context=_make_context())
 
     assert result["success"] is True
     assert result["is_error"] is False
     assert result["llm_payload"].get("needs_confirm") is True
     assert result["ui_payload"].get("confirm_card") is True
+    confirmation_id = result["ui_payload"].get("confirmation_id")
+    assert confirmation_id
+
+    # 未经人类批准直接携带凭证重试 → 服务端拒绝（模型无法自证确认）
+    from cygnusx.application.services.tool_confirmation_service import (
+        ConfirmationError,
+        get_tool_confirmation_service,
+    )
+
+    with pytest.raises(ConfirmationError) as exc_info:
+        await get_tool_confirmation_service().consume_tool_confirmation(
+            "u1", str(confirmation_id), "cygnusx_plot_volcano", args
+        )
+    assert exc_info.value.code == "CONFIRMATION_REQUIRED"
+
+    # 人类点卡置 APPROVED 后，同参数消费成功
+    await get_tool_confirmation_service().approve_by_human(
+        user_id="u1", confirmation_id=str(confirmation_id)
+    )
+    record = await get_tool_confirmation_service().consume_tool_confirmation(
+        "u1", str(confirmation_id), "cygnusx_plot_volcano", args
+    )
+    assert record.status == "CONSUMED"
+
+    # 一次性凭证：重复消费报 ALREADY_CONSUMED
+    with pytest.raises(ConfirmationError) as exc_info:
+        await get_tool_confirmation_service().consume_tool_confirmation(
+            "u1", str(confirmation_id), "cygnusx_plot_volcano", args
+        )
+    assert exc_info.value.code == "ALREADY_CONSUMED"
+
+    # 参数被改动：新的确认记录消费时报 ARGS_CHANGED
+    fresh = await get_tool_confirmation_service().create_for_tool(
+        "u1", "cygnusx_plot_volcano", args
+    )
+    await get_tool_confirmation_service().approve_by_human(
+        user_id="u1", confirmation_id=fresh.confirmation_id
+    )
+    with pytest.raises(ConfirmationError) as exc_info:
+        await get_tool_confirmation_service().consume_tool_confirmation(
+            "u1", fresh.confirmation_id, "cygnusx_plot_volcano", {**args, "pval_cutoff": 0.001}
+        )
+    assert exc_info.value.code == "ARGS_CHANGED"
 
 
 @pytest.mark.asyncio
