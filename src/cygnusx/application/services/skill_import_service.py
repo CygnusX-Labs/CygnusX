@@ -165,6 +165,8 @@ class SkillImportService:
         """市场列表 = 平台内置源 + 阿里云官方源（本地同步缓存，列表不触网）"""
         items: list[SkillMarketplaceItemDTO] = []
         items.extend(await self._list_market_dir(Path(get_settings().skill_marketplace_dir)))
+        if not get_settings().aliyun_skills_enabled:
+            return items
         # AgentExplorer API 的目录元数据存于 manifest；历史 GitHub 缓存保留兼容读取。
         aliyun_items = await self._list_aliyun_catalog()
         if aliyun_items:
@@ -245,6 +247,8 @@ class SkillImportService:
 
     async def aliyun_status(self) -> AliyunMarketplaceStatusDTO:
         """官方源状态：本地缓存条目数 + 同步元数据 + 过期标记（不触网）"""
+        if not get_settings().aliyun_skills_enabled:
+            return AliyunMarketplaceStatusDTO(enabled=False, available=False)
         return self._build_aliyun_status()
 
     async def sync_aliyun_marketplace(self, force: bool = False) -> AliyunMarketplaceStatusDTO:
@@ -256,6 +260,8 @@ class SkillImportService:
         - 网络失败：保留旧缓存、记录 last_error，内置条目与已缓存条目不受影响
         """
         settings = get_settings()
+        if not settings.aliyun_skills_enabled:
+            return AliyunMarketplaceStatusDTO(enabled=False, available=False)
         if settings.aliyun_skills_access_key_id and settings.aliyun_skills_access_key_secret:
             return await self._sync_agentexplorer_marketplace(force=force)
         cache_dir = Path(settings.aliyun_skills_cache_dir)
@@ -435,6 +441,8 @@ class SkillImportService:
     async def install_aliyun(self, skill_id: str, overwrite: bool = False) -> SkillDTO:
         """从官方源本地缓存安装技能，走统一的预览校验入库流程。"""
         settings = get_settings()
+        if not settings.aliyun_skills_enabled:
+            raise NotFoundError("阿里云官方技能源未启用（ALIYUN_SKILLS_ENABLED=false）")
         cache_dir = Path(settings.aliyun_skills_cache_dir)
         manifest = _read_json(cache_dir / "manifest.json")
         if manifest.get("provider") == "agentexplorer_api":

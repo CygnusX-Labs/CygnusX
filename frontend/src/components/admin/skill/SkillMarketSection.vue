@@ -53,6 +53,9 @@ const INSTALL_OPTIONS = [
 ]
 
 // ---------- Computed ----------
+/** 阿里云官方源总开关（后端 ALIYUN_SKILLS_ENABLED）；关闭时隐藏官方源分组与同步入口 */
+const aliyunEnabled = computed(() => aliyunStatus.value?.enabled !== false)
+
 const filteredMarket = computed(() => {
   let items = marketplace.value
   if (sourceFilter.value === 'builtin') {
@@ -237,7 +240,9 @@ async function loadMarketplace() {
     if (items.status === 'fulfilled') marketplace.value = items.value
     if (status.status === 'fulfilled') {
       aliyunStatus.value = status.value
-      if (status.value && status.value.last_synced_at === null && !aliyunSyncing.value) {
+      if (status.value.enabled === false) {
+        if (sourceFilter.value === 'aliyun') sourceFilter.value = 'all'
+      } else if (status.value.last_synced_at === null && !aliyunSyncing.value) {
         void handleSyncAliyun(false)
       }
     }
@@ -267,7 +272,7 @@ async function loadAgents() {
 }
 
 async function handleSyncAliyun(force: boolean) {
-  if (aliyunSyncing.value) return
+  if (aliyunSyncing.value || !aliyunEnabled.value) return
   aliyunSyncing.value = true
   try {
     aliyunStatus.value = await store.syncAliyunMarket(force)
@@ -426,7 +431,7 @@ defineExpose({ refresh: loadMarketplace })
       <div class="cygnusx-segmented-toggle" role="group" aria-label="来源筛选">
         <button :class="{ active: sourceFilter === 'all' }" :aria-pressed="sourceFilter === 'all'" @click="sourceFilter = 'all'">全部</button>
         <button :class="{ active: sourceFilter === 'builtin' }" :aria-pressed="sourceFilter === 'builtin'" @click="sourceFilter = 'builtin'">平台内置</button>
-        <button :class="{ active: sourceFilter === 'aliyun' }" :aria-pressed="sourceFilter === 'aliyun'" @click="sourceFilter = 'aliyun'">阿里云官方</button>
+        <button v-if="aliyunEnabled" :class="{ active: sourceFilter === 'aliyun' }" :aria-pressed="sourceFilter === 'aliyun'" @click="sourceFilter = 'aliyun'">阿里云官方</button>
       </div>
       <NSelect
         v-model:value="categoryFilter"
@@ -488,7 +493,7 @@ defineExpose({ refresh: loadMarketplace })
     <div class="market-section">
       <div class="section-header">
         <span class="section-title">技能市场</span>
-        <div v-if="aliyunStatus" class="aliyun-sync-meta">
+        <div v-if="aliyunStatus && aliyunEnabled" class="aliyun-sync-meta">
           <NIcon :component="CloudOutline" size="13" />
           <template v-if="aliyunStatus.last_synced_at">
             同步于 {{ formatRelativeTime(aliyunStatus.last_synced_at) }}
@@ -544,7 +549,7 @@ defineExpose({ refresh: loadMarketplace })
         </div>
         <NEmpty v-else description="未找到相关技能，换个关键词试试" class="market-empty" />
 
-        <div v-if="aliyunStatus && !aliyunStatus.available && aliyunStatus.error" class="aliyun-warning">
+        <div v-if="aliyunStatus && aliyunEnabled && !aliyunStatus.available && aliyunStatus.error" class="aliyun-warning">
           <NTag size="small" type="warning" :bordered="false">
             <NIcon :component="CloudOutline" /> 官方源暂不可用：{{ aliyunStatus.error }}
           </NTag>

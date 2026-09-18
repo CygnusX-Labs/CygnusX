@@ -157,6 +157,7 @@ class SkillMarketplaceItemDTO(BaseModel):
 class AliyunMarketplaceStatusDTO(BaseModel):
     """阿里云官方技能源同步状态（空态展示与同步控制用）"""
 
+    enabled: bool = True  # 总开关（ALIYUN_SKILLS_ENABLED）；关闭时市场隐藏官方源分组
     available: bool  # 本地缓存是否有可用条目
     count: int = 0  # 缓存中的技能条目数
     repo: str = ""  # 上游来源标识（AgentExplorer OpenAPI 或 GitHub owner/repo）

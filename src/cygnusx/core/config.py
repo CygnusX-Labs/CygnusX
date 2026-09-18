@@ -251,7 +251,10 @@ class Settings(BaseSettings):
     skill_marketplace_dir: str = (
         "data/ai/skill_marketplace"  # 内置技能市场：随仓库发布的可安装技能文件夹
     )
-    # ===== 阿里云官方技能源（市场第二分组）=====
+    # ===== 阿里云官方技能源（市场第二分组，可选）=====
+    # 总开关：默认关闭，市场只展示平台内置源；置 true 后阿里云官方源分组才出现。
+    # 关闭时同步/安装接口直接短路返回，不触网、不读缓存目录。
+    aliyun_skills_enabled: bool = False
     # 配置 AccessKey 后通过 AgentExplorer OpenAPI 同步目录，安装时按需拉取 SKILL.md；
     # 未配置时保留 GitHub 仓库同步作为兼容回退。网络不可达时内置条目不受影响。
     aliyun_skills_access_key_id: str = ""
