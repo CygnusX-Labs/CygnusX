@@ -31,14 +31,17 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # ===== 白名单与限额 =====
 
 # 编排代码允许回调的工具：工作区读写、沙盒执行、知识/流程查询、文档工具、
-# 平台数据引入与产物登记。禁止项（不在名单内即拒绝）：ask_user / update_plan /
+# 平台数据引入与产物登记、受限问答（llm_query，经 ptc_llm_handler 发起并审计）。
+# 禁止项（不在名单内即拒绝）：ask_user / update_plan /
 # transfer_to_agent / create_agentteams_case / parallel_subagents /
 # tool_orchestrate 自身（防递归）/ browser_*（独立会话状态）/ onlyoffice_*。
 PTC_ALLOWED_TOOLS: frozenset[str] = frozenset(
@@ -57,8 +60,48 @@ PTC_ALLOWED_TOOLS: frozenset[str] = frozenset(
         "datahub_import",
         "platform_result_import",
         "artifact_register",
+        "llm_query",
     }
 )
+
+# WP3 任务 3：llm_query 为动态白名单成员——仅在会话科研开关
+# research_mode.ptc_llm_query=true 时加入本次编排的白名单（默认不在）。
+# 审批语义不变：tool_orchestrate 整段仍是一次审批，子调用不逐次弹窗。
+PTC_STATIC_ALLOWED_TOOLS: frozenset[str] = PTC_ALLOWED_TOOLS - {"llm_query"}
+
+
+async def resolve_ptc_llm_query_enabled(
+    *,
+    session_id: str,
+    db: AsyncSession | None = None,
+    override: bool | None = None,
+) -> bool:
+    """判定本次编排是否放行 llm_query（会话 research_mode.ptc_llm_query）。
+
+    - override 显式传入（测试/内部调用）时优先；
+    - 否则读 chat_sessions.sandbox_meta.research_mode.ptc_llm_query；
+      db 不可用或读取异常按未开启（False）降级。
+    """
+    if override is not None:
+        return bool(override)
+    if db is None:
+        return False
+    try:
+        from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+
+        result = await db.execute(
+            select(ChatSessionModel.sandbox_meta).where(
+                ChatSessionModel.session_id == session_id
+            )
+        )
+        sandbox_meta = result.scalar_one_or_none() or {}
+        research_mode = sandbox_meta.get("research_mode")
+        if not isinstance(research_mode, dict):
+            return False
+        return bool(research_mode.get("ptc_llm_query"))
+    except Exception as exc:  # noqa: BLE001 - 开关读取失败按未开启降级，不阻断编排
+        logger.info(f"[PTC] llm_query 开关读取失败（会话 {session_id[:8]}）: {exc}")
+        return False
 
 PTC_DEFAULT_TIMEOUT_SECONDS = 600  # 编排总超时默认值
 PTC_MAX_TIMEOUT_SECONDS = 1800  # 编排总超时上限
@@ -234,8 +277,20 @@ async def _default_tool_executor(
     user_id: str | None,
     db: AsyncSession | None,
     image: str | None,
+    orchestration_id: str = "",
 ) -> dict[str, Any]:
-    """默认子调用分发：复用 Studio 内置工具分发器（惰性 import 避免循环依赖）。"""
+    """默认子调用分发：复用 Studio 内置工具分发器（惰性 import 避免循环依赖）。
+
+    llm_query 为编排专用受限问答，不经 execute_studio_tool，直接交
+    ptc_llm_handler（system 锚定 + 审计同窗）。"""
+    if name == "llm_query":
+        from cygnusx.application.services.ptc_llm_handler import execute_llm_query
+
+        return await execute_llm_query(
+            args, session_id=session_id, user_id=user_id, db=db,
+            orchestration_id=orchestration_id,
+        )
+
     from cygnusx.application.services.studio_tools import execute_studio_tool
 
     return await execute_studio_tool(
@@ -254,23 +309,34 @@ async def run_orchestration(
     max_calls: int = PTC_DEFAULT_MAX_CALLS,
     tool_executor: ToolExecutor | None = None,
     on_progress: ProgressCallback | None = None,
+    llm_query_enabled: bool | None = None,
 ) -> dict[str, Any]:
     """运行一段编排代码，返回 {"success": bool, "result": {"llm_payload", "ui_payload"}}。
 
     - tool_executor 可注入（测试用），缺省时走 execute_studio_tool 分发；
     - on_progress 每次子调用开始/结束各收到一行文本；
+    - llm_query_enabled 显式覆盖 llm_query 白名单判定；缺省时按会话
+      research_mode.ptc_llm_query 动态决定（默认不在白名单）；
     - 任何异常（子进程启动失败 / 超时 / 用户代码非零退出）都收敛为
       success=False 的友好 payload，绝不上抛。
     """
     started = time.monotonic()
     timeout_sec = max(1, min(int(timeout_sec), PTC_MAX_TIMEOUT_SECONDS))
     max_calls = max(1, int(max_calls))
+    # 本次编排 run id：ui_payload 透出，并作为 llm_query 审计行的关联键
+    orchestration_id = uuid4().hex
+    # WP3 任务 3：llm_query 按会话科研开关动态进出白名单（默认不进）
+    llm_allowed = await resolve_ptc_llm_query_enabled(
+        session_id=session_id, db=db, override=llm_query_enabled
+    )
+    allowed_tools = PTC_ALLOWED_TOOLS if llm_allowed else PTC_STATIC_ALLOWED_TOOLS
 
     async def _execute(name: str, args: dict[str, Any]) -> dict[str, Any]:
         if tool_executor is not None:
             return await tool_executor(name, args)
         return await _default_tool_executor(
-            name, args, session_id=session_id, user_id=user_id, db=db, image=image
+            name, args, session_id=session_id, user_id=user_id, db=db, image=image,
+            orchestration_id=orchestration_id,
         )
 
     async def _progress(text: str) -> None:
@@ -411,11 +477,17 @@ async def run_orchestration(
                 rid = msg.get("id")
                 name = str(msg.get("name") or "")
                 args = msg.get("args") if isinstance(msg.get("args"), dict) else {}
-                if name not in PTC_ALLOWED_TOOLS:
+                if name not in allowed_tools:
                     logger.info(f"[PTC] 拒绝白名单外工具 {name}（会话 {session_id[:8]}）")
-                    await _write_response(
-                        {"id": rid, "ok": False, "error": f"工具 {name} 不在编排白名单内"}
-                    )
+                    if name == "llm_query":
+                        # WP3 任务 3：科研开关未开启时的专属软失败信息（软失败：编排继续）
+                        error = (
+                            "当前会话未开启 llm_query"
+                            "（科研模式开关 research_mode.ptc_llm_query 未启用）"
+                        )
+                    else:
+                        error = f"工具 {name} 不在编排白名单内"
+                    await _write_response({"id": rid, "ok": False, "error": error})
                     continue
                 if calls_started >= max_calls:
                     await _write_response(
@@ -446,6 +518,7 @@ async def run_orchestration(
         summary_tail, summary_cut = _tail_text(output_text, _PTC_LLM_SUMMARY_TAIL)
         ui_payload: dict[str, Any] = {
             "code": code,
+            "orchestration_id": orchestration_id,
             "summary": output_text,
             "calls": records,
             "call_count": calls_started,

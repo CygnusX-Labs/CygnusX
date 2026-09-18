@@ -375,6 +375,26 @@ class ChatMessageModel(Base):
     )
 
 
+class ChatMessageEventModel(Base):
+    """AI 消息过程态事件表（append-only）。
+
+    WP2：流式执行期间逐 chunk 追加 tool_output 等过程事件，(message_id, seq)
+    联合主键保证消息内单调有序；代码层只提供插入与查询，不提供更新/删除路径。
+    历史重建时按 message_id 回放事件还原工具卡过程输出，无事件的旧消息
+    完全回落 metadata_json.tool_invocations 终态快照。
+    """
+
+    __tablename__ = "chat_message_events"
+
+    message_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class ChatMessageFeedbackModel(Base):
     """用户对 AI 消息的点赞/点踩反馈。
 

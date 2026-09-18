@@ -12,53 +12,80 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
-import ipaddress
 import json
-import re
 import time
 import uuid
 from collections.abc import AsyncIterator
-from functools import partial
 from datetime import UTC, datetime
-from pathlib import Path
+from functools import partial
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
-import anyio
-import httpx
 from loguru import logger
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cygnusx.application.schemas.chat import (
-    ChatSearchContentMatchDTO,
     ChatSessionDTO,
-    ChatSessionSearchDTO,
+    ResearchModeConfig,
 )
+from cygnusx.application.services.agent_context_builder import AgentContextBuilder
 from cygnusx.application.services.agent_handoff_service import (
     HANDOFF_TOOL_NAME,
     AgentHandoffService,
     extract_handoff_directive,
 )
-from cygnusx.application.services.agent_context_builder import AgentContextBuilder
 from cygnusx.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
 from cygnusx.application.services.biomedical_literature_service import (
     BiomedicalLiteratureService,
 )
-from cygnusx.application.services.chat_sandbox_tools import (
-    CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA,
-    CHAT_SANDBOX_TOOL_NAME,
-    execute_chat_sandbox,
-    stream_chat_sandbox_tool,
-)
-from cygnusx.application.services.chat.session_service import SessionService
-from cygnusx.application.services.chat.assistant_service import AssistantService
+from cygnusx.application.services.chat.agent_runtime_gateway import AgentRuntimeGateway
 from cygnusx.application.services.chat.assistant_management import ChatAssistantManagement
-from cygnusx.application.services.chat.runtime_support import ChatRuntimeSupport
-from cygnusx.application.services.chat.persistence_support import ChatPersistenceSupport
+from cygnusx.application.services.chat.assistant_service import AssistantService
+from cygnusx.application.services.chat.configuration import (
+    ASK_USER_SYSTEM_PROMPT_SUFFIX,
+    BUILTIN_ASSISTANTS,
+    HANDOFF_SYSTEM_PROMPT_SUFFIX,
+    KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX,
+    KNOWLEDGE_SEARCH_TOOL,
+    MEMORY_SYSTEM_PROMPT_SUFFIX,
+    MEMORY_TOOL_NAMES,
+    MEMORY_V2_WRITE_DISCIPLINE,
+    RESEARCH_TOOL_CHANNEL,
+    RESEARCH_TOOL_NAMES,
+    WEB_SEARCH_TOOL,
+)
+from cygnusx.application.services.chat.direct_chat_entrypoint import DirectChatEntrypoint
+from cygnusx.application.services.chat.dto_support import ChatDtoSupport
 from cygnusx.application.services.chat.next_step_suggestions import suggestions_metadata
+from cygnusx.application.services.chat.overdrive_control import (
+    OVERDRIVE_SUMMARY_SYSTEM_PROMPT,
+    OverdriveControl,
+    OverdrivePlanDecision,
+    _analysis_intake_questions,
+    _default_overdrive_assignments,
+    _effective_overdrive,
+    _extract_overdrive_intake_slots,
+    _is_overdrive_planning_request,
+    _normalize_overdrive_assignments,
+    _overdrive_answer_requires_user_input,
+    _overdrive_assignment_waves,
+    _overdrive_capability_profile,
+    _overdrive_preflight_questions,
+    _overdrive_summary_exposes_internal_instructions,
+    _resolve_overdrive_keyword_toggle,
+    _resolve_overdrive_router_toggle,
+    _save_overdrive_report_to_workspace,
+    build_overdrive_agent_catalog,
+    emit_overdrive_speech,
+    load_overdrive_session_state,
+    prepare_overdrive_intake,
+    resolve_active_overdrive_route,
+    stream_overdrive_manager,
+    stream_overdrive_plan_decision,
+)
+from cygnusx.application.services.chat.persistence_support import ChatPersistenceSupport
 from cygnusx.application.services.chat.request_preparation import (
     AgentRequestPreparationFailure,
     prepare_agent_request,
@@ -66,76 +93,35 @@ from cygnusx.application.services.chat.request_preparation import (
 from cygnusx.application.services.chat.routing_observability import (
     warn_custom_agents_missing_from_registry,
 )
+from cygnusx.application.services.chat.runtime_feature_gates import ChatRuntimeFeatureGates
+from cygnusx.application.services.chat.runtime_support import ChatRuntimeSupport
+from cygnusx.application.services.chat.session_management import ChatSessionManagement
+from cygnusx.application.services.chat.session_service import SessionService
 from cygnusx.application.services.chat.skill_execution import (
-    SkillExecutionResult,
     stream_skill_execution,
 )
-from cygnusx.application.services.chat.overdrive_control import (
-    OVERDRIVE_SUMMARY_SYSTEM_PROMPT,
-    OverdriveControl,
-    OverdrivePlanDecision,
-    _analysis_intake_questions,
-    _build_overdrive_followup_assignments,
-    _default_overdrive_assignments,
-    _effective_overdrive,
-    _extract_overdrive_intake_slots,
-    _filter_overdrive_questions,
-    _is_overdrive_planning_request,
-    _normalize_overdrive_assignments,
-    _overdrive_answer_requires_user_input,
-    _overdrive_assignment_waves,
-    _overdrive_capability_profile,
-    _overdrive_followup_choices,
-    _overdrive_preflight_questions,
-    _overdrive_requires_input_clarification,
-    _overdrive_summary_exposes_internal_instructions,
-    _resolve_overdrive_keyword_toggle,
-    _resolve_overdrive_router_toggle,
-    _save_overdrive_report_to_workspace,
-    ask_overdrive_manager,
-    build_overdrive_agent_catalog,
-    emit_overdrive_speech,
-    load_overdrive_session_state,
-    prepare_overdrive_intake,
-    repair_overdrive_plan,
-    resolve_active_overdrive_route,
-    stream_overdrive_manager,
-    stream_overdrive_plan_decision,
-)
-from cygnusx.application.services.chat.dto_support import ChatDtoSupport
-from cygnusx.application.services.chat.direct_chat_entrypoint import DirectChatEntrypoint
-from cygnusx.application.services.chat.runtime_feature_gates import ChatRuntimeFeatureGates
-from cygnusx.application.services.chat.session_management import ChatSessionManagement
-from cygnusx.application.services.chat.agent_runtime_gateway import AgentRuntimeGateway
-from cygnusx.application.services.chat.configuration import (
-    ASK_USER_SYSTEM_PROMPT_SUFFIX,
-    BIOINFORMATICS_DOMAIN_TRIGGERS,
-    BUILTIN_ASSISTANTS,
-    FRESHNESS_SEARCH_TRIGGERS,
-    HANDOFF_SYSTEM_PROMPT_SUFFIX,
-    KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX,
-    KNOWLEDGE_SEARCH_TOOL,
-    MEMORY_SYSTEM_PROMPT_SUFFIX,
-    MEMORY_TOOL_NAMES,
-    MEMORY_V2_WRITE_DISCIPLINE,
-    PROFESSIONAL_LEARNING_TRIGGERS,
-    RESEARCH_TOOL_CHANNEL,
-    RESEARCH_TOOL_NAMES,
-    WEB_SEARCH_TOOL,
-)
 from cygnusx.application.services.chat.utils import (
-    _cap_tool_invocation_payload,
+    _cap_tool_invocation_payload_detail,
+    _code_cell_envelope_fields,
     _extract_route_json,
     _fanout_ask_request,
+    _invocation_payload_hash,
     _is_route_execution_confirmation,
+    _max_persisted_cell_index,
     _normalize_ask_questions,
     _should_show_route_transition,
     _studio_risk_hint,
+)
+from cygnusx.application.services.chat_sandbox_tools import (
+    CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA,
+    CHAT_SANDBOX_TOOL_NAME,
+    stream_chat_sandbox_tool,
 )
 from cygnusx.application.services.collaboration_observability_service import (
     CollaborationObservabilityService,
 )
 from cygnusx.application.services.domain_registry import get_domain_registry
+from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
 from cygnusx.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_PROMPT_SUFFIX,
     MAS_PLAN_PREVIEW_TOOL_NAME,
@@ -143,16 +129,11 @@ from cygnusx.application.services.mas_plan_adapter import (
     MASPlanPreviewAdapter,
 )
 from cygnusx.application.services.overdrive_plan_constraint_service import (
-    anchor_ids as overdrive_anchor_ids,
-)
-from cygnusx.application.services.overdrive_plan_constraint_service import (
     apply_authoritative_plan,
+    build_repair_prompt,
 )
 from cygnusx.application.services.overdrive_plan_constraint_service import (
     authoritative_rules as overdrive_authoritative_rules,
-)
-from cygnusx.application.services.overdrive_plan_constraint_service import (
-    build_repair_prompt,
 )
 from cygnusx.application.services.overdrive_plan_constraint_service import (
     format_anchors as format_overdrive_anchors,
@@ -160,7 +141,6 @@ from cygnusx.application.services.overdrive_plan_constraint_service import (
 from cygnusx.application.services.overdrive_planning_service import (
     OverdrivePlanningService,
     ResearchBundleService,
-    build_research_queries,
     is_planning_only_request,
 )
 from cygnusx.application.services.overdrive_planning_telemetry_service import (
@@ -170,10 +150,7 @@ from cygnusx.application.services.overdrive_run_service import OverdriveRunServi
 from cygnusx.application.services.overdrive_runtime import (
     OverdriveManifest,
     build_upstream_context,
-    infer_contract_dependencies,
     load_overdrive_limits,
-    normalize_contract_list,
-    normalize_retry,
     relative_overdrive_root,
 )
 from cygnusx.application.services.overdrive_runtime import (
@@ -182,7 +159,6 @@ from cygnusx.application.services.overdrive_runtime import (
 from cygnusx.application.services.parallel_subagent_service import (
     PARALLEL_SUBAGENTS_TOOL_NAME,
 )
-from cygnusx.application.services.research_search_optimizer import ResearchSearchOptimizer
 from cygnusx.application.services.search_provider_service import SearchProviderService
 from cygnusx.application.services.site_settings_service import SiteSettingsService
 from cygnusx.application.services.studio_approval_service import (
@@ -193,12 +169,6 @@ from cygnusx.application.services.studio_approval_service import (
     needs_approval,
     record_approval_audit,
 )
-from cygnusx.application.services.studio_checkpoints import create_checkpoint
-from cygnusx.application.services.studio_loop_guard import (
-    StudioLoopGuard,
-    handle_loop_guard_trigger,
-)
-from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
 from cygnusx.application.services.studio_capabilities import (
     CAPABILITY_LIST_TOOL,
     CAPABILITY_LOAD_TOOL,
@@ -223,11 +193,16 @@ from cygnusx.application.services.studio_capabilities import (
 from cygnusx.application.services.studio_capabilities import (
     render_prompt as render_capability_prompt,
 )
+from cygnusx.application.services.studio_checkpoints import create_checkpoint
+from cygnusx.application.services.studio_loop_guard import (
+    StudioLoopGuard,
+    handle_loop_guard_trigger,
+)
 from cygnusx.application.services.studio_tools import (
     ASK_USER_TOOL_SCHEMA,
+    PLAN_ADVANCE_TOOL_NAMES,
     STUDIO_SYSTEM_PROMPT_SUFFIX,
     STUDIO_TOOL_NAMES,
-    PLAN_ADVANCE_TOOL_NAMES,
     advance_plan_steps,
     execute_studio_tool,
     normalize_plan_steps,
@@ -239,11 +214,9 @@ from cygnusx.application.services.unified_intent_router import (
     normalize_decision,
 )
 from cygnusx.core.config import get_settings
-from cygnusx.core.exceptions import BusinessError, NotFoundError
-from cygnusx.infrastructure.config.studio_loader import get_studio_config
-from cygnusx.core.telemetry import get_meter, get_tracer
+from cygnusx.core.exceptions import BusinessError
+from cygnusx.core.telemetry import get_meter
 from cygnusx.domain.skill.services import (
-    SKILL_RESOURCE_TOOL_NAME,
     SKILL_TOOL_NAMES,
 )
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
@@ -256,9 +229,8 @@ from cygnusx.infrastructure.config.runtime_image_loader import (
     get_runtime_images,
     render_runtime_manifest,
 )
-from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
+from cygnusx.infrastructure.config.studio_loader import get_studio_config
 from cygnusx.infrastructure.database.models.chat import (
-    ChatMessageModel,
     ChatSessionModel,
 )
 from cygnusx.infrastructure.database.session import get_session_factory
@@ -2648,9 +2620,9 @@ class ChatService(
         """
         from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
         from cygnusx.application.services.agent_service import AgentService
+        from cygnusx.application.services.studio_micro_compaction import compact_tool_history
         from cygnusx.core.sanitizer import sanitize_messages, sanitize_text
         from cygnusx.infrastructure.mcp.client import MCPClient
-        from cygnusx.application.services.studio_micro_compaction import compact_tool_history
 
         cookie_error = await self._ensure_cookie_balance(user_id)
         if cookie_error:
@@ -3726,7 +3698,9 @@ class ChatService(
 
                 runtime_prompt += f"\n\n{render_context_pack_hint(studio_context_pack)}"
             if studio_workspace_memory:
-                from cygnusx.application.services.studio_context_service import render_workspace_memory
+                from cygnusx.application.services.studio_context_service import (
+                    render_workspace_memory,
+                )
 
                 runtime_prompt += f"\n\n{render_workspace_memory(studio_workspace_memory)}"
             if studio_workspace_memory_index:
@@ -3976,6 +3950,15 @@ class ChatService(
         last_finish_reason: str | None = None
         # Studio 工具调用落库累积（代码卡片 / 产物 / diff，供历史重载渲染）
         persisted_tool_invocations: list[dict[str, Any]] = []
+        # WP3-Task1：cell 编号基线取本会话已落库信封的最大 cell_index+1
+        # （纯派生，不重写历史；查询失败时从 0 起，不阻断聊天主链路）
+        try:
+            code_cell_next = _max_persisted_cell_index(
+                await self._sessions.get_messages(current_session_id)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cell_index 基线查询失败，从 0 起编号: {}", exc)
+            code_cell_next = 0
         # 正文/工具调用的时间线：按发生顺序记录 text 段与 tool 段，
         # 供前端按"内容→工具→内容"的实际过程交错渲染，而不是上正文下工具两段式
         timeline: list[dict[str, Any]] = []
@@ -4936,6 +4919,7 @@ class ChatService(
                                 tool_call_id=tc.get("id", ""),
                                 user_id=user_id,
                                 db=self._db,
+                                message_id=ai_message.message_id,
                             ):
                                 if isinstance(item, ChatChunk):
                                     yield item
@@ -5032,6 +5016,7 @@ class ChatService(
                                 user_id=str(user_id),
                                 tool_call_id=tc.get("id", ""),
                                 session_id=str(current_session_id),
+                                message_id=ai_message.message_id,
                             ):
                                 if isinstance(item, ChatChunk):
                                     yield item
@@ -5217,25 +5202,48 @@ class ChatService(
                     # 重建工具卡片、工作区摘要与 Plotly 图表（此前仅 Studio 工具落库，
                     # 普通 MCP 工具——list_workspace_files/cygnusx_plot_volcano 等——
                     # 重开会话后卡片与图表全部丢失）。
-                    persisted_tool_invocations.append(
-                        {
-                            "tool_call_id": tc.get("id", ""),
-                            "tool_name": tool_name,
-                            "arguments": args,
-                            "success": bool(result.get("success")),
-                            "result": _cap_tool_invocation_payload(llm_result),
-                            "ui_payload": _cap_tool_invocation_payload(ui_payload),
-                            "mcp_server": tool_channel,
-                            **(
-                                {
-                                    "checkpoint_id": checkpoint_info["checkpoint_id"],
-                                    "checkpoint": checkpoint_info,
-                                }
-                                if checkpoint_info
-                                else {}
-                            ),
-                        }
+                    capped_result, result_truncation = _cap_tool_invocation_payload_detail(llm_result)
+                    capped_ui_payload, ui_payload_truncation = _cap_tool_invocation_payload_detail(
+                        ui_payload
                     )
+                    # WP2：信封落库时计算内容 sha256（不含 hash 字段自身），使信封可校验
+                    _invocation_envelope: dict[str, Any] = {
+                        "tool_call_id": tc.get("id", ""),
+                        "tool_name": tool_name,
+                        "arguments": args,
+                        "success": bool(result.get("success")),
+                        "result": capped_result,
+                        "ui_payload": capped_ui_payload,
+                        # 截断元信息落在信封层级（与载荷平级），前端历史重建
+                        # 时据此显式提示"内容已截断"，而非无声降级
+                        **({"result_truncation": result_truncation} if result_truncation else {}),
+                        **(
+                            {"ui_payload_truncation": ui_payload_truncation}
+                            if ui_payload_truncation
+                            else {}
+                        ),
+                        "mcp_server": tool_channel,
+                        **(
+                            {
+                                "checkpoint_id": checkpoint_info["checkpoint_id"],
+                                "checkpoint": checkpoint_info,
+                            }
+                            if checkpoint_info
+                            else {}
+                        ),
+                        # WP3-Task1：cell 语义冗余字段（可选；旧信封无此字段）。
+                        # 在 payload_hash 计算前写入，hash 覆盖这两个字段，
+                        # 篡改 cell_index/language 会使复算 hash 不匹配
+                        **(_cell_fields := _code_cell_envelope_fields(
+                            tool_name, args, code_cell_next
+                        )),
+                    }
+                    if _cell_fields["cell_index"] is not None:
+                        code_cell_next += 1
+                    _invocation_envelope["payload_hash"] = _invocation_payload_hash(
+                        _invocation_envelope
+                    )
+                    persisted_tool_invocations.append(_invocation_envelope)
                     await self.update_message_content(
                         ai_message.message_id,
                         full_content,
@@ -6209,4 +6217,24 @@ class ChatService(
                 )
                 else None
             ),
+            workspace_archive=(
+                dict(archive_marker)
+                if isinstance(
+                    (archive_marker := (s.sandbox_meta or {}).get("workspace_archive")), dict
+                )
+                else None
+            ),
+            # WP3 科研模式三开关：sandbox_meta.research_mode 原样透出；未开启/非法为 None
+            research_mode=_extract_research_mode(s.sandbox_meta),
         )
+
+
+def _extract_research_mode(sandbox_meta: dict | None) -> ResearchModeConfig | None:
+    """sandbox_meta.research_mode → DTO；缺失或字段非法时返回 None（按未开启处理）。"""
+    marker = (sandbox_meta or {}).get("research_mode")
+    if not isinstance(marker, dict):
+        return None
+    try:
+        return ResearchModeConfig.model_validate(marker)
+    except Exception:  # noqa: BLE001 - 存量脏数据按未开启降级，不影响会话加载
+        return None

@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from cygnusx.application.services.chat_message_event_service import message_event_service
 from cygnusx.application.services.ptc_orchestrator import (
     PTC_DEFAULT_TIMEOUT_SECONDS,
     run_orchestration,
@@ -443,7 +444,9 @@ TOOL_ORCHESTRATE_SCHEMA: dict[str, Any] = {
             "可用工具：workspace_read / workspace_list / workspace_write / workspace_edit / "
             "sandbox_execute / knowledge_search / pipeline_query / document_inspect / "
             "document_create / document_edit / document_convert / datahub_import / "
-            "platform_result_import / artifact_register。"
+            "platform_result_import / artifact_register / llm_query"
+            "（call_tool('llm_query', prompt='...', system_hint=None) 向当前会话模型发起一次"
+            "受限问答，返回 {'answer', 'model', 'usage'}，不进入宿主上下文、全程审计）。"
             "重要契约：子调用的中间结果不会回传给你，代码必须用 print 输出最终汇总，"
             "你只能看到 print 的内容。单次最多 50 次子调用，总超时默认 600 秒。"
         ),
@@ -742,6 +745,7 @@ async def _sandbox_execute(
         )
 
         if timeout_sec > STUDIO_LONG_TASK_THRESHOLD_SECONDS:
+            command_id = str(args.get("command_id") or "").strip() or None
             queued = await submit_studio_sandbox_task(
                 user_id=user_id,
                 session_id=session_id,
@@ -749,12 +753,17 @@ async def _sandbox_execute(
                 code=code,
                 timeout_sec=min(timeout_sec, 3600),
                 image=image,
+                command_id=command_id,
             )
             llm_payload = {
                 "task_id": queued["task_id"],
                 "status": queued["status"],
                 "message": "预计执行超过 10 分钟，已转入任务中心后台执行。完成后请刷新工作区查看产物。",
             }
+            if queued.get("deduplicated"):
+                llm_payload["message"] = (
+                    "相同任务已存在（幂等去重），直接沿用既有后台任务，完成后请刷新工作区查看产物。"
+                )
             return _ok_result(llm_payload, {**queued, "message": llm_payload["message"]})
 
     stdout_full = ""
@@ -1468,13 +1477,15 @@ async def stream_studio_tool(
     *,
     user_id: str | None = None,
     db: AsyncSession | None = None,
+    message_id: str | None = None,
 ) -> AsyncIterator[ChatChunk | dict[str, Any]]:
     """执行 Studio 工具并流式产出事件。
 
     产出序列：ChatChunk(type="tool_output")*（sandbox_execute 输出 stdout/stderr 增量，
     tool_orchestrate 输出每次子调用的进度行；metadata={"tool", "tool_call_id",
     "stream": "stdout"|"stderr", "data"}），最后一项为结果信封 dict
-    （同 execute_studio_tool 返回值）。
+    （同 execute_studio_tool 返回值）。tool_output chunk 同时按 message_id
+    追加到 chat_message_events（攒批落库，失败降级不影响流式）。
     """
     queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=_STREAM_QUEUE_MAX_CHUNKS)
 
@@ -1510,6 +1521,14 @@ async def stream_studio_tool(
             type="tool_output",
             metadata={"tool": name, "tool_call_id": tool_call_id, "stream": stream, "data": data},
         )
+        # WP2：tool_output chunk 追加到事件表（攒批，失败降级不阻塞流式）
+        await message_event_service.append_tool_output(
+            message_id or "",
+            tool_call_id=tool_call_id,
+            stream=stream,
+            data=data,
+        )
+    await message_event_service.flush_message_events(message_id or "")
     try:
         yield await task
     except Exception as e:  # noqa: BLE001 - execute_studio_tool 设计上不抛异常，此处兜底

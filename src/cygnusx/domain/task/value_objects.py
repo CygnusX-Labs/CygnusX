@@ -32,11 +32,15 @@ class LogLevel(str, Enum):
 
 
 # 合法的状态转换
+# 终态不可重开（WP2 任务4）：success/failed/cancelled 一经写入即不可再迁移，
+# 与 OpenAI4S compute/states.py 的终态语义一致——终态证据（结果/原因/时间戳）
+# 只允许写一次，迟到的探测或重试不得复活已结束的任务；需要再次执行时
+# 必须提交新任务（新 job 行 + 新幂等键）。
 VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.PENDING: {TaskStatus.QUEUED, TaskStatus.CANCELLED},
     TaskStatus.QUEUED: {TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.RUNNING: {TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.SUCCESS: set(),
-    TaskStatus.FAILED: {TaskStatus.PENDING, TaskStatus.QUEUED},  # 可重试
-    TaskStatus.CANCELLED: {TaskStatus.PENDING},  # 可重新入队
+    TaskStatus.FAILED: set(),
+    TaskStatus.CANCELLED: set(),
 }

@@ -84,10 +84,13 @@ class FileRegistry:
         cleanup_days: int | None = None,
         owner_scope: OwnerScope = OwnerScope.PERSONAL,
         team_id: uuid.UUID | None = None,
+        checksum: str | None = None,
     ) -> FileRecordModel:
         """注册单个文件，返回 FileRecordModel。
 
         幂等：同 user_id + storage_path 已存在时直接返回已有记录；团队文件额外按 team_id 区分。
+        checksum: 调用方实测的内容摘要（如产物登记的 sha256），仅新建记录时写入；
+        已存在记录保持原值不动（幂等语义）。
         """
         abs_path = Path(path)
         rel_path = self._pf.relative_to_root(abs_path)
@@ -111,7 +114,7 @@ class FileRegistry:
             original_name=name,
             storage_path=rel_path,
             size=size,
-            checksum="",
+            checksum=checksum or "",
             file_type=detected_type.value if hasattr(detected_type, "value") else str(detected_type),
             status="active",
             directory=directory,

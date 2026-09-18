@@ -103,10 +103,35 @@ export interface StudioShareStatus {
   shared_at: string | null
 }
 
+/** 分享快照中的工具执行摘要（R4，对应后端 tool_invocations 信封） */
+export interface SharedToolInvocation {
+  tool_name?: string
+  success?: boolean
+  arguments?: Record<string, unknown>
+  result?: unknown
+  result_truncation?: { payload_truncated?: boolean; truncation_note?: string }
+  ui_payload_truncation?: { payload_truncated?: boolean; truncation_note?: string }
+}
+
 export interface SharedStudioMessage {
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  /** R4：执行历史摘要（tool_invocations/timeline/usage），无工具执行为 null */
+  metadata_json?: {
+    tool_invocations?: SharedToolInvocation[]
+    timeline?: unknown[]
+    usage?: Record<string, unknown>
+    [key: string]: unknown
+  } | null
+}
+
+export interface SharedStudioArtifact {
+  path: string
+  size: number
+  mtime: number
+  /** R4：WP2 登记的 file_records checksum（sha256），未登记为 null */
+  sha256?: string | null
 }
 
 export interface SharedStudioSession {
@@ -116,7 +141,7 @@ export interface SharedStudioSession {
   updated_at: string
   expires_at: string
   messages: SharedStudioMessage[]
-  artifacts: StudioArtifact[]
+  artifacts: SharedStudioArtifact[]
 }
 
 /** Studio 会话级权限模式（supervised=关键操作需用户批准；auto=放权自动执行） */
@@ -140,6 +165,13 @@ export interface StudioPendingApproval {
   approval_kind?: 'tool' | 'plan'
 }
 
+export interface StudioEnvRestoreStatus {
+  status: 'restored' | 'failed' | 'skipped'
+  file: string | null
+  duration_ms: number
+  reason: string | null
+}
+
 export interface StudioSessionDetail {
   session: StudioSessionDTO
   sandbox_status: SandboxStatus
@@ -148,6 +180,8 @@ export interface StudioSessionDetail {
   files: WorkspaceEntry[]
   plan: StudioPlan | null
   capabilities: StudioCapabilitiesState | null
+  /** 最近一次声明式环境还原结果；failed 时给一次性 warning 提示 */
+  env_restore?: StudioEnvRestoreStatus | null
   sandbox_metrics: {
     cpu_percent: number
     memory_percent: number

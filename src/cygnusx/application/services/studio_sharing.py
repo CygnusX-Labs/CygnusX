@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import html
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,11 @@ from cygnusx.application.schemas.studio import (
     SharedStudioMessageDTO,
     SharedStudioSessionDTO,
 )
+
+# R4（WP3 任务 4）分享载荷大小护栏：复用 WP0 的 200KB 截断逻辑
+# （_cap_tool_invocation_payload_detail），被截断处带截断标记字段
+# （payload_truncated / original_bytes / truncation_note），前端按"已截断"显式提示。
+from cygnusx.application.services.chat.utils import _cap_tool_invocation_payload_detail
 from cygnusx.core.exceptions import NotFoundError
 from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
@@ -83,6 +89,8 @@ async def build_shared_snapshot(
             role=message.role,
             content=message.content,
             created_at=message.created_at,
+            # R4：补执行历史摘要，被分享方看到完整工具执行过程（截断护栏见下）
+            metadata_json=_share_message_metadata(message.metadata_json or {}),
         )
         for message in result.scalars().all()
         if message.role in {"user", "assistant"} and message.content
@@ -96,11 +104,15 @@ async def build_shared_snapshot(
     else:
         out_rel = factory.relative_to_root(workspace / OUTPUT_DIR)
         entries = await backend.list(out_rel, recursive=True)
+        checksums = await _artifact_checksums(db, session)
         artifacts = [
             {
                 "path": relative_workspace_path(factory.data_root / entry["path"], workspace),
                 "size": entry["size"],
                 "mtime": entry["mtime"],
+                # R4：产物 sha256 取 WP2 落 file_records 的 checksum 列（登记时实测），
+                # 无登记记录为 None
+                "sha256": checksums.get((str(entry["path"]).split("/")[-1], entry["size"])),
             }
             for entry in entries
             if entry["type"] == "file"
@@ -116,6 +128,92 @@ async def build_shared_snapshot(
     )
 
 
+# 分享快照中透出的 metadata_json 键白名单（其余键可能含隐私/内部状态，不外泄）
+_SHARED_METADATA_KEYS = ("tool_invocations", "timeline", "usage")
+
+
+def _share_message_metadata(metadata_json: dict[str, Any]) -> dict[str, Any] | None:
+    """从消息 metadata_json 提取可分享的执行历史摘要（白名单键 + 截断护栏）。
+
+    tool_invocations 信封（tool_name/arguments/result/payload_hash/截断标记）
+    原样透出——落库时已过一次 200KB 护栏，这里对快照载荷再做一次兜底截断。
+    """
+    shared: dict[str, Any] = {}
+    for key in _SHARED_METADATA_KEYS:
+        value = metadata_json.get(key)
+        if not value:
+            continue
+        capped, truncation = _cap_tool_invocation_payload_detail(value)
+        shared[key] = capped
+        if truncation:
+            shared[f"{key}_truncation"] = truncation
+    return shared or None
+
+
+async def _artifact_checksums(
+    db: AsyncSession, session: ChatSessionModel
+) -> dict[tuple[str, int], str]:
+    """WP2 产物登记的 file_records.checksum 索引：(original_name, size) -> sha256。
+
+    登记时 checksum 为 dest 落盘文件实测 sha256，与 workspace 产物同源同尺寸；
+    查不到（未登记/远程后端未实测）的条目不进索引，快照中 sha256=None。
+    """
+    try:
+        from cygnusx.infrastructure.database.models.file import FileRecordModel
+
+        user_uuid = uuid.UUID(str(session.user_id))
+    except (ValueError, AttributeError, TypeError, ImportError):
+        return {}
+    try:
+        result = await db.execute(
+            select(FileRecordModel).where(
+                FileRecordModel.user_id == user_uuid,
+                FileRecordModel.source == "studio",
+                FileRecordModel.checksum != "",
+            )
+        )
+        indexed: dict[tuple[str, int], str] = {}
+        for record in result.scalars().all():
+            indexed[(record.original_name, int(record.size))] = record.checksum
+        return indexed
+    except Exception:  # noqa: BLE001 - 分享快照尽力而为，checksum 缺失不阻断
+        return {}
+
+
+def _tool_card_html(message: SharedStudioMessageDTO) -> str:
+    """R4：单条消息的工具卡摘要 HTML（代码 + 关键输出摘要行），全部转义。"""
+    invocations = (message.metadata_json or {}).get("tool_invocations")
+    if not isinstance(invocations, list) or not invocations:
+        return ""
+    cards: list[str] = []
+    for invocation in invocations:
+        if not isinstance(invocation, dict):
+            continue
+        name = html.escape(str(invocation.get("tool_name") or "tool"))
+        status = "成功" if invocation.get("success") else "失败"
+        args = invocation.get("arguments")
+        arg_text = ""
+        if isinstance(args, dict):
+            # 代码卡取 code，文件类工具取 path，其余序列化截短
+            arg_text = str(args.get("code") or args.get("path") or args)[:400]
+        arg_html = html.escape(arg_text).replace("\n", "<br>") if arg_text else ""
+        result_text = html.escape(str(invocation.get("result") or "")[:300])
+        badges = ""
+        if invocation.get("result_truncation") or invocation.get("ui_payload_truncation"):
+            badges = '<span class="trunc">已截断</span>'
+        cards.append(
+            f'<div class="tool-card"><header><code>{name}</code>'
+            f'<span class="{"ok" if invocation.get("success") else "fail"}">{status}</span>'
+            f"{badges}</header>"
+            + (f'<pre class="args">{arg_html}</pre>' if arg_html else "")
+            + (f'<div class="result">{result_text}</div>' if result_text else "")
+            + "</div>"
+        )
+    if not cards:
+        return ""
+    return f'<div class="tools">{"".join(cards)}</div>'
+
+
 def render_printable_report(snapshot: SharedStudioSessionDTO) -> str:
     """生成无脚本、打印友好的自包含 HTML；浏览器打印即得到 PDF。"""
     title = html.escape(snapshot.title)
@@ -126,11 +224,18 @@ def render_printable_report(snapshot: SharedStudioSessionDTO) -> str:
         created_at = html.escape(_as_utc(message.created_at).isoformat())
         message_html.append(
             f'<section class="message {message.role}"><header>{role}<time>{created_at}</time>'
-            f'</header><div class="content">{content}</div></section>'
+            f'</header><div class="content">{content}</div>'
+            f"{_tool_card_html(message)}</section>"
         )
     artifact_html = "".join(
         f"<li><code>{html.escape(str(item.get('path', '')))}</code> "
-        f"<span>{int(item.get('size', 0))} bytes</span></li>"
+        f"<span>{int(item.get('size', 0))} bytes"
+        + (
+            f" · sha256:{html.escape(str(item.get('sha256'))[:16])}…"
+            if item.get("sha256")
+            else ""
+        )
+        + "</span></li>"
         for item in snapshot.artifacts
     ) or "<li>无登记产物</li>"
     return f"""<!doctype html>
@@ -144,6 +249,13 @@ h1 {{ margin-bottom:4px; }} .meta {{ color:#667085; font-size:12px; margin-botto
 .message header {{ display:flex; justify-content:space-between; gap:16px; padding:9px 12px; background:#f8fafc; font-weight:600; }}
 .message time {{ color:#667085; font-weight:400; font-size:11px; }}
 .content {{ padding:12px; white-space:normal; overflow-wrap:anywhere; }}
+.tools {{ border-top:1px dashed #e4e7ec; padding:8px 12px; display:grid; gap:8px; }}
+.tool-card {{ border:1px solid #eef1f4; border-radius:8px; padding:8px 10px; font-size:12px; }}
+.tool-card header {{ display:flex; gap:10px; align-items:center; padding:0; background:none; }}
+.tool-card .ok {{ color:#12805c; }} .tool-card .fail {{ color:#c03221; }}
+.tool-card .trunc {{ color:#b54708; }}
+.tool-card pre {{ background:#f8fafc; border-radius:6px; padding:8px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0; }}
+.tool-card .result {{ color:#475467; margin-top:6px; overflow-wrap:anywhere; }}
 code {{ background:#f2f4f7; padding:2px 5px; border-radius:4px; }}
 @media print {{ body {{ margin:0; max-width:none; padding:0; }} .no-print {{ display:none; }} }}
 </style></head><body>

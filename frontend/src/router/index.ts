@@ -454,6 +454,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AdminBlastDatabasesView.vue'),
         meta: { title: 'BLAST 数据库管理', requiresAuth: true }
       },
+      {
+        path: 'admin/workspace-archive',
+        name: 'admin-workspace-archive',
+        component: () => import('@/views/AdminWorkspaceArchiveView.vue'),
+        meta: { title: '工作区归档管理', requiresAuth: true }
+      },
     ],
   },
   {

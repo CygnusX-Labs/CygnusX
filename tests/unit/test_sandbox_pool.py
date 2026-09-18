@@ -20,11 +20,14 @@ class _FakeContainer:
         container_id: str,
         labels: dict[str, str] | None = None,
         status: str = "running",
+        attrs: dict | None = None,
     ) -> None:
         self.id = container_id
         self.labels = labels or {"cygnusx.sandbox": "warm"}
         self.status = status
         self.removed = False
+        # 默认给一份符合当前安全基线的 inspect attrs（收养路径会校验）
+        self.attrs = attrs if attrs is not None else _conforming_attrs()
 
     def stop(self, timeout: int = 5) -> None:
         self.status = "exited"
@@ -33,11 +36,34 @@ class _FakeContainer:
         self.removed = True
 
 
+def _conforming_attrs(
+    *,
+    pids_limit: int = 512,
+    read_only: bool = True,
+    cap_drop: list[str] | None = None,
+    security_opt: list[str] | None = None,
+    user: str = "10001:10001",
+) -> dict:
+    return {
+        "HostConfig": {
+            "PidsLimit": pids_limit,
+            "ReadonlyRootfs": read_only,
+            "CapDrop": cap_drop if cap_drop is not None else ["ALL"],
+            "SecurityOpt": security_opt
+            if security_opt is not None
+            else ["no-new-privileges:true"],
+        },
+        "Config": {"User": user},
+    }
+
+
 class _FakeContainers:
     def __init__(self) -> None:
         self.created: list[_FakeContainer] = []
+        self.run_kwargs: list[dict] = []
 
     def run(self, **kwargs: object) -> _FakeContainer:
+        self.run_kwargs.append(kwargs)
         container = _FakeContainer(f"sandbox-{len(self.created) + 1}", kwargs["labels"])
         self.created.append(container)
         return container
@@ -69,6 +95,12 @@ def _settings(*, warm_size: int = 2, max_size: int = 2) -> SimpleNamespace:
         sandbox_network_isolated=True,
         sandbox_docker_network="cygnusx_default",
         sandbox_image="cygnusx-sandbox-copilot:v0.0.2dev",
+        sandbox_container_user="10001:10001",
+        sandbox_pids_limit=512,
+        sandbox_read_only_rootfs=True,
+        sandbox_seccomp_profile="default",
+        sandbox_tmpfs_size="512m",
+        sandbox_pool_host_dir="",
     )
 
 
@@ -221,6 +253,121 @@ async def test_initialize_destroys_stopped_orphans() -> None:
     assert client.containers.get("dead-1").removed
     assert pool._warm_pool.qsize() == 1
     assert pool._warm_pool.get_nowait() == "sandbox-2"
+
+
+# ===== 安全基线（R6：对齐 Studio）=====
+
+# _warm_one 会为交付/输入目录创建真实宿主机临时目录（bind mount 源），
+# 单测里重定向到 pytest 的 tmp 区域，避免污染系统 /tmp
+@pytest.fixture(autouse=True)
+def _redirect_mkdtemp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    counter = {"n": 0}
+
+    def _fake_mkdtemp(prefix: str = "", dir: str | None = None) -> str:
+        counter["n"] += 1
+        path = tmp_path / f"{prefix}{counter['n']}"
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.sandbox.pool.tempfile.mkdtemp", _fake_mkdtemp
+    )
+
+
+@pytest.mark.unit
+async def test_warm_one_applies_security_baseline() -> None:
+    """容器创建必须带齐 Studio 基线：cap_drop ALL、no-new-privileges、seccomp、
+    只读 rootfs + tmpfs、非 root 用户、pids 限制。"""
+    pool = SandboxPool()
+    client = _FakeClient()
+    pool._settings = _settings(warm_size=1, max_size=1)
+    pool._warm_pool = asyncio.Queue(maxsize=1)
+    pool._client = client
+    pool._available = True
+
+    await pool.initialize()
+
+    assert len(client.containers.run_kwargs) == 1
+    kwargs = client.containers.run_kwargs[0]
+    assert kwargs["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in kwargs["security_opt"]
+    # default seccomp = daemon 内置 profile，不下发 security_opt 条目
+    assert all(not str(opt).startswith("seccomp=") for opt in kwargs["security_opt"])
+    assert kwargs["read_only"] is True
+    assert kwargs["user"] == "10001:10001"
+    assert kwargs["pids_limit"] == 512
+    tmpfs = kwargs["tmpfs"]
+    assert "/tmp" in tmpfs and "noexec" in tmpfs["/tmp"]
+    # 交付/输入目录以 bind mount 提供可写性（copy-out 兼容，容器内路径不变）
+    volumes = kwargs["volumes"]
+    bound = {v["bind"] for v in volumes.values()}
+    assert bound == {"/tmp/chat_output", "/workspace/output", "/workspace/input"}
+    assert all(v["mode"] == "rw" for v in volumes.values())
+    # 非 root 运行的可写 HOME
+    assert kwargs["environment"]["HOME"] == "/tmp"
+
+
+@pytest.mark.unit
+async def test_warm_one_seccomp_unconfined_emits_opt() -> None:
+    pool = SandboxPool()
+    client = _FakeClient()
+    settings = _settings(warm_size=1, max_size=1)
+    settings.sandbox_seccomp_profile = "unconfined"
+    pool._settings = settings
+    pool._warm_pool = asyncio.Queue(maxsize=1)
+    pool._client = client
+    pool._available = True
+
+    await pool.initialize()
+
+    assert "seccomp=unconfined" in client.containers.run_kwargs[0]["security_opt"]
+
+
+@pytest.mark.unit
+async def test_initialize_destroys_orphans_below_security_baseline() -> None:
+    """基线升级前的存量弱配置容器（root、无 cap_drop、rootfs 可写）必须销毁重建"""
+    pool = SandboxPool()
+    client = _FakeClient()
+    legacy = _FakeContainer(
+        "legacy-1",
+        attrs=_conforming_attrs(
+            pids_limit=0,
+            read_only=False,
+            cap_drop=[],
+            security_opt=[],
+            user="root",
+        ),
+    )
+    client.containers.created.append(legacy)
+    pool._settings = _settings(warm_size=1, max_size=2)
+    pool._warm_pool = asyncio.Queue(maxsize=pool._warm_pool_target())
+    pool._client = client
+    pool._available = True
+
+    await pool.initialize()
+
+    assert legacy.removed
+    assert pool._warm_pool.qsize() == 1
+    adopted = pool._warm_pool.get_nowait()
+    assert adopted != "legacy-1"
+
+
+@pytest.mark.unit
+async def test_initialize_adopts_orphans_meeting_security_baseline() -> None:
+    """符合安全基线的存量容器（如重启前的 warm 容器）继续收养复用"""
+    pool = SandboxPool()
+    client = _FakeClient()
+    client.containers.created.append(_FakeContainer("hardened-1"))
+    pool._settings = _settings(warm_size=1, max_size=2)
+    pool._warm_pool = asyncio.Queue(maxsize=pool._warm_pool_target())
+    pool._client = client
+    pool._available = True
+
+    await pool.initialize()
+
+    assert not client.containers.get("hardened-1").removed
+    assert pool._warm_pool.qsize() == 1
+    assert pool._warm_pool.get_nowait() == "hardened-1"
 
 
 # ===== copy_dir_out 产物落盘 =====

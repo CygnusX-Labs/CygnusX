@@ -421,6 +421,22 @@ class Settings(BaseSettings):
     sandbox_data_dir: str = "/data/cygnusx"
     sandbox_default_cpu: float = 2.0
     sandbox_default_memory: str = "4g"
+    # ===== 沙盒安全基线（默认值对齐 Studio StudioSandboxConfig）=====
+    # 容器运行用户（非 root，"uid:gid"）
+    sandbox_container_user: str = "10001:10001"
+    # 容器内 PID 上限（防 fork 炸弹）
+    sandbox_pids_limit: int = 512
+    # 只读 rootfs；可写需求由 /tmp 与交付/输入目录的 tmpfs 满足
+    sandbox_read_only_rootfs: bool = True
+    # seccomp：default=使用 daemon 内置默认 profile（不下发 security_opt）；
+    # unconfined=显式禁用；其余值按字面 JSON profile 内容透传
+    sandbox_seccomp_profile: str = "default"
+    # /tmp 的 tmpfs 大小（nosuid,nodev,noexec，同 Studio 基线）
+    sandbox_tmpfs_size: str = "512m"
+    # 交付/输入目录 bind mount 的宿主机基目录（空 = 系统临时目录）。
+    # 只读 rootfs 下 /tmp/chat_output、/workspace/output、/workspace/input
+    # 以 per-container 宿主机目录 bind 进容器，保证 copy-out（get_archive）可用
+    sandbox_pool_host_dir: str = ""
 
     # ===== 云端沙盒终端 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。

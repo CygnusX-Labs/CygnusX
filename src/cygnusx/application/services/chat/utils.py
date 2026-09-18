@@ -2,11 +2,65 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
 
 from loguru import logger
+
+
+def _invocation_payload_hash(envelope: dict[str, Any]) -> str:
+    """对 tool_invocations 信封内容计算 sha256（WP2 信封可校验）。
+
+    hash 字段本身（payload_hash）不参与计算；序列化按 sort_keys 稳定化，
+    确保写入方与复算方对同一信封得到同一摘要。
+    """
+    canonical = {k: v for k, v in envelope.items() if k != "payload_hash"}
+    serialized = json.dumps(canonical, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+#: 代码执行类工具（WP3-Task1）：这些工具调用的落库信封会带 cell 语义冗余字段
+CODE_EXECUTION_TOOL_NAMES = frozenset({"sandbox_execute", "chat_sandbox_execute"})
+
+
+def _code_cell_envelope_fields(
+    tool_name: str, args: dict[str, Any], next_index: int
+) -> dict[str, Any]:
+    """WP3-Task1：工具调用信封的 cell 语义冗余字段（与 result/ui_payload 平级）。
+
+    cell_index 仅对代码执行类工具（sandbox_execute / chat_sandbox_execute）递增编号，
+    非代码工具为 None；language 从工具 arguments.language 取，无则 None。
+    调用方负责在代码工具时递增 next_index（按落库顺序编号）。
+    """
+    language = args.get("language") if isinstance(args, dict) else None
+    language = str(language) if language else None
+    if tool_name not in CODE_EXECUTION_TOOL_NAMES:
+        return {"cell_index": None, "language": language}
+    return {"cell_index": next_index, "language": language}
+
+
+def _max_persisted_cell_index(messages: list[Any]) -> int:
+    """从会话已落库消息的 tool_invocations 元数据推导下一个 cell_index 基线。
+
+    纯派生：取历史信封 cell_index 最大值 + 1（历史无字段时从 0 起），
+    不重写任何已落库信封，保证会话内编号跨消息单调递增。
+    """
+    base = 0
+    for message in messages or []:
+        metadata = getattr(message, "metadata_json", None) or {}
+        invocations = metadata.get("tool_invocations")
+        if not isinstance(invocations, list):
+            continue
+        for invocation in invocations:
+            if not isinstance(invocation, dict):
+                continue
+            cell_index = invocation.get("cell_index")
+            if not isinstance(cell_index, int) or isinstance(cell_index, bool):
+                continue
+            base = max(base, cell_index + 1)
+    return base
 
 
 def _extract_route_json(text: str) -> dict[str, Any] | None:
@@ -49,6 +103,35 @@ def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
     return "该操作需要用户批准"
 
 
+def _cap_tool_invocation_payload_detail(
+    value: Any, limit: int = 200_000
+) -> tuple[Any, dict[str, Any]]:
+    """tool_invocations 落库护栏（带截断元信息版本）。
+
+    返回 (载荷, 截断元信息)。未截断时元信息为空 dict；截断时元信息含
+    payload_truncated / original_bytes / truncation_note，由调用方写入
+    tool_invocations 信封（result_truncation / ui_payload_truncation），
+    供前端历史重建时显式提示"内容已截断"，而不是无声降级。
+    """
+    if value is None:
+        return None, {}
+    original_bytes: int | None = None
+    try:
+        serialized = json.dumps(value, ensure_ascii=False, default=str)
+        if len(serialized) <= limit:
+            return value, {}
+        original_bytes = len(serialized.encode("utf-8"))
+    except (TypeError, ValueError):
+        pass
+    meta: dict[str, Any] = {
+        "payload_truncated": True,
+        "truncation_note": "工具结果/ui_payload 序列化超过 200KB 落库护栏，已替换为截断标记；完整结果见沙盒产物或归档文件",
+    }
+    if original_bytes is not None:
+        meta["original_bytes"] = original_bytes
+    return {"_cygnusx_payload_truncated": True}, meta
+
+
 def _cap_tool_invocation_payload(value: Any, limit: int = 200_000) -> Any:
     """tool_invocations 落库护栏。
 
@@ -56,14 +139,8 @@ def _cap_tool_invocation_payload(value: Any, limit: int = 200_000) -> Any:
     （如读大文件）载荷可能异常大，序列化超过 limit 时替换为截断标记，
     避免 metadata_json 无限膨胀；前端遇到标记时按"无载荷"降级渲染即可。
     """
-    if value is None:
-        return None
-    try:
-        if len(json.dumps(value, ensure_ascii=False, default=str)) <= limit:
-            return value
-    except (TypeError, ValueError):
-        pass
-    return {"_cygnusx_payload_truncated": True}
+    payload, _meta = _cap_tool_invocation_payload_detail(value, limit)
+    return payload
 
 
 def _normalize_ask_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
@@ -187,7 +264,9 @@ def _should_show_route_transition(
 def _is_route_execution_confirmation(user_text: str) -> bool:
     """判断用户是否明确确认执行已经路由的工作。"""
     normalized = user_text.replace(" ", "").lower()
-    if any(marker in normalized for marker in ("暂不", "不要开始", "先不执行", "调整参数", "先调整")):
+    if any(
+        marker in normalized for marker in ("暂不", "不要开始", "先不执行", "调整参数", "先调整")
+    ):
         return False
     return any(
         marker in normalized

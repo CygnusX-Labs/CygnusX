@@ -12,7 +12,7 @@ Project 是用户视角的"分析项目"聚合根。每个 Project 对应磁盘�
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -34,6 +34,8 @@ class ProjectService:
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
+    PROJECT_STATUSES = ("active", "completed", "handed_over")
+
     @staticmethod
     def _to_dict(model: ProjectModel) -> dict:
         return {
@@ -42,6 +44,10 @@ class ProjectService:
             "slug": model.slug,
             "description": model.description,
             "customer": model.customer,
+            # getattr 兼容测试替身等无 status 属性的投影对象（同 customer 处理）
+            "status": getattr(model, "status", None) or "active",
+            # WP3 任务 3：项目级设置（当前仅 research_mode）；NULL 透出为 None
+            "settings": getattr(model, "settings", None) if isinstance(getattr(model, "settings", None), dict) else None,
             "created_at": model.created_at.isoformat() if model.created_at else None,
             "updated_at": model.updated_at.isoformat() if model.updated_at else None,
         }
@@ -155,6 +161,96 @@ class ProjectService:
             if model is not None:
                 return self._to_dict(model)
         return await self.create_project(user_id, name)
+
+    async def update_project_settings(
+        self, user_id: UUID, project_id: UUID, settings: dict[str, Any]
+    ) -> dict[str, Any]:
+        """更新项目级 settings（WP3 任务 3，属主）。
+
+        settings 为整体替换的 JSONB 对象；当前仅约定 research_mode 键，
+        若存在必须是 dict（enabled 布尔总开关 + 可选子项），其余键原样保存。
+        """
+        if not isinstance(settings, dict):
+            raise ValidationError("settings 必须是 JSON 对象")
+        research_mode = settings.get("research_mode")
+        if research_mode is not None and not isinstance(research_mode, dict):
+            raise ValidationError("settings.research_mode 必须是 JSON 对象")
+        stmt = select(ProjectModel).where(
+            ProjectModel.id == project_id, ProjectModel.user_id == user_id
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if model is None:
+            raise NotFoundError(f"项目不存在：{project_id}")
+        model.settings = settings
+        await self._session.commit()
+        await self._session.refresh(model)
+        return self._to_dict(model)
+
+    async def mark_project_status(self, user_id: UUID, project_id: UUID, status: str) -> dict:
+        """标记项目状态（属主）；completed/handed_over 触发其下会话工作区休眠打包。
+
+        chat_sessions.project_id 存的是 str(projects.id)（已核实线上数据），
+        按字符串等值匹配；打包为后台任务，busy 会话跳过记日志。
+        """
+        status = (status or "").strip().lower()
+        if status not in self.PROJECT_STATUSES:
+            raise ValidationError(f"非法项目状态：{status}（允许 {self.PROJECT_STATUSES}）")
+        stmt = select(ProjectModel).where(
+            ProjectModel.id == project_id, ProjectModel.user_id == user_id
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if model is None:
+            raise NotFoundError(f"项目不存在：{project_id}")
+        model.status = None if status == "active" else status
+        await self._session.commit()
+        if status in {"completed", "handed_over"}:
+            await self._pack_project_sessions(model)
+        return self._to_dict(model)
+
+    async def _pack_project_sessions(self, model: ProjectModel) -> None:
+        """项目完成/移交后，其下 studio 会话全部后台休眠打包（幂等，busy 跳过）。"""
+        import asyncio
+
+        from loguru import logger
+
+        from cygnusx.application.services.workspace_archive_service import pack_session
+        from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+        from cygnusx.infrastructure.database.session import get_session_factory
+
+        project_id = str(model.id)
+
+        async def _run() -> None:
+            packed = 0
+            try:
+                async with get_session_factory()() as db:
+                    result = await db.execute(
+                        select(ChatSessionModel).where(
+                            ChatSessionModel.project_id == project_id,
+                            ChatSessionModel.mode == "studio",
+                            ChatSessionModel.status != "deleted",
+                        )
+                    )
+                    sessions = list(result.scalars().all())
+                    for session in sessions:
+                        try:
+                            await pack_session(db, session.session_id, "system", is_admin=True)
+                            packed += 1
+                        except Exception as exc:  # noqa: BLE001 - busy 等跳过记日志
+                            logger.info(
+                                "[Archive] 项目 {} 会话 {} 完成触发打包跳过: {}",
+                                model.slug,
+                                session.session_id[:12],
+                                exc,
+                            )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[Archive] 项目 {} 会话打包任务失败: {}", model.slug, exc)
+            if packed:
+                logger.info("[Archive] 项目 {} 完成触发打包 {} 个会话", model.slug, packed)
+
+        # fire-and-forget：API 事务不等待打包完成
+        asyncio.create_task(_run())
 
     async def delete_project(self, user_id: UUID, project_id: UUID) -> bool:
         """删除项目（仅删 DB 记录 + 目录记录，不删物理文件，避免误删数据）。"""

@@ -134,10 +134,26 @@ celery_app.conf.beat_schedule = {
         "task": "cygnusx.infrastructure.celery_app.tasks.studio.recycle_idle_sandboxes",
         "schedule": crontab(minute="*/5"),
     },
+    # 每 10 分钟对账 Studio 长任务：悬挂 queued / 滞留 running 只报告或标记漂移，
+    # 绝不自动重提交（WP2 任务4 契约 c：reconcile-only）
+    "studio-long-task-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.studio.reconcile_studio_long_tasks",
+        "schedule": 600.0,
+    },
     # 每天凌晨 3:30 清理超过保留期且未在分享/执行中的 Studio 工作区
     "studio-workspace-retention": {
         "task": "cygnusx.infrastructure.celery_app.tasks.studio.cleanup_expired_workspaces",
         "schedule": crontab(hour=3, minute=30),
+    },
+    # 每天凌晨 4:30 休眠打包：先工作区配额清理，再 dormant 扫描（WP1）
+    "studio-workspace-dormant-archive": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.studio.hibernate_dormant_workspaces",
+        "schedule": crontab(hour=4, minute=30),
+    },
+    # 每天凌晨 5:30 清理到期归档包（WP1）
+    "studio-archive-expire-cleanup": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.studio.cleanup_expired_workspace_archives",
+        "schedule": crontab(hour=5, minute=30),
     },
     # 每 5 分钟下线过期实验 MCP（MCP Builder TTL 机制）
     "mcp-builder-expire-experimental": {

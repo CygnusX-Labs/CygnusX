@@ -34,6 +34,7 @@ class Task(BaseModel):
     progress: float = 0.0  # 0.0 ~ 1.0
     sample_count: int = 0  # 提交时由 len(sample_sheet) 落库
     logs: list[TaskLog] = []
+    idempotency_key: str | None = None  # job 幂等键（command_id 语义，DB UNIQUE 约束）
     created_at: datetime = Field(default_factory=datetime.now)
     started_at: datetime | None = None
     finished_at: datetime | None = None

@@ -6,7 +6,8 @@
 - 项目级 ``AGENTS.md``：不存在时创建（项目名/客户/描述/创建时间 + “分析记录”小节），
   每次归档向“分析记录”追加一行条目（按 run 目录名幂等，重复归档不产生重复条目）；
 - run 级 ``README.md``：项目/客户/时间戳/分析类型与流程版本/最终产物清单（文件名 +
-  大小 + md5）/代码脚本清单/软件与版本段/分析环境段；
+  大小 + md5 + sha256，MD5 保留兼容）/代码脚本清单/软件与版本段/分析环境段；
+- run 级 ``manifest.json``：逐文件 path/size/sha256 实测对账记录（OpenAI4S 契约同款字段）；
 - run 级 ``environment.json``：结构化环境快照（字段命名稳定，供机器校验）。
 
 所有内容由平台代码生成，不依赖 LLM；调用方必须用 try/except 兜底，
@@ -28,6 +29,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cygnusx.application.services.artifact_manifest import sha256_stream
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.config.runtime_image_loader import get_runtime_images
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
@@ -68,6 +70,9 @@ class ArchivedFile:
     relative_path: str  # 相对 run 目录，如 "output/de.csv"
     size: int = 0
     md5: str = ""
+    # 登记/归档时实测的 sha256（流式分块读取）；读取失败为空串，
+    # 与 md5 并存：MD5 保留兼容，sha256 为新的对账口径。
+    sha256: str = ""
 
 
 # ------------------------------------------------------------------
@@ -277,10 +282,10 @@ def render_run_readme(
     lines.extend(["", "## 摘要", "", summary.strip() or "（无）"])
     lines.extend(["", "## 最终结果", ""])
     if artifacts:
-        lines.extend(["| 文件 | 大小(bytes) | MD5 |", "| --- | --- | --- |"])
+        lines.extend(["| 文件 | 大小(bytes) | MD5 | SHA-256 |", "| --- | --- | --- | --- |"])
         for item in artifacts:
             lines.append(
-                f"| `{item.relative_path}` | {item.size} | {item.md5 or '-'} |"
+                f"| `{item.relative_path}` | {item.size} | {item.md5 or '-'} | {item.sha256 or '-'} |"
             )
     else:
         lines.append("（无）")
@@ -388,6 +393,7 @@ async def archive_run(
                 "name": item.name,
                 "size": item.size,
                 "md5": item.md5,
+                "sha256": item.sha256,
             }
             for item in artifacts
         ],
@@ -411,6 +417,24 @@ async def archive_run(
         (json.dumps(environment, ensure_ascii=False, indent=2, default=str) + "\n").encode(
             "utf-8"
         ),
+    )
+    # 产物 manifest 旁落 README：逐文件 path/size/sha256 的实测对账记录，
+    # OpenAI4S compute/manifest 契约同款字段；sha256 缺省（None）即实测失败。
+    manifest = {
+        "schema_version": ARCHIVE_SCHEMA_VERSION,
+        "archived_at": archived_at,
+        "files": [
+            {
+                "path": item.relative_path,
+                "size": item.size,
+                "sha256": item.sha256 or None,
+            }
+            for item in artifacts
+        ],
+    }
+    await backend.write(
+        f"{run_rel}/manifest.json",
+        (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
     )
 
     agents_rel = factory.relative_to_root(project_root / "AGENTS.md")
@@ -487,6 +511,7 @@ async def archive_studio_run(
             relative_path=f"output/{artifact_name}",
             size=int(getattr(artifact, "size", 0) or 0),
             md5=md5_stream(local_file) if local_file.is_file() else "",
+            sha256=sha256_stream(local_file) if local_file.is_file() else "",
         )
     ]
     summary = str(getattr(report, "title", "") or artifact_name)
@@ -592,6 +617,7 @@ async def archive_overdrive_delivery(
                 relative_path=f"output/{name}",
                 size=len(content),
                 md5=md5_stream(local_file) if local_file.is_file() else "",
+                sha256=sha256_stream(local_file) if local_file.is_file() else "",
             )
         )
 

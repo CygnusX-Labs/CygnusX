@@ -15,7 +15,7 @@ import {
   ArrowBackOutline, RefreshOutline, FileTrayStackedOutline, ShareSocialOutline,
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
   AnalyticsOutline, ChatbubbleEllipsesOutline, CodeSlashOutline, DocumentTextOutline,
-  FlaskOutline, GridOutline, PowerOutline, TimeOutline, TrashOutline,
+  FlaskOutline, GridOutline, PowerOutline, TimeOutline, TrashOutline, SettingsOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import AskUserModal from '@/components/ai-chat/AskUserModal.vue'
@@ -26,6 +26,7 @@ import PendingApprovalBar, {
   type PendingAskItem,
 } from '@/components/ai-chat/PendingApprovalBar.vue'
 import StudioPlanTimeline from '@/components/studio/StudioPlanTimeline.vue'
+import ResearchModeSettingsModal from '@/components/studio/ResearchModeSettingsModal.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import StudioFileTree from '@/components/studio/StudioFileTree.vue'
 import StudioArtifactsPanel from '@/components/studio/StudioArtifactsPanel.vue'
@@ -33,7 +34,7 @@ import StudioWorkspaceEditor from '@/components/studio/StudioWorkspaceEditor.vue
 import SessionHistoryDrawer from '@/components/agent-workspace/SessionHistoryDrawer.vue'
 import OverdriveToggle from '@/components/agent-workspace/OverdriveToggle.vue'
 import { StudioContextKey } from '@/components/studio/context'
-import { studioApi, type StudioSessionDTO, type SandboxStatus } from '@/api/studio'
+import { studioApi, type StudioSessionDTO, type SandboxStatus, type StudioSessionDetail } from '@/api/studio'
 import { shouldApplyServerUi, shouldApplyServerViewMode } from '@/utils/studioViewGuard'
 import { useAgentHubStore } from '@/stores/agentHub'
 import { useAuthStore } from '@/stores/auth'
@@ -54,6 +55,17 @@ const message = useMessage()
 const dialog = useDialog()
 
 const sessionId = computed(() => (route.params.sessionId as string) || '')
+
+// 环境还原失败提示去重：同一失败身份（会话+文件+原因）只 toast 一次
+const envRestoreNotified = new Set<string>()
+
+function notifyEnvRestore(envRestore: StudioSessionDetail['env_restore']) {
+  if (!envRestore || envRestore.status !== 'failed' || !envRestore.reason) return
+  const key = `${sessionId.value}:${envRestore.file || ''}:${envRestore.reason}`
+  if (envRestoreNotified.has(key)) return
+  envRestoreNotified.add(key)
+  message.warning(`环境还原失败，已回退基础环境：${envRestore.reason}`)
+}
 
 const loading = ref(true)
 const studioSessions = ref<StudioSessionDTO[]>([])
@@ -118,6 +130,8 @@ const viewModeTouched = ref(false)
 const splitRatio = ref(40)
 const chatDrawerOpen = ref(false)
 const historyOpen = ref(false)
+/** 科研模式设置弹窗（WP3 任务 3 入口） */
+const researchSettingsOpen = ref(false)
 const workspaceEditorRef = ref<InstanceType<typeof StudioWorkspaceEditor> | null>(null)
 const followAi = ref(true)
 const terminalCollapsed = ref(false)
@@ -224,6 +238,7 @@ async function refreshStatus() {
     sandboxStatus.value = detail.sandbox_status
     sandboxMetrics.value = detail.sandbox_metrics || { cpu_percent: 0, memory_percent: 0, memory_used: 0, memory_limit: 0 }
     workspaceId.value = detail.workspace_id
+    notifyEnvRestore(detail.env_restore)
     if (!wasRunning && detail.sandbox_status === 'running' && store.isStreaming) message.success('沙盒已点火，工作区准备就绪 🚀')
     // 流式进行中服务端的 plan 可能尚未提交（聊天事务末尾才 commit），
     // 此时空值不覆盖面板上的实时计划，避免待办"出现一下就消失"
@@ -301,6 +316,7 @@ async function enterSession(id: string) {
     sandboxStatus.value = detail.sandbox_status
     sandboxMetrics.value = detail.sandbox_metrics || { cpu_percent: 0, memory_percent: 0, memory_used: 0, memory_limit: 0 }
     workspaceId.value = detail.workspace_id
+    notifyEnvRestore(detail.env_restore)
     if (!wasRunning && detail.sandbox_status === 'running' && store.isStreaming) message.success('沙盒已点火，工作区准备就绪 🚀')
     // 同 refreshStatus：流式中服务端 plan 未提交时用空值覆盖会清掉面板实时计划
     if (detail.plan?.steps?.length) store.currentPlan = detail.plan.steps
@@ -816,13 +832,25 @@ async function goSession(id: string) {
   }
 }
 
-function handleHistorySelect(session: { id: string }, messageId?: string) {
+function handleHistorySelect(session: { id: string; workspace_archive?: unknown }, messageId?: string) {
   if (session.id === sessionId.value) return
-  router.push({
-    name: 'studio',
-    params: { sessionId: session.id },
-    query: messageId ? { message: messageId } : {},
-  })
+  const enter = () => {
+    router.push({
+      name: 'studio',
+      params: { sessionId: session.id },
+      query: messageId ? { message: messageId } : {},
+    })
+  }
+  // 已归档休眠的工作台会话：先调恢复端点，成功后再路由进入加载
+  if (session.workspace_archive) {
+    store.restoreArchivedSession(session.id)
+      .then(enter)
+      .catch((e) => {
+        message.error(e instanceof Error ? e.message : '恢复会话工作区失败，请稍后重试')
+      })
+    return
+  }
+  enter()
 }
 
 // ---------- 文件预览（按类型分流，未知二进制绝不按文本读取） ----------
@@ -1011,6 +1039,14 @@ function formatSessionTime(iso: string): string {
             </n-button>
           </template>
           将工作区脚本提炼为 Skill
+        </n-tooltip>
+        <n-tooltip v-if="sessionId" trigger="hover">
+          <template #trigger>
+            <n-button text aria-label="会话设置" @click="researchSettingsOpen = true">
+              <n-icon size="16"><SettingsOutline /></n-icon>
+            </n-button>
+          </template>
+          会话设置（科研模式）
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
@@ -1295,6 +1331,9 @@ function formatSessionTime(iso: string): string {
     />
 
     <SessionHistoryDrawer v-model:show="historyOpen" mode="studio" @select="handleHistorySelect" />
+
+    <!-- 科研模式三开关（WP3 任务 3）：渲染形态 / 工作区协议 / PTC 白名单 -->
+    <ResearchModeSettingsModal v-model:show="researchSettingsOpen" />
 
     <n-modal
       v-model:show="showExtractSkill"

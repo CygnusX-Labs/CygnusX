@@ -293,3 +293,84 @@ async def test_stream_studio_tool_emits_progress() -> None:
     assert all(c.metadata.get("tool_call_id") == "tc-1" for c in outputs)
     envelope = chunks[-1]
     assert isinstance(envelope, dict) and envelope["success"] is True
+
+
+# ===== WP3 任务 3：llm_query 动态白名单（会话 research_mode.ptc_llm_query 门控） =====
+
+
+async def test_llm_query_soft_fails_when_gate_off() -> None:
+    """默认（无 db / 开关未开）：llm_query 不在白名单，call_tool 软失败且不到达分发器。"""
+    recorder = _Recorder()
+    code = (
+        "try:\n"
+        "    call_tool('llm_query', prompt='x')\n"
+        "except RuntimeError as exc:\n"
+        "    print('blocked:', exc)\n"
+    )
+    result = await run_orchestration(code, "sess-1", tool_executor=recorder)
+    assert result["success"] is True  # 软失败：编排继续
+    assert "当前会话未开启 llm_query" in result["result"]["llm_payload"]["summary"]
+    assert recorder.calls == []
+
+
+async def test_llm_query_allowed_when_override_true() -> None:
+    """开关开启（显式 override）：llm_query 进白名单并到达分发器（不真调模型）。"""
+    recorder = _Recorder()
+    code = "print(call_tool('llm_query', prompt='hi')['tool'])\n"
+    result = await run_orchestration(
+        code, "sess-1", tool_executor=recorder, llm_query_enabled=True
+    )
+    assert result["success"] is True
+    assert [name for name, _ in recorder.calls] == ["llm_query"]
+    assert "llm_query" in result["result"]["llm_payload"]["summary"]
+
+
+async def test_llm_query_gate_reads_session_research_mode() -> None:
+    """resolve_ptc_llm_query_enabled 从 chat_sessions.sandbox_meta 读开关。"""
+    from cygnusx.application.services.ptc_orchestrator import (
+        resolve_ptc_llm_query_enabled,
+    )
+
+    class _Result:
+        def __init__(self, value):
+            self._value = value
+
+        def scalar_one_or_none(self):
+            return self._value
+
+    class _Db:
+        def __init__(self, value):
+            self._value = value
+
+        async def execute(self, _stmt):
+            return _Result(self._value)
+
+    on = await resolve_ptc_llm_query_enabled(
+        session_id="s",
+        db=_Db({"research_mode": {"enabled": True, "ptc_llm_query": True}}),
+    )
+    assert on is True
+    off = await resolve_ptc_llm_query_enabled(
+        session_id="s",
+        db=_Db({"research_mode": {"enabled": True, "ptc_llm_query": False}}),
+    )
+    assert off is False
+    assert await resolve_ptc_llm_query_enabled(session_id="s", db=_Db(None)) is False
+    assert await resolve_ptc_llm_query_enabled(session_id="s", db=None) is False
+    assert await resolve_ptc_llm_query_enabled(session_id="s", db=None, override=True) is True
+
+
+def test_llm_query_not_in_static_whitelist_and_not_approval_required() -> None:
+    """回归：llm_query 默认不在静态白名单，且审批语义不变（不在审批拦截名单）。"""
+    from cygnusx.application.services.ptc_orchestrator import (
+        PTC_ALLOWED_TOOLS,
+        PTC_STATIC_ALLOWED_TOOLS,
+    )
+    from cygnusx.application.services.studio_approval_service import (
+        approval_required_tools,
+    )
+
+    assert "llm_query" in PTC_ALLOWED_TOOLS  # 动态成员：候选全集
+    assert "llm_query" not in PTC_STATIC_ALLOWED_TOOLS  # 默认编排白名单不含
+    assert "tool_orchestrate" in approval_required_tools()  # 整段一次审批不变
+    assert "llm_query" not in approval_required_tools()  # 子调用不逐次审批

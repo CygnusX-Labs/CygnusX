@@ -27,10 +27,10 @@ from cygnusx.api.v1 import (
     plot_stats,
     projects,
     prompts,
-    reports,
     reminders,
-    schedules,
+    reports,
     sandbox,
+    schedules,
     site_content,
     site_settings,
     stats,
@@ -58,6 +58,7 @@ from cygnusx.api.v1.admin import stats as admin_stats
 from cygnusx.api.v1.admin import storage as admin_storage
 from cygnusx.api.v1.admin import terminals as admin_terminals
 from cygnusx.api.v1.admin import users as admin_users
+from cygnusx.api.v1.admin import workspace_archive as admin_workspace_archive
 from cygnusx.reference_genomes.api import router as reference_genomes_router
 from cygnusx.tools import register_tool_routers
 
@@ -88,6 +89,11 @@ api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(cookies.router, prefix="/cookies", tags=["Cookies"])
 api_router.include_router(admin_cookies.router, prefix="/admin/cookies", tags=["Admin-Cookies"])
 api_router.include_router(admin_users.router, prefix="/admin/users", tags=["Admin-Users"])
+api_router.include_router(
+    admin_workspace_archive.router,
+    prefix="/admin/workspace-archive",
+    tags=["Admin-WorkspaceArchive"],
+)
 api_router.include_router(admin_stats.router, prefix="/admin/stats", tags=["Admin-Stats"])
 api_router.include_router(
     admin_session_logs.router, prefix="/admin/session-logs", tags=["Admin-Session-Logs"]

@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import io
 import json
 import shutil
 import tarfile
+import tempfile
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +33,28 @@ _IMAGE_PREFIX = "%%IMAGE%%"
 _PLOTLY_PREFIX = "%%PLOTLY%%"
 _SENTINEL = object()
 _TIMEOUT = object()
+
+
+def _seccomp_security_opt(profile: str) -> str | None:
+    """把 seccomp_profile 配置转换为 Docker security_opt 条目。
+
+    与 Studio 基线（infrastructure/studio/manager.py 同名函数）语义一致：
+    Docker daemon 的 seccomp 选项只接受 ``unconfined`` 或字面 JSON profile 内容；
+    ``default`` 不是合法值。省略 seccomp 选项时 daemon 自动应用其内置默认
+    profile，语义即“default”，因此该配置返回 None（不追加 security_opt 条目）。
+    """
+    normalized = (profile or "").strip()
+    if normalized.lower() in {"", "default"}:
+        return None
+    if normalized.lower() == "unconfined":
+        return "seccomp=unconfined"
+    return f"seccomp={normalized}"
+
+
+def _pool_host_base(settings: Any) -> str | None:
+    """warm pool bind mount 宿主机基目录；配置为空时用系统临时目录。"""
+    base = str(getattr(settings, "sandbox_pool_host_dir", "") or "").strip()
+    return base or None
 
 
 class SandboxUnavailableError(Exception):
@@ -148,6 +172,18 @@ class SandboxPool:
                 await self.destroy(cid)
                 destroyed += 1
                 continue
+            # list() 返回的摘要对象 attrs 不含 HostConfig，reload 取完整 inspect
+            reload_fn = getattr(container, "reload", None)
+            if reload_fn is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(reload_fn)
+            if not self._container_meets_security_baseline(container):
+                # 安全基线升级前创建的存量容器（无 cap_drop/只读 rootfs 等）
+                # 不允许收养复用，直接销毁由新基线重建（对齐 Studio 重建策略）
+                logger.info(f"沙盒孤儿容器不符合安全基线，销毁重建: {cid}")
+                await self.destroy(cid)
+                destroyed += 1
+                continue
             async with self._container_lock:
                 if len(self._managed_container_ids) >= self._max_pool_size():
                     room = False
@@ -196,23 +232,65 @@ class SandboxPool:
 
     async def _warm_one(self, name: str = "") -> str | None:
         client = self._get_client()
-        mem_limit = self._settings.sandbox_default_memory
-        cpu_shares = int(self._settings.sandbox_default_cpu * 1024)
+        settings = self._settings
+        mem_limit = settings.sandbox_default_memory
+        cpu_shares = int(settings.sandbox_default_cpu * 1024)
 
         def _run() -> str:
             network = None
             network_mode = None
-            if self._settings.sandbox_network_isolated:
+            if settings.sandbox_network_isolated:
                 network_mode = "none"
             else:
-                network = self._settings.sandbox_docker_network
+                network = settings.sandbox_docker_network
+            # 安全基线对齐 Studio（studio/manager.py _ensure 容器创建）：
+            # cap_drop ALL + no-new-privileges + seccomp + 只读 rootfs +
+            # 非 root 用户 + pids/mem 限制。
+            security_opt = ["no-new-privileges:true"]
+            seccomp_opt = _seccomp_security_opt(settings.sandbox_seccomp_profile)
+            if seccomp_opt is not None:
+                security_opt.append(seccomp_opt)
+            read_only = bool(settings.sandbox_read_only_rootfs)
+            tmpfs: dict[str, str] | None = None
+            volumes: dict[str, dict[str, str]] | None = None
+            if read_only:
+                # /tmp：通用可写区（nosuid,nodev,noexec，同 Studio 基线）。
+                tmpfs = {"/tmp": f"rw,nosuid,nodev,noexec,size={settings.sandbox_tmpfs_size}"}
+                # /tmp/chat_output、/workspace/output、/workspace/input：聊天沙盒
+                # 交付/输入目录。不用 tmpfs 而用 per-container 宿主机 bind mount：
+                # 本机 Docker daemon 对 tmpfs 路径的 get_archive（copy-out 依赖）
+                # 取不到内容，bind mount 在 daemon 与容器两侧视图一致。
+                # 容器内路径与协议约定保持不变，copy-out / 附件注入 / R7 重置机制不受影响。
+                host_dir = Path(
+                    tempfile.mkdtemp(prefix="cygnusx-sandbox-", dir=_pool_host_base(settings))
+                )
+                volumes = {}
+                for sub, container_path in (
+                    ("chat_output", "/tmp/chat_output"),
+                    ("output", "/workspace/output"),
+                    ("input", "/workspace/input"),
+                ):
+                    sub_dir = host_dir / sub
+                    sub_dir.mkdir()
+                    sub_dir.chmod(0o777)  # 容器内非 root 用户可写
+                    volumes[str(sub_dir)] = {"bind": container_path, "mode": "rw"}
             container = client.containers.run(
-                image=self._settings.sandbox_image,
+                image=settings.sandbox_image,
                 command=["sleep", "infinity"],
                 detach=True,
                 name=name or None,
                 mem_limit=mem_limit,
                 cpu_shares=cpu_shares,
+                pids_limit=settings.sandbox_pids_limit,
+                cap_drop=["ALL"],
+                user=settings.sandbox_container_user,
+                security_opt=security_opt,
+                read_only=read_only,
+                tmpfs=tmpfs,
+                volumes=volumes,
+                # 镜像 HOME=/root，非 root 运行时必须指向可写位置，
+                # 否则 python/R 的用户级缓存写入失败
+                environment={"HOME": "/tmp"},
                 network=network,
                 network_mode=network_mode,
                 labels={"cygnusx.sandbox": "warm"},
@@ -236,18 +314,67 @@ class SandboxPool:
             self._managed_container_ids.add(container_id)
             return container_id
 
+    def _container_meets_security_baseline(self, container: Any) -> bool:
+        """校验存量容器是否满足当前沙盒安全基线（对齐 Studio _validate_container_security）。
+
+        HostConfig 缺失（无法核验）视为不符合，走销毁重建，保证基线收敛。
+        """
+        settings = self._settings
+        attrs = getattr(container, "attrs", None) or {}
+        host_config = attrs.get("HostConfig") or {}
+        if not host_config:
+            return False
+        if int(host_config.get("PidsLimit") or 0) != int(settings.sandbox_pids_limit):
+            return False
+        if settings.sandbox_read_only_rootfs and not host_config.get("ReadonlyRootfs"):
+            return False
+        cap_drop = {str(item).upper() for item in host_config.get("CapDrop") or []}
+        if "ALL" not in cap_drop:
+            return False
+        security_opts = {str(item).lower() for item in host_config.get("SecurityOpt") or []}
+        if "no-new-privileges:true" not in security_opts:
+            return False
+        actual_user = str((attrs.get("Config") or {}).get("User", ""))
+        if actual_user != str(settings.sandbox_container_user):
+            return False
+        seccomp_opt = _seccomp_security_opt(settings.sandbox_seccomp_profile)
+        return not (
+            seccomp_opt is not None and seccomp_opt.lower() not in security_opts
+        )
+
     async def destroy(self, container_id: str | None) -> None:
         if not container_id:
             return
         client = self._get_client()
 
         def _destroy() -> None:
+            host_dirs: list[Path] = []
             try:
                 container = client.containers.get(container_id)
+                # 回收前记下 bind mount 的宿主机目录（孤儿容器无内存映射，从 Mounts 发现）
+                for mount in (container.attrs.get("Mounts") or []):
+                    if str(mount.get("Destination") or "") in {
+                        "/tmp/chat_output",
+                        "/workspace/output",
+                        "/workspace/input",
+                    }:
+                        host_dirs.append(Path(str(mount.get("Source"))))
+                if container.status == "running":
+                    # bind 目录内容的属主是容器用户，宿主机进程未必有权删除；
+                    # 先在容器内以容器用户清空（mountpoint 本身删不掉不影响），
+                    # 再回收容器，最后清宿主机目录树
+                    with contextlib.suppress(Exception):
+                        exec_id = client.api.exec_create(
+                            container_id,
+                            cmd=["rm", "-rf", "/tmp/chat_output", "/workspace/output", "/workspace/input"],
+                        )["Id"]
+                        client.api.exec_start(exec_id)
                 container.stop(timeout=5)
                 container.remove(force=True)
             except Exception:
                 pass
+            for host_dir in host_dirs:
+                shutil.rmtree(host_dir.parent, ignore_errors=True)
 
         await asyncio.to_thread(_destroy)
         async with self._container_lock:

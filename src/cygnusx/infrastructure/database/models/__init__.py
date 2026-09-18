@@ -4,7 +4,10 @@
 导入即注册到 Base.metadata，供 create_all / alembic 使用。
 """
 
-from cygnusx.infrastructure.database.models.agent import AgentTemplateModel, UserAgentCapabilityModel
+from cygnusx.infrastructure.database.models.agent import (
+    AgentTemplateModel,
+    UserAgentCapabilityModel,
+)
 from cygnusx.infrastructure.database.models.agent_memory import (
     AgentMemoryModel,
     MemoryBlockModel,
@@ -33,11 +36,12 @@ from cygnusx.infrastructure.database.models.chat import (
     CaseArtifactDependencyModel,
     CaseArtifactVersionModel,
     ChatAssistantModel,
-    ChatMessageFeedbackModel,
-    CollaborationDegradationEventModel,
     ChatHandoffEventModel,
+    ChatMessageEventModel,
+    ChatMessageFeedbackModel,
     ChatMessageModel,
     ChatSessionModel,
+    CollaborationDegradationEventModel,
     QcVerificationCheckModel,
 )
 from cygnusx.infrastructure.database.models.cookie import (
@@ -48,16 +52,16 @@ from cygnusx.infrastructure.database.models.cookie import (
     LedgerEntryModel,
 )
 from cygnusx.infrastructure.database.models.festival import FestivalClaimModel
-from cygnusx.infrastructure.database.models.goal import (
-    AgentGoalEventModel,
-    AgentGoalModel,
-    AgentGoalWorkUnitModel,
-)
 from cygnusx.infrastructure.database.models.file import (
     DirectoryModel,
     FileRecordModel,
     SampleModel,
     UploadSessionModel,
+)
+from cygnusx.infrastructure.database.models.goal import (
+    AgentGoalEventModel,
+    AgentGoalModel,
+    AgentGoalWorkUnitModel,
 )
 from cygnusx.infrastructure.database.models.knowledge_audit_log import DocAuditLogModel
 from cygnusx.infrastructure.database.models.knowledge_base import KnowledgeBaseModel
@@ -76,13 +80,13 @@ from cygnusx.infrastructure.database.models.mas import (
     MASRunModel,
 )
 from cygnusx.infrastructure.database.models.mcp import MCPServerModel
-from cygnusx.infrastructure.database.models.mcp_log import MCPLogModel
 from cygnusx.infrastructure.database.models.mcp_builder import (
     MCPBuildModel,
     MCPReviewModel,
     MCPVersionModel,
     MCPVisibilityModel,
 )
+from cygnusx.infrastructure.database.models.mcp_log import MCPLogModel
 from cygnusx.infrastructure.database.models.notification import NotificationModel
 from cygnusx.infrastructure.database.models.overdrive import (
     OverdriveCommandModel,
@@ -109,6 +113,7 @@ from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.models.team import TeamMemberModel, TeamModel
 from cygnusx.infrastructure.database.models.terminal import TerminalSessionModel
 from cygnusx.infrastructure.database.models.user import UserModel, WorkspaceModel
+from cygnusx.infrastructure.database.models.workspace_archive import WorkspaceArchiveModel
 
 __all__ = [
     "AgentTemplateModel",
@@ -121,6 +126,7 @@ __all__ = [
     "APIKeyModel",
     "UserModel",
     "WorkspaceModel",
+    "WorkspaceArchiveModel",
     "TaskModel",
     "TeamModel",
     "TeamMemberModel",

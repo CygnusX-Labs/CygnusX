@@ -31,6 +31,15 @@ class ProjectCreateRequest(BaseModel):
     customer: str = Field(default="", max_length=200, description="客户名称（可选）")
 
 
+class ProjectUpdateRequest(BaseModel):
+    status: Literal["active", "completed", "handed_over"] | None = Field(
+        None, description="项目状态：active/completed/handed_over"
+    )
+    # WP3 任务 3：项目级设置（整体替换）；当前仅约定 research_mode 键，
+    # 新建会话时继承为会话初始 research_mode
+    settings: dict[str, Any] | None = Field(None, description="项目级设置 JSON 对象")
+
+
 @router.get("", summary="列出用户项目")
 async def list_projects(
     current_user_id: CurrentUserId,
@@ -126,6 +135,47 @@ async def get_project_overview(
     except Exception as exc:
         from cygnusx.core.exceptions import NotFoundError
 
+        if isinstance(exc, NotFoundError):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise
+
+
+@router.patch("/{project_id}", summary="更新项目")
+async def update_project(
+    current_user_id: CurrentUserId,
+    service: ProjectServiceDep,
+    project_id: str,
+    req: ProjectUpdateRequest,
+) -> dict[str, Any]:
+    """更新项目元信息（status：active/completed/handed_over；settings：项目级设置）。
+
+    标记 completed/handed_over 时，其下 studio 会话工作区会后台休眠打包。
+    settings 整体替换，当前仅约定 research_mode 键（科研模式三开关），
+    创建会话时继承为会话初始 research_mode。
+    """
+    from uuid import UUID
+
+    from cygnusx.core.exceptions import NotFoundError
+    from cygnusx.core.exceptions import ValidationError as DomainValidationError
+
+    try:
+        payload: dict[str, Any] = {}
+        if req.status is not None:
+            payload = await service.mark_project_status(
+                UUID(current_user_id), UUID(project_id), req.status
+            )
+        if req.settings is not None:
+            payload = await service.update_project_settings(
+                UUID(current_user_id), UUID(project_id), req.settings
+            )
+        if not payload:
+            raise DomainValidationError("请求体为空：status 与 settings 至少传一个")
+        return payload
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
+    except DomainValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
         if isinstance(exc, NotFoundError):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         raise

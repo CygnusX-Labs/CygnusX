@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from loguru import logger
@@ -18,6 +19,7 @@ from cygnusx.application.services.chat.utils import (
     _cap_tool_invocation_payload,
     _fanout_ask_request,
     _normalize_ask_questions,
+    _studio_risk_hint,
 )
 from cygnusx.application.services.chat_sandbox_tools import (
     CHAT_SANDBOX_TOOL_NAME,
@@ -25,12 +27,125 @@ from cygnusx.application.services.chat_sandbox_tools import (
 )
 from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
 from cygnusx.application.services.parallel_subagent_service import PARALLEL_SUBAGENTS_TOOL_NAME
+from cygnusx.application.services.studio_approval_service import (
+    APPROVAL_TTL_SECONDS,
+    always_allow_set,
+    get_studio_approval_service,
+    needs_approval,
+    record_approval_audit,
+)
 from cygnusx.domain.skill.services import SKILL_TOOL_NAMES
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
     merge_token_usage,
     provider_manager,
 )
+
+_EmitFn = Callable[[ChatChunk], Awaitable[None]]
+
+
+async def _gate_chat_sandbox_approval(
+    *,
+    emit: _EmitFn,
+    user_id: str,
+    session_id: str,
+    tool_call_id: str,
+    args: dict[str, Any],
+    permission_mode: str | None,
+    always_allow: set[str],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """chat_sandbox_execute 的 supervised 审批闸，语义逐点对齐 legacy 手写循环
+    （chat_service.py 的 is_chat_sandbox_tool 分支）：
+
+    - needs_approval 判定（supervised 模式 ∧ 拦截名单 ∧ 未 always_allow）；
+    - StudioApprovalService.create 写 Redis pending 记录（TTL 300s）；
+    - 经 emit 下发 approval_request（含 timeout_seconds），等待期间每 15s 发
+      heartbeat（与 legacy 的 SSE 保活一致）；
+    - 决议经 BLPOP 回来后下发 approval_resolved；edited 携 modified_args
+      替换参数并按 approved 处理；approved + always 写入流内 always_allow；
+    - timeout 经 record_approval_audit 落 audit_logs（method="EVENT"）；
+    - 拒绝/超时返回 rejection 信封（success=False, rejected=True），由调用方
+      作为工具结果回灌 LLM 与前端。
+
+    返回 (生效参数, 拒绝信封)：通过时拒绝信封为 None。
+    """
+    if not needs_approval(permission_mode, CHAT_SANDBOX_TOOL_NAME, always_allow):
+        return args, None
+    approval_service = get_studio_approval_service()
+    approval = await approval_service.create(
+        user_id=user_id,
+        session_id=session_id,
+        tool_call_id=tool_call_id,
+        tool_name=CHAT_SANDBOX_TOOL_NAME,
+        arguments=args,
+        risk_hint=_studio_risk_hint(CHAT_SANDBOX_TOOL_NAME, args),
+    )
+    await emit(
+        ChatChunk(
+            type="approval_request",
+            metadata={
+                "approval_id": approval["approval_id"],
+                "tool_call_id": tool_call_id,
+                "tool_name": CHAT_SANDBOX_TOOL_NAME,
+                "arguments": args,
+                "risk_hint": approval["risk_hint"],
+                "timeout_seconds": APPROVAL_TTL_SECONDS,
+            },
+        )
+    )
+    resolution_task = asyncio.create_task(
+        approval_service.wait_resolution(approval["approval_id"])
+    )
+    try:
+        while not resolution_task.done():
+            await asyncio.wait({resolution_task}, timeout=15)
+            if not resolution_task.done():
+                await emit(ChatChunk(type="heartbeat"))
+        resolution = resolution_task.result()
+    finally:
+        if not resolution_task.done():
+            resolution_task.cancel()
+    action = str(resolution.get("action") or "timeout")
+    await emit(
+        ChatChunk(
+            type="approval_resolved",
+            metadata={
+                "approval_id": approval["approval_id"],
+                "tool_call_id": tool_call_id,
+                "action": action,
+            },
+        )
+    )
+    if action == "edited" and isinstance(resolution.get("modified_args"), dict):
+        args = resolution["modified_args"]
+        action = "approved"
+    if action == "approved" and resolution.get("always"):
+        always_allow.add(CHAT_SANDBOX_TOOL_NAME)
+    if action == "timeout":
+        await record_approval_audit(
+            user_id=str(user_id),
+            approval_id=approval["approval_id"],
+            session_id=str(session_id),
+            tool_name=CHAT_SANDBOX_TOOL_NAME,
+            action="timeout",
+            resolver="timeout",
+            arguments=args,
+            method="EVENT",
+        )
+    if action != "approved":
+        reason = resolution.get("reason") or (
+            "用户未响应（超时）" if action == "timeout" else "用户拒绝了该操作"
+        )
+        reject_payload = {"rejected": True, "error": reason}
+        return args, {
+            "success": False,
+            "rejected": True,
+            "result": {
+                "llm_payload": reject_payload,
+                "ui_payload": dict(reject_payload),
+            },
+        }
+    return args, None
 
 
 class LangGraphChatRuntime(DelegatingAgentRuntime):
@@ -79,6 +194,27 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             "skill_pins": skill_pins or {},
         }
         persisted_web_sources = web_sources if web_sources is not None else []
+        # 审批闸上下文（对齐 legacy chat_service）：仅当会话显式携带
+        # sandbox_meta.permissions.mode 时启用审批；always_allow 集合支持流内
+        # always 批准动态补充，同流内后续调用直接放行。
+        approval_session = await self._service.get_session(session_id, user_id)
+        approval_sandbox_meta = (
+            dict(approval_session.sandbox_meta or {}) if approval_session else {}
+        )
+        _permissions = approval_sandbox_meta.get("permissions")
+        chat_permission_mode = (
+            _permissions.get("mode") if isinstance(_permissions, dict) else None
+        )
+        chat_always_allow = always_allow_set(approval_sandbox_meta)
+        # NodeDeps 每轮循环重建，emit 由 LangGraphRuntimeService.stream 在图执行前
+        # 挂到 deps 上；经 holder 让工具执行器拿到当前轮的 emit 以透出审批事件。
+        deps_holder: dict[str, Any] = {}
+
+        async def _emit(chunk: ChatChunk) -> None:
+            deps = deps_holder.get("deps")
+            if deps is not None and deps.emit is not None:
+                await deps.emit(chunk)
+
         from cygnusx.infrastructure.execution.langgraph_nodes import NodeDeps
         from cygnusx.infrastructure.execution.langgraph_runtime import (
             LangGraphRuntimeService,
@@ -163,10 +299,24 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     )
                 return result
             if tool_name == CHAT_SANDBOX_TOOL_NAME:
-                # 与 legacy 手写循环同一执行本体；LangGraph 执行器只回单个信封，
-                # 不走 stream_chat_sandbox_tool 的增量 tool_output 事件，
-                # stdout/stderr/产物随最终 ui_payload 一次性透出。
-                return await execute_chat_sandbox(args, user_id, session_id=session_id)
+                # 与 legacy 手写循环同一审批闸（supervised 模式经 Redis 审批 + SSE
+                # 事件下发/决议回写，audit_logs 留痕）；决议通过后才执行。执行本体
+                # 与 legacy 相同；LangGraph 执行器只回单个信封，不走
+                # stream_chat_sandbox_tool 的增量 tool_output 事件（R13，见 ADR）。
+                effective_args, rejection = await _gate_chat_sandbox_approval(
+                    emit=_emit,
+                    user_id=user_id,
+                    session_id=session_id,
+                    tool_call_id=tool_call_id,
+                    args=args,
+                    permission_mode=chat_permission_mode,
+                    always_allow=chat_always_allow,
+                )
+                if rejection is not None:
+                    return rejection
+                return await execute_chat_sandbox(
+                    effective_args, user_id, session_id=session_id
+                )
             server = _find_server(tool_name)
             if server is None:
                 return {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
@@ -260,6 +410,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     agent_id=execution_agent_id,
                     execution_path=execution_path,
                 )
+                deps_holder["deps"] = deps
                 runtime = LangGraphRuntimeService(deps, max_rounds=max_rounds)
                 async for chunk in runtime.stream(runtime_state["llm_messages"]):
                     if chunk.type == "text":

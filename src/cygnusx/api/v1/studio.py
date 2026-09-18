@@ -578,6 +578,7 @@ async def get_studio_session(
         sandbox_capabilities=_session_sandbox_capabilities(session),
         permissions=(session.sandbox_meta or {}).get("permissions") or {"mode": "supervised"},
         sandbox_metrics=sandbox_metrics,
+        env_restore=studio_sandbox_manager.env_restore_status(session_id),
         ui={
             "view_mode": (session.sandbox_meta or {}).get("ui", {}).get("view_mode", get_studio_config().ui.default_view_mode),
             "split_ratio": (session.sandbox_meta or {}).get("ui", {}).get("split_ratio", 40),
@@ -609,6 +610,25 @@ async def delete_studio_session(
         raise ConflictError("会话正在执行任务，请稍后再试")
     await service.delete_session(session_id, current_user_id)
     return {"success": True}
+
+
+@router.post("/sessions/{session_id}/restore", summary="恢复已归档的工作区")
+async def restore_studio_workspace(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    db: DbSession,
+    session_id: str,
+) -> dict[str, Any]:
+    """解包归档包恢复工作区目录（幂等；409=工作区配额不足；不做容器操作）。
+
+    - 未归档（sandbox_meta 无 workspace_archive 标记）：200 {"restored": false, "reason": "not_archived"}
+    - 已恢复过：200 {"restored": true, "idempotent": true}
+    - 恢复成功后沙盒按既有懒启动链路在下次执行时拉起。
+    """
+    await _get_studio_session(service, session_id, current_user_id)
+    from cygnusx.application.services.workspace_archive_service import unpack_session
+
+    return await unpack_session(db, session_id, current_user_id)
 
 
 @router.patch("/sessions/{session_id}/ui", summary="保存 Studio 代码工作室视图状态")

@@ -23,6 +23,7 @@ from cygnusx.application.services.project_archive_service import (
     md5_stream,
     render_environment_markdown,
     render_project_agents_md,
+    sha256_stream,
 )
 from cygnusx.infrastructure.config.storage_config import StorageConfig
 from cygnusx.infrastructure.storage import LocalStorageBackend
@@ -168,6 +169,7 @@ async def test_archive_run_writes_readme_environment_and_agents(storage_env):
     artifact = run_dir / "output" / "de.csv"
     artifact.write_bytes(b"gene,log2fc\nA,1.2\n")
     expected_md5 = hashlib.md5(b"gene,log2fc\nA,1.2\n").hexdigest()
+    expected_sha256 = hashlib.sha256(b"gene,log2fc\nA,1.2\n").hexdigest()
 
     project = ProjectInfo(name="TP53 项目", customer="客户A")
     env = collect_environment(flow_id="studio", flow_name="OmicStudio")
@@ -185,6 +187,7 @@ async def test_archive_run_writes_readme_environment_and_agents(storage_env):
                 relative_path="output/de.csv",
                 size=artifact.stat().st_size,
                 md5=md5_stream(artifact),
+                sha256=sha256_stream(artifact),
             )
         ],
         factory=factory,
@@ -196,6 +199,9 @@ async def test_archive_run_writes_readme_environment_and_agents(storage_env):
     assert "- 客户: 客户A" in readme
     assert "- 分析类型: OmicStudio 产物登记" in readme
     assert "## 最终结果" in readme and "output/de.csv" in readme and expected_md5 in readme
+    # MD5 保留兼容 + 新增 sha256 列并存
+    assert "| 文件 | 大小(bytes) | MD5 | SHA-256 |" in readme
+    assert expected_sha256 in readme
     assert "## 代码与脚本" in readme
     assert "## 软件与版本" in readme and "## 分析环境" in readme
 
@@ -205,7 +211,14 @@ async def test_archive_run_writes_readme_environment_and_agents(storage_env):
     assert snapshot["run"]["directory"].endswith(f"runs/{run_dir.name}")
     assert snapshot["run"]["analysis_type"] == "OmicStudio 产物登记"
     assert snapshot["artifacts"][0]["md5"] == expected_md5
+    assert snapshot["artifacts"][0]["sha256"] == expected_sha256
     assert environment["run"]["status"] == "completed"
+
+    # 产物 manifest 旁落：逐文件 path/size/sha256 实测对账记录
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["files"] == [
+        {"path": "output/de.csv", "size": artifact.stat().st_size, "sha256": expected_sha256}
+    ]
 
     agents = (factory.project_dir(uid, project.slug) / "AGENTS.md").read_text(encoding="utf-8")
     assert "## 分析记录" in agents
@@ -289,6 +302,13 @@ async def test_archive_studio_run_generates_documents(storage_env):
     readme = (run_dir / "README.md").read_text(encoding="utf-8")
     assert "OmicStudio 产物登记" in readme
     assert "output/a.png" in readme
+    # MD5 与 sha256 并存，且 sha256 为落盘文件实测值
+    assert hashlib.md5(b"img").hexdigest() in readme
+    assert hashlib.sha256(b"img").hexdigest() in readme
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["files"] == [
+        {"path": "output/a.png", "size": 3, "sha256": hashlib.sha256(b"img").hexdigest()}
+    ]
     agents = (factory.project_dir(uid, "我的项目") / "AGENTS.md").read_text(encoding="utf-8")
     assert "图 v1" in agents
     assert (run_dir / "environment.json").is_file()

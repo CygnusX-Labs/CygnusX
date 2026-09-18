@@ -3,7 +3,7 @@ import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NEmpty, NInput, NModal,
-  NPopconfirm, NSkeleton, NSpace, NSpin, NTabPane, NTabs, NTag, useMessage,
+  NPopconfirm, NSkeleton, NSpace, NSpin, NSwitch, NTabPane, NTabs, NTag, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import PageHeader from '@/components/PageHeader.vue'
@@ -30,6 +30,34 @@ const sessionStatus = ref<ProjectSessionStatus>('active')
 const renameTarget = ref<ProjectSessionItem | null>(null)
 const renameTitle = ref('')
 const renameSaving = ref(false)
+
+/** 项目级科研模式默认值（WP3 任务 3 可选项）：项目内新会话默认开启科研模式。
+ *  后端项目设置端点可能稍后到位：PATCH 失败时回滚开关并提示，不阻塞页面。 */
+const projectResearchDefault = ref(false)
+const togglingProjectResearch = ref(false)
+
+async function handleProjectResearchToggle(value: boolean) {
+  if (togglingProjectResearch.value) return
+  const previous = projectResearchDefault.value
+  projectResearchDefault.value = value
+  togglingProjectResearch.value = true
+  try {
+    await projectsApi.updateProjectSettings(projectId.value, {
+      research_mode: {
+        enabled: value,
+        render_mode: 'message_flow',
+        workspace_protocol: 'standard',
+        ptc_llm_query: false,
+      },
+    })
+    message.success(value ? '已开启：项目内新会话将默认开启科研模式' : '已关闭项目级科研模式默认开关')
+  } catch (e: any) {
+    projectResearchDefault.value = previous
+    message.error(e?.response?.data?.detail || '项目设置保存失败（后端端点可能尚未上线），已恢复开关状态')
+  } finally {
+    togglingProjectResearch.value = false
+  }
+}
 
 function formatDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : '—'
@@ -372,6 +400,18 @@ onMounted(loadOverview)
           <NDescriptionsItem label="创建时间">{{ formatDate(overview.project.created_at) }}</NDescriptionsItem>
           <NDescriptionsItem label="更新时间">{{ formatDate(overview.project.updated_at) }}</NDescriptionsItem>
         </NDescriptions>
+        <div class="project-default-row">
+          <div class="project-default-label">
+            <span class="project-default-title">新会话默认开启科研模式</span>
+            <span class="project-default-desc">项目内新建会话自动套用科研模式设置（工作台会话可在会话设置中再调整）</span>
+          </div>
+          <n-switch
+            :value="projectResearchDefault"
+            :loading="togglingProjectResearch"
+            data-test="project-research-default"
+            @update:value="handleProjectResearchToggle"
+          />
+        </div>
       </NCard>
 
       <NCard :bordered="false" class="detail-card">
@@ -479,6 +519,31 @@ onMounted(loadOverview)
   font-size: var(--font-card-title-size);
   line-height: var(--font-card-title-height);
   font-weight: var(--font-card-title-weight);
+}
+
+/* 项目级科研模式默认值开关（WP3 任务 3 可选项） */
+.project-default-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--n-border-color, #e5e7eb);
+}
+.project-default-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.project-default-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+.project-default-desc {
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
 }
 
 .card-header-count {

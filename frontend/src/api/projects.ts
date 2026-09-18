@@ -82,6 +82,18 @@ export const projectsApi = {
     return res.data
   },
 
+  /**
+   * 项目级设置（WP3 任务 3 可选项）：如"项目内新会话默认开启科研模式"。
+   * 后端端点可能稍后到位，调用方必须容忍失败并回滚 UI。
+   */
+  async updateProjectSettings(
+    projectId: string,
+    settings: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const res = await apiClient.patch<Record<string, unknown>>(`/projects/${projectId}`, { settings })
+    return res.data
+  },
+
   /** 项目总览：元数据 + 历史会话（分页，可按状态过滤）+ 历史分析 run 目录 */
   async getProjectOverview(
     projectId: string,

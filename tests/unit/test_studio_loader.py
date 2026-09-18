@@ -158,6 +158,53 @@ def test_hot_reload_on_mtime_change(tmp_path: Path):
 
 
 @pytest.mark.unit
+def test_retention_quota_archive_defaults():
+    """生命周期/配额/归档配置项默认值（archive.backend=s3 仅占位不实现）"""
+    config = StudioConfig()
+    assert config.retention.active_days == 14
+    assert config.quota.workspace_gb == 500
+    assert config.quota.archive_gb == 50
+    assert config.archive.backend == "local"
+    assert config.archive.retention_days == 180
+    # 兼容：workspace_retention_days 配置项保留但不再是 purge 删除依据
+    assert config.session.workspace_retention_days == 7
+
+
+@pytest.mark.unit
+def test_retention_quota_archive_from_yaml(tmp_path: Path):
+    yaml_path = tmp_path / "studio.yaml"
+    _write_yaml(
+        yaml_path,
+        """
+studio:
+  retention:
+    active_days: 30
+  quota:
+    workspace_gb: 100
+    archive_gb: 10
+  archive:
+    backend: s3
+    retention_days: 90
+""",
+    )
+    config = StudioConfigManager(config_path=yaml_path).get_config()
+    assert config.retention.active_days == 30
+    assert config.quota.workspace_gb == 100
+    assert config.quota.archive_gb == 10
+    # s3 允许填写（占位），但本期不实现，运行期按 local 行为处理
+    assert config.archive.backend == "s3"
+    assert config.archive.retention_days == 90
+
+
+@pytest.mark.unit
+def test_invalid_archive_backend_falls_back_to_defaults(tmp_path: Path):
+    yaml_path = tmp_path / "studio.yaml"
+    _write_yaml(yaml_path, "studio:\n  archive:\n    backend: oss\n")
+    config = StudioConfigManager(config_path=yaml_path).get_config()
+    assert config == StudioConfig()
+
+
+@pytest.mark.unit
 def test_workspace_root_resolves_storage_path_placeholder():
     """mounts.workspace 的 {storage_path} 占位符解析为 settings.storage_path"""
     config = StudioConfig()

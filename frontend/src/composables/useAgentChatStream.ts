@@ -61,6 +61,10 @@ export interface ToolCallEvent {
   mcp_server?: string
   /** 调用理由（为什么调这个工具，后端 metadata 透传） */
   purpose?: string
+  /** 科研模式信封字段（WP3 任务 1）：cell 时间线分组依据；旧后端/非代码工具无此字段 */
+  cell_index?: number | null
+  /** 科研模式信封字段：cell 组头语言徽标；缺省时由卡片按参数/扩展名推断 */
+  language?: string | null
 }
 export interface ToolResultEvent {
   tool_call_id: string
@@ -705,6 +709,8 @@ export function useAgentChatStream() {
           arguments: (data.arguments as Record<string, unknown>) || {},
           mcp_server: typeof data.mcp_server === 'string' ? data.mcp_server : undefined,
           purpose: typeof data.purpose === 'string' ? data.purpose : undefined,
+          cell_index: typeof data.cell_index === 'number' ? data.cell_index : null,
+          language: typeof data.language === 'string' ? data.language : null,
         })
         break
       case 'mode_changed':

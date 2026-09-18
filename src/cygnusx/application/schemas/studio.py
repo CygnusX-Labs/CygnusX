@@ -183,6 +183,11 @@ class StudioSessionDetailDTO(BaseModel):
         description="会话级权限模式（sandbox_meta.permissions，默认 supervised）",
     )
     sandbox_metrics: dict[str, Any] = Field(default_factory=dict, description="容器 CPU/内存快照")
+    env_restore: dict[str, Any] | None = Field(
+        None,
+        description="最近一次声明式环境还原结果（status/file/duration_ms/reason）；"
+        "failed 时前端给一次性 warning 提示（WP2 任务 3）",
+    )
     share: StudioShareStatusDTO | None = Field(
         None, description="只读分享状态；原始令牌永不从详情接口返回"
     )
@@ -206,6 +211,9 @@ class SharedStudioMessageDTO(BaseModel):
     role: str
     content: str
     created_at: datetime
+    # R4（WP3 任务 4）：执行历史摘要（tool_invocations/timeline/usage），
+    # 经 WP0 200KB 截断护栏处理；无工具执行的消息为 None
+    metadata_json: dict[str, Any] | None = None
 
 
 class SharedStudioSessionDTO(BaseModel):

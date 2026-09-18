@@ -25,6 +25,22 @@ class TaskRepositoryImpl(ITaskRepository):
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
+    async def get_by_idempotency_key(self, idempotency_key: str) -> Task | None:
+        """根据幂等键获取任务（job 冲突提交时返回已有行，不新建）"""
+        result = await self._session.execute(
+            select(TaskModel).where(TaskModel.idempotency_key == idempotency_key)
+        )
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None
+
+    async def count_attempts_by_key_prefix(self, key_prefix: str) -> int:
+        """统计同一派生幂等键前缀（base 与 base:aN）已有的行数，用于终态后抬升 attempt。"""
+        pattern = f"{key_prefix}:a%"
+        result = await self._session.execute(
+            select(func.count(TaskModel.id)).where(TaskModel.idempotency_key.like(pattern))
+        )
+        return int(result.scalar_one())
+
     async def list_by_user(self, user_id: UUID, status: str | None = None) -> list[Task]:
         """列出用户的任务"""
         query = select(TaskModel).where(TaskModel.user_id == user_id)
@@ -179,6 +195,7 @@ class TaskRepositoryImpl(ITaskRepository):
             progress=model.progress,
             sample_count=model.sample_count,
             logs=logs,
+            idempotency_key=model.idempotency_key,
             created_at=model.created_at,
             started_at=model.started_at,
             finished_at=model.finished_at,
@@ -200,6 +217,7 @@ class TaskRepositoryImpl(ITaskRepository):
             progress=task.progress,
             sample_count=task.sample_count,
             logs=[log.model_dump(mode="json") for log in task.logs],
+            idempotency_key=task.idempotency_key,
             started_at=task.started_at,
             finished_at=task.finished_at,
         )
@@ -217,6 +235,7 @@ class TaskRepositoryImpl(ITaskRepository):
         model.error_message = task.error_message
         model.progress = task.progress
         model.sample_count = task.sample_count
+        model.idempotency_key = task.idempotency_key
         # 注意: logs 不在此处覆盖，由 append_log 单独管理，避免丢失直接追加的日志
         model.started_at = task.started_at
         model.finished_at = task.finished_at

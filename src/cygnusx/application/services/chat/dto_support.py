@@ -25,7 +25,10 @@ class ChatDtoSupport:
         )
 
     @staticmethod
-    def _to_msg_dto(message: ChatMessageModel) -> ChatMessageDTO:
+    def _to_msg_dto(
+        message: ChatMessageModel,
+        tool_output_replay: dict[str, Any] | None = None,
+    ) -> ChatMessageDTO:
         usage = (message.metadata_json or {}).get("usage") or {} if message.role == "assistant" else {}
         input_tokens = (
             usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0) or usage.get("input", 0)
@@ -38,13 +41,18 @@ class ChatDtoSupport:
         total_tokens = (
             usage.get("total_tokens", 0) or usage.get("total", 0) or input_tokens + output_tokens
         )
+        # WP2 双读：有事件的消息在终态快照 metadata 之外附带过程态回放块；
+        # 无事件的旧会话不传 replay，metadata 原样透传，行为与升级前完全一致
+        metadata_json = dict(message.metadata_json or {})
+        if tool_output_replay:
+            metadata_json["tool_output_replay"] = tool_output_replay
         return ChatMessageDTO(
             message_id=message.message_id,
             role=message.role,
             content=message.content,
             content_type=message.content_type,
             status=message.status,
-            metadata_json=message.metadata_json or {},
+            metadata_json=metadata_json,
             created_at=message.created_at,
             tokens={
                 "input": input_tokens,

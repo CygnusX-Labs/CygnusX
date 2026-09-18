@@ -20,7 +20,11 @@ from cygnusx.application.schemas.chat import (
 from cygnusx.core.exceptions import NotFoundError
 from cygnusx.infrastructure.ai_provider.openai_compatible import provider_manager
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
-from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+from cygnusx.infrastructure.database.models.chat import (
+    ChatMessageEventModel,
+    ChatMessageModel,
+    ChatSessionModel,
+)
 
 
 class ChatSessionManagement:
@@ -243,6 +247,37 @@ class ChatSessionManagement:
         if str(project.user_id) != str(user_id):
             raise AuthorizationError("无权绑定其他用户的项目")
 
+    async def _project_research_mode_defaults(
+        self, user_id: str, project_id: str | None
+    ) -> dict[str, Any] | None:
+        """项目级 settings.research_mode（WP3 任务 3）：存在且为合法对象时返回其浅拷贝。
+
+        仅做轻校验（dict + enabled 布尔）；非法或缺失返回 None（不继承）。
+        """
+        if not project_id:
+            return None
+        from cygnusx.infrastructure.database.models.project import ProjectModel
+
+        try:
+            project_uuid = uuid.UUID(str(project_id))
+        except (ValueError, AttributeError, TypeError):
+            return None
+        result = await self._db.execute(
+            select(ProjectModel).where(ProjectModel.id == project_uuid)
+        )
+        project = result.scalar_one_or_none()
+        if project is None or str(project.user_id) != str(user_id):
+            return None
+        # getattr 兼容测试替身等无 settings 属性的投影对象（同 project_service._to_dict 惯例）
+        settings = getattr(project, "settings", None)
+        settings = settings if isinstance(settings, dict) else None
+        research_mode = (settings or {}).get("research_mode")
+        if not isinstance(research_mode, dict):
+            return None
+        if "enabled" in research_mode and not isinstance(research_mode.get("enabled"), bool):
+            return None
+        return dict(research_mode)
+
     async def create_session(
         self,
         user_id: str,
@@ -259,6 +294,12 @@ class ChatSessionManagement:
     ) -> ChatSessionDTO:
         if require_project:
             await self._validate_project_binding(user_id, project_id)
+        # WP3 任务 3：项目 settings.research_mode 继承为会话初始值；
+        # 调用方显式传入的 research_mode（如模板指定）优先，不覆盖。
+        research_mode = await self._project_research_mode_defaults(user_id, project_id)
+        if research_mode is not None:
+            sandbox_meta = dict(sandbox_meta or {})
+            sandbox_meta.setdefault("research_mode", research_mode)
         session = await self._sessions.create(
             user_id=user_id,
             model_id=model_id,
@@ -497,4 +538,30 @@ class ChatSessionManagement:
             if not session:
                 raise NotFoundError("会话不存在或无权访问")
         messages = self._order_messages(await self._sessions.get_messages(session_id))
-        return [self._to_msg_dto(m) for m in messages]
+        # WP2 双读重建：仅对含 tool_invocations 的 assistant 消息批量探查事件表，
+        # 有事件的走过程态回放（终态快照保持不变），无事件的旧会话原样组装
+        from cygnusx.application.services.chat_message_event_service import (
+            message_event_service,
+        )
+
+        candidates = [
+            m.message_id
+            for m in messages
+            if m.role == "assistant" and isinstance(m.metadata_json, dict)
+            and m.metadata_json.get("tool_invocations")
+        ]
+        replays: dict[str, dict[str, Any]] = {}
+        if candidates:
+            event_rows = await self._db.execute(
+                select(ChatMessageEventModel.message_id)
+                .where(ChatMessageEventModel.message_id.in_(candidates))
+                .limit(len(candidates))
+            )
+            with_events = {row[0] for row in event_rows.all()}
+            if with_events:
+                replays = await message_event_service.load_replay(
+                    self._db, sorted(with_events)
+                )
+        return [
+            self._to_msg_dto(m, replays.get(m.message_id)) for m in messages
+        ]

@@ -30,8 +30,50 @@ class StudioSessionConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     idle_ttl_minutes: int = 30
+    # 工作区删除线已迁往 retention.active_days；本字段仅保留为后续休眠功能的
+    # 候选线（purge 不再用它做删除依据），配置项保留以兼容已有 studio.yaml。
     workspace_retention_days: int = 7
     prewarm_on_create: bool = True
+
+
+class StudioRetentionConfig(BaseModel):
+    """Studio 数据保留配置（purge 删除线与豁免窗口）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    # 最近 active_days 天内有消息/执行记录的会话豁免 purge；
+    # 超过该窗口且无豁免的会话工作区可被清理。
+    active_days: int = Field(default=14, ge=1)
+    # 超过 dormant_days 天未活动且无豁免的 studio 会话工作区会被
+    # 休眠打包（tar.gz 归档），释放工作区配额。
+    dormant_days: int = Field(default=90, ge=1)
+
+
+class StudioQuotaConfig(BaseModel):
+    """Studio 存储配额占位配置（本期仅配置化，不强制配额）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    workspace_gb: int = Field(default=500, ge=0)
+    archive_gb: int = Field(default=50, ge=0)
+
+
+class StudioArchiveConfig(BaseModel):
+    """Studio 归档配置占位（本期仅 local 生效，s3 为占位不实现）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    backend: str = "local"
+    retention_days: int = Field(default=180, ge=1)
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"local", "s3"}:
+            raise ValueError("archive.backend 必须为 local 或 s3")
+        # 注意：s3 仅为配置占位，本期不实现，运行期按 local 行为处理。
+        return normalized
 
 
 class StudioNetworkConfig(BaseModel):
@@ -196,6 +238,9 @@ class StudioConfig(BaseModel):
     enabled: bool = True
     default_image: str = "cygnusx-analysis:core-v0.0.2dev"
     session: StudioSessionConfig = Field(default_factory=StudioSessionConfig)
+    retention: StudioRetentionConfig = Field(default_factory=StudioRetentionConfig)
+    quota: StudioQuotaConfig = Field(default_factory=StudioQuotaConfig)
+    archive: StudioArchiveConfig = Field(default_factory=StudioArchiveConfig)
     sandbox: StudioSandboxConfig = Field(default_factory=StudioSandboxConfig)
     ui: StudioUiConfig = Field(default_factory=StudioUiConfig)
     agent: StudioAgentConfig = Field(default_factory=StudioAgentConfig)
@@ -231,6 +276,11 @@ class StudioConfig(BaseModel):
         if not path.is_absolute():
             path = Path(get_settings().storage_path) / path
         return path
+
+    @property
+    def archive_root(self) -> Path:
+        """归档包顶级目录（与 studio/ 平级、平台独占，不挂入任何容器）。"""
+        return Path(get_settings().storage_path) / "studio-archive"
 
 
 class StudioConfigManager:

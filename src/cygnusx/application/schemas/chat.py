@@ -113,6 +113,31 @@ class TokenUsage(BaseModel):
     total: int = 0
 
 
+class ResearchModeConfig(BaseModel):
+    """科研模式三开关（WP3 任务 3）：仅存于会话 sandbox_meta.research_mode。
+
+    仅交互层语义开关——执行、审批、审计、落库路径不因此改变。
+    - enabled：总开关；False 时子项不生效（存储为最小对象 {"enabled": False}）
+    - render_mode：前端渲染模式 message_flow（消息流）/ cell_timeline（单元时间线）
+    - workspace_protocol：工作区协议 standard / research（research 才触发声明式环境还原）
+    - ptc_llm_query：tool_orchestrate 编排内 llm_query 是否进白名单
+    """
+
+    enabled: bool = False
+    render_mode: Literal["message_flow", "cell_timeline"] = "message_flow"
+    workspace_protocol: Literal["standard", "research"] = "standard"
+    ptc_llm_query: bool = False
+
+
+class ResearchModeUpdateRequest(BaseModel):
+    """PUT /sessions/{id}/research-mode 请求体；enabled=True 时未传的子项沿用存量值或默认。"""
+
+    enabled: bool = Field(..., description="总开关")
+    render_mode: Literal["message_flow", "cell_timeline"] | None = None
+    workspace_protocol: Literal["standard", "research"] | None = None
+    ptc_llm_query: bool | None = None
+
+
 class ChatSessionDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -135,6 +160,11 @@ class ChatSessionDTO(BaseModel):
     overdrive: bool = False
     # L2→L4 升级状态（suggested/dismissed/upgraded，含 room_id 只读标记）；无升级为 None。
     agentteams_upgrade: dict[str, Any] | None = None
+    # WP1 工作区归档态：sandbox_meta.workspace_archive 原样透出；未归档为 None。
+    # 契约字段（前端并行开发依赖），字段名与结构不得改。
+    workspace_archive: dict[str, Any] | None = None
+    # WP3 科研模式三开关：sandbox_meta.research_mode 原样透出；未开启为 None。
+    research_mode: ResearchModeConfig | None = None
 
 
 class ChatAssistantDTO(BaseModel):

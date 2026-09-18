@@ -13,7 +13,7 @@ import {
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
   TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline, BulbOutline,
-  WarningOutline, BriefcaseOutline, ServerOutline,
+  WarningOutline, BriefcaseOutline, ServerOutline, ArchiveOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
 import NotAuthorized from '@/components/NotAuthorized.vue'
@@ -312,6 +312,7 @@ const adminNavItems = computed<NavItem[]>(() => [
       { key: 'admin-announcements', label: '通知公告', to: '/admin/announcements', icon: NotificationsOutline },
       { key: 'admin-terminals', label: '沙盒终端管理', to: '/admin/terminals', icon: TerminalOutline },
       { key: 'admin-blast-databases', label: 'BLAST 数据库管理', to: '/admin/blast-databases', icon: SearchOutline },
+      { key: 'admin-workspace-archive', label: '工作区归档管理', to: '/admin/workspace-archive', icon: ArchiveOutline },
     ],
   },
 ])

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cygnusx.infrastructure.database.base import Base, TimestampMixin
@@ -39,6 +39,12 @@ class ProjectModel(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # 可选客户名（项目归属客户/课题组）
     customer: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+    # 项目状态：active（NULL 视为进行中）/ completed / handed_over；
+    # 标记 completed/handed_over 时触发其下会话工作区休眠打包。
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 项目级设置（WP3 任务 3，JSONB）：{"research_mode": {...}}；
+    # 创建会话时 research_mode 继承为会话 sandbox_meta.research_mode 初始值。
+    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True

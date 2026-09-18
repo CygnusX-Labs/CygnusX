@@ -68,6 +68,7 @@ import type {
   PipelineTaskStatus,
   PipelineType,
 } from '@/types/pipeline'
+import type { ResearchModeSettings } from '@/types/chat'
 
 const STUDIO_OUTPUT_CAP = 20_000
 
@@ -133,6 +134,24 @@ export interface AgentSession {
   overdrive?: boolean
   /** 用户为下一条消息选择的沙箱运行时 ID（null/undefined = 跟随 Agent 默认；会话创建后固定） */
   runtime_profile?: string | null
+  /** 工作区已归档休眠（WP1；与 status='archived' 软删语义无关，仍可点击恢复） */
+  workspace_archive?: WorkspaceArchiveInfo | null
+  /** 科研模式设置（WP3 任务 3；null/undefined = 未开启，旧数据兼容） */
+  research_mode?: ResearchModeSettings | null
+}
+
+/** 会话工作区归档休眠信息（WP1；null/undefined = 正常会话） */
+export interface WorkspaceArchiveInfo {
+  package_id: string
+  created_at: string
+  expires_at: string
+}
+
+/** 恢复会话工作区的响应（POST /studio/sessions/{id}/restore） */
+export interface WorkspaceRestoreResult {
+  restored: boolean
+  idempotent?: boolean
+  reason?: string
 }
 
 /** 可用模型选项（来自 /api/v1/chat/models） */
@@ -1002,6 +1021,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         extra_mcp_servers?: string[]
         multi_agent?: boolean
         overdrive?: boolean
+        workspace_archive?: WorkspaceArchiveInfo | null
+        research_mode?: ResearchModeSettings | null
         created_at: string
         updated_at: string
       }>>('/chat/sessions')
@@ -1022,6 +1043,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           extra_mcp_servers: s.extra_mcp_servers || [],
           multi_agent: Boolean(s.multi_agent),
           overdrive: Boolean(s.overdrive),
+          workspace_archive: s.workspace_archive ?? null,
+          research_mode: s.research_mode ?? null,
         }))
       // 合并正在流式中的临时会话，避免刷新时丢失
       const tempSessions = sessions.value.filter((s) => s.id.startsWith('sess-'))
@@ -1411,6 +1434,40 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /** 恢复已归档休眠的会话工作区（幂等响应按成功处理，成功后清除本地归档标记） */
+  async function restoreArchivedSession(id: string): Promise<WorkspaceRestoreResult> {
+    let result: WorkspaceRestoreResult
+    try {
+      const res = await apiClient.post<WorkspaceRestoreResult>(`/studio/sessions/${id}/restore`)
+      result = res.data
+    } catch (e: any) {
+      // 配额不足等场景后端返回 409 + detail，透传给上层展示
+      const detail = e?.response?.data?.detail
+      throw new Error(typeof detail === 'string' && detail ? detail : '恢复会话工作区失败，请稍后重试')
+    }
+    if (result?.restored) {
+      const session = sessions.value.find((s) => s.id === id)
+      if (session) session.workspace_archive = null
+    }
+    return result
+  }
+
+  /**
+   * 打开会话；工作区已归档休眠时先走恢复端点再走正常打开流程（selectSession → loadSessionMessages）。
+   * 「not_archived」视为已被其他端恢复，按成功继续。恢复失败（如 409 配额不足）抛错，由调用方提示。
+   */
+  async function openSessionWithRestore(id: string): Promise<void> {
+    const session = sessions.value.find((s) => s.id === id)
+    if (session?.workspace_archive) {
+      const result = await restoreArchivedSession(id)
+      if (!result.restored && result.reason !== 'not_archived') {
+        throw new Error('会话工作区恢复失败，请稍后重试')
+      }
+      session.workspace_archive = null
+    }
+    await selectSession(id)
+  }
+
   function newChat() {
     stopStreaming()
     stopAgentTeamsCaseEvents()
@@ -1463,6 +1520,25 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     }
   }
 
+  /**
+   * 科研模式设置（WP3 任务 3）：乐观更新当前会话的 research_mode，
+   * PUT 失败时回滚并抛出错误，由调用方提示用户。
+   */
+  async function updateResearchMode(id: string, settings: ResearchModeSettings): Promise<void> {
+    const session = sessions.value.find((s) => s.id === id)
+    if (!session) return
+    const previous = session.research_mode ?? null
+    session.research_mode = { ...settings }
+    try {
+      const applied = await chatApi.updateResearchMode(id, settings)
+      session.research_mode = applied ?? { ...settings }
+    } catch (e) {
+      session.research_mode = previous
+      console.error('保存科研模式设置失败:', e)
+      throw e
+    }
+  }
+
   async function generateSessionTitle(id: string): Promise<void> {
     if (!id || id.startsWith('sess-')) return
     const session = sessions.value.find((s) => s.id === id)
@@ -1494,6 +1570,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         created_at: s.created_at,
         updated_at: s.updated_at,
         model_id: s.model_id || undefined,
+        workspace_archive: s.workspace_archive ?? null,
       }))
     return {
       title_matches,
@@ -1765,6 +1842,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
               mcpServer: (inv.mcp_server as string) || 'studio',
               status: inv.success ? 'success' : 'error',
               checkpointId: typeof inv.checkpoint_id === 'string' ? inv.checkpoint_id : undefined,
+              // 200KB 落库截断标记（信封层级）：存在时卡片显示"内容已截断"提示；
+              // 旧数据无此字段则保持原有降级渲染
+              uiPayloadTruncation: inv.ui_payload_truncation as ToolCall['uiPayloadTruncation'],
+              resultTruncation: inv.result_truncation as ToolCall['resultTruncation'],
+              // 科研模式信封字段（WP3 任务 1）：与 result/ui_payload 平级，旧数据无此字段
+              cellIndex: typeof inv.cell_index === 'number' ? inv.cell_index : null,
+              language: typeof inv.language === 'string' ? inv.language : undefined,
             }
             if (so || se) tc.output = so + se
             return tc
@@ -2389,6 +2473,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             status: 'running',
             mcpServer: event.mcp_server,
             purpose: event.purpose,
+            cellIndex: event.cell_index ?? null,
+            language: event.language ?? undefined,
           })
           // 交错时间线：记录这次工具调用的位置，正文段在其后另起
           toolMessage.timeline ||= []
@@ -3092,9 +3178,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     fetchSkillVersions, rollbackSkill, fetchSkillVersionDetail, fetchSkillReferences,
     toggleSkill, deleteSkill,
     // session actions
-    startSessionFromAgent, selectSession, newChat, deleteSession, renameSession, generateSessionTitle,
+    startSessionFromAgent, selectSession, openSessionWithRestore, restoreArchivedSession,
+    newChat, deleteSession, renameSession, generateSessionTitle,
     searchSessions, switchSessionModel, loadSessionMessages, sendMessage, stopStreaming, pauseStreaming,
-    submitMessageFeedback,
+    submitMessageFeedback, updateResearchMode,
     approveToolCall, rejectToolCall, approveOverdriveApproval, rejectOverdriveApproval, answerAskRequest,
     decideOverdrivePlan,
     initStudioPermissions, setStudioPermissions,

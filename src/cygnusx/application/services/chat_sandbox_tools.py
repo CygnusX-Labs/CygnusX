@@ -21,6 +21,8 @@ from uuid import UUID
 
 from loguru import logger
 
+from cygnusx.application.services.artifact_manifest import build_file_entry, reconcile_declared
+from cygnusx.application.services.chat_message_event_service import message_event_service
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
@@ -54,6 +56,16 @@ CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA: dict[str, Any] = {
                     "type": "integer",
                     "description": "超时秒数，缺省 300s",
                 },
+                "artifacts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "声明本次执行将产出的交付文件（相对 /tmp/chat_output/ 或 "
+                        "/workspace/output/ 的路径，支持 * glob，如 \"results/summary.csv\""
+                        "、\"figures/*.png\"）。执行结束后平台逐文件实测 size+sha256 对账；"
+                        "声明了但未产出的文件会在结果 missing_artifacts 中告警"
+                    ),
+                },
             },
             "required": ["language", "code"],
         },
@@ -78,10 +90,11 @@ CHAT_INPUT_CONTAINER_DIR = "/workspace/input"
 # 必须清掉上一个会话遗留的产物与输入文件，避免跨会话文件串扰。
 # mkdir 时一并创建 figures/results 常用子目录，避免用户代码直接
 # savefig("/tmp/chat_output/figures/xxx.png") 时因子目录不存在而报 FileNotFoundError。
+# 注意：/workspace/output、/workspace/input 在只读 rootfs 基线下是 tmpfs 挂载点，
+# rm -rf 无法删除挂载点本身（退出码非零），用 `;` 保证后续 mkdir 一定执行。
 _ARTIFACT_DIR_RESET_CMD = (
     f"rm -rf {CHAT_ARTIFACT_CONTAINER_DIR} {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}"
-    f" {CHAT_INPUT_CONTAINER_DIR}"
-    f" && mkdir -p"
+    f" {CHAT_INPUT_CONTAINER_DIR} 2>/dev/null; mkdir -p"
     f" {CHAT_ARTIFACT_CONTAINER_DIR}/figures {CHAT_ARTIFACT_CONTAINER_DIR}/results"
     f" {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}/figures {CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR}/results"
     f" {CHAT_INPUT_CONTAINER_DIR}"
@@ -97,6 +110,11 @@ _artifact_dir_owner: dict[str, str] = {}
 # 后续调用只把新增/内容变化的文件返回给前端，避免同一文件在多轮消息的
 # artifacts 清单里重复出现（宿主机复制仍全量执行，保证文件落盘）。
 _collected_artifacts: dict[str, dict[str, tuple]] = {}
+
+# 同一会话内产物 sha256 实测缓存：session_id -> {relpath: (size, mtime, sha256|None)}。
+# 与 _collected_artifacts 同生命周期：(size, mtime) 签名未变的文件不重复读盘 hash，
+# 签名变化（内容被覆盖）时重新实测，保证 manifest 里的 sha256 始终对应当前字节。
+_artifact_digests: dict[str, dict[str, tuple]] = {}
 
 # 容器内已注入输入文件的签名：container_id -> {文件名: (size, mtime)}。
 # 同一容器被同一会话亲和复用时跳过未变化的重复注入；容器切换会话（交付目录重置）
@@ -140,16 +158,25 @@ async def _collect_artifacts(
     user_id: str,
     session_id: Any,
     db: Any | None = None,
-) -> list[dict[str, Any]]:
+    declared: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     """执行后把 /tmp/chat_output 下的交付文件复制到宿主机，生成可下载产物清单。
 
     产物统一归置到 users/{uid}/workspace/chat-output/{session_id}/output，
     并注册进 file_records（source=CHAT_SANDBOX），使 AI 助手 / 文件中心可见。
     归属校验由下载端点路径中的用户 id 保证；沙盒会话回收后文件仍保留在宿主机，
     历史消息中的下载链接继续有效。
+
+    返回 (fresh_items, manifest, missing)：
+    - fresh_items：本轮新增/内容变化的产物（含实测 sha256 字段）；
+    - manifest：本轮收集到的全部产物逐文件 {path, size, sha256} 实测记录
+      （读取失败标 error，sha256/size 为 None，不抛出）；新建 file_records
+      记录时 sha256 同时写入 checksum 列；
+    - missing：声明了（declared globs）但没有任何实测成功文件兑现的 glob，
+      由调用方写入 missing_artifacts 告警，杜绝"exit 0 即成功"的静默假成功。
     """
     if not container_id:
-        return []
+        return [], [], []
     from cygnusx.infrastructure.sandbox import get_sandbox_pool
 
     path_factory = get_path_factory()
@@ -173,11 +200,48 @@ async def _collect_artifacts(
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ChatSandbox] 产物收集失败: {e}")
-        return []
+        return [], [], []
     # 两个目录平铺到同一宿主目录，按 path 去重（后收集的覆盖先收集的）
     items = list({str(item["path"]): item for item in items}.values())
 
-    # 注册到统一文件索引；失败只记录日志，不阻断产物返回
+    # sha256 实测对账（OpenAI4S compute/manifest 契约）：逐文件流式 hash，
+    # (size, mtime) 签名未变时走缓存；读取失败的文件记入 manifest 并标
+    # error，不抛异常、不阻断登记主流程。
+    digests = _artifact_digests.setdefault(str(session_id), {})
+    manifest: list[dict[str, Any]] = []
+    sha_by_rel: dict[str, str | None] = {}
+    for item in items:
+        relpath = str(item["path"])
+        sig = (item.get("size"), item.get("mtime"))
+        cached = digests.get(relpath)
+        if cached and cached[0] == sig[0] and cached[1] == sig[1]:
+            sha = cached[2]
+            entry: dict[str, Any] = {"path": relpath, "size": sig[0], "sha256": sha}
+            if sha is None:
+                entry["error"] = cached[3] if len(cached) > 3 else "sha256 实测失败"
+        else:
+            entry = build_file_entry(host_dest, host_dest / relpath)
+            sha = entry.get("sha256")
+            digests[relpath] = (sig[0], sig[1], sha, entry.get("error") or "")
+            if entry.get("error"):
+                logger.warning(
+                    f"[ChatSandbox] 产物 sha256 实测失败（记入 manifest error）: "
+                    f"{relpath} {entry['error']}"
+                )
+        sha_by_rel[relpath] = sha
+        manifest.append(entry)
+    manifest.sort(key=lambda e: str(e.get("path")))
+
+    # 声明产物对账：只有实测成功（有 sha256）的文件能兑现声明；
+    # 声明了但落空的 glob 进 missing，由调用方置 missing_artifacts 告警。
+    _featured, missing = reconcile_declared(manifest, declared)
+    if missing:
+        logger.warning(
+            f"[ChatSandbox] 声明产物未产出（missing_artifacts）: session={session_id} {missing}"
+        )
+
+    # 注册到统一文件索引；失败只记录日志，不阻断产物返回。
+    # 新建记录时把实测 sha256 写入 checksum 列；幂等命中已有记录保持原值。
     registered_ids: dict[str, str] = {}
     if db is not None:
         try:
@@ -193,6 +257,7 @@ async def _collect_artifacts(
                     abs_path,
                     source=FileSource.CHAT_SANDBOX,
                     directory=chat_directory,
+                    checksum=sha_by_rel.get(str(item["path"])) or None,
                 )
                 registered_ids[str(item["path"])] = str(record.id)
         except Exception as exc:  # noqa: BLE001
@@ -214,8 +279,9 @@ async def _collect_artifacts(
         if collected.get(relpath) == signature:
             continue
         collected[relpath] = signature
+        item["sha256"] = sha_by_rel.get(relpath)
         fresh_items.append(item)
-    return fresh_items
+    return fresh_items, manifest, missing
 
 
 # ===== 执行器 =====
@@ -460,8 +526,14 @@ async def execute_chat_sandbox(
             # 必须显式提交，才能让 5 分钟回收任务看到最新 last_activity/status。
             await db.commit()
 
-            artifacts = await _collect_artifacts(
-                session.container_id, user_id, session.id, db=db
+            declared_raw = args.get("artifacts")
+            declared: list[str] | None = None
+            if isinstance(declared_raw, str):
+                declared = [declared_raw]
+            elif isinstance(declared_raw, list):
+                declared = [str(p) for p in declared_raw]
+            artifacts, artifact_manifest, missing_artifacts = await _collect_artifacts(
+                session.container_id, user_id, session.id, db=db, declared=declared
             )
             # 产物注册到 file_records 后需要再提交一次，确保元数据持久化
             try:
@@ -500,6 +572,17 @@ async def execute_chat_sandbox(
                 llm_payload["artifacts_note"] = (
                     "交付文件已保存，消息中已附下载按钮；回复用户时报文件名即可"
                 )
+            if artifact_manifest:
+                llm_payload["artifact_manifest"] = artifact_manifest
+            if missing_artifacts:
+                # 声明了产物但文件不存在：显式告警，不允许静默假成功。
+                # missing_artifacts 与 payload_truncation 同为信封平级字段，
+                # 前端历史重建时可据此渲染告警（本期前端不改，字段先落库）。
+                llm_payload["missing_artifacts"] = missing_artifacts
+                llm_payload["missing_artifacts_note"] = (
+                    "以下声明的交付文件未产出，请检查代码写文件路径"
+                    "（/tmp/chat_output/ 或 /workspace/output/）后重试"
+                )
             if error:
                 llm_payload["error"] = error
 
@@ -514,6 +597,10 @@ async def execute_chat_sandbox(
                 ui_payload["plotly_figures"] = plotly_figures
             if artifacts:
                 ui_payload["artifacts"] = artifacts
+            if artifact_manifest:
+                ui_payload["artifact_manifest"] = artifact_manifest
+            if missing_artifacts:
+                ui_payload["missing_artifacts"] = missing_artifacts
             if error:
                 ui_payload["error"] = error
 
@@ -532,8 +619,13 @@ async def stream_chat_sandbox_tool(
     user_id: str,
     tool_call_id: str = "",
     session_id: str | None = None,
+    message_id: str | None = None,
 ) -> AsyncIterator[ChatChunk | dict[str, Any]]:
-    """流式执行聊天沙盒工具，产出 tool_output 事件 + 最终结果信封。"""
+    """流式执行聊天沙盒工具，产出 tool_output 事件 + 最终结果信封。
+
+    tool_output chunk 同时按 message_id 追加到 chat_message_events
+    （攒批落库，失败降级不影响流式）。
+    """
     queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=_STREAM_QUEUE_MAX_CHUNKS)
 
     async def _on_output(stream: str, data: str) -> None:
@@ -564,6 +656,14 @@ async def stream_chat_sandbox_tool(
                 "data": data,
             },
         )
+        # WP2：tool_output chunk 追加到事件表（攒批，失败降级不阻塞流式）
+        await message_event_service.append_tool_output(
+            message_id or "",
+            tool_call_id=tool_call_id,
+            stream=stream,
+            data=data,
+        )
+    await message_event_service.flush_message_events(message_id or "")
     try:
         yield await task
     except Exception as e:  # noqa: BLE001

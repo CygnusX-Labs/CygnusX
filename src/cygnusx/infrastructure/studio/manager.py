@@ -123,6 +123,18 @@ class StudioSandboxManager:
     _last_activity: dict[str, float] = field(default_factory=dict)
     _busy_leases: dict[str, dict[str, float]] = field(default_factory=dict)
     _scratch_volumes: dict[str, ScratchVolumeManager] = field(default_factory=dict)
+    # 声明式环境还原（WP2 任务 3）：session_id -> container_id，标记该容器
+    # 生命周期内已做过还原检测/执行；容器重建（新 container_id）后自动重新检测。
+    _env_restore_done: dict[str, str] = field(default_factory=dict)
+    # session_id -> 最近一次还原结果（成功/失败/跳过 + 原因），供详情接口
+    # 透传给前端做一次性 warning 提示；失败不阻断会话。
+    _env_restore_state: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _env_restore_lock: asyncio.Lock | None = field(default=None, init=False, repr=False)
+
+    def _restore_lock(self) -> asyncio.Lock:
+        if self._env_restore_lock is None:
+            self._env_restore_lock = asyncio.Lock()
+        return self._env_restore_lock
 
     # ------------------------------------------------------------------
     # 配置 & Docker 客户端
@@ -647,7 +659,7 @@ class StudioSandboxManager:
         await self._wait_ready(agent_socket)
         await self._touch(session_id)
         logger.info(f"[Studio] 会话 {session_id[:8]} 沙盒就绪: {name} -> unix://{agent_socket}")
-        return SandboxHandle(
+        handle = SandboxHandle(
             session_id=session_id,
             container_id=str(container.id),
             container_name=name,
@@ -656,6 +668,10 @@ class StudioSandboxManager:
             image=image,
             workspace_dir=workspace,
         )
+        # 还原钩子（WP2 任务 3）：容器新建/重建后的首次激活，在工作区声明文件
+        # 存在时于容器内跑一次一次性安装；失败仅降级 + 记日志/审计，不阻断启动。
+        await self._maybe_restore_environment(handle, user_id=user_id)
+        return handle
 
     @staticmethod
     def _validate_isolated_network(client: Any, config: StudioConfig) -> None:
@@ -752,6 +768,145 @@ class StudioSandboxManager:
                 raise StudioSandboxUnavailableError("沙盒 agent UDS 服务就绪超时")
             await asyncio.sleep(0.3)
 
+    # ------------------------------------------------------------------
+    # 声明式环境还原（WP2 任务 3，替代容器快照）
+    # ------------------------------------------------------------------
+    async def _maybe_restore_environment(
+        self, handle: SandboxHandle, user_id: str | None = None
+    ) -> None:
+        """容器生命周期内只做一次还原检测/执行；失败降级，绝不向上抛。
+
+        幂等：``_env_restore_done[session_id] == container_id`` 即跳过；
+        容器重建后 container_id 变化自动重新检测。并发 ensure_running 共用
+        本进程的 asyncio.Lock（跨进程由既有执行租约兜底，重复执行安装命令
+        本身也是幂等的）。
+        """
+        session_id = handle.session_id
+        if self._env_restore_done.get(session_id) == handle.container_id:
+            return
+        async with self._restore_lock():
+            if self._env_restore_done.get(session_id) == handle.container_id:
+                return
+            # 先标记再执行：即使过程异常也保证同一容器生命周期不重复还原。
+            self._env_restore_done[session_id] = handle.container_id
+            from cygnusx.application.services.workspace_env_restore_service import (
+                EnvRestoreResult,
+                RESTORE_SKIP_RESEARCH_MODE_OFF,
+                build_restore_script,
+                detect_restore_file,
+                latest_missing_env_snapshot,
+                research_restore_gate_enabled,
+                restore_timeout_seconds,
+                summarize_failure,
+                write_restore_audit,
+            )
+
+            log = logger.bind(session_id=session_id, component="workspace_env_restore")
+            # WP3 任务 3 门控：仅科研模式（enabled + workspace_protocol=research）放行还原。
+            # 开关关闭时的跳过不落审计（避免每次激活一条 204 噪音）：
+            # 检测到声明文件存在（本该还原）记 info 并透出状态，否则只记 debug。
+            gate_on, gate_reason = await research_restore_gate_enabled(session_id)
+            if not gate_on:
+                declared = detect_restore_file(handle.workspace_dir)
+                if declared is not None:
+                    log.info(
+                        "环境还原跳过（科研模式未开启）: 声明文件 {} 存在但不还原 — {}",
+                        declared, gate_reason,
+                    )
+                    self._env_restore_state[session_id] = EnvRestoreResult(
+                        status="skipped",
+                        file=None,
+                        duration_ms=0,
+                        reason=RESTORE_SKIP_RESEARCH_MODE_OFF,
+                        container_id=handle.container_id,
+                    ).as_dict()
+                else:
+                    log.debug("环境还原跳过（科研模式未开启，且无声明文件）: {}", gate_reason)
+                return
+
+            result = EnvRestoreResult(
+                status="skipped", file=None, duration_ms=0,
+                reason=None, container_id=handle.container_id,
+            )
+            try:
+                restore_file = detect_restore_file(handle.workspace_dir)
+                if restore_file is None:
+                    missing = await latest_missing_env_snapshot(session_id)
+                    result.reason = "工作区无 conda-explicit.txt / environment.yml，跳过环境还原"
+                    if missing:
+                        result.reason += (
+                            f"（WP1 打包 manifest 标记缺失环境四件套: {', '.join(missing)}）"
+                        )
+                    log.info("环境还原跳过: {}", result.reason)
+                else:
+                    result.file = restore_file
+                    timeout = restore_timeout_seconds(
+                        self._config().sandbox.exec_timeout_seconds
+                    )
+                    started = time.monotonic()
+                    exit_code, stderr_tail, _ = await self._exec_env_restore(
+                        handle, build_restore_script(restore_file), timeout
+                    )
+                    result.duration_ms = int((time.monotonic() - started) * 1000)
+                    if exit_code == 0:
+                        result.status = "restored"
+                        log.info(
+                            "环境还原成功 file={} duration_ms={}", restore_file, result.duration_ms
+                        )
+                    else:
+                        result.status = "failed"
+                        result.reason = summarize_failure(stderr_tail, exit_code)
+                        log.warning(
+                            "环境还原失败（降级为基础环境，不阻断会话）file={} duration_ms={} {}",
+                            restore_file, result.duration_ms, result.reason,
+                        )
+            except Exception as exc:  # noqa: BLE001 - 还原失败绝不阻断会话启动
+                result.status = "failed"
+                result.reason = summarize_failure(f"还原执行异常: {exc}", -1)
+                log.warning("环境还原异常（降级为基础环境）: {}", result.reason)
+            self._env_restore_state[session_id] = result.as_dict()
+            await write_restore_audit(session_id=session_id, user_id=user_id, result=result)
+
+    async def _exec_env_restore(
+        self, handle: SandboxHandle, code: str, timeout_sec: int
+    ) -> tuple[int, str, int]:
+        """在容器内经 sandbox-agent /exec 非交互执行还原脚本（bash，一次性进程）。
+
+        返回 (exit_code, stderr 尾部, duration_ms)；持有执行租约防止空闲回收。
+        """
+        lease_token = await self._set_busy(handle.session_id, timeout_sec)
+        payload = {"language": "bash", "code": code, "timeout": timeout_sec}
+        stderr_tail = ""
+        exit_code = -1
+        duration_ms = 0
+        try:
+            async with (
+                self._agent_client(handle.agent_socket, _AGENT_TIMEOUT) as client,
+                client.stream("POST", "/exec", json=payload) as resp,
+            ):
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    etype = event.get("type")
+                    if etype == "stderr":
+                        stderr_tail = (stderr_tail + str(event.get("data", "")))[-2000:]
+                    elif etype == "result":
+                        exit_code = int(event.get("exit_code", -1))
+                        duration_ms = int(event.get("duration_ms", 0) or 0)
+        finally:
+            await self._clear_busy(handle.session_id, lease_token)
+            await self._touch(handle.session_id)
+        return exit_code, stderr_tail, duration_ms
+
+    def env_restore_status(self, session_id: str) -> dict[str, Any] | None:
+        """最近一次环境还原结果（含失败原因），供会话详情接口透传给前端。"""
+        return self._env_restore_state.get(session_id)
+
     async def _handle(
         self, session_id: str, image: str | None = None, user_id: str | None = None
     ) -> SandboxHandle:
@@ -841,6 +996,9 @@ class StudioSandboxManager:
         last_active_at = await self.last_activity_at(session_id)
         await self._remove_activity(session_id)
         scratch = self._scratch_volumes.get(session_id)
+        # 容器回收后还原标记/结果随之失效；重建容器会以新 container_id 重新检测。
+        self._env_restore_state.pop(session_id, None)
+        self._env_restore_done.pop(session_id, None)
 
         def _stop() -> bool:
             client = self._get_client()

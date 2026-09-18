@@ -18,6 +18,8 @@ class TaskModel(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_tasks_created_at", "created_at"),
         Index("ix_tasks_user_id_created_at", "user_id", "created_at"),
+        # job 幂等键：UNIQUE 保证并发提交同键时只有一行落库（NULL 行不受约束）
+        Index("uq_tasks_idempotency_key", "idempotency_key", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -36,6 +38,7 @@ class TaskModel(Base, TimestampMixin):
     sample_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )  # 提交时由 len(sample_sheet) 落库
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     logs: Mapped[list[dict]] = mapped_column(JSON, default=list)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

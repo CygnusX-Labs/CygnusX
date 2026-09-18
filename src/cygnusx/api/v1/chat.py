@@ -12,10 +12,11 @@ import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy import text as sql_text
 
 from cygnusx.api.deps import CurrentUserId, DbSession
 from cygnusx.application.schemas.chat import (
@@ -34,10 +35,15 @@ from cygnusx.application.schemas.chat import (
     OverdrivePlanDecisionRequest,
     OverdriveRunCommandRequest,
     RejectOverdriveApprovalRequest,
+    ResearchModeConfig,
+    ResearchModeUpdateRequest,
     UpdateSessionRequest,
 )
 from cygnusx.application.schemas.skill import SkillDTO
 from cygnusx.application.services.chat.chat_event_service import ChatEventService
+from cygnusx.application.services.chat.notebook_export_service import (
+    ChatNotebookExportService,
+)
 from cygnusx.application.services.chat_service import ChatService
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
@@ -414,7 +420,6 @@ async def decide_overdrive_plan(
         max_revisions=int(planning_limits.get("max_revision_rounds") or 3),
     )
     await db.commit()
-    from cygnusx.core.config import get_settings
 
     use_langgraph_engine = get_settings().orchestrator_engine == "langgraph"
     # langgraph 路径：approve/cancel 决策以 Command(resume=...) 喂回编排图
@@ -772,7 +777,6 @@ async def decide_agentteams_upgrade(
     from cygnusx.application.services.agentteams_upgrade_advisor import (
         AgentTeamsUpgradeService,
     )
-    from cygnusx.core.config import get_settings
 
     session = await _get_owned_session(db, session_id, current_user_id)
     if req.action == "dismiss":
@@ -875,6 +879,44 @@ async def get_messages(
 
         raise NotFoundError("会话不存在或无权访问")
     return await service.get_messages(session_id, current_user_id)
+
+
+@router.get(
+    "/sessions/{session_id}/notebook",
+    summary="导出会话为只读 .ipynb（确定性纯投影）",
+)
+async def export_session_notebook(
+    current_user_id: CurrentUserId,
+    service: ChatServiceDep,
+    db: DbSession,
+    session_id: str,
+) -> Response:
+    """WP3-Task2：把会话落库历史投影为只读 notebook。
+
+    权限与 get_messages 同款复核（会话属主）；导出为纯派生只读视图，
+    同一份历史导出两次字节一致。截断条目带说明导出，不静默丢弃。
+    """
+    session = await service.get_session(session_id, current_user_id)
+    if not session:
+        from cygnusx.core.exceptions import NotFoundError
+
+        raise NotFoundError("会话不存在或无权访问")
+    exported = await ChatNotebookExportService(db).export_session(session)
+    from urllib.parse import quote
+
+    filename = str(exported["filename"])
+    # starlette 头按 latin-1 编码：filename= 给 ASCII 兜底，UTF-8 原名走 filename*
+    ascii_fallback = filename.encode("ascii", "ignore").decode() or "notebook.ipynb"
+    return Response(
+        content=exported["data"],
+        media_type=exported["content_type"],
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
 
 
 @router.get(
@@ -1057,6 +1099,98 @@ async def patch_session(
     req: UpdateSessionRequest,
 ) -> ChatSessionDTO:
     return await service.update_session_title(session_id, current_user_id, req.title, locked=True)
+
+
+@router.put(
+    "/sessions/{session_id}/research-mode",
+    summary="设置会话科研模式三开关（WP3）",
+)
+async def update_research_mode(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    session_id: str,
+    req: ResearchModeUpdateRequest,
+) -> dict:
+    """会话级科研模式开关：render_mode / workspace_protocol / ptc_llm_query。
+
+    - 属主校验；写入 sandbox_meta.research_mode（jsonb_set 原子合并，
+      与 studio.py 既有模式一致，不擦除聊天流并发写入的其他键）；
+    - enabled=False 忽略子项、存储最小对象 {"enabled": False}；
+      enabled=True 未传的子项沿用存量值（无存量则默认）；
+    - 开关只影响交互层（前端渲染 / 环境还原 / llm_query 白名单），
+      执行、审批、审计、落库路径不变；
+    - 每次变更落 audit_logs（resource_type='research_mode_change'，含旧值新值摘要）。
+    """
+    import uuid as uuid_mod
+
+    from pydantic import ValidationError as PydanticValidationError
+
+    from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
+
+    session = await _get_owned_session(db, session_id, current_user_id)
+
+    stored_old = (session.sandbox_meta or {}).get("research_mode")
+    old_summary: dict | None = None
+    old_cfg: dict = {}
+    if isinstance(stored_old, dict):
+        try:
+            old_cfg = ResearchModeConfig.model_validate(stored_old).model_dump()
+            old_summary = dict(old_cfg)
+        except PydanticValidationError:
+            old_summary = {"_invalid": True}  # 存量值非法：记摘要但不当合并基底
+
+    if req.enabled:
+        merged = {
+            **ResearchModeConfig().model_dump(),
+            **old_cfg,
+            **req.model_dump(exclude_none=True),
+            "enabled": True,
+        }
+        stored_rm: dict = ResearchModeConfig.model_validate(merged).model_dump()
+    else:
+        # 存储最小对象（忽略子项）；回显即存储值
+        stored_rm = {"enabled": False}
+
+    # sandbox_meta 是多请求共享的 JSONB：原子 jsonb_set，不整体回写
+    await db.execute(
+        sql_text(
+            "UPDATE chat_sessions SET sandbox_meta = jsonb_set("
+            "COALESCE(sandbox_meta, '{}'::jsonb), '{research_mode}', "
+            "CAST(:rm AS jsonb), true), updated_at = now() WHERE session_id = :sid"
+        ),
+        {"rm": json.dumps(stored_rm, ensure_ascii=False), "sid": session_id},
+    )
+    await db.flush()
+    await db.refresh(session)
+
+    user_uuid: uuid_mod.UUID | None = None
+    try:
+        user_uuid = uuid_mod.UUID(str(current_user_id))
+    except (ValueError, AttributeError, TypeError):
+        user_uuid = None
+    db.add(
+        AuditLogModel(
+            id=uuid_mod.uuid4(),
+            user_id=user_uuid,
+            username=None if user_uuid else str(current_user_id),
+            method="PUT",
+            path=f"/api/v1/chat/sessions/{session_id}/research-mode",
+            resource_type="research_mode_change",
+            resource_id=session_id[:100],
+            status_code=200,
+            detail={
+                "event": "research_mode_change",
+                "session_id": session_id,
+                "old": old_summary,
+                "new": stored_rm,
+            },
+        )
+    )
+    await db.flush()
+    # 契约（前端已锁定）：响应体即回显的 research_mode 对象本身
+    # （{enabled, render_mode, workspace_protocol, ptc_llm_query} 或 {"enabled": false}），
+    # 不额外包壳
+    return stored_rm
 
 
 @router.post("/sessions/{session_id}/generate-title", response_model=dict, summary="生成会话标题")

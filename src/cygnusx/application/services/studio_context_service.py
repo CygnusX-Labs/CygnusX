@@ -26,9 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from cygnusx.application.schemas.chat import ChatSessionDTO
+from cygnusx.application.services.artifact_manifest import sha256_stream
 from cygnusx.application.services.file_service import ensure_directory_chain
 from cygnusx.core.config import get_settings
-from cygnusx.core.exceptions import BusinessError, NotFoundError, CygnusXError
+from cygnusx.core.exceptions import BusinessError, CygnusXError, NotFoundError
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.infrastructure.config.deployment_config import get_deployment_config
 from cygnusx.infrastructure.config.storage_config import get_user_chat_upload_dir
@@ -592,7 +593,10 @@ async def register_artifact_report(
             anchor_db.add(file_model)
             await anchor_db.flush()
 
-            # 产物同时注册到统一文件索引，使 AI 助手 / 文件中心可见
+            # 产物同时注册到统一文件索引，使 AI 助手 / 文件中心可见。
+            # checksum 列写入登记时对 dest 落盘文件的 sha256 实测（流式分块），
+            # 实测不到（远程后端等）留空，与归档文档的 md5/sha256 语义一致，不阻断登记。
+            artifact_sha256 = sha256_stream(dest) if dest.is_file() else ""
             try:
                 registry = FileRegistry(anchor_db)
                 dest_directory = dest_dir.relative_to(
@@ -603,6 +607,7 @@ async def register_artifact_report(
                     dest,
                     source=FileSource.STUDIO,
                     directory=dest_directory,
+                    checksum=artifact_sha256 or None,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
