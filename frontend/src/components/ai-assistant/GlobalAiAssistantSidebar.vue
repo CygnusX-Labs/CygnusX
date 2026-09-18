@@ -4,7 +4,7 @@
  *
  * 默认吸附在屏幕右边缘（收起为纵向标签，悬停滑出），点击展开右侧浮层面板；
  * 关闭面板后图标按同一路径收回右边缘。流式输出复用 /api/v1/chat/stream。
- * 样式遵循 ARCHITECTURE_DESIN/fontend.md：只消费语义令牌，动效 220ms 弹簧、可打断。
+ * 样式遵循 ARCHITECTURE_DESIN/frontend.md：只消费语义令牌，动效 220ms 弹簧、可打断。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'

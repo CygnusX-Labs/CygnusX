@@ -2,7 +2,10 @@
 
 > **文档读者**：执行本方案的 AI 工程师或开发者。
 > **文档目标**：从当前代码状态出发，分阶段实现"超频模式"——用户在星尘 AI 聊天中点一个按钮（或直接用自然语言说"进入超频模式"）后，聊天界面被"团队房间"接管：Manager 自动发现当前所有可用 Agent，按用户布置的任务进行分工协作，各 Agent 的发言以独立消息（带各自头像/名字/颜色）流回现有聊天窗口；最终形态与官方 AgentTeams 的 Matrix 房间互通。
-> **使用方式**：第 1~3 章是背景与设计共识（必读）；第 4 章是前后端冻结接口契约（任何实现不得偏离）；第 5 章是第一期逐步实施详案（可直接照做）；第 6 章是第二期 Matrix Gateway 详案；第 7~9 章是可选项、风险清单与执行 Checklist。
+> **使用方式**：第 1~3 章是背景与设计共识（必读）；第 4 章是前后端冻结接口契约（任何实现不得偏离）；第 5 章是第一期逐步实施详案（可直接照做）；第 6 章是第二期 Matrix Gateway 详案；第 7~9 章是可选项、风险清单与执行 Checklist；第 10 章是 2026-08-04 审查与修复记录（史料的整合并入，勿再执行）。
+
+> **合并说明（2026-09-18 文档整合）**：原 `agentteams_review_fixes.md`（2026-08-04 超频模式第一期审查修复清单）中仍有效的独有裁决已整体并入本文件第 10 章「审查与修复记录（2026-08-04）」，原文件已删除，历史见 git（修 1 与修 3 的文档回写部分已落在正文第 1/4/6/7 章，不重复）。
+> **修订记录（2026-09-18）**：两个纯转述执行提示词文件 `agentteams_implementation_prompt.md`（转述本文第 4/5 章）与 `agentteams_review_fixes_prompt.md`（转述原审查修复清单）已移除——两者零独有内容、原已标注"勿再执行"，内容可查 git 历史。
 
 ---
 
@@ -74,7 +77,7 @@
   fanout_result = await ParallelSubAgentToolService().run_parallel_subagents(
       context_summary=user_content, tasks=[...], context=tool_context)
   ```
-  返回 `{success, llm_payload, ui_payload}`；自带防递归/剥控制工具/隔离 session（C1–C7 约束，见 `parallel_subagent_service.py:39` 与 `ARCHITECTURE_DESIN/multi-agent.md`）。
+  返回 `{success, llm_payload, ui_payload}`；自带防递归/剥控制工具/隔离 session（C1–C7 约束，见 `parallel_subagent_service.py:39` 与 `ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md`）。
 - **ChatChunk 产出先例**：`yield ChatChunk(type="collaboration_fanout", metadata={...})`（:2387-2394）。
 - **sandbox_meta 标准写法**（JSONB 必须整体重新赋值，否则不变更检测）：
   ```python
@@ -463,3 +466,71 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 ### 第三期（可选）
 
 - [x] Bridge 接入向导 / 资源管理面板 / 新建 Case 表单 / Case 状态实时化（第 7 章）—— 均已随第一期提前实现
+
+---
+
+## 10. 审查与修复记录（2026-08-04）
+
+> **来源与整合说明**：本章为 2026-09-18 文档整合时并入的史料，原文是 `agentteams_review_fixes.md`——对第一期实现的后端/前端双份审查报告（2026-08-04）形成的修复清单，共 6 项修复（每项含问题、证据位置、修复步骤、验证方法），已全部执行完毕。**结论回顾**：第一期本体可交付（契约点全落实、51 项后端测试全绿、前端 type-check/build 通过）。原文头注的时点说明仍然成立：文中所述修复已执行或已演进，部分引用（路径、行号、测试文件）为 2026-08-04 时点位置、可能已失效；**请勿按本章再次执行，当前实现以代码为准**。
+> 修 1（§4.3 SSE 线格式拍平的契约回写）与修 3 的文档回写部分（§1.2 修订注、第 6/7 章"已随第一期提前实现"标注）已落在本文正文，此处不重复；本章保留仍有效的独有裁决与执行口径。执行要求（当时口径）：修代码保持最小改动；禁止 git 任何写操作（commit/push/reset）；不引入新依赖。
+
+### 10.1 修 2：parallel_subagents 工具 schema 与运行时对齐（fan-out 最少 1 个子任务）
+
+- 背景：实现删除了 `parallel_subagent_service.py` 中"fan-out 至少 2 个子任务"的运行时校验（超频单 assignment 分派需要），LLM 面工具契约需同步：`tool_configs/tools_schema.yaml` 的 `parallel_subagents` `tasks` 参数 `minItems: 2` → `minItems: 1`，描述中"2–5 个"改为"1–5 个"；`ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md` 中 parallel_subagents 的"至少 2 个/2–5 个"能力下限描述同步改为"1–5 个"。
+- **不得误改的区分口径**（要改的只是工具 schema 的能力下限——1 个也合法）：
+  - `chat_service.py` 的 `ROUTER_SYSTEM_PROMPT` 与 `MULTI_AGENT_SYSTEM_PROMPT_SUFFIX` 里"可拆成 2–5 个独立子任务才 fanout"是**何时拆**的语义建议，保持不变；
+  - 统一路由 fanout 的 `len(fanout_tasks) >= 2` 是路由自动分派的门槛，保持不变。
+- 断言 minItems=2 或"至少两个子任务"报错文案的测试需同步更新（`grep -rn "minItems" tests/ tool_configs/`、`grep -rn "至少.*子任务\|2 个子任务" tests/`）。
+- 验证口径：`grep -n "minItems" tool_configs/tools_schema.yaml` 显示 1；`python -c "import yaml; yaml.safe_load(open('tool_configs/tools_schema.yaml'))"` 解析通过；相关单测全绿。
+
+### 10.2 修 3："接受二/三期提前量"决策与加固
+
+- **决策**：实现提前完成了原第二期（Matrix Gateway：`agentteams_room_gateway_service.py`、`_run_overdrive_turn` 内 Matrix 建房/消息镜像、当时的 room-events SSE、Gateway `matrix_client.py`）和原第三期（admin Bridge 向导、Case 事件推送、新建 Case 表单）。审查确认降级安全（gateway 默认 disabled，未配置时超频正常，Matrix 失败仅记日志）。**默认决策：接受提前量**，做以下加固；若产品决定拒绝，走末尾回退方案。
+- **三个降级测试用例**（`tests/unit/test_overdrive_chat.py` 追加）：
+  1. gateway enabled=True 但不可达（mock httpx 抛 ConnectError）→ 超频轮正常完成，room_speech 序列完整，发出 `mode_changed{degraded:true}`；
+  2. gateway enabled=True、建房成功但 `post_message` 单条失败 → 仅记日志，不中断后续发言；
+  3. 会话无 `matrix_room_id` 时前端 room-events 404 → 后端返回结构与前端静默处理兼容。（**注**：room-events SSE 通道已于 2026-09-11 移除，见 6.5 修订注记，该场景现由房间回流新通道的对应测试承担，以代码为准。）
+- **隔离检查**：确认 `_run_overdrive_turn` 内 Matrix 分支全部在 `if gateway_service.available:` 与 try/except 内，`agentteams_gateway_enabled` 默认 False（`core/config.py`）——已确认则只需在代码注释中标注"第二期提前实现，默认关闭"。
+- **回退方案（仅当决策为拒绝时执行）**：`_run_overdrive_turn` 中删除 Matrix 建房/镜像分支，保留 `agentteams_room_gateway_service.py` 与 room-events SSE（它们独立于聊天主路径，不影响），对应测试改为跳过。
+- 验证口径：新增降级测试通过；`grep -n "提前实现" ARCHITECTURE_DESIN/agentteams_overdrive.md` 有命中。
+
+### 10.3 修 4：预置红测试（HEAD 上即红，非本次改动引入）与"先判对错再改"原则
+
+- **问题 A**：`tests/unit/test_agent_router.py` 2 个失败——路由 `intent` 期望 `delivery_case` 实得 `case`（路由意图逻辑与测试漂移）。
+- **问题 B**：`tests/unit/test_agent_router_dispatch.py` 2 个失败——`data/ai/` 注册表新增 3 个 scrna agent，未同步进 router 候选表。
+- **裁决原则：先判对错，再改过期的一侧，禁止为通过而改**：
+  - 问题 A：读失败用例与 `chat_service.py` 路由意图归一化逻辑（`_route_to_agent`/RouteInfo 归一化处），判断 `case` 与 `delivery_case` 哪个是当前设计意图（依据 `ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md` 的意图枚举）。设计已统一为 `case` → 更新测试期望；`delivery_case` 才是契约 → 修归一化逻辑。
+  - 问题 B：`git diff HEAD -- data/ai/` 看新增的 3 个 scrna agent；对照 router 候选表来源——候选若由 `list_agents(active_only=True)` 动态生成，则测试里写死的候选清单/快照过期 → 更新测试数据；若存在 `router.md`/yaml 人工候选表 → 把新 agent 补进去。
+  - 修复汇报中必须写明：每处是"代码对、测试过期"还是"测试对、代码漂移"，及依据。
+- 验证口径：两个测试文件全绿；`pytest tests/unit -k router -q` 无回归。
+
+### 10.4 修 5：前端低严重度清理（四小项）
+
+- **5a 关键词触发路径诊断假阳性**：发送时 overdrive=false、流中被关键词打开时，占位消息被 splice 移除，但 `onDone` 仍对脱离数组的 aiMsg 判空，触发 `reportChatDiagnostic('stream-empty')` 假阳性（`agentHub.ts`）。修法：`onDone`/`onError` 的普通分支加守卫——`if (session.overdrive || modeChangedToOverdrive)` 跳过空回复诊断与兜底；注意关键词路径下闭包变量 `effectiveOverdrive` 初始为 false，需在 `onModeChanged` 时同步更新该闭包变量，或改为实时读 `session.overdrive`。验证：模拟"发送时关、流中开"路径，不再产生 stream-empty 诊断日志。
+- **5b sendMessage options 补 overdrive 字段（对齐 F2 字面契约）**：`sendMessage` options 类型加 `overdrive?: boolean`；计算处改为 `const effectiveOverdrive = options.overdrive ?? session.overdrive ?? false`；options 显式传入时同步写回 `session.overdrive`（照 multiAgent 的写法）。验证：传 `options.overdrive=true` 且 session.overdrive=false 时请求体带 `overdrive:true`。
+- **5c OverdriveToggle tooltip 文案对齐 F1 文档原文**：未开——"开启后，复杂任务由 Manager 发现全部专家并分工协作，各专家在对话中依次发言"；已开——"超频模式已开启：团队房间接管对话，直接布置任务即可"。
+- **5d 超频时最后一条消息误判 streaming 样式**：`KimiMessageList.vue` 把最后一条 assistant 且 isTyping 的消息视为 streaming，超频轮最后一条 room_speech 命中该条件（内容无影响，仅样式）。修法（二选一，推荐前者）：`onRoomSpeech` push 的消息显式 `status:'done'` 且不参与 typing 判定；或在 `KimiMessageList.vue` 的 streaming 判定条件中排除 `message.senderAgent` 存在的消息。验证：超频轮结束后最后一条发言不显示打字光标/流式样式。
+
+### 10.5 修 6：工作区变更集拆分原则
+
+- 工作区混了两个独立 feature 的改动（超频/AgentTeams vs 参考基因组），提交时应拆成两个变更集；**只产出 `git add` 分组清单写进汇报，不执行任何 git 命令**。
+- **变更集 A：超频模式 + AgentTeams**：`src/cygnusx/application/schemas/chat.py`、`api/v1/chat.py`、`application/services/chat_service.py`、`application/services/parallel_subagent_service.py`、`application/services/agentteams_room_gateway_service.py`、`application/services/agentteams_service.py`、`application/services/agentteams_case_tool_service.py`、`api/v1/agentteams.py`、`api/v1/admin/agentteams_bridge.py`、`application/schemas/agentteams_bridge.py`、`core/config.py`（仅 gateway 相关 hunk）、`integrations/agentteams/`、`deploy/agentteams/`、`frontend/src/stores/agentHub.ts`、`composables/useAgentChatStream.ts`、`components/agent-workspace/OverdriveToggle.vue`、`AgentSandbox.vue`、`views/StudioView.vue`、`components/ai-chat/types.ts`、`KimiMessageItem.vue`、`views/AgentTeamsCaseView.vue`、`components/task/AgentTeamsCasesPanel.vue`、`components/admin/AgentTeamsBridgeTab.vue`、`api/admin/agentTeamsBridge.ts`、`tests/unit/test_overdrive_chat.py`、`test_agentteams_*`、`tool_configs/tools_schema.yaml`、`ARCHITECTURE_DESIN/agentteams_overdrive.md`、`multi_agent_fanout_2026-07.md`
+- **变更集 B：参考基因组模块**：`src/cygnusx/reference_genomes/`、`api/v1/router.py`（该文件两个 feature 都碰，需 `git add -p` 拆 hunk）、`core/config.py`（同上，`reference_genomes_yaml` 的 hunk 归 B）、`refdata/reference_genomes.yaml`、`frontend/src/api/referenceGenomes.ts`、`types/referenceGenomes.ts`、`views/ReferenceGenomesView.vue`、`tests/unit/reference_genomes/`、`test_reference_genomes_sequence.py`、`scripts/reference_genomes_smoke.py`
+- **需人工裁决的混杂文件**：`api/v1/router.py`、`core/config.py`、`views/ProfileView.vue`（个人页 UI 重做，与两个 feature 均无关，建议单独第三个变更集）、`docs/knowledge/getting-started.md`、`.gitignore`、`.env.example`（逐文件确认归属）。
+- 子模块变动（`pipelines/*`、`Protocol/FlowFrame` 显示 `m`）与两个 feature 无关，不要纳入。
+
+### 10.6 总验证命令（全部修复后必跑，2026-08-04 时点口径）
+
+```bash
+# 后端（用项目 .venv）
+.venv/bin/python -m pytest tests/unit/test_overdrive_chat.py tests/unit/test_agentteams_room_gateway_service.py \
+  tests/unit/test_agentteams_matrix_case_binding.py tests/unit/test_agentteams_bridge_admin.py \
+  tests/unit/test_agentteams_service.py tests/unit/test_parallel_subagent_service.py \
+  tests/unit/test_agent_router.py tests/unit/test_agent_router_dispatch.py -q
+# 前端
+cd frontend && npm run type-check && npm run build
+# 文档
+grep -n "拍平" ARCHITECTURE_DESIN/agentteams_overdrive.md && grep -n "minItems" tool_configs/tools_schema.yaml
+```
+
+全部通过后汇报：每项修复的改动文件+位置、修 4 的对错判断依据、变更集分组清单（修 6）、验证输出摘要。

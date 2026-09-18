@@ -2,6 +2,8 @@
 
 > 本文档描述 CygnusX 平台统一日志架构。新增或修改日志相关功能时，请对照本架构保持目录、格式、挂载方式和容量保护策略一致。
 >
+> 迁移说明（2026-09-18）：原文 §9.2–§9.6（terminal 资源配置、参考基因组前端/路由/JBrowse 配置、cygnusxtools 参考库离线构建）与日志主题无关，已整段迁至 `database_architecture.md` 附录《Terminal 与参考基因组模块更新记录》；本文 §9 仅余 §9.1 日志容量治理，编号顺延保持不变。
+>
 > 关联文档：
 > - `docs/update_info/26.7.7/omichub_log_unification_plan.md`（改造计划）
 > - `README.md`「日志排查」章节（日常运维速查）
@@ -249,11 +251,13 @@ Grafana 查询示例：
 3. **环境变量控制**：服务标识、日志级别、落盘目录和保留策略通过环境变量控制。
 4. **JSON 优先**：供机器抓取的日志优先输出 JSON（loguru `serialize=True` 或 Nginx `escape=json`）。
 5. **不影响主流程**：日志写入失败必须降级，不能导致请求或任务失败。
-6. **同步更新文档**：新增目录、环境变量、sink、轮转策略时，同步更新 `LOG_ARCHITECTURE.md` 与 `README.md`「日志排查」章节。
+6. **同步更新文档**：新增目录、环境变量、sink、轮转策略时，同步更新 `log_architecture.md` 与 `README.md`「日志排查」章节。
 
 ---
 
 ## 9. 本次代码与架构更新记录
+
+> 迁出说明（2026-09-18）：原 §9.2–§9.6（云端沙盒终端资源配置链路、参考基因组库升级为数据库模块、前端入口与路由兼容、JBrowse 配置模型兼容扩展、参考数据库离线构建边界）与日志主题无关，已整段迁至 `database_architecture.md` 附录《Terminal 与参考基因组模块更新记录》，原文内容以该附录为准；本章仅余 §9.1，编号顺延保持不变。
 
 ### 9.1 日志容量治理
 
@@ -262,41 +266,3 @@ Grafana 查询示例：
 - `src/cygnusx/infrastructure/database/repositories/task_repository.py`：任务 DB 日志增加单条 message 截断和最大条数限制，避免长 stdout/stderr 撑大数据库字段。
 - `deploy/docker/docker-compose.yml`、`deploy/docker/docker-compose.worker.yml`：统一 Docker `json-file` stdout/stderr 大小限制，并挂载 `/data/cygnusx/logs/*` 到对应容器路径。
 - `deploy/logrotate/cygnusx-logs`：为 Nginx 与 Snakemake 文件日志提供宿主机轮转兜底。
-
-### 9.2 云端沙盒终端资源配置链路
-
-- `tool_configs/terminal/terminal_config.yaml` 仍作为资源配置源，后端配置加载器按 mtime 热重载，无需重启服务。
-- `GET /api/v1/terminal/config` 新增运行时配置接口，向前端返回 `enabled`、`default_resources` 和 `max_resources`。
-- `frontend/src/stores/terminal.ts` 的滑块上限跟随 `terminal_config.yaml` 的 `max_resources`（经 `GET /api/v1/terminal/config` 下发），镜像列表和运行时配置会一起加载；`DEFAULT_MAX_MEMORY_MB=4096` / `DEFAULT_MAX_CPU_CORES=4.0` 仍保留，仅作为运行时配置缺失时的兜底默认值。
-- `frontend/src/components/terminal/ResourceSettings.vue` 使用自适应刻度，避免 16GB/32GB 这类大内存上限导致滑块刻度拥挤。
-- `src/cygnusx/infrastructure/terminal/docker_manager.py` 在创建容器前按 `max_resources` 夹紧 memory、CPU、pids 和 tmpfs，保证绕过前端的请求也不会突破 YAML 硬上限。
-
-### 9.3 参考基因组库升级为数据库模块
-
-- `frontend/src/mock/referenceGenomes.ts` 按 PRD 将原「单一 Genome 列表」升级为 `SpeciesDatabase -> GenomeVersion -> DataFiles` 模型，覆盖 FASTA、GFF、GO、KEGG 四类数据文件，并保留 `MOCK_GENOMES` 等兼容导出，避免旧页面一次性断裂。
-- 新模型增加基因中心视图所需的 `Gene`、`Transcript`、`GOAnnotation`、`KEGGAnnotation`、`GeneVersionMapping` 结构，支持基因检索、注释查看和跨版本 ID 映射。
-- `frontend/src/views/ReferenceGenomesView.vue` 改为数据库列表页，展示物种、版本、数据文件构建状态和汇总指标；`frontend/src/views/ReferenceGenomeDetailView.vue` 改为版本详情页，提供概览、基因、功能注释、版本映射、数据文件等标签页。
-- 后续已落地为独立后端模块：新增 `src/cygnusx/reference_genomes/api.py`，在 `src/cygnusx/api/v1/router.py` 挂载到 `/api/v1/reference-genomes`（物种/版本/基因搜索/序列/GO/KEGG/统一搜索）；前端 `frontend/src/api/referenceGenomes.ts` 对接真实接口，`ReferenceGenomesView.vue` / `ReferenceGenomeDetailView.vue` 已改用真实 API，不再依赖前端静态 mock 数据。
-
-### 9.4 前端入口与路由兼容
-
-- `frontend/src/layouts/DefaultLayout.vue` 将主导航「参考基因组」入口调整为「数据库」，入口路径切到 `/database`，并保留 `/reference-genomes` 与 `/reference-genomes/:id` 的高亮兼容。
-- `frontend/src/router/index.ts` 新增 `/database` 与 `/database/:id` 路由；旧 `/reference-genomes` 路由继续指向同一页面，避免历史链接失效。
-- 前端「代码沙盒」独立入口已从主导航移除，`/sandbox` 兼容跳转到 `/tools/terminal`；云端沙盒终端作为统一执行环境入口保留在生信工具箱和管理员终端管理中。
-- `frontend/src/config/homeQuickEntries.ts` 将首页快捷入口同步为「数据库」，避免首页、侧边栏和实际路由命名不一致。
-
-### 9.5 JBrowse 配置模型兼容扩展
-
-- `src/cygnusx/tools/jbrowse/config.py` 为 `AssemblyConfig` 增加 `common_name`、`taxonomy_id`、`version_id`、`version_name`、`assembly_name`、`category`、`icon`、`is_default`、`status`、`release_date`、`stats`、`data_files` 等数据库模块字段。
-- `src/cygnusx/tools/jbrowse/schema.py` 与 `frontend/src/types/jbrowse.ts` 同步扩展 DTO 类型，前端可从现有 JBrowse 接口读取更丰富的数据库版本元数据。
-- `src/cygnusx/tools/jbrowse/service.py` 新增统一 `_assembly_to_dto` 转换逻辑，列表与详情接口共享同一字段映射，减少字段漂移。
-- `tool_configs/jbrowse/jbrowse_config.yaml` 示例加入数据库版本元数据与数据文件配置，同时保留原 `fasta`、`fai` 字段，JBrowse 浏览器加载链路不变。
-
-### 9.6 参考数据库离线构建边界
-
-- `scripts/pyproject.toml` 新增为 `cygnusxtools` 独立安装配置，`scripts/cygnusxtools` 作为可安装 CLI 工具包，推荐通过 `pip install -e ./scripts` 安装；根目录 `pyproject.toml` 也保留 `cygnusxtools` console script，便于整个平台 editable install 时同时获得工具命令。
-- `cygnusxtools` 的 argparse formatter 统一封装在 `scripts/cygnusxtools/utils/argparse.py`，优先使用 `rich-argparse` 美化 Usage、命令组、参数名、metavar 和默认值展示；缺少依赖时回退到标准库 `ArgumentDefaultsHelpFormatter`，方便源码调试。
-- `cygnusxtools refdb build` 用于从 FA、GFF、GO、KO、KEGG 原始文件生成 `database.sqlite`、FASTA `.fai`、`database_manifest.json`、`jbrowse_assembly_snippet.yaml` 和 `build_report.json`。
-- 该命令不挂接 Web API、Celery Worker 或前端操作，管理员应在独立计算节点、登录终端或维护窗口手动运行，避免大文件解析和索引构建给平台服务造成压力。
-- 平台侧只注册生成好的 `path`、`index_path`、`db_path` 和 `build_status=ready`，通过 `tool_configs/jbrowse/jbrowse_config.yaml` 读取现成资产；当前不在平台内执行 FA/GFF/KO/KEGG 转换。
-- `scripts/README.md` 记录 cygnusxtools 的安装方式、目录结构、扩展规范；`docs/update_info/26.6/offline_reference_database_build.md` 记录输入格式、构建命令、SQLite 表结构、注册步骤和排查清单。

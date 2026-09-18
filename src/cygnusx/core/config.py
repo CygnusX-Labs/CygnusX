@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     # 依据: 待测（经验初值）— 预览只取报告头部，20MB 为经验上限；验证: 统计真实报告体积分布再校准
     agentteams_report_preview_max_mb: int = 20
     # 依据: 上游契约 — 与平台日志保留口径一致（loguru retention 30 天，README.md:1069、
-    # ARCHITECTURE_DESIN/LOG_ARCHITECTURE.md:69）
+    # ARCHITECTURE_DESIN/log_architecture.md:69）
     agentteams_evidence_retention_days: int = 30
     # ===== Session 目录引用 =====
     # 目录仅生成轻量清单，避免一次递归扫描或将大型输入直接注入模型上下文。
@@ -170,7 +170,7 @@ class Settings(BaseSettings):
     # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。
     unified_intent_router_enabled: bool = False
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
-    # 设计见 ARCHITECTURE_DESIN/multi-agent.md §4
+    # 设计见 ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md §4
     subagent_fanout_enabled: bool = False
     agentteams_chat_entry_enabled: bool = False
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"

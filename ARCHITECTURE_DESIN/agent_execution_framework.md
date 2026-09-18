@@ -1,9 +1,11 @@
 # CygnusX Agent 当前执行框架
 
-> **时点说明**：本文件为 2026-08-18 时点的快照/评审稿，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 agentteams_room_current_architecture_2026-08-21.md、database_architecture.md）为准。
+> **时点说明**：本文件为 2026-08-18 时点的快照/评审稿，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 database_architecture.md）为准。
 
 > 更新时间：2026-08-18  
 > 文档定位：记录仓库当前已经存在的 Agent 请求装配、思考—工具闭环、LangGraph、Studio、AgentTeams Worker、房间路由和前端事件投影。本文优先描述“现在代码实际怎么运行”，不把未来规划误写成已上线能力。
+
+> **合并说明（2026-09-18）**：本文档已吸收 `agent_execution_loop_observability_2026-08.md`（2026-08-18 快照）的全部独有内容，原文件已删除。对应关系：闭环统一语义与范围声明并入 §4；`degraded` 降级回退会诊路由细则并入 §5.1；统一事件契约与三级工具事件链并入 §6.1；Worker 证据投影并入 §6.4；协助室前端事件→默认文案映射并入 §6.5；Guard 与失败语义并入 §7.3；验证基线并入 §10.1。与本文原有 §2.1/§6/§11 重复的文字以本文档为准，不再重复收录。
 
 ## 1. 一页结论
 
@@ -86,6 +88,21 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 
 ## 4. 三类核心闭环
 
+本节三类闭环与 AgentTeams Worker 共同遵循统一的可观测语义。该语义升级不合并 Legacy、LangGraph、Studio 与 AgentTeams Worker 的运行时实现，而是在保持既有兼容性的前提下统一它们的事件与追溯口径：
+
+```text
+用户请求
+→ 执行路径判定
+→ 模型思考
+→ 工具调用
+→ 工具执行
+→ 工具结果写回上下文
+→ 下一轮继续分析
+→ Guard / 最终结果
+```
+
+覆盖范围：统一 `execution_path` 与生命周期事件；协助室普通消息的只读工具路由；Worker ReAct 事件向 Case 房间时间线投影；前端技术事件模式下的关联追溯；Loop Guard 状态可见性、测试与运行手册。非目标：不以可观测性改动重写各执行 Runtime，不把纯讨论伪装为工具执行，也不默认展示模型原始 reasoning。
+
 ### 4.1 Legacy 手写 ReAct
 
 `chat_legacy` 的最小语义如下：
@@ -158,8 +175,9 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 | --- | --- | --- |
 | `chat` | 无执行动词，或命中咨询/寒暄否决词 | 走 Manager 普通会诊/回复 |
 | `clarify` | 有执行动词，但没有明确文件或上下文对象 | 发送结构化追问，最多追问有限轮次 |
-| `tool_execute` | 明确读取、查看、检索、查询或只读复核对象 | 仅使用受控只读工具，结果回灌后由 Manager 回复 |
-| `execute` | 有执行动词且有明确对象，且未命中否决词 | 启动 Case planning |
+| `tool_execute` | 明确读取、查看、打开、检索、查询、复核或判断请求 | 仅使用受控只读工具（受控读取、检索与只读复核），缺少对象时请求澄清；结果回灌后由 Manager 回复 |
+| `execute` | 有执行动词且有明确对象，且未命中否决词 | 需要真实分析/生成/运行时启动 Case planning，并进入审批边界 |
+| `degraded` | 澄清轮次耗尽或受限条件不能满足 | 明确说明未执行原因并回退 Manager 会诊 |
 
 执行对象可来自附件/上下文引用，或文本中的常见数据文件名。该判定宁可漏触发，不因“分析”“运行”等词单独启动真实工作流。
 
@@ -203,19 +221,37 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 | `round` | 当前模型—工具循环轮次 |
 | `execution_path` | 当前执行路径 |
 | `tool_call_id` | 工具事件的调用关联，可选 |
+| `timestamp` | 事件产生时间（ISO 8601 格式，如 `2026-08-18T00:00:00+00:00`） |
 
 当前统一生命周期事件：
 
 | 事件 | 语义 |
 | --- | --- |
 | `agent_turn_started` | 一次 Agent turn 开始，已完成上下文和工具装配 |
+| `agent_tool_call` | 模型发起工具调用意图（三级工具事件链第一级） |
+| `agent_tool_started` | 工具实际开始执行（第二级） |
+| `agent_tool_result` | 工具返回成功/失败结果（第三级） |
 | `agent_context_reinjected` | 工具结果已写回模型上下文，下一轮具备继续条件 |
 | `agent_turn_continued` | 工具结果回灌后（或其他合法原因）同一执行链进入下一轮 |
 | `agent_final_result` | 本次执行形成最终结果、等待输入或达到轮次边界 |
 | `agent_turn_failed` | 模型、工具、运行时或上下文处理失败 |
 | `agent_loop_guard_triggered` | 运行保护触发，循环被安全中止或降级 |
 
-旧事件仍保留：`text`、`tool_call`、`tool_result`、`worker_tool_call`、`worker_tool_result`、`loop_guard_triggered`、`done` 等。新事件用于可观测性和结构化时间线，不能要求旧前端立即删除兼容分支。
+工具相关事件构成三级事件链，并由 `tool_call_id` 贯穿关联同一次调用的整个生命周期：
+
+```text
+agent_turn_started
+→ agent_tool_call
+→ agent_tool_started
+→ agent_tool_result
+→ agent_context_reinjected
+→ agent_turn_continued
+→ agent_final_result
+```
+
+异常或运行保护使用 `agent_turn_failed` 与 `agent_loop_guard_triggered`。
+
+旧事件仍保留：`text`、`tool_call`、`tool_result`、`worker_tool_call`、`worker_tool_result`、`loop_guard_triggered`、`done` 等，避免旧前端或 SSE 消费方断连。新事件用于可观测性和结构化时间线，不能要求旧前端立即删除兼容分支。
 
 ### 6.2 SSE 发送约束
 
@@ -231,6 +267,43 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 - `onExecutionEvent`：统一生命周期事件，供调试时间线、Worker 进度和房间投影消费。
 
 正常用户界面应优先显示“正在检索 / 正在执行 / 已获得结果 / 正在整理”，而不是默认展示完整内部 reasoning。协助室开启“默认展开底层事件”后，Worker 卡片可查看 `tool_call_id`、`round`、`execution_path` 以及截断后的参数/结果摘要。
+
+### 6.4 Worker 证据投影与关联信息
+
+`ParallelSubAgentService` 为每个 Worker 工具事件写入 `round`、`execution_path`、`tool_call_id`、工具名和受限摘要。`AgentConsultationService._BridgeEvidenceProjector` 再把它们投影为房间可消费的 `agent.*` Case 证据事件：
+
+| Worker 事件 | 房间证据事件 | 关键载荷 |
+| --- | --- | --- |
+| `worker_tool_call` | `agent.tool_call` | 参数摘要、调用 ID、轮次、执行路径 |
+| `worker_tool_started` | `agent.tool_started` | 调用 ID、轮次、执行路径 |
+| `worker_tool_result` | `agent.tool_result` | 成功状态、耗时、结果摘要、调用 ID |
+| `agent_context_reinjected` | `agent.context_reinjected` | 工具结果已写回的轮次与调用 ID |
+| `agent_turn_continued` | `agent.turn_continued` | 当前/前一轮次与执行路径 |
+| `agent_loop_guard_triggered` | `agent.loop_guard_triggered` | Guard 原因、工具、轮次与路径 |
+
+结果摘要最多保留受限长度，前端不接收完整原始工具结果包或长 reasoning 作为默认展示内容。
+
+### 6.5 协助室前端事件投影
+
+`agentTeamsRoom.ts` 将 Case 证据事件映射为用户可理解的结构化阶段：
+
+| 事件 | 默认文案 |
+| --- | --- |
+| `agent.tool_call` | 正在调用工具 |
+| `agent.tool_started` | 工具执行中 |
+| `agent.tool_result` | 工具调用完成/失败 |
+| `agent.context_reinjected` | 工具结果已纳入下一步分析 |
+| `agent.turn_continued` | Worker 已进入下一轮分析 |
+| `agent.loop_guard_triggered` | 运行保护已触发 |
+
+默认房间视图只显示阶段、状态、耗时与最终结果。开启协助室设置中的“默认展开底层事件”后，才可按步骤查看：
+
+- `tool_call_id`；
+- `round`；
+- `execution_path`；
+- 已截断的参数摘要和结果摘要。
+
+这确保 Worker 工具结果与后续思考之间可追溯，同时避免房间默认视图被底层技术信息或原始 reasoning 刷屏。
 
 ## 7. 运行保护与停止语义
 
@@ -253,6 +326,14 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 当前 loop guard 主要保护**总量和连续失败**，还不是完整的“重复工具参数、无新信息、无进展”判定器。后续增加推进判定时，必须先定义可观测的进展信号，不能用模糊的文本相似度直接误杀合法重复查询。
 
 取消、超时、审批等待和断流恢复也必须保持幂等：不能因前端重连而重复执行有副作用工具。
+
+### 7.3 Worker Guard 与失败语义
+
+- 相同工具及等价参数连续重复时，Worker 触发 `duplicate_tool_call` Guard；
+- 工具连续返回同样结果时，Worker 触发无进展保护；
+- 达到最大轮次时，返回阶段性结论并发出 `agent_loop_guard_triggered`；
+- 工具失败必须以失败状态和失败摘要回传；Manager 不得把失败描述为“已完成”；
+- Guard 触发后，不再继续盲目执行同一工具调用。
 
 ## 8. 数据与状态边界
 
@@ -329,6 +410,19 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 - [ ] 前端普通模式不泄露原始内部 reasoning。
 - [ ] 房间 `chat / clarify / execute` 判定有对应测试，纯咨询不会启动 Case。
 
+### 10.1 闭环可观测性验证基线
+
+闭环可观测性升级（合并入本文时点为 2026-08-18）已覆盖的关键自动化验证：
+
+- Worker 工具调用、结果回灌和下一轮事件按同一调用 ID 关联；
+- 重复工具调用触发 Guard 并终止继续调用；
+- LangGraph 工具回灌事件序列完整；
+- 协助室明确读取文件请求进入 `agentteams_tool_execution`，不会启动 Case planning；
+- 前端投影保留调试关联字段，但默认文案不泄露它们；
+- 前端 `vue-tsc --noEmit` 与 AgentTeams 房间投影测试通过。
+
+建议复验命令见 `docs/architecture/agent-execution-loop-runbook.md`；代码与文档发生冲突时，以当前代码和测试为准。
+
 ## 11. 关键实现位置
 
 | 位置 | 职责 |
@@ -352,11 +446,11 @@ LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、M
 ## 12. 与其他架构文档的关系
 
 - 本文是“当前实现快照”，优先回答现在代码如何运行。
-- `agent_framework_final_baseline.md` 是较早的 Agent 基线和发布验收文档。
-- `agent_architecture_and_extension_guide.md` 侧重 Agent 配置、扩展和能力状态。
-- `agentteams_room_plan.md` 侧重团队协作室的产品实施路线和里程碑。
-- `cygnusx_studio.md` 侧重 OmicStudio 工作台的产品实现与交接。
+- `agent_framework_baseline.md` 是较早的 Agent 基线和发布验收文档。
+- 原 `agent_architecture_and_extension_guide.md` 侧重 Agent 配置、扩展和能力状态，已于 2026-09-18 并入 `agent_framework_baseline.md`（能力状态历史 P1–P4、`data/ai/` 目录树、扩展反模式与实施边界），不再作为独立文件存在。
+- `deprecated/agentteams_room_architecture.md` 是团队协作室历史设计基线，该方向已不再演进、设计文档已归档至 `deprecated/`（原 `agentteams_room_plan.md` 实施总账与框架研究、Manager 定位评估已于 2026-09-18 并入其 §15–§17 与附录 A）；已落地的 `agentteams_*` 代码路径现状仍以代码与本文为准。
+- `cygnusx_studio_handover_2026-07.md` 侧重 OmicStudio 工作台的产品实现与交接。
 - `docs/info/26.8.18/CygnusX-Agent思考工具闭环优化实施计划与编码提示词.md` 是本次闭环优化的实施计划、验收标准和编码提示词。
-- `agent_execution_loop_observability_2026-08.md` 记录本轮事件关联、房间只读工具路由、Worker 时间线和验证基线。
+- 原 `agent_execution_loop_observability_2026-08.md` 记录本轮事件关联、房间只读工具路由、Worker 时间线和验证基线，已于 2026-09-18 并入本文（§4、§5.1、§6.1、§6.4、§6.5、§7.3、§10.1），不再作为独立文件存在。
 
 当文档之间描述冲突时，以当前代码、测试和运行配置为事实来源；目标方案必须明确标记为“计划”或“待实现”。

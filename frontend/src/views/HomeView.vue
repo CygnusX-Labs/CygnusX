@@ -292,7 +292,7 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-/* Hero 渐变背景上的按钮：毛玻璃 + 高亮边框方案（规范见 ARCHITECTURE_DESIN/fontend.md §5.7）。
+/* Hero 渐变背景上的按钮：毛玻璃 + 高亮边框方案（规范见 ARCHITECTURE_DESIN/frontend.md §5.7）。
    注意：Naive 将 --n-* 变量内联在元素上，class 级变量覆盖无效；
    这里直接用 CSS 属性 + 双类选择器提高特异性覆盖。 */
 .n-button.hero-btn-primary {

@@ -1,11 +1,12 @@
 # CygnusX AI 助手最终框架基线
 
-> **时点说明**：本文件为 2026-07-26 时点的基线快照，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 agentteams_room_current_architecture_2026-08-21.md、database_architecture.md）为准。
+> **时点说明**：本文件为 2026-07-26 时点的基线快照，记录当时的设计与实现状态。此后代码已持续演进，部分细节（行号、清单、状态）可能已过期；当前实现以代码及本目录中更新的基线文档（如 database_architecture.md）为准。
 
 > **基线日期**：2026-07-26  
 > **最近更新**：2026-07-29 — ask_user 全执行器中断语义、会话隔离与数据缺失澄清契约（§5.5）、工作区工具包白名单扩至读取类工具（§5.1）。  
 > **适用范围**：当前 `data/ai/` Agent 配置、`data/ai/prompts/` 系统提示词、普通聊天、OmicStudio、Handoff 与 MAS 灰度链路。  
-> **定位**：本文描述“当前可运行的最终基线”，用于提示词发布、工具授权、Agent 扩展和部署验收。历史演进和更完整的扩展说明见 `agent_architecture_and_extension_guide.md`。
+> **定位**：本文描述“当前可运行的最终基线”，用于提示词发布、工具授权、Agent 扩展和部署验收。  
+> **合并说明（2026-09-18）**：本文档已吸收 `agent_architecture_and_extension_guide.md`（2026-07-26 快照）的独有内容，原文件已删除。对应关系：P1–P4 能力状态表与优化方案指向并入 §12「能力状态历史（P1–P4）」；完整 `data/ai/` 目录树并入 §2.2；「不要采用的方式」反模式清单并入 §8.4；优化方案实施边界表附于文末 §13。该指南与本文重叠的 §1–5、§6–8 内容以本文（其继任版本）为准，未重复收录。
 
 ---
 
@@ -57,6 +58,32 @@ ChatService → 手写 ReAct 或 LangGraph ReAct → 模型 / 工具 / SSE
 - 新建内置 Agent 时，YAML 中的提示词、工具绑定和功能配置会写入数据库。
 - 已存在的内置 Agent 启动同步时只同步能力相关 `features`，**不会自动覆盖**管理员可能修改过的模型、提示词和绑定关系。
 - 因此，修改 `data/ai/prompts/*.md` 后必须通过管理端保存对应 Agent，或调用 `PUT /api/v1/admin/agents/{agent_id}` 发布 `system_prompt`；仅改文件并重启不能证明线上已生效。
+
+### 2.2 data/ai/ 静态资产目录树
+
+AI 相关静态资产均位于 `data/ai/`（自《架构现状与扩展指南》2026-07-26 快照并入）：
+
+```text
+data/
+├── CygnusX.yaml                    # enabled Agent 名称列表和站点配置
+└── ai/
+    ├── *.yaml                      # 内置 Agent 声明
+    ├── prompts/
+    │   ├── registry.yaml           # 通用 Prompt Registry
+    │   ├── general.md ...          # 当前 Agent 的详细提示词
+    │   ├── copilot/ studio/ ...    # 其他 AI 系统提示词
+    │   └── legacy_agents/          # 迁移前副本，仅供对照，不参与当前注册表
+    ├── tools/*.yaml                # Agent 工具包的声明式授权
+    ├── mas/                        # MAS 能力与工具执行策略
+    ├── providers.yaml              # Provider 配置
+    ├── provider_templates.yaml     # Provider 模板
+    ├── runtime_images.yaml         # Studio / Toolbox 镜像能力目录
+    ├── studio.yaml                 # Studio 沙盒配置
+    ├── skills/                     # 已安装 Skill 的可写目录
+    └── skill_marketplace/          # 内置 Skill 市场
+```
+
+`data/ai/orchestrator.yaml` 定义了 `agent-orchestrator`，默认不在 `agents.enabled` 中。设置 `MAS_ENABLED=true` 后，加载器会把它纳入内置 Agent 同步并为其注入计划预览工具；关闭开关时不会暴露该入口。
 
 ---
 
@@ -241,6 +268,15 @@ MAS_ENABLED=true   → 加载 orchestrator；仍需部署 Celery/outbox 与目�
 4. 在 `data/ai/prompts/registry.yaml` 登记提示词；
 5. 验证加载、数据库发布、真实工具调用和前端入口。
 
+### 8.4 不要采用的方式
+
+以下反模式清单自《架构现状与扩展指南》并入，与上文扩展流程配套：
+
+- 不要在 Prompt 中要求模型“执行某个 Python/Bash 文件”并假设它会真的执行；
+- 不要把用户输入直接拼入 shell 命令；
+- 不要通过 YAML 提供任意脚本路径并在服务器端 `subprocess` 执行；
+- 不要把高权限工具默认发给所有 Agent；应使用工具包白名单和最小权限。
+
 ---
 
 ## 9. 发布验收清单
@@ -307,4 +343,43 @@ LangGraph 运行时测试在当前本地环境中曾出现首项通过后无法�
 | Skill 渐进式披露 | `src/cygnusx/domain/skill/services.py` |
 | MAS 功能开关 | `src/cygnusx/core/config.py` |
 | MAS 能力与产物契约 | `data/ai/mas/` |
+| 内置工具 schema | `tool_configs/tools_schema.yaml` |
+| 工具 schema 分发执行 | `src/cygnusx/application/services/tool_bridge_service.py` |
+| MAS Run / 审批 / Artifact API | `src/cygnusx/application/services/mas_service.py` |
+| MAS DAG 调度 | `src/cygnusx/application/services/mas_scheduler_service.py` |
+| Agent 工具包说明 | `data/ai/tools/README.md` |
+
+（末五项自《架构现状与扩展指南》关键实现位置表并入。）
+
+---
+
+## 12. 能力状态历史（P1–P4）
+
+以下内容自 `agent_architecture_and_extension_guide.md` §0（2026-07-26 实施状态）并入。下列能力已经进入代码库，但其中需要运行开关、数据库迁移或部署侧条件的能力，不能仅凭代码存在就视为生产环境已启用：
+
+| 能力 | 代码状态 | 默认行为 / 启用条件 |
+| --- | --- | --- |
+| P1 长期记忆 | 已实现 | `agent_memories` 通过关键词召回；执行 `alembic upgrade head` 后可用。用户可查看、修改、归档自己的记忆。 |
+| P2 Agent Handoff | 已实现 | 白名单 Agent 可经 `transfer_to_agent` 在同一会话转交；ReAct 与 LangGraph 都在收到控制工具结果后停止源 Agent，再以精简交接包启动目标 Agent。 |
+| P3 MAS 计划与执行体验 | 已实现、默认灰度关闭 | 需 `MAS_ENABLED=true` 与 Celery/outbox 调度链；该开关会自动加载 `orchestrator`，普通聊天不会自动创建 MAS Run。 |
+| P4 语义记忆与多专家会诊 | 已实现、默认关闭 | 向量以 JSONB 持久化并在候选集内语义重排，历史记忆可按需回填；删除会话后可异步提炼摘要；router 可并行征询 2–3 位专家后由主专家汇总。需要单独配置 Embedding 模型与功能开关。 |
+
+P2 的审计数据写入 `chat_handoff_events`；前端通过 SSE `handoff` 事件在消息流显示转交卡片。P3 为 DAG 节点增加了产物 Schema 边校验、失败节点手动重试和产物下载接口；除 RNA-seq 外还提供受限 `scanpy-qc` 节点。单细胞模板仅能在 `analysis-scrna` 镜像已部署到 MAS Worker 后灰度开放。
+
+后续能力演进（长期记忆、Agent Handoff、MAS 产品化）的实施路线见 [`docs/26.7.26/ai_agent/CygnusX平台Agent能力优化方案-记忆与多Agent协作.md`](../docs/26.7.26/ai_agent/CygnusX平台Agent能力优化方案-记忆与多Agent协作.md)。该方案是未来目标，不应反向作为本节“当前已实现”的证据。
+
+---
+
+## 13. 优化方案实施边界（附录）
+
+以下边界表自 `agent_architecture_and_extension_guide.md` §10 并入（2026-07-26 时点），记录当时的实施缺口与架构约束。当前架构为长期记忆和多 Agent 协作预留了可复用的工具、审计、会话、事件和 MAS 调度基础，但以下能力尚未在默认聊天链路中实现：
+
+| 优化项 | 当前缺口 | 实施时必须遵守的架构约束 |
+| --- | --- | --- |
+| 长期记忆 | 没有跨会话 Memory 表、召回服务或记忆工具 | 当前 `assemble_context(agent_id)` 不接收 `user_id`/query；应由 ChatService 的会话级装配层传入用户隔离和当前消息。 |
+| Agent Handoff | 没有 `transfer_to_agent` 工具、handoff SSE 事件或 hop 状态 | 手写 ReAct 和 LangGraph 两条执行器都必须识别同一控制流信号；不能只把它当作普通 ToolBridge 结果回灌。 |
+| MAS 产品化 | Run/调度已有，但默认关闭且没有普通聊天入口和确认 UI | 必须同时验证 `MAS_ENABLED`、orchestrator 启用、Celery outbox 消费与目标执行器部署；仅有 API 或 Plan 预览不足以构成可用产品。 |
+| YAML 发布 | 已落库 Agent 不自动覆盖提示词/模型/绑定 | 需通过后台 API 发布，或新增带 diff/确认的 YAML 发布命令；禁止启动时无条件覆盖数据库。 |
+
+这四项也是优化方案实施前的架构检查点。
 

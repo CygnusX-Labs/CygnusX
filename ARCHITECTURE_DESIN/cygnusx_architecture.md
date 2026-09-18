@@ -512,20 +512,20 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 | 主题 | 首选详细文档 |
 |---|---|
 | 项目模块和接入规范 | `cygnusx_design.md` |
-| Agent 现状与扩展 | `agent_architecture_and_extension_guide.md`、`agent_current_execution_framework_2026-08.md` |
-| Agent 可观测性 | `agent_execution_loop_observability_2026-08.md` |
-| Chat Runtime 分层与事件契约 | `execution_layers.md` |
-| AgentTeams | `agentteams_room_current_architecture_2026-08-21.md`、`agentteams_department_collaboration_architecture.md` |
-| Studio | `cygnusx_studio.md` |
-| 沙箱安全与能力路由 | `cygnusx_sandbox_enhancement_architecture_2026-08-22.md` |
-| MCP | `mcp_architecture.md`、`mcp_builder_agent.md` |
+| Agent 现状与扩展 | `agent_execution_framework.md`、`agent_framework_baseline.md`（原 `agent_architecture_and_extension_guide.md` 已并入其中） |
+| Agent 可观测性 | `agent_execution_framework.md` §6/§7.3（原 `agent_execution_loop_observability_2026-08.md` 已并入其中） |
+| Chat Runtime 分层与事件契约 | `chat_execution_layers_2026-08.md` |
+| AgentTeams | `deprecated/agentteams_room_architecture.md`、`deprecated/agentteams_department_collaboration.md` |
+| Studio | `cygnusx_studio_handover_2026-07.md` |
+| 沙箱安全与能力路由 | `cygnusx_sandbox_architecture_2026-08-22.md` |
+| MCP | `mcp_architecture.md`（含 §5 MCP 构建师 agent-mcp-builder as-built 章节，原 `mcp_builder_agent.md` 已于 2026-09-18 并入） |
 | 记忆 | `memory_architecture.md` |
-| 知识库 | `knowledge_db.md` |
-| 多智能体/A2A/共享工作区 | `plan_ai.md` |
+| 知识库 | `knowledge_architecture.md` |
+| 多智能体/A2A/共享工作区 | `mas_a2a_plan_2026-07.md` |
 | Worker 镜像与动态环境 | `worker_images_plan.md` |
-| 日志 | `LOG_ARCHITECTURE.md` |
-| 前端规范 | `fontend.md` |
-| 愿景 | `平台愿景定义.md` |
+| 日志 | `log_architecture.md` |
+| 前端规范 | `frontend.md` |
+| 愿景 | `cygnusx_platform_vision_2026-08.md` |
 
 目录内另有评审稿、提示词、修复记录和历史版本文档。它们用于追踪决策，不应直接覆盖本文列出的当前实现状态。
 
@@ -536,35 +536,25 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 本总览提取自 `ARCHITECTURE_DESIN/` 当前文件，包括：
 
 - `README.md`
-- `LOG_ARCHITECTURE.md`
+- `log_architecture.md`
 - `cygnusx_design.md`
-- `cygnusx_studio.md`
-- `cygnusx_sandbox_enhancement_architecture_2026-08-22.md`
-- `fontend.md`
-- `plan_ai.md`
-- `agent_architecture_and_extension_guide.md`
+- `cygnusx_studio_handover_2026-07.md`
+- `cygnusx_sandbox_architecture_2026-08-22.md`
+- `frontend.md`
+- `mas_a2a_plan_2026-07.md`
+- `agent_framework_baseline.md`
 - `agent_architecture_review_2026-07.md`
-- `agent_current_execution_framework_2026-08.md`
-- `agent_execution_loop_observability_2026-08.md`
-- `agent_framework_final_baseline.md`
-- `agentteams.md`
-- `agentteams_department_collaboration_architecture.md`
-- `agentteams_department_collaboration_architecture_2026-08.md`
-- `agentteams_room_current_architecture_2026-08-21.md`
-- `agentteams_room_framework_research_2026-08.md`
-- `agentteams_room_plan.md`
-- `agentteams_implementation_prompt.md`
-- `agentteams_review_fixes.md`
-- `agentteams_review_fixes_prompt.md`
-- `manager_role_bioinfo_department_manager_2026-08.md`
+- `agent_execution_framework.md`
+- `deprecated/agentteams_overdrive.md`
+- `deprecated/agentteams_department_collaboration.md`
+- `deprecated/agentteams_room_architecture.md`（2026-09-18 起已并入并替代原 `agentteams_room_framework_research_2026-08.md`、`agentteams_room_plan.md`、`manager_role_bioinfo_department_manager_2026-08.md` 三份文档）
 - `mcp_architecture.md`
-- `mcp_builder_agent.md`
 - `memory_architecture.md`
-- `knowledge_db.md`
+- `knowledge_architecture.md`
 - `worker_images_plan.md`
-- `multi-agent.md`
-- `multi-agent-prompt.md`
-- `plan_ai.md`
-- `平台愿景定义.md`
+- `multi_agent_fanout_2026-07.md`
+- `domain_prompt_sedimentation_2026-08.md`
+- `mas_a2a_plan_2026-07.md`
+- `cygnusx_platform_vision_2026-08.md`
 
 本文刻意不复制每个领域文档的全部接口和任务清单；新增模块或修改执行链路时，应回到对应详细文档和代码进行核对。

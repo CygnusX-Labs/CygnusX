@@ -2,7 +2,7 @@
 
 > 本文件是 `kegg-enrichment` 工具的目录级架构说明。它落实
 > `tool_configs/tools_design.md` 的工具配置外置要求，并与
-> `ARCHITECTURE_DESIN/fontend.md` 的工作台页面、主题和状态反馈规范保持一致。
+> `ARCHITECTURE_DESIN/frontend.md` 的工作台页面、主题和状态反馈规范保持一致。
 >
 > 路由 key 保持 `kegg-enrichment` 以兼容既有链接；产品名称统一为 **GO / KEGG 富集分析**。
 
@@ -101,7 +101,7 @@ Source, ID, Description, GeneRatio, BgRatio, pvalue, p.adjust, qvalue, geneID, C
 
 ## 5. 前端工作台契约
 
-页面遵循 `tools_design.md` §6 与 `fontend.md` 的标准工作台模式：
+页面遵循 `tools_design.md` §6 与 `frontend.md` 的标准工作台模式：
 
 - 根容器单层 `16px` 留白，参数区与结果区使用 `320px 1fr` 的紧凑双栏；
 - 使用共享 `PageHeader`，页面级操作仅放在其 `#actions` 插槽；

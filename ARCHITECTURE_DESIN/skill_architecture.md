@@ -1,7 +1,7 @@
 # CygnusX Skill 体系架构（全生命周期）
 
 > 基线日期：2026-09-18。本文由代码实勘得出，修正了旧文档中过时的描述；
-> 与 `agent_framework_final_baseline.md` §5.2（Skill 契约）、`agent_architecture_and_extension_guide.md`（挂载与绑定）互为补充，冲突时以本文为准。
+> 与 `agent_framework_baseline.md` §5.2（Skill 契约）、`agent_framework_baseline.md` §12 与 §2.2（挂载与绑定，原 `agent_architecture_and_extension_guide.md` 已并入其中）互为补充，冲突时以本文为准。
 
 ## 0. 两套 Skill 体系（勿混淆）
 
@@ -94,7 +94,7 @@
 
 ### 4.1 工具路由与执行
 
-- 工具名只有两个：`use_skill`、`skill_resource`（`domain/skill/services.py` 常量；旧文档 `agentteams_room_plan.md`（现已并入 `agentteams_room_current_architecture_2026-08-21.md`）中的 `read_skill_resource` 是笔误，已修正）
+- 工具名只有两个：`use_skill`、`skill_resource`（`domain/skill/services.py` 常量；旧文档 `agentteams_room_plan.md`（现已并入 `deprecated/agentteams_room_architecture.md`）中的 `read_skill_resource` 是笔误，已修正）
 - `langgraph_runtime.py`：`tool_name in SKILL_TOOL_NAMES` → 路由到 skills 节点
 - `runtime_support.py: _execute_skill_tool`：
   1. 先在**已挂载** skills 中按 skill_id（或 name）匹配，未挂载直接报错
@@ -204,9 +204,9 @@ ALIYUN_SKILLS_REGION_ID=cn-hangzhou
 
 | 旧文档 | 原描述 | 实况（本文） |
 |---|---|---|
-| `multi-agent-prompt.md:36` | skill 市场"36 技能" | 内置市场约 **600** 个技能文件夹 |
-| `agentteams_room_plan.md`（已并入 `agentteams_room_current_architecture_2026-08-21.md`） | 工具名 `read_skill_resource` | 实为 `skill_resource` |
-| `agent_current_execution_framework_2026-08.md:72` | `skill_pins` 仅一句带过 | 完整语义见 §6.2 |
+| `domain_prompt_sedimentation_2026-08.md:36` | skill 市场"36 技能" | 内置市场约 **600** 个技能文件夹 |
+| `agentteams_room_plan.md`（已并入 `deprecated/agentteams_room_architecture.md`） | 工具名 `read_skill_resource` | 实为 `skill_resource` |
+| `agent_execution_framework.md:72` | `skill_pins` 仅一句带过 | 完整语义见 §6.2 |
 | 全部旧文档 | 无版本管理章节 | §6 双轨版本 + 快照/回滚/check-update |
 | 全部旧文档 | 无外部源开关 | §5.3 `ALIYUN_SKILLS_ENABLED`（2026-09-18 新增，默认关） |
-| `agent_architecture_and_extension_guide.md` | 未提自动安装 | `_ensure_configured_marketplace_skills` 自动装 YAML 声明的市场技能（§3.1） |
+| `agent_architecture_and_extension_guide.md`（已并入 `agent_framework_baseline.md`） | 未提自动安装 | `_ensure_configured_marketplace_skills` 自动装 YAML 声明的市场技能（§3.1） |

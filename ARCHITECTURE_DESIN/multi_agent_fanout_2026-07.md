@@ -359,7 +359,7 @@ RNAFlow 之类长管道，子 Agent 应在结果中建议父 Agent 走 MAS 计�
 ## 5. 实施步骤
 
 按仓库既有约定（新增工具 = schema 注册 + tool pack + 重启，见
-`agent_architecture_and_extension_guide.md` 的扩展流程）：
+`agent_framework_baseline.md` §8 的扩展流程，原 `agent_architecture_and_extension_guide.md` 已并入其中）：
 
 **Phase 1 —— 运行时骨架（后端）**
 

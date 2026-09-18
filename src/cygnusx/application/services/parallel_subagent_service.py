@@ -1,6 +1,6 @@
 """对话内并行子 Agent fan-out 运行时。
 
-设计文档：ARCHITECTURE_DESIN/multi-agent.md §4。
+设计文档：ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md §4。
 
 父 Agent 一次工具调用提交相互独立的子任务列表，本服务在请求内并行运行
 受限子 ReAct 循环（可调用 builtin 工具），失败隔离后结构化汇总回父上下文。
