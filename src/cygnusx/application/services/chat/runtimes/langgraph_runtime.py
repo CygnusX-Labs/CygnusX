@@ -16,8 +16,11 @@ from cygnusx.application.services.chat.configuration import (
 from cygnusx.application.services.chat.next_step_suggestions import suggestions_metadata
 from cygnusx.application.services.chat.runtimes.delegating_runtime import DelegatingAgentRuntime
 from cygnusx.application.services.chat.utils import (
-    _cap_tool_invocation_payload,
+    _cap_tool_invocation_payload_detail,
+    _code_cell_envelope_fields,
     _fanout_ask_request,
+    _invocation_payload_hash,
+    _max_persisted_cell_index,
     _normalize_ask_questions,
     _studio_risk_hint,
 )
@@ -26,6 +29,7 @@ from cygnusx.application.services.chat_sandbox_tools import (
     execute_chat_sandbox,
 )
 from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
+from cygnusx.application.services.mas_plan_adapter import MAS_PLAN_PREVIEW_TOOL_NAME
 from cygnusx.application.services.parallel_subagent_service import PARALLEL_SUBAGENTS_TOOL_NAME
 from cygnusx.application.services.studio_approval_service import (
     APPROVAL_TTL_SECONDS,
@@ -34,6 +38,11 @@ from cygnusx.application.services.studio_approval_service import (
     needs_approval,
     record_approval_audit,
 )
+from cygnusx.application.services.studio_tools import (
+    SUBMIT_OUTPUT_TOOL_NAME,
+    SUBMIT_OUTPUT_TOOL_SCHEMA,
+)
+from cygnusx.core.config import get_settings
 from cygnusx.domain.skill.services import SKILL_TOOL_NAMES
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
@@ -282,20 +291,69 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     "success": True,
                     "result": {"llm_payload": ask_payload, "ui_payload": dict(ask_payload)},
                 }
+            if tool_name == SUBMIT_OUTPUT_TOOL_NAME:
+                # 显式 Finalize 动作（openai4s 外循环三选一，§3.3.1）：模型提交
+                # 最终答复并结束本轮；图经 state["finalize"] 收尾，output 由下方
+                # 作为最终正文并入消息（携带完成语义，对标 host.submit_output）。
+                output = str(args.get("output") or "")
+                finalize_payload: dict[str, Any] = {
+                    "output": output,
+                    "message": "最终答复已提交，本轮结束。",
+                }
+                return {
+                    "success": True,
+                    "result": {
+                        "llm_payload": finalize_payload,
+                        "ui_payload": dict(finalize_payload),
+                    },
+                }
             if tool_name == "knowledge_search":
                 session = await self._service.get_session(session_id, user_id)
                 return await self._service._knowledge_search_chat(
                     args, project_id=session.project_id if session else None
                 )
             if tool_name == "web_search":
+                # 对齐 legacy chat_service.py:5038-5074：循环内补发 web_search
+                # UI 事件（searching / sources / empty / failed），前端来源卡片依赖它们。
+                query = str(args.get("query") or "")
+                await _emit(
+                    ChatChunk(
+                        type="web_search",
+                        content=query,
+                        metadata={"status": "searching"},
+                    )
+                )
                 result = await self._service._web_search(args)
                 search_payload = result.get("result") if isinstance(result, dict) else None
                 search_results = (
                     search_payload.get("results", []) if isinstance(search_payload, dict) else []
                 )
-                if isinstance(search_results, list):
+                if isinstance(result, dict) and result.get("success") and isinstance(search_results, list):
                     persisted_web_sources.extend(
                         item for item in search_results if isinstance(item, dict)
+                    )
+                    if search_results:
+                        await _emit(
+                            ChatChunk(
+                                type="web_search_results",
+                                metadata={"sources": search_results},
+                            )
+                        )
+                    else:
+                        await _emit(
+                            ChatChunk(
+                                type="web_search",
+                                content="未找到相关结果，已基于模型知识回答",
+                                metadata={"status": "empty"},
+                            )
+                        )
+                else:
+                    await _emit(
+                        ChatChunk(
+                            type="web_search",
+                            content="联网搜索失败，已基于模型自身知识回答",
+                            metadata={"status": "failed"},
+                        )
                     )
                 return result
             if tool_name == CHAT_SANDBOX_TOOL_NAME:
@@ -316,6 +374,200 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     return rejection
                 return await execute_chat_sandbox(
                     effective_args, user_id, session_id=session_id
+                )
+            if tool_name == MAS_PLAN_PREVIEW_TOOL_NAME:
+                # 对齐 legacy chat_service.py:4391-4392：adapt 返回的信封
+                # （success/result 双通道）直接作为工具结果，不再二次封装。
+                from cygnusx.application.services.mas_plan_adapter import (
+                    MASPlanPreviewAdapter,
+                )
+
+                return MASPlanPreviewAdapter().adapt(args)
+            if tool_name == PARALLEL_SUBAGENTS_TOOL_NAME:
+                # 对齐 legacy chat_service.py:4408-4511 并行子 Agent fanout：
+                # Case 绑定拒绝、每轮次数护栏、started/aggregated 事件与
+                # 双通道信封封装逐点一致；fanout-ask 检测由 tool_result 消费
+                # 分支（下方 494-499）自动完成，这里不再发 ask_request。
+                tool_context = runtime_state["tool_context"]
+                if tool_context.extra.get("agentteams_case_id"):
+                    limit_error = (
+                        "当前会话已绑定 AgentTeams Case；复杂协作由 Case Work Item 编排，"
+                        "不会再通过 parallel_subagents 派生子 Agent。"
+                    )
+                    return {
+                        "success": False,
+                        "result": {
+                            "llm_payload": {"success": False, "error": limit_error},
+                            "ui_payload": {"error": limit_error},
+                        },
+                    }
+                if (
+                    subagent_calls_per_round["count"]
+                    >= get_settings().subagent_max_children_per_message
+                ):
+                    limit_error = "本轮已执行过子 Agent 并行分派，请先消化汇总结果再决定下一步"
+                    return {
+                        "success": False,
+                        "result": {
+                            "llm_payload": {"success": False, "error": limit_error},
+                            "ui_payload": {"error": limit_error},
+                        },
+                    }
+                subagent_calls_per_round["count"] += 1
+                fanout_tasks = [
+                    item for item in (args.get("tasks") or []) if isinstance(item, dict)
+                ]
+                await _emit(
+                    ChatChunk(
+                        type="subagents",
+                        metadata={
+                            "phase": "started",
+                            "tool_call_id": tool_call_id,
+                            "tasks": [
+                                {
+                                    "index": fanout_index,
+                                    "agent_id": str(item.get("agent_id") or ""),
+                                    "task": str(item.get("task") or "")[:120],
+                                }
+                                for fanout_index, item in enumerate(fanout_tasks, start=1)
+                            ],
+                        },
+                    )
+                )
+                if tool_context.extra.get("goal_id"):
+                    from cygnusx.application.services.goal_adapters.fanout_adapter import (
+                        GoalFanoutAdapter,
+                    )
+
+                    fanout_envelope = await GoalFanoutAdapter().execute(
+                        context_summary=str(args.get("context_summary") or ""),
+                        tasks=fanout_tasks,
+                        context=tool_context,
+                    )
+                else:
+                    from cygnusx.application.services.parallel_subagent_tool_service import (
+                        ParallelSubAgentToolService,
+                    )
+
+                    fanout_envelope = (
+                        await ParallelSubAgentToolService().run_parallel_subagents(
+                            context_summary=str(args.get("context_summary") or ""),
+                            tasks=fanout_tasks,
+                            context=tool_context,
+                        )
+                    )
+                await _emit(
+                    ChatChunk(
+                        type="subagents",
+                        metadata={
+                            "phase": "aggregated",
+                            "tool_call_id": tool_call_id,
+                            "success": bool(fanout_envelope.get("success")),
+                            "summary": str(
+                                (fanout_envelope.get("llm_payload") or {}).get("summary")
+                                or ""
+                            ),
+                            "progress": (fanout_envelope.get("ui_payload") or {}).get(
+                                "progress"
+                            )
+                            or [],
+                        },
+                    )
+                )
+                return {
+                    "success": bool(fanout_envelope.get("success")),
+                    "result": {
+                        "llm_payload": fanout_envelope.get("llm_payload"),
+                        "ui_payload": fanout_envelope.get("ui_payload"),
+                    },
+                }
+            if tool_name == "create_agentteams_case":
+                # 对齐 legacy chat_service.py:4512-4584：未确认时经 ToolBridge 预检
+                # （needs_confirm 时登记确认请求并并入 ui_payload），已确认时
+                # 直调 AgentTeamsCaseToolService.run 并下发 agentteams_case 卡片事件。
+                from cygnusx.application.services.agentteams_case_tool_service import (
+                    AgentTeamsCaseToolService,
+                )
+                from cygnusx.application.services.tool_bridge_service import (
+                    get_tool_bridge_service,
+                )
+
+                tool_context = runtime_state["tool_context"]
+                if not args.get("_confirmed"):
+                    bridge_result = await get_tool_bridge_service().execute(
+                        user_id=user_id,
+                        tool_name=tool_name,
+                        arguments=args,
+                        context=tool_context,
+                    )
+                    if (bridge_result.get("llm_payload") or {}).get("needs_confirm"):
+                        confirmation = (
+                            await AgentTeamsCaseToolService().record_confirmation_request(
+                                objective=str(args.get("objective") or ""),
+                                project_id=str(args.get("project_id") or ""),
+                                flow_id=str(args.get("flow_id") or ""),
+                                origin_consultation_id=str(
+                                    args.get("origin_consultation_id") or ""
+                                )
+                                or None,
+                                consultation_summary=str(
+                                    args.get("consultation_summary") or ""
+                                )
+                                or None,
+                                context=tool_context,
+                            )
+                        )
+                        bridge_result = {
+                            **bridge_result,
+                            "ui_payload": {
+                                **dict(bridge_result.get("ui_payload") or {}),
+                                "agentteams_case_confirmation": confirmation,
+                            },
+                        }
+                    return {
+                        "success": bool(bridge_result.get("success")),
+                        "result": bridge_result,
+                    }
+                case_envelope = await AgentTeamsCaseToolService().run(
+                    objective=str(args.get("objective") or ""),
+                    project_id=str(args.get("project_id") or ""),
+                    flow_id=str(args.get("flow_id") or ""),
+                    sample_context_refs=args.get("sample_context_refs") or [],
+                    origin_consultation_id=str(args.get("origin_consultation_id") or "")
+                    or None,
+                    consultation_summary=str(args.get("consultation_summary") or "")
+                    or None,
+                    context=tool_context,
+                )
+                card = (case_envelope.get("ui_payload") or {}).get("case_card") or {}
+                await _emit(
+                    ChatChunk(
+                        type="agentteams_case",
+                        metadata={
+                            "phase": "created",
+                            "tool_call_id": tool_call_id,
+                            "session_id": session_id,
+                            "message_id": ai_message_id,
+                            **card,
+                        },
+                    )
+                )
+                return {
+                    "success": bool(case_envelope.get("success")),
+                    "result": {
+                        "llm_payload": case_envelope.get("llm_payload"),
+                        "ui_payload": case_envelope.get("ui_payload"),
+                    },
+                }
+            if tool_name in {"goal_complete", "goal_blocked"}:
+                # 对齐 legacy chat_service.py:5026-5033：goal 终态工具直调
+                # GoalTerminalToolService（execute 已返回完整双通道信封）。
+                from cygnusx.application.services.goal_terminal_tools import (
+                    GoalTerminalToolService,
+                )
+
+                return await GoalTerminalToolService().execute(
+                    tool_name, args, runtime_state["tool_context"]
                 )
             server = _find_server(tool_name)
             if server is None:
@@ -344,6 +596,12 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
         timeline_text_buffer = ""
         pending_tool_args: dict[str, dict[str, Any]] = {}
         pending_fanout_ask: dict[str, Any] | None = None
+        # 终止态标记：ask_user / fanout 澄清收尾时置 True，
+        # agent_final_result 据此发 awaiting_input（对齐 legacy 5464/5468）。
+        terminal_awaiting_input = False
+        # 显式 Finalize 动作标记：submit_output 收尾时置 True，
+        # agent_final_result 据此携带 action="finalize"（§3.3.1）。
+        terminal_finalize = False
         execution_path = "chat_langgraph"
         execution_run_id = f"agent-langgraph:{ai_message_id}"
         execution_agent_id = str(
@@ -352,6 +610,21 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             or "router"
         )
         execution_round = 0
+        # 并行子 Agent fanout 每轮（一次图运行）次数护栏（对齐 legacy
+        # chat_service.py:4190 的 subagent_calls_this_round 每轮重置语义）：
+        # _tool_executor 在 while True 循环外定义、跨轮复用，故计数器需在
+        # 每次图运行开始时重置（参照 execution_round 的处理方式）。
+        subagent_calls_per_round: dict[str, int] = {"count": 0}
+        # WP3-Task1：cell 编号基线取本会话已落库信封的最大 cell_index+1
+        # （纯派生，对齐 legacy chat_service.py:3956；查询失败时从 0 起，
+        # 不阻断聊天主链路）
+        try:
+            code_cell_next = _max_persisted_cell_index(
+                await self._service._sessions.get_messages(session_id)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cell_index 基线查询失败，从 0 起编号: {}", exc)
+            code_cell_next = 0
 
         yield execution_chunk(
             "agent_turn_started",
@@ -394,6 +667,18 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
 
         try:
             while True:
+                # 每次图运行（一轮）开始时重置并行子 Agent fanout 计数器，
+                # 对齐 legacy chat_service.py:4190 的 subagent_calls_this_round。
+                subagent_calls_per_round["count"] = 0
+                # 显式 Finalize 动作（submit_output，§3.3.1）随 Runtime 挂载（幂等）：
+                # 仅 LangGraph 路径下发给模型，legacy 逃生舱不识别本工具。
+                runtime_tools = runtime_state["tools"]
+                if runtime_tools and not any(
+                    (t.get("function") or {}).get("name") == SUBMIT_OUTPUT_TOOL_NAME
+                    for t in runtime_tools
+                    if isinstance(t, dict)
+                ):
+                    runtime_state["tools"] = [*runtime_tools, SUBMIT_OUTPUT_TOOL_SCHEMA]
                 deps = NodeDeps(
                     model_config=runtime_state["model_config"],
                     system_prompt=runtime_state["system_prompt"],
@@ -480,23 +765,55 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                                 "tool_name": tool_name,
                             }
                         )
-                        persisted_tool_invocations.append(
-                            {
-                                "tool_call_id": call_id,
-                                "tool_name": tool_name,
-                                "arguments": pending_tool_args.pop(call_id, {}),
-                                "success": success,
-                                "result": _cap_tool_invocation_payload(llm_result),
-                                "ui_payload": _cap_tool_invocation_payload(ui_payload),
-                                "mcp_server": tc_meta.get("mcp_server"),
-                            }
+                        # 信封落库对齐 legacy chat_service.py:5209-5249：带截断元信息
+                        # 的落库护栏、cell 语义字段与 payload_hash(WP2 可校验)。
+                        # 历史重载凭这些字段重建卡片/图表并显式提示截断。
+                        args = pending_tool_args.pop(call_id, {})
+                        capped_result, result_truncation = _cap_tool_invocation_payload_detail(llm_result)
+                        capped_ui_payload, ui_payload_truncation = _cap_tool_invocation_payload_detail(
+                            ui_payload
                         )
+                        _invocation_envelope: dict[str, Any] = {
+                            "tool_call_id": call_id,
+                            "tool_name": tool_name,
+                            "arguments": args,
+                            "success": success,
+                            "result": capped_result,
+                            "ui_payload": capped_ui_payload,
+                            **(
+                                {"result_truncation": result_truncation}
+                                if result_truncation
+                                else {}
+                            ),
+                            **(
+                                {"ui_payload_truncation": ui_payload_truncation}
+                                if ui_payload_truncation
+                                else {}
+                            ),
+                            "mcp_server": tc_meta.get("mcp_server"),
+                            **(
+                                {"reliability": tc_meta["reliability"]}
+                                if tc_meta.get("reliability") is not None
+                                else {}
+                            ),
+                            # cell 字段在 payload_hash 计算前写入，hash 覆盖 cell_index/
+                            # language（对齐 legacy 5238-5243）
+                            **(_cell_fields := _code_cell_envelope_fields(
+                                tool_name, args, code_cell_next
+                            )),
+                        }
+                        if _cell_fields["cell_index"] is not None:
+                            code_cell_next += 1
+                        _invocation_envelope["payload_hash"] = _invocation_payload_hash(
+                            _invocation_envelope
+                        )
+                        persisted_tool_invocations.append(_invocation_envelope)
                         if tool_name == PARALLEL_SUBAGENTS_TOOL_NAME and isinstance(llm_result, dict):
-                            envelope = {
+                            fanout_envelope = {
                                 "llm_payload": llm_result.get("llm_payload"),
                                 "ui_payload": ui_payload,
                             }
-                            pending_fanout_ask = _fanout_ask_request(envelope)
+                            pending_fanout_ask = _fanout_ask_request(fanout_envelope)
                         await self._service.update_message_content(
                             ai_message_id,
                             full_content,
@@ -516,6 +833,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 # 等用户下一条消息回答（对齐 legacy stop_after_tools 语义）。
                 ask_request = runtime.last_ask_request
                 if ask_request is not None:
+                    terminal_awaiting_input = True
                     _flush_timeline_text()
                     questions = _normalize_ask_questions(ask_request.get("args") or {})
                     first = questions[0]
@@ -542,7 +860,28 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         },
                     )
                     break
+                # 显式 Finalize 动作（submit_output）：把模型提交的答复作为最终
+                # 正文并入消息（文本块透传给前端并落库），随后正常收尾本轮。
+                finalize_request = runtime.last_finalize
+                if finalize_request is not None and runtime.last_handoff is None:
+                    finalize_output = str(finalize_request.get("output") or "")
+                    if finalize_output:
+                        terminal_finalize = True
+                        if full_content and not full_content.endswith("\n"):
+                            full_content += "\n"
+                        full_content += finalize_output
+                        timeline_text_buffer += finalize_output
+                        await self._service.update_message_content(
+                            ai_message_id, full_content, "streaming"
+                        )
+                        yield ChatChunk(
+                            type="text",
+                            content=finalize_output,
+                            metadata={"session_id": session_id, "message_id": ai_message_id},
+                        )
+                    break
                 if pending_fanout_ask is not None:
+                    terminal_awaiting_input = True
                     _flush_timeline_text()
                     first = pending_fanout_ask["questions"][0]
                     yield ChatChunk(
@@ -711,7 +1050,12 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             round_number=execution_round,
             execution_path=execution_path,
             message_id=ai_message_id,
-            status="round_limit" if runtime.rounds_exhausted else "completed",
+            status=(
+                "round_limit"
+                if runtime.rounds_exhausted
+                else "awaiting_input" if terminal_awaiting_input else "completed"
+            ),
+            **({"action": "finalize"} if terminal_finalize else {}),
         )
         yield ChatChunk(
             type="done",

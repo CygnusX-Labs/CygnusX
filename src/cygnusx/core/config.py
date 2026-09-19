@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     service_name: str = "web"
     # Runtime 拆分灰度：关闭时保持当前 ChatService 直连路径。
     chat_runtime_refactor_enabled: bool = False
+    # 单 Runtime 收敛逃生舱：默认所有非 Studio/非 MAS 普通聊天走 LangGraph 状态图；
+    # 打开后全部回退手写循环（仅用于 LangGraph 运行时故障时的紧急回滚）。
+    chat_force_legacy_runtime: bool = False
     # 事件顺序异常默认仅告警，避免 SSE 已开始后因观测校验中断用户回复；
     # 需要严格阻断时显式设置 CHAT_EVENT_SEQUENCE_ENFORCEMENT=raise。
     chat_event_sequence_enforcement: Literal["off", "warn", "raise"] = "warn"

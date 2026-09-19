@@ -4,22 +4,26 @@
 
 > 更新时间：2026-08-18
 > **演进注记（2026-09-18）**：科研闭环 WP0–WP4 已交付，执行面新增——PTC llm_query（system 锚定 + 动态白名单，门控见 research_mode）、tool_output 严格定向（无 tool_call_id 丢弃）、信封截断标记与 payload_hash、chat_message_events 过程回放、LangGraph chat_sandbox_execute 审批闸（ADR-0002）。以上及生命周期/科研形态的 as-built 详见 `research_loop_architecture_2026-09.md`。
-> 文档定位：记录仓库当前已经存在的 Agent 请求装配、思考—工具闭环、LangGraph、Studio、AgentTeams Worker、房间路由和前端事件投影。本文优先描述“现在代码实际怎么运行”，不把未来规划误写成已上线能力。
+> 文档定位：记录仓库当前已经存在的 Agent 请求装配、思考—工具闭环、LangGraph、Studio、AgentTeams Worker、房间路由和前端事件投影。本文优先描述”现在代码实际怎么运行”，不把未来规划误写成已上线能力。
 
 > **合并说明（2026-09-18）**：本文档已吸收 `agent_execution_loop_observability_2026-08.md`（2026-08-18 快照）的全部独有内容，原文件已删除。对应关系：闭环统一语义与范围声明并入 §4；`degraded` 降级回退会诊路由细则并入 §5.1；统一事件契约与三级工具事件链并入 §6.1；Worker 证据投影并入 §6.4；协助室前端事件→默认文案映射并入 §6.5；Guard 与失败语义并入 §7.3；验证基线并入 §10.1。与本文原有 §2.1/§6/§11 重复的文字以本文档为准，不再重复收录。
+
+> **修订注记（2026-09-19）**：本次修订基于 omichub-vs-openai4s-comparison-report 对比报告 B1/B2/C1/D 节事实依据，完成两项改动：① 新增「动作路由与宿主回调层」章节（现§3.3），描述外循环动作路由（tool_batch/finalize/code_cell）与内循环 cell 内 host RPC 的两层思考链结构，对标 openai4s 深度思考链范式；② 退化 chat_legacy 路径，明确收敛至 chat_langgraph 单 Runtime 的目标态（计划/待实现）。所有目标态均显式标注”（计划/待实现）”，严禁把计划写成已上线能力。
+>
+> **修订注记（2026-09-19,as-built）**：单 Runtime 收敛与 openai4s 外循环第一阶段已落地——普通聊天默认全量走 `chat_langgraph`（分流不再以 `features.engine=="langgraph"` 为门,保留 `engine:"legacy"` 与全局开关 `chat_force_legacy_runtime` 两个逃生舱）;LangGraph 补齐 legacy 工具分发全链(goal 终态 / parallel_subagents 含每轮护栏 / create_agentteams_case / mas_plan_preview)与事件对齐(awaiting_input 终止态、轮级 agent_context_reinjected、去重 agent_turn_started、web_search UI 事件);显式 Finalize 动作(`submit_output`)与 Code Cell 轮次预算豁免(全代码执行工具轮不递增 max_rounds)已进图实现;落库信封对齐 legacy(payload_hash / cell_index+language / reliability / 截断元信息,chat/runtimes/langgraph_runtime.py)。handoff image/capabilities 经核对无差距(LangGraph 分流排除 studio_mode,镜像替换本就只在 Studio 分支发生);Router `runtime_context["runtime"]` 为显式覆写入口(测试/灰度),普通聊天无论 Router 开关都经 LegacyChatRuntime 壳进入内部 LangGraph 分流。Code Cell 完全围栏原生动作、Studio 分支收敛进图、legacy 循环体删除仍为计划态。
 
 ## 1. 一页结论
 
 CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、分路径执行**的 Agent 平台：
 
 1. 用户消息先经过会话、Agent、模型、MCP、Skill、Studio 和功能开关装配。
-2. 普通聊天有两条主执行引擎：Legacy 手写 ReAct 循环和 LangGraph 状态图。
+2. 普通聊天已收敛为 LangGraph 单 Runtime（2026-09-19 落地）；legacy 手写循环退化为逃生舱（`engine:"legacy"` 或 `chat_force_legacy_runtime`），Studio 分支仍由其承载。
 3. OmicStudio 使用独立的 Studio 工具循环，并在工具执行期间提供审批、计划、沙盒和 loop guard。
 4. `parallel_subagents` 会派生受限 Worker；Worker 自己拥有多轮 ReAct，但不能递归 fan-out 或越权切换父会话。
 5. AgentTeams 协助室同时存在 Case 执行链、Manager 咨询链和单步只读工具链；普通房间消息按 `chat / clarify / tool_execute / execute / degraded` 处理，只有明确的只读请求才进入 `tool_execute`。
 6. 后端通过 SSE 发送正文、思考增量、工具调用、工具结果、审批和统一执行生命周期事件；前端按事件类型投影为消息、工具卡片、Worker 时间线和调试事件。
 
-当前最重要的架构事实是：**“工具闭环已经存在”不等于“所有入口都使用同一个 Runtime”**。因此新增能力必须先声明执行路径，再选择对应的循环、上下文和治理边界。
+当前最重要的架构事实是：**”工具闭环已经存在”不等于”所有入口都使用同一个 Runtime”**。因此新增能力必须先声明执行路径，再选择对应的循环、上下文和治理边界。
 
 ## 2. 当前执行拓扑
 
@@ -28,9 +32,9 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
    │
    ├─ 会话/Agent/模型/权限/能力装配
    │
-   ├─ 普通聊天
-   │    ├─ chat_legacy       → ChatService 手写 ReAct
-   │    └─ chat_langgraph   → LangGraphRuntimeService
+   ├─ 普通聊天（LangGraph 单 Runtime，已收敛；legacy 手写循环仅逃生舱）
+   │    ├─ chat_legacy       → ChatService 手写 ReAct（仅逃生舱：engine:"legacy" 或 chat_force_legacy_runtime）
+   │    └─ chat_langgraph   → LangGraphRuntimeService（统一 Runtime，普通聊天默认全量）
    │
    ├─ OmicStudio
    │    └─ studio_chat_loop  → Studio 工具循环 + 审批/计划/沙盒
@@ -49,8 +53,8 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 
 | `execution_path` | 当前用途 | 主要入口 | 是否默认启用 |
 | --- | --- | --- | --- |
-| `chat_legacy` | 普通 Agent 的手写 ReAct 工具循环 | `ChatService.stream_agent_chat` | 是，取决于 Agent 配置 |
-| `chat_langgraph` | 普通 Agent 的图化 ReAct | `ChatService._stream_agent_chat_langgraph` | 由 `features.engine=langgraph` 控制 |
+| `chat_legacy` | 手写 ReAct 工具循环（已退化为逃生舱，仅 `engine:"legacy"` 或全局开关 `chat_force_legacy_runtime`） | `ChatService.stream_agent_chat` | 普通聊天默认不再进入；Studio 分支仍由该循环承载（待收敛） |
+| `chat_langgraph` | 普通 Agent 的图化 ReAct（统一 Runtime） | `ChatService._stream_agent_chat_langgraph` | 普通聊天默认全量（2026-09-19 起不再以 `features.engine=langgraph` 为门） |
 | `studio_chat_loop` | 工作台工具、代码、文件和沙盒闭环 | `ChatService` Studio 分支 | 进入 Studio 会话时启用 |
 | `agentteams_manager_consultation` | Manager 对 Case/房间上下文进行只读会诊 | `AgentConsultationService` | AgentTeams 场景启用 |
 | `agentteams_worker_react` | Worker 执行受限任务和工具调用 | `ParallelSubAgentService._child_loop` | 被 Manager/工具显式派生时启用 |
@@ -87,6 +91,56 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 
 任何新增工具都必须明确两路结果是否存在，并保证模型回灌内容不会直接携带超大原始文件、二进制内容或未脱敏错误堆栈。
 
+## 3.3 动作路由与宿主回调层（新增）
+
+本节基于 openai4s 深度思考链对比报告 B1/B2/C1/D 节的事实依据，描述 CygnusX Agent 的两层思考链结构：**外循环（动作路由）** → **内循环（cell 内 host RPC）**。
+
+### 3.3.1 每轮动作三选一
+
+模型每轮输出严格归为三类动作之一：
+
+1. **有序 JSON tool 批次**：一组并行或串行的 function tool 调用。
+2. **显式 Finalize 动作**：模型主动发出终止信号（LangGraph 单 Runtime 下为 `submit_output` 工具；无 tool_calls 的被动结束仍保留为兜底）。
+3. **一个完整围栏 Code Cell**：原生代码单元（native 优先于 code），对标引擎原生动作而非普通 function tool。
+
+**现状（2026-09-19 as-built）**：普通聊天已收敛为 LangGraph 单 Runtime，循环为"tool_calls → 执行 → 回灌"单一回路；`agent_final_result` 可由显式 Finalize 动作（`submit_output`）驱动，也可由"无 tool_calls 的被动结束"触发。
+
+**目标态落地进度**：
+- `agent_final_result` 升级为显式 Finalize 动作语义：LangGraph 路径新增 `submit_output` 工具（仅单 Runtime 挂载,legacy 逃生舱不识别）,模型调用后图直接路由到 end,`output` 作为最终正文并入消息,`agent_final_result` 携带 `action="finalize"`（已落地）;
+- Code Cell 不占 tool 轮次预算（已落地）：tool_exec 标记全代码执行工具轮(`code_cell_only_round`),下一轮 llm_call 不递增 max_rounds;
+- Code Cell 完全围栏原生动作（独立动作类型、不经 function tool 序列化、cell 内完成语义对标 `host.submit_output`）仍为计划/待实现。
+
+### 3.3.2 Code-as-Action 定位
+
+**范式差异**：代码 Cell 是对标的引擎原生动作，而非普通 function tool。
+
+**现状**：`sandbox_execute` / `chat_sandbox_execute` / `tool_orchestrate` 仍以普通 function tool 下发；但代码执行轮已不占 tool 轮次预算（§3.3.1，2026-09-19 落地）。剩余代价：
+- notebook 单元只能事后从 tool_call 投影，无法在 cell 内携带完成语义。
+
+**目标态（部分落地）**：Code Cell 作为独立动作类型、不经 function tool 序列化、cell 内携带完成语义（完全围栏）仍为计划/待实现；轮次预算豁免已先行落地。
+
+### 3.3.3 cell 内宿主回调通道（内循环）
+
+**当前实现**：现有 PTC（`tool_orchestrate`，`application/services/ptc_orchestrator.py`）定位为"cell 内宿主回调通道"。对标 openai4s 的 `host.llm / host.delegate / host.compute` 通用宿主通道。
+
+**P0（已落地）**：`PTC_ALLOWED_TOOLS` 白名单已含 LLM 回调 handler `llm_query`（`ptc_llm_handler.py`，system 锚定 + 动态白名单 + research_mode 门控，WP0–WP4 交付），编排代码可中途问模型。`host.delegate / host.compute` 无对应 handler，为取舍项。
+
+### 3.3.4 两层结构图
+
+```text
+外循环（动作路由）
+├─ tool_batch：有序 JSON tool 批次
+├─ finalize：显式 Finalize 动作（submit_output，2026-09-19 已落地）
+└─ code_cell：完整围栏 Code Cell（轮次豁免已落地；完全围栏为计划/待实现）
+    │
+    └─ 内循环（cell 内 host RPC）
+        ├─ host.llm：细胞内问模型（PTC llm_query，已落地）
+        ├─ host.delegate：委托子任务（取舍项，未落地）
+        └─ host.compute：本地计算/代码执行（取舍项，未落地）
+```
+
+两层思考链结构：外循环决定本轮动作类型，内循环在 Code Cell 内部提供宿主回调通道（LLM 查询、委托、计算）。
+
 ## 4. 三类核心闭环
 
 本节三类闭环与 AgentTeams Worker 共同遵循统一的可观测语义。该语义升级不合并 Legacy、LangGraph、Studio 与 AgentTeams Worker 的运行时实现，而是在保持既有兼容性的前提下统一它们的事件与追溯口径：
@@ -104,7 +158,7 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 
 覆盖范围：统一 `execution_path` 与生命周期事件；协助室普通消息的只读工具路由；Worker ReAct 事件向 Case 房间时间线投影；前端技术事件模式下的关联追溯；Loop Guard 状态可见性、测试与运行手册。非目标：不以可观测性改动重写各执行 Runtime，不把纯讨论伪装为工具执行，也不默认展示模型原始 reasoning。
 
-### 4.1 Legacy 手写 ReAct
+### 4.1 Legacy 手写 ReAct（退化路径）
 
 `chat_legacy` 的最小语义如下：
 
@@ -129,7 +183,9 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 - 默认工具轮次上限为 100；用户确认后可扩展至 1000。
 - Studio 工具循环额外接入 `StudioLoopGuard`。
 
-### 4.2 LangGraph ReAct
+**收敛说明（已落地为逃生舱语义，2026-09-19）**：legacy 的差异化行为已表达为 LangGraph 图节点参数——轮次上限用户确认扩展（`extend_max_rounds` → `NodeDeps.max_tool_rounds`，默认 100/扩展 1000）与轮次触顶强制收尾提示词注入（`llm_call_node` 的 `force_final_response`）。legacy 循环本体仅作逃生舱保留（`engine:"legacy"` / `chat_force_legacy_runtime`），普通聊天默认不再进入。
+
+### 4.2 LangGraph ReAct（统一 Runtime）
 
 `chat_langgraph` 通过 `LangGraphRuntimeService` 构建临时状态图：
 
@@ -141,12 +197,12 @@ START → llm_call ── 无 tool_calls ──→ END
 
 节点职责：
 
-- `llm_call_node`：流式调用模型，透传正文/思考，收集本轮 tool calls。
-- `tool_exec_node`：逐个执行工具，透传 `tool_call` / `tool_result`，追加 `role=tool`。
+- `llm_call_node`：流式调用模型，透传正文/思考，收集本轮 tool calls；触顶轮注入强制收尾提示词并禁用工具；Code Cell 轮（`code_cell_only_round`）不递增轮次。
+- `tool_exec_node`：逐个执行工具，透传 `tool_call` / `tool_result`，追加 `role:tool`；handoff / ask_user / finalize（`submit_output`）三类终止指令短路返回 state 并路由到 end。
 - `route_after_llm`：根据错误和 tool calls 决定结束或执行工具。
-- `route_after_tool`：根据 handoff、ask_user 和轮次预算决定继续或结束。
+- `route_after_tool`：根据 handoff、ask_user、finalize 和轮次预算决定继续或结束。
 
-LangGraph 不是另一套工具契约；它复用 Provider、工具执行器、MCP 匹配和 ChatService 收尾逻辑，目标是让状态转移显式化，同时保持 Legacy 事件兼容。
+**承接 legacy 全部分发（2026-09-19 已补齐）**：`_tool_executor` 除 MCP/builtin 回退外，覆盖 handoff、skill、ask_user、submit_output、knowledge_search、web_search（含 UI 事件）、chat_sandbox_execute（审批闸，ADR-0002）、mas_plan_preview、parallel_subagents（每轮护栏）、create_agentteams_case、goal 终态工具。**对齐 Legacy 差异化行为**：LangGraph 版复用 Provider、工具执行器、MCP 匹配和 ChatService 收尾逻辑；新能力一律先进图实现，禁止新增 legacy-only 行为。
 
 ### 4.3 Worker 受限 ReAct
 
@@ -368,16 +424,17 @@ agent_turn_started
 1. 先确定工具属于 builtin、MCP、Skill 还是 Studio 能力。
 2. 定义 schema、权限级别、是否需要确认、是否允许 Worker 使用。
 3. 定义 `llm_payload` 和 `ui_payload`，明确长度和敏感信息处理。
-4. 在 Legacy、LangGraph、Worker 中确认是否需要同等语义支持。
+4. 在统一 Runtime（LangGraph 图）与 Worker 中确认是否需要同等语义支持；过渡期同步检查 legacy 兼容层。
 5. 补 `tool_call`、`tool_result`、失败、取消和重试测试。
 
 ### 9.2 修改循环
 
-1. 不要只修改模型 prompt 来“修复循环”；先确认工具结果是否真正回灌。
+1. 不要只修改模型 prompt 来”修复循环”；先确认工具结果是否真正回灌。
 2. 保留 `tool_call_id`、`run_id`、`round` 和 `execution_path`。
 3. 新增终止分支时，必须同时处理持久化、SSE、前端状态和 token usage。
 4. 所有最终结果事件必须先于 `done`。
 5. 不要把 Worker 内部过程直接当作 Manager 最终结论。
+6. **禁止新增 legacy-only 循环行为**（2026-09-19 起为正式口径：新能力一律进 LangGraph 图，legacy 仅维护逃生舱所需的最小逻辑）。
 
 ### 9.3 新增路由
 
@@ -400,8 +457,8 @@ agent_turn_started
 
 修改 Agent 闭环后至少验证：
 
-- [ ] Legacy 多轮 tool call 能看到 `agent_context_reinjected`。
-- [ ] LangGraph 与 Legacy 的 `tool_call` / `tool_result` 语义一致。
+- [ ] Legacy 多轮 tool call 能看到 `agent_context_reinjected`（过渡期兼容层）。
+- [ ] 收敛完成后由单一 Runtime 天然保证 tool_call/tool_result 语义一致，过渡期由兼容层保证。
 - [ ] 工具结果能进入下一轮模型 messages，而不是只发给前端。
 - [ ] `ask_user`、handoff、错误、超时、取消均能正常收尾。
 - [ ] Studio loop guard 触发后能降级或安全结束。
@@ -410,6 +467,8 @@ agent_turn_started
 - [ ] SSE 断流/重连不会重复执行副作用工具。
 - [ ] 前端普通模式不泄露原始内部 reasoning。
 - [ ] 房间 `chat / clarify / execute` 判定有对应测试，纯咨询不会启动 Case。
+- [x] **chat_legacy 路径上不再新增任何差异化行为**（2026-09-19 起为正式口径：普通聊天默认 chat_langgraph,legacy 仅逃生舱）。
+- [x] 单 Runtime 收敛回归：`tests/unit/test_langgraph_runtime.py`（22 用例，含 finalize / Code Cell 豁免 / 落库信封对齐）、`tests/unit/test_agent_multistep_e2e.py`、`tests/unit/chat/`（golden baselines、dual-run、事件状态机、Router）全绿。
 
 ### 10.1 闭环可观测性验证基线
 
@@ -428,10 +487,13 @@ agent_turn_started
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/cygnusx/application/services/chat_service.py` | 普通聊天、Studio、Legacy/LangGraph 分流、工具执行和消息收尾 |
+| `src/cygnusx/application/services/chat_service.py` | 普通聊天、Studio、单 Runtime 分流（默认 LangGraph,`engine:"legacy"`/`chat_force_legacy_runtime` 逃生舱）、工具执行和消息收尾 |
+| `src/cygnusx/core/config.py` | `chat_runtime_refactor_enabled`（Router 灰度）、`chat_force_legacy_runtime`（单 Runtime 逃生舱） |
 | `src/cygnusx/application/services/execution_events.py` | 统一 Agent 生命周期事件构造 |
-| `src/cygnusx/infrastructure/execution/langgraph_nodes.py` | LangGraph LLM/工具节点和路由 |
-| `src/cygnusx/infrastructure/execution/langgraph_runtime.py` | LangGraph 图运行和队列流式输出 |
+| `src/cygnusx/infrastructure/execution/langgraph_nodes.py` | LangGraph LLM/工具节点和路由（含 force_final_response、ask_user/finalize/handoff 短路、Code Cell 轮次豁免） |
+| `src/cygnusx/infrastructure/execution/langgraph_runtime.py` | LangGraph 图运行和队列流式输出（收集 ask_request/finalize/handoff 终止态） |
+| `src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py` | LangGraph 聊天 Runtime：submit_output 挂载、审批闸（ADR-0002）、legacy 工具分发全链、落库信封（payload_hash/cell/reliability）、统一收尾事件 |
+| `src/cygnusx/application/services/studio_tools.py` | `ASK_USER_TOOL_SCHEMA`、`SUBMIT_OUTPUT_TOOL_SCHEMA`（显式 Finalize）等工具 schema |
 | `src/cygnusx/application/services/studio_loop_guard.py` | Studio 工具循环护栏 |
 | `src/cygnusx/application/services/parallel_subagent_service.py` | Worker fan-out、子 ReAct、隔离和控制 |
 | `src/cygnusx/application/services/agentteams_execution_intent.py` | 协助室执行意图三态判定 |
@@ -453,5 +515,6 @@ agent_turn_started
 - `cygnusx_studio_handover_2026-07.md` 侧重 OmicStudio 工作台的产品实现与交接。
 - `docs/info/26.8.18/CygnusX-Agent思考工具闭环优化实施计划与编码提示词.md` 是本次闭环优化的实施计划、验收标准和编码提示词。
 - 原 `agent_execution_loop_observability_2026-08.md` 记录本轮事件关联、房间只读工具路由、Worker 时间线和验证基线，已于 2026-09-18 并入本文（§4、§5.1、§6.1、§6.4、§6.5、§7.3、§10.1），不再作为独立文件存在。
+- **本次修订新增「动作路由与宿主回调层」（§3.3）**：依据 openai4s 对比报告 B1/B2/C1/D 节，描述外循环动作路由与内循环 cell 内 host RPC 的两层思考链结构；**chat_legacy 收敛为 LangGraph 单 Runtime 已于 2026-09-19 落地（普通聊天默认全量,legacy 退化为逃生舱）**。
 
-当文档之间描述冲突时，以当前代码、测试和运行配置为事实来源；目标方案必须明确标记为“计划”或“待实现”。
+当文档之间描述冲突时，以当前代码、测试和运行配置为事实来源；目标方案必须明确标记为”计划”或”待实现”。

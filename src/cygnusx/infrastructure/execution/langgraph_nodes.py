@@ -100,12 +100,8 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
     force_final_response = (
         deps.max_tool_rounds is not None and rounds >= deps.max_tool_rounds
     )
-    if rounds == 0:
-        await deps.emit_execution(
-            "agent_turn_started",
-            round_number=rounds + 1,
-            phase="before_model_call",
-        )
+    # agent_turn_started 由外层 Runtime 统一发送（对齐 legacy 每轮一次），
+    # 图内不再重复发送。
     system_prompt = deps.system_prompt
     tools = deps.tools or None
     if force_final_response:
@@ -160,13 +156,18 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             round_text = "已完成可执行的工具步骤，请根据上方工具结果继续处理。"
             await deps.emit_chunk(ChatChunk(type="text", content=round_text))
 
+    # Code Cell 不占 tool 轮次预算（§3.3.2）：上一轮工具批次全部为代码执行类
+    # 工具时，本轮 llm_call 不递增轮次（force_final_response 判定与事件
+    # round_number 仍以递增前的 rounds 为准）。
+    next_rounds = rounds if state.get("code_cell_only_round") else rounds + 1
+
     assistant: dict[str, Any] = {"role": "assistant", "content": round_text}
     if round_reasoning:
         # DeepSeek tool calling 要求工具结果回灌时保留上一轮推理内容。
         assistant["reasoning_content"] = round_reasoning
     if tool_calls:
         assistant["tool_calls"] = tool_calls
-    return {"messages": [assistant], "rounds": rounds + 1, "usage": usage, "error": None}
+    return {"messages": [assistant], "rounds": next_rounds, "usage": usage, "error": None}
 
 
 async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
@@ -254,6 +255,9 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
                     else True,
                     "result": llm_result,
                     "ui_payload": ui_payload,
+                    "reliability": result.get("reliability")
+                    if isinstance(result, dict)
+                    else None,
                 },
             )
         )
@@ -263,13 +267,6 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             tool_call_id=tool_call_id,
             tool_name=tool_name,
             success=bool(result.get("success")) if isinstance(result, dict) else True,
-        )
-        await deps.emit_execution(
-            "agent_context_reinjected",
-            round_number=state.get("rounds", 0) + 1,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            phase="after_tool_result",
         )
 
         llm_content = json.dumps(llm_result, ensure_ascii=False, default=str)
@@ -295,18 +292,64 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             and isinstance(result, dict)
             and bool(result.get("success", False))
         ):
+            # 对齐 legacy chat_service.py:5405-5414：ask 轮同样发出轮级
+            # agent_context_reinjected（handoff 轮不发，legacy 5386-5403 提前 continue）。
+            await deps.emit_execution(
+                "agent_context_reinjected",
+                round_number=state.get("rounds", 0) + 1,
+                tool_call_count=len(tool_calls),
+                phase="after_tool_result",
+            )
             return {
                 "messages": new_messages,
                 "ask_request": {"tool_call_id": tool_call_id, "args": args},
                 "error": None,
             }
+        # 显式 Finalize 动作（submit_output，§3.3.1）：模型主动提交最终答复并
+        # 结束本轮。工具结果照常回灌（保持上下文完整），图经 state["finalize"]
+        # 路由到 end，由外层 Runtime 把 output 作为最终正文收尾。
+        if (
+            tool_name == "submit_output"
+            and isinstance(result, dict)
+            and bool(result.get("success", False))
+        ):
+            await deps.emit_execution(
+                "agent_context_reinjected",
+                round_number=state.get("rounds", 0) + 1,
+                tool_call_count=len(tool_calls),
+                phase="after_tool_result",
+            )
+            return {
+                "messages": new_messages,
+                "finalize": {
+                    "tool_call_id": tool_call_id,
+                    "output": str(args.get("output") or ""),
+                },
+                "error": None,
+            }
+    # 轮级回灌事件（对齐 legacy 每轮一次，而非每工具一次）：本轮全部工具结果
+    # 已写入 role:tool 消息，下一轮模型调用具备继续条件。
+    await deps.emit_execution(
+        "agent_context_reinjected",
+        round_number=state.get("rounds", 0) + 1,
+        tool_call_count=len(tool_calls),
+        phase="after_tool_result",
+    )
     await deps.emit_execution(
         "agent_turn_continued",
         round_number=state.get("rounds", 0) + 2,
         reason="tool_results_reinjected",
         tool_call_count=len(tool_calls),
     )
-    return {"messages": new_messages, "error": None}
+    # Code Cell 轮次豁免标记（§3.3.2）：本批 tool_calls 全部为代码执行类工具时，
+    # 下一轮 llm_call 不递增轮次预算。
+    from cygnusx.application.services.chat.utils import CODE_EXECUTION_TOOL_NAMES
+
+    code_cell_only = bool(tool_calls) and all(
+        (tc.get("function", {}) or {}).get("name", "") in CODE_EXECUTION_TOOL_NAMES
+        for tc in tool_calls
+    )
+    return {"messages": new_messages, "error": None, "code_cell_only_round": code_cell_only}
 
 
 def route_after_llm(state: AgentState) -> str:
@@ -327,5 +370,7 @@ def route_after_tool(state: AgentState, max_rounds: int) -> str:
     if state.get("handoff"):
         return "end"
     if state.get("ask_request"):
+        return "end"
+    if state.get("finalize"):
         return "end"
     return "llm_call"

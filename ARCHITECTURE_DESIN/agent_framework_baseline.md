@@ -207,9 +207,9 @@ ChatService.stream_agent_chat()
 
 ### 6.2 ReAct 与 LangGraph
 
-- `agent-general`、`agent-scrna` 的 `features.engine: langgraph` 在非 Studio 会话使用 LangGraph 图化 ReAct。
-- 其他普通 Agent 使用 ChatService 内的手写 ReAct 循环。
-- 两种执行器都必须支持工具结果回灌、Handoff 控制信号、ask_user 澄清中断（`ask_request` 事件 + 本轮收尾，见 §5.5）、错误信封和最大工具轮数限制；业务语义不得因执行器不同而改变。
+- 2026-09-19 起，普通聊天（非 Studio、非 MAS 编排）**默认全部使用 LangGraph 图化 ReAct 单 Runtime**，不再以 `features.engine: langgraph` 为门；`features.engine` 仅保留逃生舱语义：显式声明 `engine: "legacy"` 的 Agent 仍走手写循环，另有全局开关 `chat_force_legacy_runtime` 可一键回退（见 `agent_execution_framework.md` §2/§4）。
+- Studio 会话仍由 ChatService 手写循环承载 Studio 工具分支（待收敛进图）。
+- 执行器必须支持工具结果回灌、Handoff 控制信号、ask_user 澄清中断（`ask_request` 事件 + 本轮收尾，见 §5.5）、显式 Finalize（`submit_output`，`agent_final_result` 携带 `action="finalize"`）、错误信封和最大工具轮数限制；业务语义不得因执行器不同而改变。
 
 ### 6.3 OmicStudio
 

@@ -10,6 +10,9 @@ HITL / checkpoint / task_context 字段，仅保留 ReAct 工具循环所需的�
 - handoff:  已校验的 Agent 交接指令；tool_exec 后立即结束当前图，由 ChatService 接管
 - ask_request: ask_user 澄清请求（tool_call_id + 原始 args）；tool_exec 后立即结束
   当前图，由 ChatService 产出 ask_request 事件并收尾本轮，等用户下条消息回答
+- finalize: submit_output 显式 Finalize 动作（tool_call_id + output）；tool_exec 后
+  立即结束当前图，由 ChatService 把 output 作为最终正文收尾本轮（openai4s 外循环
+  三选一之一，见 agent_execution_framework.md §3.3）
 """
 
 from __future__ import annotations
@@ -27,3 +30,7 @@ class AgentState(TypedDict, total=False):
     error: str | None
     handoff: dict[str, Any] | None
     ask_request: dict[str, Any] | None
+    finalize: dict[str, Any] | None
+    #: 上一轮 tool 批次是否全部为代码执行类工具（Code Cell）：为 True 时下一轮
+    #: llm_call 不递增轮次预算（Code Cell 不占 tool 轮次，§3.3.2）
+    code_cell_only_round: bool

@@ -24,7 +24,17 @@ class ChatRouterService:
         self._service = service
 
     def select_runtime(self, request: ChatRuntimeRequest) -> ChatRuntime:
-        """未迁移分支统一回落到 Legacy，避免提前改变任何业务语义。"""
+        """选择 Runtime。
+
+        优先级：显式覆写（runtime_context["runtime"]，测试/灰度用，全库仅测试
+        与调用方显式传入）> overdrive > studio > 普通聊天回落 Legacy。
+
+        注意：单 Runtime 收敛（2026-09-19）后，普通聊天的 LangGraph 默认分流在
+        ChatService._stream_agent_chat_inner 内部完成（不再以 features.engine
+        为门）；此处回落的 LegacyChatRuntime 同样转发 _stream_agent_chat_inner，
+        因此 Router 开与不开，普通聊天最终都进入 LangGraph 状态图（逃生舱
+        engine:"legacy" / chat_force_legacy_runtime 除外）。
+        """
         runtime = str(request.runtime_context.get("runtime") or "").lower()
         if runtime == "direct":
             return DirectChatRuntime(self._service)

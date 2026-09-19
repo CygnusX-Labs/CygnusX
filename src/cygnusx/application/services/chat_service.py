@@ -4101,12 +4101,16 @@ class ChatService(
             yield ChatChunk(type="done", metadata={"session_id": current_session_id})
             return
 
-        # LangGraph 引擎分流：features.engine == "langgraph" 且非 Studio 模式时
-        # 走状态图运行时；其余（含 Studio 沙盒、未标记 engine）保持手写循环不变。
+        # LangGraph 统一 Runtime：普通聊天（非 Studio、非 MAS 编排）默认全部走状态图，
+        # 收敛 chat_legacy/chat_langgraph 双引擎为单 Runtime（见
+        # ARCHITECTURE_DESIN/agent_execution_framework.md §2/§4）。
+        # 仅两处保留手写循环：① Agent 显式声明 features.engine == "legacy"；
+        # ② 全局逃生舱 chat_force_legacy_runtime（LangGraph 故障紧急回滚）。
         if (
-            ctx.features.get("engine") == "langgraph"
-            and not studio_mode
+            not studio_mode
             and not is_mas_orchestrator
+            and ctx.features.get("engine") != "legacy"
+            and not get_settings().chat_force_legacy_runtime
         ):
             from cygnusx.application.services.chat.runtimes.langgraph_runtime import (
                 LangGraphChatRuntime,

@@ -2708,15 +2708,18 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           aiMsg.collaborationRoute = event
         },
         onToolOutput: (tool, _stream, data, toolCallId) => {
-          // 优先按 tool_call_id 精确匹配；无 id（旧事件）时回退为最后一个同名 running 工具
+          // 严格定向（research_loop WP3）：tool_output 必须携带 tool_call_id,
+          // 无 id 的旧事件直接丢弃并告警,不再回退匹配"最后一个同名 running 工具"
+          if (!toolCallId) {
+            console.warn('[agentHub] 丢弃无 tool_call_id 的 tool_output 事件', tool)
+            return
+          }
           const toolMessage = effectiveOverdrive
             ? [...session.messages].reverse().find((item) => item.role === 'assistant' && item.senderAgent)
               || aiMsg
             : aiMsg
           const tcs = toolMessage.toolCalls || []
-          const tc = toolCallId
-            ? tcs.find((t) => t.id === toolCallId)
-            : [...tcs].reverse().find((t) => t.status === 'running' && (!tool || t.name === tool))
+          const tc = tcs.find((t) => t.id === toolCallId)
           if (tc) tc.output = appendBoundedStudioOutput(tc.output || '', data)
         },
         onRetry: (attempt, maxAttempts) => {

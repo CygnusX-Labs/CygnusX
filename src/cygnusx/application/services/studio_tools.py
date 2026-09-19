@@ -107,6 +107,32 @@ ASK_USER_TOOL_SCHEMA: dict[str, Any] = {
     },
 }
 
+#: 显式 Finalize 动作（openai4s 外循环三选一之一，见 agent_execution_framework.md §3.3）：
+# 模型主动提交最终答复并结束本轮，替代"无 tool_calls 的被动结束"。
+# 仅 LangGraph 单 Runtime 挂载（legacy 逃生舱不识别本工具）。
+SUBMIT_OUTPUT_TOOL_NAME = "submit_output"
+SUBMIT_OUTPUT_TOOL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": SUBMIT_OUTPUT_TOOL_NAME,
+        "description": (
+            "提交最终答复并显式结束本轮（Finalize 动作）。当已有信息足以给出完整结论时调用，"
+            "将最终答复全文写入 output 参数。调用后本轮立即结束，正文会以普通回复展示给用户；"
+            "不要同时再输出正文或其他工具调用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "output": {
+                    "type": "string",
+                    "description": "提交给用户的最终答复全文（Markdown）",
+                },
+            },
+            "required": ["output"],
+        },
+    },
+}
+
 STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "sandbox_execute",

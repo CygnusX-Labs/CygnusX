@@ -44,6 +44,9 @@ class LangGraphRuntimeService:
         self.error: str | None = None
         self.last_handoff: dict[str, Any] | None = None
         self.last_ask_request: dict[str, Any] | None = None
+        # submit_output 显式 Finalize 动作（tool_call_id + output）；图经
+        # state["finalize"] 结束后由外层 Runtime 作为最终正文收尾
+        self.last_finalize: dict[str, Any] | None = None
         # 图因轮次触顶进入强制收尾轮时为 True，供调用方产出 round_limit 事件
         self.rounds_exhausted: bool = False
         self._graph = self._build_graph()
@@ -94,6 +97,8 @@ class LangGraphRuntimeService:
             "error": None,
             "handoff": None,
             "ask_request": None,
+            "finalize": None,
+            "code_cell_only_round": False,
         }
 
         async def _run() -> None:
@@ -125,6 +130,7 @@ class LangGraphRuntimeService:
                 self.error = final.get("error")
                 self.last_handoff = final.get("handoff")
                 self.last_ask_request = final.get("ask_request")
+                self.last_finalize = final.get("finalize")
                 # 正常收尾时 rounds ≤ max_rounds；进入强制收尾轮（rounds >=
                 # max_tool_rounds 的 llm_call）后 rounds 会超过上限，据此判定触顶。
                 self.rounds_exhausted = (final.get("rounds") or 0) > self._max_rounds
