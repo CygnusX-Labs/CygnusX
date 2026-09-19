@@ -22,6 +22,7 @@ import {
 } from '@vicons/ionicons5'
 import CodeEditor from '@/components/sandbox/CodeEditor.vue'
 import { useAgentHubStore } from '@/stores/agentHub'
+import { approvalErrorText } from './approvalErrors'
 import type { ToolCall } from '@/components/ai-chat/types'
 
 const props = defineProps<{ tool: ToolCall }>()
@@ -104,11 +105,7 @@ async function handleApprove(withEdits: boolean, always = false) {
           : '已批准，开始执行',
     )
   } catch (error) {
-    message.error(
-      error instanceof Error && error.message === 'APPROVAL_STREAM_INACTIVE'
-        ? '该审批所属执行流已结束，请重新发送任务后再操作'
-        : '批准失败，审批可能已超时，请重试',
-    )
+    message.error(approvalErrorText(error, '批准失败，请重试'))
   } finally {
     submitting.value = false
   }
@@ -122,11 +119,7 @@ async function handleReject() {
     await store.rejectToolCall(id, rejectReason.value.trim() || undefined)
     message.success('已退回，等待 AI 修改')
   } catch (error) {
-    message.error(
-      error instanceof Error && error.message === 'APPROVAL_STREAM_INACTIVE'
-        ? '该审批所属执行流已结束，请重新发送任务后再操作'
-        : '退回失败，审批可能已超时，请重试',
-    )
+    message.error(approvalErrorText(error, '退回失败，请重试'))
   } finally {
     submitting.value = false
   }

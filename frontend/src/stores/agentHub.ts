@@ -57,6 +57,7 @@ import {
   type TokenUsage,
 } from '@/composables/useAgentChatStream'
 import { studioApi, type StudioPermissionMode, type StudioRuntimeProfile } from '@/api/studio'
+import { isApprovalGone } from '@/components/ai-chat/approvalErrors'
 import { useChatStore } from '@/stores/chat'
 import { sortPersistedChatMessages } from '@/utils/chatMessageOrder'
 import { normalizeSuggestions } from '@/utils/nextStepSuggestions'
@@ -2898,9 +2899,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     modifiedArgs?: Record<string, unknown>,
     always?: boolean,
   ): Promise<void> {
-    if (!isStreaming.value) {
-      throw new Error('APPROVAL_STREAM_INACTIVE')
-    }
+    // 不以前端 isStreaming 预判：刷新页面后执行流仍在后端等待审批，
+    // 此时 REST + Redis 决议通道依然有效，误判会挡住合法批准；以服务端响应为准。
     const tc = findApprovalTool(approvalId)
     if (tc?.approval && tc.approval.status === 'pending') {
       tc.approval.status = modifiedArgs ? 'edited' : 'approved'
@@ -2910,8 +2910,14 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       await studioApi.approveApproval(approvalId, modifiedArgs, always)
     } catch (e) {
       if (tc?.approval) {
-        tc.approval.status = 'pending'
-        tc.status = 'awaiting_approval'
+        if (isApprovalGone(e)) {
+          // 记录已过期/被消费：转入终态，卡片显示"已超时"并离开待处理列表
+          tc.approval.status = 'timeout'
+          tc.status = 'timed_out'
+        } else {
+          tc.approval.status = 'pending'
+          tc.status = 'awaiting_approval'
+        }
       }
       throw e
     }
@@ -2919,9 +2925,6 @@ export const useAgentHubStore = defineStore('agentHub', () => {
 
   /** 退回待审批工具（理由回灌 LLM 让其修改后重试） */
   async function rejectToolCall(approvalId: string, reason?: string): Promise<void> {
-    if (!isStreaming.value) {
-      throw new Error('APPROVAL_STREAM_INACTIVE')
-    }
     const tc = findApprovalTool(approvalId)
     if (tc?.approval && tc.approval.status === 'pending') {
       tc.approval.status = 'rejected'
@@ -2931,8 +2934,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       await studioApi.rejectApproval(approvalId, reason)
     } catch (e) {
       if (tc?.approval) {
-        tc.approval.status = 'pending'
-        tc.status = 'awaiting_approval'
+        if (isApprovalGone(e)) {
+          tc.approval.status = 'timeout'
+          tc.status = 'timed_out'
+        } else {
+          tc.approval.status = 'pending'
+          tc.status = 'awaiting_approval'
+        }
       }
       throw e
     }
