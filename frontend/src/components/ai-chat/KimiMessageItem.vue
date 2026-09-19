@@ -1233,26 +1233,6 @@ function handleEdit() {
           </button>
           <p v-if="isWorkerCollapsed" class="worker-result-preview">{{ workerPreview }}</p>
           <template v-else>
-          <!-- 生成中指示置于气泡内容之前：流式生成图片等大块内容时，
-               动画不会被已生成内容压到可视区之外。 -->
-          <!-- 正文尚未生成时的优雅行内指示：替代孤立的闪烁光标，
-               正文首个 token 到达后平滑淡出（不套 out-in：避免卸载竞态）。 -->
-          <transition name="gen-tail">
-            <div v-if="showGeneratingTail" class="generating-tail" role="status" aria-live="polite">
-              <span class="gen-spark" aria-hidden="true">✨</span>
-              <span class="gen-text">正在生成回复</span>
-              <span class="gen-dots" aria-hidden="true"><i /><i /><i /></span>
-            </div>
-          </transition>
-
-          <!-- 流式光标 + typing 指示：正文流式输出时显示在内容之前，结束后 200ms 淡出 -->
-          <transition name="cursor-fade">
-            <span v-if="streamingActive && streamingHasContent" class="stream-tail">
-              <span class="stream-cursor" />
-              <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
-            </span>
-          </transition>
-
           <!-- 交错时间线：正文与工具调用按实际发生顺序渲染（内容→工具→内容），
                最终结论永远在最底部，不用翻回顶部看结果 -->
           <template v-if="timelineView.length">
@@ -1425,6 +1405,26 @@ function handleEdit() {
               </a>
             </div>
           </details>
+
+          <!-- 生成中/流式指示统一放在气泡内容末尾：新内容一直在底部追加，
+               指示跟着内容末尾走，始终贴在输入框上方的可视区内；
+               若放在内容之前，会被流式长正文/大图顶出可视区，
+               用户看不到"还在输出"的反馈（不套 out-in：避免卸载竞态）。 -->
+          <transition name="gen-tail">
+            <div v-if="showGeneratingTail" class="generating-tail" role="status" aria-live="polite">
+              <span class="gen-spark" aria-hidden="true">✨</span>
+              <span class="gen-text">正在生成回复</span>
+              <span class="gen-dots" aria-hidden="true"><i /><i /><i /></span>
+            </div>
+          </transition>
+
+          <!-- 流式光标 + typing 指示：跟随在已生成内容之后，结束后 200ms 淡出 -->
+          <transition name="cursor-fade">
+            <span v-if="streamingActive && streamingHasContent" class="stream-tail">
+              <span class="stream-cursor" />
+              <span class="stream-dots" aria-hidden="true"><i /><i /><i /></span>
+            </span>
+          </transition>
           </template>
         </div>
 
@@ -1950,7 +1950,7 @@ function handleEdit() {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-top: 14px;
   padding: 8px 14px;
   width: fit-content;
   max-width: 100%;

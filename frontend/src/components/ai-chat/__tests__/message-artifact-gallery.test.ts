@@ -61,7 +61,15 @@ describe('MessageArtifactGallery', () => {
     })
     app.mount(host)
 
-    const buttons = [...host.querySelectorAll<HTMLButtonElement>('button')]
+    // 文件列表收进产物窗口:先打开窗口再操作下载
+    const openButton = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('打开产物窗口'))
+    openButton?.click()
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    const buttons = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
     buttons.find((button) => button.textContent?.trim() === '下载')?.click()
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -103,7 +111,15 @@ describe('MessageArtifactGallery', () => {
     })
     app.mount(host)
 
-    const buttons = [...host.querySelectorAll<HTMLButtonElement>('button')]
+    // 预览按钮在产物窗口内:先打开窗口
+    const openButton = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('打开产物窗口'))
+    openButton?.click()
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    const buttons = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
     buttons.find((button) => button.textContent?.trim() === '预览')?.click()
     await nextTick()
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -187,7 +203,7 @@ describe('MessageArtifactGallery', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
 
-    const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__zoom-trigger')
+    const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__thumb')
     expect(trigger).toBeTruthy()
     trigger?.click()
     await nextTick()
@@ -228,11 +244,19 @@ describe('MessageArtifactGallery', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
 
+    // PDF 卡片收进产物窗口:先打开窗口再校验内嵌只读预览
+    const openButton = [...host.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('打开产物窗口'))
+    openButton?.click()
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
     // 卡片内嵌只读预览：iframe 存在、不可交互（pointer-events 关闭），点击穿透到放大按钮
-    const inlineFrame = host.querySelector<HTMLIFrameElement>('.message-artifacts__pdf-inline')
+    const inlineFrame = document.body.querySelector<HTMLIFrameElement>('.message-artifacts__pdf-inline')
     expect(inlineFrame).toBeTruthy()
     expect(inlineFrame?.getAttribute('src')).toBe('blob:artifact#toolbar=0&navpanes=0&view=FitH&page=1')
-    const trigger = host.querySelector<HTMLButtonElement>('.message-artifacts__pdf-trigger')
+    const trigger = document.body.querySelector<HTMLButtonElement>('.message-artifacts__pdf-trigger')
     expect(trigger).toBeTruthy()
     trigger?.click()
     await nextTick()
