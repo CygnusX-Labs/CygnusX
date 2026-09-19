@@ -39,3 +39,4 @@ tool_groups:
   sandbox: true      # 沙箱执行 (create/execute/list/destroy)
   platform: true     # 平台信息 (user_info/platform_status)
   pipelines: true    # 完整分析流程 (RNA-seq/ATAC-seq prepare/submit/status/results)
+  seqout: true       # 公共数据库检索 (seqout_search/project_detail/sample_manifest/resolve)

@@ -28,6 +28,11 @@ from cygnusx.infrastructure.database.repositories.ai_provider_repository import 
 )
 
 
+def _opt_float(value: Any) -> float | None:
+    """YAML 字段转可选 float：None 原样保留，否则转 float。"""
+    return None if value is None else float(value)
+
+
 def _load_yaml(path: str) -> dict[str, Any]:
     """读取并解析 YAML，返回 providers 列表"""
     file_path = Path(path)
@@ -100,6 +105,8 @@ class AIProviderYamlLoader:
                 max_tokens=int(item.get("max_tokens", base.max_tokens if base else 2048)),
                 top_p=float(item.get("top_p", base.top_p if base else 1.0)),
                 timeout=int(item.get("timeout", base.timeout if base else 120)),
+                input_price=_opt_float(item.get("input_price", base.input_price if base else None)),
+                output_price=_opt_float(item.get("output_price", base.output_price if base else None)),
                 is_active=bool(item.get("is_active", base.is_active if base else True)),
                 is_default=is_default,
                 extra_params=item.get("extra_params", base.extra_params if base else {}),

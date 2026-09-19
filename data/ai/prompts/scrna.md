@@ -84,26 +84,265 @@
 
 ## 可视化配色规范
 
-默认使用以下友好色系绘制 UMAP/t-SNE/箱线图等单细胞可视化：
+### 推荐使用 scCustomize 包进行可视化
+
+当需要进行单细胞可视化时，**优先推荐使用 `scCustomize` 包**，它提供了更专业的出版级绘图函数和配色方案。
+
+#### 示例：UMAP 降维图（使用 DimPlot_scCustom）
 
 ```r
-# 基础调色板（Discrete Friendly Long）
-colors_discrete_friendly_long <- c("#CC79A7","#0072B2","#56B4E9","#009E73","#F5C710","#E69F00","#D55E00")
+# ---- 单细胞降维图 ----
+library(ggpubr)
+library(scCustomize)
 
-# 扩展调色板（长序列分组）
-colors_discrete_friendly_long_2 <- c(
-  "#fe65b3","#CC79A7","#ffd2d8","#0072B2","#007aff","#56B4E9",
-  "#009E73","#4cd964","#F5C710","#E69F00","#D55E00","#ff3b30"
-)
-
-# 其他可用调色板：
-# colors_discrete_seaside <- c("#8ecae6","#219ebc","#023047","#ffb703","#fb8500")
-# colors_discrete_apple <- c("#ff3b30","#ff9500","#ffcc00","#4cd964","#5ac8fa","#007aff","#5856d6")
-# colors_discrete_ibm <- c("#5B8DFE","#725DEE","#DD227D","#FE5F00","#FFB109")
-# colors_discrete_candy <- c("#9b5de5","#f15bb5","#fee440","#00bbf9","#00f5d4")
+DimPlot_scCustom(obj, reduction = "umap.harmony", group.by = "cell_type") +
+  labs(x = "UMAP-1", y = "UMAP-2", title = "细胞亚群 UMAP 降维图") +
+  scale_color_manual(
+    name   = "Cell Type",
+    labels = c("B_cell"  = "B Cell",
+               "T_cell"  = "T Cell",
+               "Mono"    = "Monocyte"),
+    values = c("B_cell"  = "#0072B2",   # 色盲安全蓝
+               "T_cell"  = "#009E73",   # 色盲安全绿
+               "Mono"    = "#E69F00")   # 色盲安全橙
+  ) +
+  theme_pubclean() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5)) +
+  guides(color = guide_legend(keywidth = 1, keyheight = 1.5, ncol = 3,
+                              override.aes = list(size = 6)))
 ```
 
-绘图时优先使用 `theme_pubclean()` + `patchwork` 布局，并在 legend 位置与标题对齐上保持一致性。
+### 专业配色方案
+
+以下配色方案经过色盲友好性和出版质量验证，可在 `scale_color_manual()` 中直接使用：
+
+```r
+# === 推荐的色盲友好调色板 ===
+
+# 1. Discrete Friendly Long 2 (20 种颜色，强烈推荐)
+colors_discrete_friendly_long_2 <- c(
+  "#241EF5","#5823F6","#5856d6","#CC79A7",
+  "#fe65b3","#f6bcfd","#ffd2d8","#0072B2",
+  "#007aff","#56B4E9","#009E73","#90e4cd",
+  "#4cd964","#a5da6b","#F5C710","#E69F00",
+  "#D55E00","#ff3b30","#DD227D"
+)
+
+# 2. Discrete Friendly Long (7 种核心颜色)
+color_discrete_friendly  <- c("#0072B2","#56B4E9","#009E73","#F5C710","#E69F00","#D55E00")
+
+# 3. IBM 配色（适合 5 个分组）
+colors_discrete_ibm <- c("#5B8DFE","#725DEE","#DD227D","#FE5F00","#FFB109")
+
+# 4. Candy 配色（活泼风格，适合 5 个分组）
+colors_discrete_candy <- c("#9b5de5","#f15bb5","#fee440","#00bbf9","#00f5d4")
+
+# 5. Seaside 配色（海洋风格，适合 5 个分组）
+colors_discrete_seaside <- c("#8ecae6","#219ebc","#023047","#ffb703","#fb8500")
+
+# 6. Apple 配色（类似 iOS 风格，适合 7 个分组）
+colors_discrete_apple <- c("#ff3b30","#ff9500","#ffcc00","#4cd964","#5ac8fa","#007aff","#5856d6")
+
+# === 连续色阶调色板 ===
+
+# Blue-Pink-Yellow 连续色阶（适合表达量渐变）
+colors_continuous_bluepinkyellow <- c(
+  "#00034D","#000F9F","#001CEF","#241EF5","#5823F6",
+  "#A033E0","#E85AB1","#F1907C","#F4AF63","#FCE552","#FFFB6D"
+)
+
+# === 特殊用途调色板 ===
+
+# 4 色组合（适合关键对比）
+color_1 <- c("#ECA669","#E06681","#8087E2","#E2D269")
+color_2 <- c("#4DACD6","#4FAE62","#F6C54D","#E37D46","#C02D45")
+```
+
+### 使用建议
+
+1. **分组数 ≤ 7**: 使用 `colors_discrete_friendly_long` 或 `color_discrete_friendly`
+2. **分组数 7-20**: 使用 `colors_discrete_friendly_long_2`（最推荐）
+3. **分组数 5**: 使用 `colors_discrete_ibm` 或 `colors_discrete_candy`
+4. **表达量热图**: 使用 `colors_continuous_bluepinkyellow`
+5. **关键基因对比**: 使用 `color_1` 或 `color_2`
+
+### 绘图最佳实践
+
+#### 统一的样式设置规范
+
+所有 `scCustomize` 函数的可视化都应遵循以下样式设置：
+
+```r
+# === 通用样式模板 ===
+
+# 1. 基础样式（所有图都适用）
+theme_pubclean() +
+  theme(
+    plot.title = element_text(hjust = 0.5),      # 标题水平居中
+    legend.position = "bottom",                   # 图例在底部
+    axis.text.x = element_text(angle = 45, hjust = 1)  # X 轴标签倾斜 45 度
+  )
+
+# 2. 图例配置（根据分组数调整）
+guides(
+  color = guide_legend(
+    keywidth = 1, 
+    keyheight = 1.5, 
+    ncol = min(3, n_groups),           # 最多 3 列，根据分组数自动调整
+    override.aes = list(size = 6)      # 图例点大小
+  ),
+  fill = guide_legend(
+    keywidth = 1, 
+    keyheight = 1.5, 
+    ncol = min(3, n_groups),
+    override.aes = list(size = 6)
+  )
+)
+```
+
+#### VlnPlot_scCustom 示例（小提琴图）
+
+```r
+# ---- 基因表达小提琴图 ----
+p1 <- VlnPlot_scCustom(
+  obj = seu_malignant,
+  pt.size = 0,                        # 不显示单个点
+  group.by = "cell_type",
+  adjust = 1.2,                       # 调整小提琴宽度
+  features = "Dediff_Index"
+) +
+  labs(y = "Dedifferentiation Index \n (−epithelial score)") +
+  scale_fill_manual(values = colors_discrete_friendly_long_2) +
+  theme_pubclean() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom"
+  ) +
+  ggtitle("Dedifferentiation by Malignant Subtype (Resistant)")
+```
+
+#### Plot_Density_Custom 示例（基因表达密度图）
+
+```r
+# ---- 基因表达密度图 ----
+valid_genes <- c("Gene1", "Gene2", "Gene3")  # 要展示的基因列表
+ncol_use <- length(valid_genes)              # 根据基因数决定列数
+
+p <- Plot_Density_Custom(
+  seurat_object = seu_malignant_new_ann,
+  reduction     = "umap.harmony",
+  features      = valid_genes
+) +
+  plot_layout(ncol = ncol_use) &             # 使用 & 继承父图层样式
+  labs(x = "UMAP-1", y = "UMAP-2") &
+  theme_pubclean() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"                 # 密度图图例可在右侧
+  )
+```
+
+#### DimPlot_scCustom 示例（降维图）
+
+```r
+# ---- 单细胞降维图 ----
+DimPlot_scCustom(obj, reduction = "umap.harmony", group.by = "cell_type") +
+  labs(x = "UMAP-1", y = "UMAP-2", title = "细胞亚群 UMAP 降维图") +
+  scale_color_manual(
+    name   = "Cell Type",
+    labels = c("B_cell"  = "B Cell",
+               "T_cell"  = "T Cell",
+               "Mono"    = "Monocyte"),
+    values = c("B_cell"  = "#0072B2",   # 色盲安全蓝
+               "T_cell"  = "#009E73",   # 色盲安全绿
+               "Mono"    = "#E69F00")   # 色盲安全橙
+  ) +
+  theme_pubclean() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  guides(color = guide_legend(
+    keywidth = 1, 
+    keyheight = 1.5, 
+    ncol = 3,
+    override.aes = list(size = 6)
+  ))
+```
+
+#### FeaturePlot_scCustom 示例（特征图）
+
+```r
+# ---- 基因表达特征图 ----
+FeaturePlot_scCustom(
+  obj = seu_data,
+  features = c("CD3D", "CD4", "CD8A"),
+  cols = c("lightgrey", "red"),
+  order = TRUE,
+  label = TRUE,
+  repel = TRUE
+) +
+  scale_color_gradientn(colors = colors_continuous_bluepinkyellow) +
+  theme_pubclean() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom"
+  )
+```
+
+#### DotPlot_scCustom 示例（点图）
+
+```r
+# ---- 标记基因点图 ----
+DotPlot_scCustom(
+  object = seu_data,
+  markers = cell_markers,
+  group.by = "group",
+  dotsize = 1.5,
+  col.min = 0,
+  cex = 10
+) +
+  scale_fill_gradientn(colors = colors_continuous_bluepinkyellow) +
+  theme_pubclean() +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+### 绘图最佳实践总结
+
+1. **优先使用 scCustomize 专用函数**
+   - `DimPlot_scCustom` - 降维图（UMAP/t-SNE）
+   - `VlnPlot_scCustom` - 小提琴图
+   - `FeaturePlot_scCustom` - 特征表达图
+   - `Plot_Density_Custom` - 密度图
+   - `DotPlot_scCustom` - 点图
+   - `Heatmap_scCustom` - 热图
+
+2. **统一样式设置**
+   - 所有图都使用 `theme_pubclean()` 作为基础
+   - 标题水平居中：`plot.title = element_text(hjust = 0.5)`
+   - 图例位置：大多数情况用 `"bottom"`，密度图可用 `"right"`
+   - X 轴标签倾斜：`axis.text.x = element_text(angle = 45, hjust = 1)`
+
+3. **配色方案选择**
+   - 离散变量：使用 `scale_color_manual()` 或 `scale_fill_manual()`
+   - 连续变量：使用 `scale_color_gradientn()` 或 `scale_fill_gradientn()`
+   - 推荐调色板见下方"专业配色方案"章节
+
+4. **多图拼接**
+   - 使用 `patchwork` 包保持风格一致
+   - 使用 `&` 操作符继承父图层样式
+   - 确保所有子图的主题设置一致
+
+5. **图例优化**
+   - 根据分组数自动调整列数：`ncol = min(3, n_groups)`
+   - 增加图例项大小：`override.aes = list(size = 6)`
+   - 调整图例键尺寸：`keywidth = 1, keyheight = 1.5`
 
 ## 工具使用协议
 

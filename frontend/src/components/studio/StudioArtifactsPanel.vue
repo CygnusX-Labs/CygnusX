@@ -53,9 +53,11 @@ const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'])
 const PDF_EXTS = new Set(['pdf'])
 const TABLE_EXTS = new Set(['csv', 'tsv'])
 const MARKDOWN_EXTS = new Set(['md', 'markdown'])
+// HTML 报告（如 plotly 交互图表）：与左侧工作区预览一致，sandbox 隔离渲染
+const HTML_EXTS = new Set(['html', 'htm'])
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
-type PreviewKind = 'image' | 'pdf' | 'table' | 'markdown' | 'unsupported'
+type PreviewKind = 'image' | 'pdf' | 'html' | 'table' | 'markdown' | 'unsupported'
 type PreviewRow = Record<string, string | number>
 
 const artifacts = ref<StudioArtifact[]>([])
@@ -221,6 +223,12 @@ async function openPreview(artifact: StudioArtifact) {
 
     if (PDF_EXTS.has(ext)) {
       previewKind.value = 'pdf'
+      previewUrl.value = await studioApi.fetchArtifactBlob(props.sessionId, artifact.path)
+      return
+    }
+
+    if (HTML_EXTS.has(ext)) {
+      previewKind.value = 'html'
       previewUrl.value = await studioApi.fetchArtifactBlob(props.sessionId, artifact.path)
       return
     }
@@ -412,7 +420,7 @@ function formatTime(mtime: number): string {
       :title="previewName"
       style="width: min(1000px, calc(100vw - 32px))"
     >
-      <div v-if="!previewLoading && !previewError && (previewKind === 'image' || previewKind === 'pdf')" class="preview-toolbar">
+      <div v-if="!previewLoading && !previewError && (previewKind === 'image' || previewKind === 'pdf' || previewKind === 'html')" class="preview-toolbar">
         <template v-if="previewKind === 'image'">
           <n-button text size="tiny" aria-label="缩小" :disabled="previewZoom <= ZOOM_MIN" @click="zoomPreviewBy(-ZOOM_STEP)">
             <n-icon size="14"><RemoveOutline /></n-icon>
@@ -452,6 +460,16 @@ function formatTime(mtime: number): string {
           :title="`${previewName} PDF 预览`"
           class="preview-pdf"
         />
+        <div v-else-if="previewKind === 'html' && previewUrl" class="html-preview-wrap">
+          <iframe
+            :src="previewUrl"
+            :title="`${previewName} HTML 预览`"
+            sandbox="allow-scripts"
+            referrerpolicy="no-referrer"
+            class="preview-html"
+          />
+          <small class="html-preview-hint">沙盒内渲染，页面脚本可用但无法访问登录态；引用的外部本地资源可能无法加载</small>
+        </div>
         <div v-else-if="previewKind === 'table'" class="table-preview">
           <n-data-table
             v-if="previewRows.length"
@@ -654,6 +672,24 @@ function formatTime(mtime: number): string {
   border: 0;
   border-radius: 8px;
   background: var(--chat-surface, #fff);
+}
+.html-preview-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.preview-html {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--chat-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--chat-surface, #fff);
+}
+.html-preview-hint {
+  color: var(--chat-text-muted, #999);
+  font-size: 11px;
+  text-align: center;
 }
 .table-preview,
 .markdown-preview {

@@ -15,20 +15,28 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         sample_sheet: list[dict] | None = None,
         comparisons: list[dict] | None = None,
         user_confirmed: bool = False,
+    ) -> dict:async def cygnusx_submit_analysis(
+        flow_id: str,
+        name: str = "",
+        parameters: dict | None = None,
+        sample_sheet: list[dict] | None = None,
+        comparisons: list[dict] | None = None,
+        user_confirmed: bool = False,
     ) -> dict:
-        """提交分析任务到平台。需要 user_confirmed=True 确认执行。
+"""提交分析任务到平台。需要 user_confirmed=True 确认执行。
 
-        复杂流程（如 RNA-seq/ATAC-seq 有专用参数预检）可改用
-        rna_seq_prepare / atac_seq_prepare 先校验再经 rna_seq_submit 提交。
+:param flow_id: Flow ID
+:param name: Task name
+:param parameters: Params
+:param sample_sheet: Sample sheet
+:param comparisons: Comparisons
+:param user_confirmed: Confirmed
+:return: JSON format result
 
-        Args:
-            flow_id: 流程 ID (如 rna_seq, atac_seq)
-            name: 任务名称
-            parameters: 流程参数字典
-            sample_sheet: 样本表 (list of dicts, 每个 dict 对应一个样本)
-            comparisons: 比较组 (如 [{"name": "vs", "control": "ctrl", "treatment": "treat"}])
-            user_confirmed: 设为 True 确认提交
-        """
+示例:
+    await cygnusx_submit_analysis("flow", "task", {}, [], [], True)
+    # Submit analysis
+"""
         if not user_confirmed:
             return {
                 "success": True,
@@ -84,8 +92,22 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         flow_id: str,
         parameters: dict | None = None,
         sample_sheet: list[dict] | None = None,
+    ) -> dict:async def cygnusx_preview_analysis(
+        flow_id: str,
+        parameters: dict | None = None,
+        sample_sheet: list[dict] | None = None,
     ) -> dict:
-        """预览/验证分析参数（dry-run）：检查参数是否合法，不实际提交。"""
+"""预览/验证分析参数（dry-run）：检查参数是否合法，不实际提交。"""
+
+:param flow_id: Flow ID
+:param parameters: Params
+:param sample_sheet: Sample sheet
+:return: JSON format result
+
+示例:
+    await cygnusx_preview_analysis("flow", {}, [])
+    # Validate params
+"""
         try:
             flow = await api.get_flow(flow_id)
             flow_params = flow.get("parameters", [])

@@ -51,6 +51,7 @@ import {
   loadTokenPricing,
   summarizeUsage,
   formatTokensInM,
+  resolvePricing,
 } from '@/utils/tokenCost'
 
 const route = useRoute()
@@ -470,12 +471,18 @@ const session = computed(() => store.currentSession)
 const agent = computed(() => (session.value ? store.getAgent(session.value.agent_id) : null))
 
 // ---------- 会话 token 用量 / 费用 ----------
-// 单价在 设置 → 偏好设置 配置（localStorage）；设置页保存后广播
+// 单价取模型级配置（AI 配置中心，随 /chat/models 下发），未配置回退到
+// 设置 → 偏好设置 的全局单价（localStorage）；设置页保存后广播
 // 'token-pricing-changed'，此处热更新，无需刷新页面
 const tokenPricing = ref(loadTokenPricing())
-const sessionUsage = computed(() =>
-  session.value ? summarizeUsage(session.value.messages, tokenPricing.value) : null,
-)
+const sessionUsage = computed(() => {
+  if (!session.value) return null
+  const model = store.availableModels.find((m) => m.id === session.value?.model_id)
+  return summarizeUsage(
+    session.value.messages,
+    resolvePricing(tokenPricing.value, { input: model?.input_price, output: model?.output_price }),
+  )
+})
 function refreshTokenPricing() {
   tokenPricing.value = loadTokenPricing()
 }
@@ -1043,7 +1050,7 @@ function formatSessionTime(iso: string): string {
               <span class="usage-cost">¥{{ sessionUsage.cost < 0.01 ? sessionUsage.cost.toFixed(4) : sessionUsage.cost.toFixed(2) }}</span>
             </span>
           </template>
-          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens，输出 {{ sessionUsage.output.toLocaleString() }} tokens；按设置页单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
+          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens，输出 {{ sessionUsage.output.toLocaleString() }} tokens；按模型单价（AI 配置中心）或设置页全局单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
         </n-tooltip>
         <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
         <!-- 仅 studio 会话展示权限切换器：普通聊天会话后端一律 404，避免"切换失败"死按钮 -->

@@ -611,8 +611,8 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
               </div>
               <div class="pref-item">
                 <div class="pref-info">
-                  <div class="pref-label">AI 用量单价</div>
-                  <div class="pref-desc">按每 M（百万）tokens 计价（元），工作台顶栏会按此实时估算当前会话费用</div>
+                  <div class="pref-label">AI 用量单价（全局兜底）</div>
+                  <div class="pref-desc">按每 M（百万）tokens 计价（元）；模型在 AI 配置中心配置了单价时优先使用模型单价，此处作为未配置模型的兜底价</div>
                 </div>
                 <div class="pricing-inputs">
                   <span class="pricing-field">

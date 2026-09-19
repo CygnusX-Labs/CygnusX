@@ -9,7 +9,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_list_flows(category: str = "") -> dict:
-        """列出平台可用的分析流程。可按类别过滤: rna_seq/atac_seq/scrna 等。"""
+        """列出平台可用的分析流程。可按类别过滤：rna_seq/atac_seq/scrna 等。
+
+        :param category: 流程类别过滤（可选）："rna_seq"/"atac_seq"/"scrna"等，留空返回全部
+        :return: JSON 格式结果，含 success、summary、data、next_steps
+
+        示例:
+            await cygnusx_list_flows("scrna")
+            # 返回所有单细胞 RNA 分析流程
+        """
         try:
             data = await api.list_flows(category=category or None)
             flows = data.get("flows", data) if isinstance(data, dict) else data
@@ -30,7 +38,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_get_flow_detail(flow_id: str) -> dict:
-        """获取分析流程详情：描述、参数列表、样本表定义、执行配置。"""
+        """获取分析流程详情：描述、参数列表、样本表定义、执行配置。
+
+        :param flow_id: 流程 ID（如："scrna_v2"）
+        :return: JSON 格式流程详情，含 meta、parameters、sample_sheet
+
+        示例:
+            await cygnusx_get_flow_detail("scrna_v2")
+            # 返回完整流程信息
+        """
         try:
             data = await api.get_flow(flow_id)
             meta = data.get("meta", {})
@@ -57,7 +73,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_get_flow_parameters(flow_id: str) -> dict:
-        """获取流程的参数 JSON Schema，用于了解每个参数的类型、默认值和约束。"""
+        """获取流程的参数 JSON Schema，用于了解每个参数的类型、默认值和约束。
+
+        :param flow_id: 流程 ID（如："scrna_v2"）
+        :return: JSON 格式参数 schema，含 properties 和 required 列表
+
+        示例:
+            await cygnusx_get_flow_parameters("scrna_v2")
+            # 返回参数定义列表
+        """
         try:
             data = await api.get_flow_schema(flow_id)
             props = data.get("properties", {})

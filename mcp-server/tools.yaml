@@ -180,3 +180,92 @@ groups:
       - name: check_workspace_data
         description: "检查当前 API Key 所属用户工作区内的数据完整性"
         read_only: true
+
+  - id: seqout
+    module: tools.seqout
+    description: "公共数据库检索 — 完整覆盖 seqout.org API（搜索/项目/样本/统计/下载等）"
+    tools:
+      # Search Tools
+      - name: seqout_search
+        description: "在 GEO/SRA/ENA/GSA 中搜索组学项目"
+        read_only: true
+      - name: seqout_search_geo
+        description: "仅搜索 GEO 数据库"
+        read_only: true
+      - name: seqout_search_sra
+        description: "仅搜索 SRA 数据库"
+        read_only: true
+      - name: seqout_search_structured
+        description: "使用元数据过滤器结构化搜索"
+        read_only: true
+      # Project Tools
+      - name: seqout_get_project_detail
+        description: "获取项目详情（实验设计、平台、文献）"
+        read_only: true
+      - name: seqout_get_project_metadata
+        description: "获取项目标题和描述"
+        read_only: true
+      - name: seqout_get_project_citation
+        description: "获取项目引用文献 (BibTeX)"
+        read_only: true
+      - name: seqout_get_project_enriched
+        description: "获取 AI 增强的样本元数据"
+        read_only: true
+      # Experiment & Sample Tools
+      - name: seqout_get_experiments
+        description: "列出研究中的所有实验"
+        read_only: true
+      - name: seqout_get_runs
+        description: "列出 FASTQ 下载链接"
+        read_only: true
+      - name: seqout_get_run_download
+        description: "获取单个运行的下载链接"
+        read_only: true
+      - name: seqout_get_sample_metadata
+        description: "获取样本元数据"
+        read_only: true
+      - name: seqout_get_sample_detail
+        description: "获取完整的样本详细信息"
+        read_only: true
+      - name: seqout_get_sample_manifest
+        description: "获取数据集的样本清单"
+        read_only: true
+      # Resolution Tools
+      - name: seqout_resolve_accession
+        description: "反查样本归属的项目编号"
+        read_only: true
+      - name: seqout_resolve_prj
+        description: "将 BioProject 解析到研究级别"
+        read_only: true
+      # Ontology & Statistics Tools
+      - name: seqout_get_ontology_term
+        description: "查询本体论术语信息"
+        read_only: true
+      - name: seqout_get_organisms
+        description: "列出所有支持的物种"
+        read_only: true
+      - name: seqout_get_common_name
+        description: "获取物种的常用名称"
+        read_only: true
+      - name: seqout_beacon_info
+        description: "获取 Beacon 元数据"
+        read_only: true
+      - name: seqout_beacon_runs
+        description: "浏览测序运行记录"
+        read_only: true
+      - name: seqout_get_stats_growth
+        description: "获取数据库增长统计"
+        read_only: true
+      - name: seqout_get_organism_totals
+        description: "获取每个物种的实验总数"
+        read_only: true
+      - name: seqout_get_platform_totals
+        description: "获取平台实验总数或过滤选项"
+        read_only: true
+      # Download Tools
+      - name: seqout_get_download_links
+        description: "获取 TSV 格式的下载链接"
+        read_only: true
+      - name: seqout_get_metadata_csv
+        description: "下载合并的元数据 CSV"
+        read_only: true

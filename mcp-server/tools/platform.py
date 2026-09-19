@@ -9,7 +9,14 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_get_user_info() -> dict:
-        """获取当前用户信息和存储配额。"""
+        """获取当前用户信息与存储配额。
+
+        :return: JSON 格式用户信息，含 user_id、storage_quota、storage_used
+
+        示例:
+            await cygnusx_get_user_info()
+            # 返回用户信息和存储使用情况
+        """
         try:
             user = await api.get_me()
             quota = await api.get_quota()
@@ -26,7 +33,14 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_get_platform_status() -> dict:
-        """获取平台状态概览：任务统计、可用流程、存储情况。"""
+        """获取平台概览：任务统计、可用流程数量、存储总量。
+
+        :return: JSON 格式平台状态，含 task_stats、pipeline_count、storage_total
+
+        示例:
+            await cygnusx_get_platform_status()
+            # 返回平台运行状态摘要
+        """
         try:
             tasks = await api.list_tasks()
             flows = await api.list_flows()

@@ -164,6 +164,9 @@ export interface AvailableModel {
   is_default: boolean
   temperature?: number
   max_tokens?: number
+  /** 输入/输出单价（元 / M tokens），null = 未配置 */
+  input_price?: number | null
+  output_price?: number | null
 }
 
 export const useAgentHubStore = defineStore('agentHub', () => {
@@ -1001,6 +1004,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         is_default: m.is_default,
         temperature: m.temperature,
         max_tokens: m.max_tokens,
+        input_price: m.input_price ?? null,
+        output_price: m.output_price ?? null,
       }))
     } catch (e) {
       console.error('加载模型列表失败:', e)

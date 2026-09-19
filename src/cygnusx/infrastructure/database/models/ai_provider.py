@@ -29,6 +29,9 @@ class AIProviderConfigModel(Base, TimestampMixin):
     max_tokens: Mapped[int] = mapped_column(Integer, default=2048, nullable=False)
     top_p: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     timeout: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    # 输入/输出单价（元 / M tokens），用于工作台会话费用估算；None = 未配置
+    input_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    output_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     extra_params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)

@@ -25,6 +25,9 @@ class PipelinePrepareRequest(CygnusXBaseSchema):
 
 class PipelineSubmitRequest(CygnusXBaseSchema):
     prepared_params: dict[str, Any]
+    # 外部 MCP 通道的人类确认凭证（CLI 侧 user_confirmed 确认后由 mcp-server 置 True）。
+    # 为 True 时平台允许一步消费 PENDING 确认记录；否则要求记录已被人类点卡置 APPROVED。
+    user_confirmed: bool = False
 
 
 class PipelineResultsRequest(CygnusXBaseSchema):

@@ -811,6 +811,8 @@ async def list_models(db: DbSession) -> list[dict]:
             "is_default": c.is_default,
             "temperature": c.temperature,
             "max_tokens": c.max_tokens,
+            "input_price": c.input_price,
+            "output_price": c.output_price,
         }
         for c in configs
     ]

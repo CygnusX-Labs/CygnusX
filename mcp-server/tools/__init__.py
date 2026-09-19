@@ -23,6 +23,7 @@ _GROUP_REGISTRY: dict[str, str] = {
     "sandbox": "tools.sandbox",
     "platform": "tools.platform",
     "pipelines": "tools.pipelines",
+    "seqout": "tools.seqout",
 }
 
 _TOOLS_YAML = Path(__file__).resolve().parent.parent / "tools.yaml"

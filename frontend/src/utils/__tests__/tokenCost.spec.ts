@@ -5,6 +5,7 @@ import {
   DEFAULT_TOKEN_PRICING,
   formatTokensInM,
   loadTokenPricing,
+  resolvePricing,
   saveTokenPricing,
   summarizeUsage,
 } from '../tokenCost'
@@ -44,5 +45,16 @@ describe('tokenCost', () => {
     expect(usage.total).toBe(1_800_000)
     // 1.5 * 2 + 0.3 * 8 = 5.4
     expect(usage.cost).toBeCloseTo(5.4)
+  })
+
+  it('resolves model pricing over global fallback per field', () => {
+    const globalPricing = { inputPerM: 1, outputPerM: 2 }
+    // 模型全配置：完全覆盖
+    expect(resolvePricing(globalPricing, { input: 4, output: 12 })).toEqual({ inputPerM: 4, outputPerM: 12 })
+    // 部分配置：缺省字段回退全局
+    expect(resolvePricing(globalPricing, { input: 4, output: null })).toEqual({ inputPerM: 4, outputPerM: 2 })
+    // 未配置：全局兜底
+    expect(resolvePricing(globalPricing, null)).toEqual(globalPricing)
+    expect(resolvePricing(globalPricing, { input: null, output: undefined })).toEqual(globalPricing)
   })
 })

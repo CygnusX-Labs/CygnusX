@@ -10,7 +10,16 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def list_workspace_files(path: str = "", pattern: str = "") -> dict:
-        """列出当前用户工作区目录的文件和文件夹，返回 file_id、类型、大小和修改时间。"""
+        """列出当前用户工作区目录的文件和文件夹，返回 file_id、类型、大小和修改时间。
+
+:param path: 目录路径（可选，默认根目录）
+:param pattern: 文件名模式过滤器（可选，如:'*.txt'）
+:return: JSON 格式的文件列表，包含 file_id、type、size、mtime
+
+示例:
+    await list_workspace_files("/data", "*.fastq")
+    # 返回/data 目录下所有 fastq 文件
+"""
         try:
             data = await api.list_workspace_files(path=path or None, pattern=pattern or None)
             return {
@@ -23,7 +32,16 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def search_workspace_files(query: str, limit: int = 50) -> dict:
-        """递归按文件名模糊搜索当前用户工作区文件。"""
+        """递归按文件名模糊搜索当前用户工作区文件。
+
+:param query: 搜索关键词
+:param limit: 最多返回结果数，默认 50
+:return: JSON 格式的搜索结果，包含 items 列表
+
+示例:
+    await search_workspace_files("sample_01", limit=20)
+    # 返回包含 sample_01 的文件
+"""
         try:
             data = await api.search_workspace_files(query=query, limit=limit)
             items = data.get("items", []) if isinstance(data, dict) else []
@@ -42,7 +60,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def cygnusx_list_files(directory: str = "") -> dict:
-        """列出用户文件。可按目录过滤。"""
+        """列出用户文件，可按目录过滤。
+
+:param directory: 目录路径（可选）
+:return: JSON 格式的文件列表
+
+示例:
+    await cygnusx_list_files("/workspace/project1")
+    # 返回指定目录下的文件列表
+"""
         try:
             data = await api.list_files(directory=directory or None)
             files = data.get("files", data) if isinstance(data, dict) else data
@@ -60,8 +86,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"获取文件列表失败: {e.detail}"}
 
     @mcp.tool()
-    async def cygnusx_get_file_tree() -> dict:
-        """获取用户完整文件树（按来源分组：upload/download/pipeline 等）。"""
+    async def cygnusx_get_file_tree() -> dict:async def cygnusx_get_file_tree() -> dict:
+"""获取用户完整文件树（按来源分组：upload/download/pipeline 等）。"""
+
+:return: JSON format result
+
+示例:
+    await cygnusx_get_file_tree()
+    # Return complete file tree
+"""
         try:
             data = await api.get_file_tree()
             groups = list(data.keys()) if isinstance(data, dict) else []
@@ -74,8 +107,15 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"获取文件树失败: {e.detail}"}
 
     @mcp.tool()
-    async def cygnusx_list_directories() -> dict:
-        """列出用户的所有目录。"""
+    async def cygnusx_list_directories() -> dict:async def cygnusx_list_directories() -> dict:
+"""列出用户的所有目录。"""
+
+:return: JSON format result
+
+示例:
+    await cygnusx_list_directories()
+    # Return all directories
+"""
         try:
             data = await api.list_directories()
             dirs = data if isinstance(data, list) else data.get("directories", [])
@@ -89,8 +129,16 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"获取目录失败: {e.detail}"}
 
     @mcp.tool()
-    async def cygnusx_get_task_outputs(task_id: str) -> dict:
-        """获取已完成任务的输出文件列表。任务结果绑定在用户目录下。"""
+    async def cygnusx_get_task_outputs(task_id: str) -> dict:async def cygnusx_get_task_outputs(task_id: str) -> dict:
+"""获取已完成任务的输出文件列表。任务结果绑定在用户目录下。"""
+
+:param task_id: Task ID
+:return: JSON format result
+
+示例:
+    await cygnusx_get_task_outputs("task_123")
+    # Return task outputs
+"""
         try:
             task = await api.get_task(task_id)
             work_dir = task.get("work_dir", "")
@@ -121,11 +169,17 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"获取任务输出失败: {e.detail}"}
 
     @mcp.tool()
-    async def cygnusx_read_file_content(file_path: str, max_lines: int = 50) -> dict:
-        """读取用户目录下文本文件的前 N 行。路径相对于用户数据根目录。
+    async def cygnusx_read_file_content(file_path: str, max_lines: int = 50) -> dict:async def cygnusx_read_file_content(file_path: str, max_lines: int = 50) -> dict:
+"""读取用户目录下文本文件的前 N 行。路径相对于用户数据根目录。
 
-        例如: tasks/{task_id}/work/rna_seq/results/deseq2/all_degs.csv
-        """
+:param file_path: File path
+:param max_lines: Max lines
+:return: JSON format result
+
+示例:
+    await cygnusx_read_file_content("/path.txt", 50)
+    # Return file content
+"""
         max_lines = max(1, min(max_lines, settings.max_file_preview_lines))
         try:
             data = await api.preview_file(file_path, max_lines=max_lines)

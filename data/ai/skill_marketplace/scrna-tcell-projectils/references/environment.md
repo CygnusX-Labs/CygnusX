@@ -27,15 +27,10 @@
 > （`remotes::install_github`）均不可达，上表 conda 通道是唯一现场安装路径；
 > ProjecTILs/scCustomize 未预装时本技能无法运行，应如实告知用户。
 
-## 参考数据（不进技能包）
+## 参考数据（不进技能包，管理员预置）
 
-- ProjecTILs TIL 参考 atlas：默认由 `ProjecTILs::load.reference.map()` **在线加载**（需网络）。
-- 无网络沙盒：在有网环境执行以下命令预下载，产物放共享数据卷，运行时经 `--ref` 传入：
-
-```r
-ref <- ProjecTILs::load.reference.map()
-saveRDS(ref, "projectils_ref.rds")
-```
+- ProjecTILs TIL 参考 atlas rds 由平台管理员按 `provisioning.md` 预置到共享数据卷，沙盒内路径约定 `ref/ProjecTILs/projectils_ref.rds`，运行时经 `--ref` 传入；
+- 未传 `--ref` 时脚本回退为 `ProjecTILs::load.reference.map()` **在线加载**（需网络），平台沙盒无外网必失败；运行时模型只上报缺失，不自行下载。
 
 ## 资源建议
 

@@ -47,6 +47,17 @@ export interface SessionUsage {
   cost: number
 }
 
+/** 模型级单价（AI 配置中心配置）覆盖全局单价；未配置字段回退到全局值 */
+export function resolvePricing(
+  globalPricing: TokenPricing,
+  modelPrice?: { input?: number | null; output?: number | null } | null,
+): TokenPricing {
+  return {
+    inputPerM: modelPrice?.input ?? globalPricing.inputPerM,
+    outputPerM: modelPrice?.output ?? globalPricing.outputPerM,
+  }
+}
+
 export interface HasTokens {
   tokens?: { input?: number; output?: number; total?: number }
 }

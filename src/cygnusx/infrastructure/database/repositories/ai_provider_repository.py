@@ -93,6 +93,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             max_tokens=model.max_tokens,
             top_p=model.top_p,
             timeout=model.timeout,
+            input_price=model.input_price,
+            output_price=model.output_price,
             is_active=model.is_active,
             is_default=model.is_default,
             extra_params=model.extra_params or {},
@@ -113,6 +115,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             max_tokens=config.max_tokens,
             top_p=config.top_p,
             timeout=config.timeout,
+            input_price=config.input_price,
+            output_price=config.output_price,
             is_active=config.is_active,
             is_default=config.is_default,
             extra_params=config.extra_params,
@@ -128,6 +132,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
         model.max_tokens = config.max_tokens
         model.top_p = config.top_p
         model.timeout = config.timeout
+        model.input_price = config.input_price
+        model.output_price = config.output_price
         model.is_active = config.is_active
         model.is_default = config.is_default
         model.extra_params = config.extra_params

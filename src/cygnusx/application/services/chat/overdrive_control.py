@@ -827,6 +827,7 @@ _OVERDRIVE_INPUT_MARKERS = (
     "已上传", "上传了", "附件", "工作区", "文件", "目录", "路径", "样本表", "元数据",
     "fastq", "fastq.gz", "fq.gz", "fasta", "矩阵", "count", "表达量", "vcf", "bam",
     "h5ad", "treefile", "newick", "结果",
+    ".qs", ".rds", ".seurat",  # 单细胞对象格式：Seurat QuickSave, RDS, Seurat 对象
 )
 
 
