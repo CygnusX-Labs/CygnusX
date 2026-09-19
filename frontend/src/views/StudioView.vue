@@ -16,6 +16,7 @@ import {
   PrintOutline, CloseCircleOutline, ConstructOutline, ChevronBackOutline, ChevronForwardOutline,
   AnalyticsOutline, ChatbubbleEllipsesOutline, CodeSlashOutline, DocumentTextOutline,
   FlaskOutline, GridOutline, PowerOutline, TimeOutline, TrashOutline, SettingsOutline,
+  SpeedometerOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import AskUserModal from '@/components/ai-chat/AskUserModal.vue'
@@ -46,6 +47,11 @@ import {
   inferStudioTaskStatus,
   parseTaskUnderstanding,
 } from '@/utils/studioPresentation'
+import {
+  loadTokenPricing,
+  summarizeUsage,
+  formatTokensInM,
+} from '@/utils/tokenCost'
 
 const route = useRoute()
 const router = useRouter()
@@ -462,6 +468,24 @@ watch(
 // ---------- 顶栏信息 ----------
 const session = computed(() => store.currentSession)
 const agent = computed(() => (session.value ? store.getAgent(session.value.agent_id) : null))
+
+// ---------- 会话 token 用量 / 费用 ----------
+// 单价在 设置 → 偏好设置 配置（localStorage）；设置页保存后广播
+// 'token-pricing-changed'，此处热更新，无需刷新页面
+const tokenPricing = ref(loadTokenPricing())
+const sessionUsage = computed(() =>
+  session.value ? summarizeUsage(session.value.messages, tokenPricing.value) : null,
+)
+function refreshTokenPricing() {
+  tokenPricing.value = loadTokenPricing()
+}
+window.addEventListener('token-pricing-changed', refreshTokenPricing)
+window.addEventListener('storage', refreshTokenPricing)
+onUnmounted(() => {
+  window.removeEventListener('token-pricing-changed', refreshTokenPricing)
+  window.removeEventListener('storage', refreshTokenPricing)
+})
+
 const overdriveEnabled = computed({
   get: () => Boolean(session.value?.overdrive),
   set: (value: boolean) => {
@@ -1010,6 +1034,17 @@ function formatSessionTime(iso: string): string {
         <n-tag v-else size="small" round :bordered="false" class="model-tag">{{ modelName }}</n-tag>
       </div>
       <div class="bar-right">
+        <n-tooltip v-if="sessionUsage && sessionUsage.total > 0" trigger="hover">
+          <template #trigger>
+            <span class="token-usage-chip">
+              <n-icon size="13"><SpeedometerOutline /></n-icon>
+              <span>↑{{ formatTokensInM(sessionUsage.input) }}</span>
+              <span>↓{{ formatTokensInM(sessionUsage.output) }}</span>
+              <span class="usage-cost">¥{{ sessionUsage.cost < 0.01 ? sessionUsage.cost.toFixed(4) : sessionUsage.cost.toFixed(2) }}</span>
+            </span>
+          </template>
+          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens，输出 {{ sessionUsage.output.toLocaleString() }} tokens；按设置页单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
+        </n-tooltip>
         <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
         <!-- 仅 studio 会话展示权限切换器：普通聊天会话后端一律 404，避免"切换失败"死按钮 -->
         <n-tooltip v-if="sessionId && store.currentSession?.mode === 'studio'" trigger="hover">
@@ -1445,6 +1480,25 @@ function formatSessionTime(iso: string): string {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+.token-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--studio-border, #e8e8f2);
+  border-radius: 999px;
+  background: var(--studio-primary-soft, #f0edff);
+  color: var(--studio-text-sub, #8a8aa3);
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+.token-usage-chip .usage-cost {
+  color: var(--studio-primary, #6c5ce7);
+  font-weight: 600;
 }
 .sandbox-light {
   font-size: 12px;
