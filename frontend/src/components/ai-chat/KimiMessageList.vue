@@ -205,6 +205,28 @@ watch(
   },
 )
 
+/**
+ * 末尾内容体量：流式 token 与工具执行输出（sandbox stdout 等）都是原地追加，
+ * messages.length 与 streamingContent 均不变，但列表持续变高。
+ * 汇总各消息 toolCalls[].output 与末尾消息正文体量，任何增长都驱动一次吸底。
+ * 只读取 length 字段，依赖精确、逐 chunk 重算开销可忽略。
+ */
+const tailVolume = computed(() => {
+  let volume = 0
+  const last = props.messages[props.messages.length - 1]
+  if (last) volume += (last.content?.length || 0) + (last.thought?.length || 0)
+  for (const message of props.messages) {
+    for (const tc of message.toolCalls || []) {
+      volume += tc.output?.length || 0
+    }
+  }
+  return volume
+})
+
+watch(tailVolume, () => {
+  nextTick(() => scrollToBottom())
+})
+
 watch(
   () => [props.streamingContent, props.streamingThought],
   () => {

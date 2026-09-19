@@ -218,7 +218,10 @@ async function handleAnswer(text: string) {
 <style scoped lang="scss">
 .pending-bar {
   flex-shrink: 0;
-  margin: 0 16px;
+  /* 与输入框、计划时间线同宽居中（受 --chat-content-max-width 约束） */
+  width: calc(100% - 32px);
+  max-width: var(--chat-content-max-width, 860px);
+  margin: 0 auto 8px;
   border: 1px solid rgba(240, 160, 32, 0.55);
   border-radius: 12px;
   background: var(--chat-surface, var(--bg-card, #fff));

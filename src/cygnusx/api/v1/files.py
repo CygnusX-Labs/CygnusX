@@ -101,6 +101,7 @@ _CHAT_UPLOAD_ALLOWED_SUFFIXES = frozenset(
         ".bed",
         ".h5ad",
         ".rds",
+        ".qs",
         ".gz",
         ".zip",
         ".tar",
@@ -138,6 +139,7 @@ _CHAT_UPLOAD_DATA_MANAGEMENT_SUFFIXES = frozenset(
         ".cram",
         ".h5ad",
         ".rds",
+        ".qs",
         ".zip",
     }
 )

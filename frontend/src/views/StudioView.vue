@@ -1662,7 +1662,8 @@ function formatSessionTime(iso: string): string {
 }
 .input-area {
   flex-shrink: 0;
-  padding: 12px 20px;
+  /* 左右 16px 与待处理条、分析计划卡的 calc(100% - 32px) 一致，三者任意栏宽都对齐 */
+  padding: 12px 16px;
   border-top: 1px solid var(--chat-border);
 }
 /* 与上方消息列同宽居中（消息列受 --chat-content-max-width 约束） */

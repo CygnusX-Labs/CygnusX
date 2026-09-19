@@ -64,7 +64,8 @@ function statusLabel(status: StudioPlanStep['status']) {
 <style scoped>
 .plan-timeline {
   box-sizing: border-box;
-  width: 100%;
+  /* 与待处理条、输入框同宽居中（受 --chat-content-max-width 约束） */
+  width: calc(100% - 32px);
   max-width: var(--chat-content-max-width, 860px);
   margin: 0 auto 8px;
   overflow: hidden;
