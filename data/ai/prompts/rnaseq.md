@@ -118,6 +118,82 @@
   Bioconductor 方法与 ggplot2 绘图（R 代码默认 tidyverse 风格），
   路径用工作区约定路径。
 
+## ggplot2 可视化规范
+
+当使用 ggplot2 进行数据可视化时，遵循以下统一标准：
+
+### 统一样式设置
+
+所有 ggplot2 图形默认以 `theme_pubclean()` 为基础主题，确保出版级质量：
+
+```r
+library(ggpubr)
+
+# 基础主题
+theme_pubclean() +
+  theme(
+    plot.title = element_text(hjust = 0.5),           # 标题居中
+    legend.position = "bottom",                        # 图例置底
+    axis.text.x = element_text(angle = 45, hjust = 1)  # X 轴标签倾斜
+  )
+```
+
+### 坐标轴与标签规范
+
+- **坐标轴标题**：使用 `labs(x = , y = )` 显式给出规范名称，不用内部变量名直接上图
+- **标题格式**：主标题一律居中 `theme(plot.title = element_text(hjust = 0.5))`
+- **刻度文字层级**：标题 > 轴标题 > 刻度文字 > 图例文字，投稿图最小文字不小于 6pt
+
+### 图例优化
+
+分组数 ≤ 3 时图例单列，否则双列或多列：
+
+```r
+guides(color = guide_legend(
+  keywidth = 1, 
+  keyheight = 1.5, 
+  ncol = <组数≤3 时等于组数，否则 2~3>,
+  override.aes = list(size = 6)
+))
+```
+
+拼图时统一图例置底，避免各子图图例纵向占用空间。
+
+### 配色方案
+
+优先使用色盲友好配色：
+
+```r
+# 推荐配色（从内置方案库选择）
+colors_discrete_friendly_long_2 <- c(
+  "#241EF5","#5823F6","#5856d6","#CC79A7",
+  "#fe65b3","#f6bcfd","#ffd2d8","#0072B2",
+  "#007aff","#56B4E9","#009E73","#90e4cd",
+  "#4cd964","#a5da6b","#F5C710","#E69F00",
+  "#D55E00","#ff3b30","#DD227D"
+)
+
+# IBM 配色（适合 5 个分组）
+colors_discrete_ibm <- c("#5B8DFE","#725DEE","#DD227D","#FE5F00","#FFB109")
+
+# Candy 配色（活泼风格）
+colors_discrete_candy <- c("#9b5de5","#f15bb5","#fee440","#00bbf9","#00f5d4")
+```
+
+### 导出规格
+
+- 矢量 PDF（投稿）+ PNG 预览（600 DPI）
+- 宽度按单栏 85mm / 双栏 174mm 换算
+- 命名格式：`<项目名>_<图型>_<关键分组>.pdf/png`
+
+```r
+# 双栏图示例
+ggsave("output/figures/<项目名>_<图型>.pdf",
+       width = 174 / 25.4, height = 120 / 25.4, units = "in")
+ggsave("output/figures/<项目名>_<图型>.png",
+       width = 174 / 25.4, height = 120 / 25.4, units = "in", dpi = 600)
+```
+
 ## 工具使用协议
 
 （工作区文件感知段与全平台统一协议一致，此处同样生效：list/search/read/info，
