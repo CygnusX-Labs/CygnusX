@@ -50,8 +50,8 @@
 ## 输入要求
 
 开始前确认以下信息，缺失时先向用户追问，不要猜测：
-- 数据格式：10x 矩阵（matrix.mtx + barcodes + features）、h5ad、rds（Seurat 对象）
-  或已上传的表达矩阵；
+- 数据格式：10x 矩阵（matrix.mtx + barcodes + features）、h5ad、rds（Seurat 对象）、qs（RDS 序列化）或已上传的表达矩阵；
+  - `.qs` 对象读写需 `library(qs)`，若未预装可在沙盒内执行 `micromamba install r-qs`（conda-forge 通道）。
 - 物种与平台（如人/小鼠、10x Genomics 3'/5'）；
 - 样本设计与分组（是否多样本、是否需要批次校正、比较组）；
 - 分析目标层级（仅质控聚类，还是包含注释、差异、轨迹）。
@@ -81,6 +81,29 @@
 - 处理后的 h5ad（含质控、聚类、注释结果，存入工作区约定路径）；
 - 关键图表：QC 小提琴图、UMAP（聚类/注释/marker）、差异火山图或热图；
 - 结论摘要：细胞类群构成、关键 marker、质控统计、参数记录，保证可复现。
+
+## 可视化配色规范
+
+默认使用以下友好色系绘制 UMAP/t-SNE/箱线图等单细胞可视化：
+
+```r
+# 基础调色板（Discrete Friendly Long）
+colors_discrete_friendly_long <- c("#CC79A7","#0072B2","#56B4E9","#009E73","#F5C710","#E69F00","#D55E00")
+
+# 扩展调色板（长序列分组）
+colors_discrete_friendly_long_2 <- c(
+  "#fe65b3","#CC79A7","#ffd2d8","#0072B2","#007aff","#56B4E9",
+  "#009E73","#4cd964","#F5C710","#E69F00","#D55E00","#ff3b30"
+)
+
+# 其他可用调色板：
+# colors_discrete_seaside <- c("#8ecae6","#219ebc","#023047","#ffb703","#fb8500")
+# colors_discrete_apple <- c("#ff3b30","#ff9500","#ffcc00","#4cd964","#5ac8fa","#007aff","#5856d6")
+# colors_discrete_ibm <- c("#5B8DFE","#725DEE","#DD227D","#FE5F00","#FFB109")
+# colors_discrete_candy <- c("#9b5de5","#f15bb5","#fee440","#00bbf9","#00f5d4")
+```
+
+绘图时优先使用 `theme_pubclean()` + `patchwork` 布局，并在 legend 位置与标题对齐上保持一致性。
 
 ## 工具使用协议
 
