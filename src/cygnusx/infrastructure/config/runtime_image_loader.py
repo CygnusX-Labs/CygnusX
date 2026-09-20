@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -25,6 +25,8 @@ class RuntimeProfile(BaseModel):
     family: str
     isolation_class: str
     runtime_uid: int = Field(default=10001, ge=10000)
+    runtime_gid: int = Field(default=10001, ge=10000)
+    runtime_group: str = "cygnusx-sandbox"
     dockerfile: str
     extends: str | None = None
     executor_compatibility: set[Literal["studio", "toolbox"]] = Field(default_factory=set)
@@ -36,7 +38,9 @@ class RuntimeProfile(BaseModel):
     resources: RuntimeResources = Field(default_factory=RuntimeResources)
     network_policy: Literal["none", "whitelist"] = "none"
 
-    @field_validator("image", "family", "isolation_class", "dockerfile")
+    @field_validator(
+        "image", "family", "isolation_class", "dockerfile", "runtime_group"
+    )
     @classmethod
     def non_empty(cls, value: str) -> str:
         if not value.strip():
@@ -88,6 +92,16 @@ class RuntimeImageRegistryConfig(BaseModel):
         executor: Literal["studio", "toolbox"],
         preferred_profile: str | None = None,
     ) -> tuple[str, RuntimeProfile]:
+        """选择运行时画像。
+
+        ``preferred_profile`` 表示调用方已经明确指定了画像，必须严格校验能力和
+        executor，不得静默改选其它 profile。没有 preferred profile 时才走能力匹配，
+        并按最小满足集合选择；调用方负责决定这是不是用户显式的能力覆盖。
+
+        这里不负责读取 Agent YAML，也不应把 ``default_profile`` 当成每个 Agent 的
+        默认值。若要改变严格校验、能力匹配或兜底语义，先向用户询问，因为这会
+        影响 Studio、工具箱以及所有未固定 runtime_profile 的任务。
+        """
         if preferred_profile:
             if preferred_profile not in self.profiles:
                 raise KeyError(f"未知运行时 profile: {preferred_profile}")
@@ -186,3 +200,31 @@ runtime_image_registry = RuntimeImageRegistryManager()
 
 def get_runtime_images() -> RuntimeImageRegistryConfig:
     return runtime_image_registry.get_config()
+
+
+def resolve_studio_image(studio_config: Mapping[str, Any] | None) -> str | None:
+    """Resolve an Agent's declared Studio image without applying the global fallback.
+
+    ``features.studio.image`` is the value persisted by :mod:`agent_loader` and is
+    therefore preferred.  Older database rows may contain only
+    ``features.studio.runtime_profile``; resolving that profile here keeps those rows
+    on their Agent-specific image instead of silently sending them to
+    ``selection.default_profile`` (currently ``analysis-core``).
+
+    Returning ``None`` is intentional: it means the Agent has no Studio image
+    declaration and lets the caller decide whether a global default is appropriate.
+    This helper must not be changed to return ``analysis-core`` because that would
+    erase the distinction between an explicit Agent runtime and the deployment-wide
+    safety fallback.  Changes to this precedence require asking the user first.
+    """
+    config = studio_config or {}
+    image = str(config.get("image") or "").strip()
+    if image:
+        return image
+    profile_id = str(config.get("runtime_profile") or "").strip()
+    if not profile_id:
+        return None
+    _, profile = get_runtime_images().select(
+        set(), "studio", preferred_profile=profile_id
+    )
+    return profile.image

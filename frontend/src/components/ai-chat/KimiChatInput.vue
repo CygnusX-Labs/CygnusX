@@ -370,7 +370,17 @@ function focusWithCursorAtEnd() {
   const end = el.value.length
   el.setSelectionRange(end, end)
 }
-defineExpose({ focus, focusWithCursorAtEnd })
+
+/** 读取当前草稿附件（进入工作台携带草稿时使用，返回副本不清空） */
+function getDraftAttachments(): FileAttachment[] {
+  return attachments.value.map((a) => ({ ...a }))
+}
+
+/** 恢复草稿附件（工作台进入后回填草稿时使用，整体替换） */
+function setDraftAttachments(items: FileAttachment[]) {
+  attachments.value = (items || []).map((a) => ({ ...a }))
+}
+defineExpose({ focus, focusWithCursorAtEnd, getDraftAttachments, setDraftAttachments })
 
 const agentTeamsCaseVisible = ref(false)
 const agentTeamsCaseSubmitting = ref(false)
@@ -1622,6 +1632,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             切换到 AI 工作台以执行代码、运行脚本并保存产物；当前对话历史会一并带过去
           </n-tooltip>
+          <!-- 工作台入口之后的外挂区域（如项目选择器），由调用方按需注入 -->
+          <slot name="after-workbench" />
         </div>
 
         <div class="toolbar-right">

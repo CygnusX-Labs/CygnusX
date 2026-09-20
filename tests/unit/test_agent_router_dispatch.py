@@ -287,74 +287,79 @@ async def test_question_routes_to_expected_expert(
 
 
 @pytest.mark.unit
-async def test_bulk_rnaseq_guard_corrects_scrna_model_misroute(
+async def test_text_intake_no_longer_bypasses_router(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
-    _mock_router_output(
-        monkeypatch,
-        json.dumps(
-            {
-                "agent_id": "agent-scrna",
-                "reason": "误把怎么开始理解为单细胞上游",
-                "confidence": 0.82,
-            }
-        ),
-    )
+    """缺参数只影响专家后续 intake，不能在 Router 前强制改派通用助手。"""
+    captured: dict[str, Any] = {}
 
-    ctx, info = await service._route_to_agent(router_ctx, "RNA-seq 差异表达分析怎么开始")
+    async def route_with_model(**kwargs: Any):
+        captured.update(kwargs)
+        yield SimpleNamespace(
+            type="text",
+            content=json.dumps({"agent_id": "agent-rnaseq", "reason": "转录组研究计划"}),
+            metadata={},
+        )
 
-    assert ctx is not None and ctx.agent_id == "agent-rnaseq"
-    assert info is not None and info["agent_id"] == "agent-rnaseq"
-    assert "纠正单细胞专家误匹配" in info["reason"]
-
-
-@pytest.mark.unit
-async def test_ambiguous_tp53_plan_routes_to_general_intake_before_experts(
-    service: ChatService, router_ctx: Any, monkeypatch
-):
-    async def should_not_route_with_model(**_kwargs: Any):
-        raise AssertionError("模糊研究计划应由确定性 intake 门槛拦截")
-        yield SimpleNamespace(type="text", content="", metadata={})
-
-    monkeypatch.setattr(
-        chat_service_module.provider_manager, "chat_stream", should_not_route_with_model
-    )
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_with_model)
     ctx, info = await service._route_to_agent(
         router_ctx,
         "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
     )
 
-    assert ctx is not None and ctx.agent_id == "agent-general"
-    assert info is not None and info["needs_clarification"] is True
-    assert len(info["clarification_questions"]) == 3
-    assert "先由通用助手" in info["reason"]
+    assert ctx is not None and ctx.agent_id == "agent-rnaseq"
+    assert info is not None and info["reason"] == "转录组研究计划"
+    assert "TP53" in captured["messages"][0]["content"]
 
 
 @pytest.mark.unit
-async def test_image_attachment_bypasses_ambiguous_intake_and_explains_general_route(
+async def test_router_receives_uploaded_file_manifest_and_can_select_visualization_expert(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
     captured: dict[str, Any] = {}
 
-    async def route_image_question(**kwargs: Any):
+    async def route_visualization_request(**kwargs: Any):
         captured.update(kwargs)
         yield SimpleNamespace(
             type="text",
-            content=json.dumps({"agent_id": "agent-general", "reason": "图片问题"}),
+            content=json.dumps({"agent_id": "agent-viz", "reason": "差异表达可视化交付"}),
             metadata={},
         )
 
-    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_image_question)
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_visualization_request)
     ctx, info = await service._route_to_agent(
         router_ctx,
-        "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
-        attachments=[{"type": "image", "mime_type": "image/png"}],
+        "请基于上传的差异表达 CSV 生成火山图和热图，并给出结果总结。",
+        attachments=[
+            {
+                "name": "synthetic_gene_expression_3000 - Untitled.csv",
+                "type": "file",
+                "mime_type": "text/csv",
+            }
+        ],
     )
 
+    assert ctx is not None and ctx.agent_id == "agent-viz"
+    assert info is not None and info["reason"] == "差异表达可视化交付"
+    assert "synthetic_gene_expression_3000 - Untitled.csv" in captured["messages"][0]["content"]
+    assert "附件清单" in captured["messages"][0]["content"]
+
+
+@pytest.mark.unit
+async def test_router_does_not_override_model_target_with_keyword_rules(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    """专家目标必须来自 Router JSON；用户文本中的关键词不能覆盖模型决策。"""
+    _mock_router_output(
+        monkeypatch,
+        json.dumps({"agent_id": "agent-general", "reason": "模型决定由通用助手处理"}),
+    )
+
+    ctx, info = await service._route_to_agent(router_ctx, "请画一个火山图")
+
     assert ctx is not None and ctx.agent_id == "agent-general"
-    assert info is not None and info["needs_clarification"] is False
-    assert info["reason"] == "已附图片，通用助手将先识别图片内容并直接回答当前问题"
-    assert "包含图片附件" in captured["messages"][0]["content"]
+    assert info is not None and info["agent_id"] == "agent-general"
+    assert info["reason"] == "模型决定由通用助手处理"
 
 
 # ---------------------------------------------------------------------------

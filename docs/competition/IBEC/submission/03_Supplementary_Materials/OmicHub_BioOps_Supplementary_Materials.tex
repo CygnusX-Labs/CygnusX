@@ -17,24 +17,27 @@
 \begin{document}
 
 \begin{center}
-{\LARGE\bfseries Supplementary Materials --- OmicHub BioOps}\\[0.5em]
+{\LARGE\bfseries Supplementary Materials --- CygnusX}\\[0.5em]
 {\large Primary language: English.}\\[1.5em]
 \end{center}
 
 \begin{tabularx}{\textwidth}{>{\bfseries}p{0.24\textwidth}X}
 \toprule
-Project Title & OmicHub BioOps: Auditable Agent $\times$ Skill Infrastructure for Controlled Omics Analysis Delivery\\
-Team Name & \texttt{[Team name]}\\
-Institution & OmicHub / Huazhong Agricultural University \texttt{[confirm official institution string]}\\
+Project Title & CygnusX: Auditable Agent $\times$ Skill Infrastructure for Controlled Omics Analysis Delivery\\
+Team ID & \texttt{IBEC26-35}\\
+Team Name & \texttt{CygnusX}\\
+Institution & Huazhong Agricultural University\\
 Team Members & Jian Zhang (Founder) \texttt{[add members and roles]}\\
-Track / Category & \texttt{[If applicable]}\\
+Track / Category & Bioinformatics Platform\\
 Date & 2026-09-18\\
 \bottomrule
 \end{tabularx}
 
 \section{Package Overview}
 
-This package supports the claims made in the project report and technical abstract. It contains: (1) the OmicHub BioOps application source (backend, frontend, pipeline modules); (2) declarative configuration for agents, Skills, and analysis pipelines; (3) contract/unit tests for the controlled-execution base; (4) screenshots of the platform interfaces (form-based submission, Skill marketplace, agent workspace, delivery README and verification report); (5) de-identified demonstration datasets and result archives for the reference bulk RNA-seq scenario. Every quantitative claim in the report maps to a section below.
+This package supports the claims made in the project report and technical abstract. It contains: (1) the CygnusX application source (backend, frontend, pipeline modules); (2) declarative configuration for agents, Skills, and analysis pipelines; (3) contract/unit tests for the controlled-execution base; (4) screenshots of the platform interfaces (form-based submission, Skill library, agent workspace, delivery README and verification report); (5) de-identified demonstration datasets and result archives for the reference bulk RNA-seq scenario. Every quantitative claim in the report maps to a section below.
+
+The platform vision starts from a research phenomenon and progressively organizes a verifiable computational experiment: research question \textrightarrow computational experiment \textrightarrow evidence chain \textrightarrow human review \textrightarrow experimental validation. The current package demonstrates the Reliable Workflow and controlled-delivery foundation. Goal-oriented discovery is a roadmap direction, not a current delivery claim; model-generated hypotheses do not replace expert judgment or experimental validation.
 
 \section{Recommended Directory Structure}
 \begin{verbatim}
@@ -42,7 +45,7 @@ submission_package/
   report.pdf
   technical_abstract.pdf
   supplementary_materials.pdf
-  code/            # OmicHub BioOps repository (src/cygnusx, frontend, pipelines)
+  code/            # CygnusX repository (src/cygnusx, frontend, pipelines)
   data/            # de-identified demo inputs (sample sheets, contrasts, test FASTQ)
   results/         # run archives: projects/<slug>/runs/<task>-<timestamp>/
   figures/         # interface screenshots and architecture diagram
@@ -64,15 +67,15 @@ submission_package/
   \item Data source and license: de-identified transcriptomic sequencing data from the HZAU genomics laboratory plant-genomics projects (species: rice \texttt{[confirm species per demo set]}); public reference genome and annotation from MSU/RAP-DB (academic use). No human genetic resources are included in the demo package.
   \item Format, sample count, features: paired-end FASTQ (demo subset), \texttt{samples.csv} + \texttt{contrasts.csv} metadata tables; quantification tables (genes $\times$ samples counts); differential-expression result TSVs with log2FC, p, padj columns.
   \item Preprocessing and QC: fastp read filtering; alignment QC (mapping rate $\geq$ 0.70) and base-quality QC (Q30 $\geq$ 0.80) enforced by platform quality gates; reference-version pinning recorded in \texttt{environment.json}.
-  \item Access restrictions: demonstration data only; original laboratory data are not redistributed (private-deployment model keeps customer data in place).
+  \item Access restrictions: demonstration data only; original laboratory data are not redistributed (private-deployment model keeps research data in place).
 \end{itemize}
 
 \section{Results and Demonstration Materials}
 \begin{itemize}
   \item Main result files: \texttt{results/projects/\textlangle slug\textrangle /runs/\textlangle task\textrangle -\textlangle timestamp\textrangle /} archives, each containing pipeline YAML version, parameters, logs, artifacts, \texttt{environment.json}, delivery \texttt{README.md}, and \texttt{verification.tsv} (per-file SUCCESS/MISSING/FAIL).
-  \item Screenshots (\texttt{figures/}): (F1) web form submission with parameter whitelist; (F2) Skill marketplace (Analysis category, 36 analysis Skills); (F3) domain-agent workspace (RNA-seq analyst) with structured conclusions and delivery document; (F4) project history page and evidence timeline.
+  \item Screenshots (\texttt{figures/}): (F1) web form submission with parameter whitelist; (F2) Skill library (Analysis category, 36 analysis Skills); (F3) domain-agent workspace (RNA-seq analyst) with structured conclusions and delivery document; (F4) project history page and evidence timeline.
   \item Repository URL: \texttt{[private repository during review; community edition URL once published]}. Platform link: on-premise demo instance, \texttt{[URL + reviewer credentials if provided]}. Demo video: \texttt{[URL]}.
-  \item Consistency note: efficiency figures in report Section 7 (75\% / 90\% / 80\% reductions) correspond to walkthroughs in \texttt{demo/} measured as human operation and waiting time; the platform-in-production facts (v0.1.0 at HZAU, 29 services, 227 modules, 38 Skills) correspond to the repository inventory in \texttt{code/}.
+  \item Consistency note: efficiency figures in report Section 7 (75\% / 90\% / 80\% reductions) correspond to walkthroughs in \texttt{demo/} measured as human operation and waiting time; the platform-in-use facts (v0.1.0 at HZAU, 29 services, 227 modules, 38 Skills) correspond to the repository inventory in \texttt{code/}. These are research-engineering estimates, not universal performance claims.
 \end{itemize}
 
 \section{Reproducibility Checklist}

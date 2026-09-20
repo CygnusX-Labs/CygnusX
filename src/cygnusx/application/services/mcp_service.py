@@ -69,6 +69,8 @@ from cygnusx.infrastructure.mcp.presets import (
     CYGNUSX_TOOLS_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_NAME,
     PRESET_SERVERS,
+    SEQOUT_SERVER_ID,
+    SEQOUT_SERVER_NAME,
     _build_cygnusx_tools_preset,
     get_preset_by_name,
 )
@@ -265,6 +267,7 @@ class MCPService:
             (CYGNUSX_PIPELINES_SERVER_NAME, CYGNUSX_PIPELINES_SERVER_ID),
             ("cygnusx-platform", CYGNUSX_PLATFORM_SERVER_ID),
             (CYGNUSX_TOOLS_SERVER_NAME, CYGNUSX_TOOLS_SERVER_ID),
+            (SEQOUT_SERVER_NAME, SEQOUT_SERVER_ID),
             (CONDA_META_MCP_SERVER_NAME, CONDA_META_MCP_SERVER_ID),
         ):
             try:
@@ -286,12 +289,18 @@ class MCPService:
             if existing is not None:
                 # 预设工具随代码演进（如新增工作区文件工具），需把最新工具清单同步进库，
                 # 否则已存在部署的 builtin 预设工具不会出现在 LLM 工具清单里。
-                if preset["name"] in (CYGNUSX_PIPELINES_SERVER_NAME, "cygnusx-platform"):
+                if preset["name"] in (
+                    CYGNUSX_PIPELINES_SERVER_NAME,
+                    "cygnusx-platform",
+                    SEQOUT_SERVER_NAME,
+                ):
                     await self._sync_preset_server(existing, preset, force_preset_sync)
                 continue
             preset_id = (
                 CYGNUSX_PLATFORM_SERVER_ID
                 if preset["name"] == "cygnusx-platform"
+                else SEQOUT_SERVER_ID
+                if preset["name"] == SEQOUT_SERVER_NAME
                 else CYGNUSX_PIPELINES_SERVER_ID
                 if preset["name"] == CYGNUSX_PIPELINES_SERVER_NAME
                 else uuid4()

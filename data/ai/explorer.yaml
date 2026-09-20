@@ -58,3 +58,12 @@ handoff:
     - agent-scrna
     - agent-viz
   max_hops_per_session: 1
+
+studio:
+  enabled: true
+  # 侦察 Agent 只做受限的代码库读取与结构化调查，因此显式固定通用 core
+  # 运行时。不要依赖 Studio 全局 default_image 隐式补齐；所有启用 Agent 都应
+  # 能在 YAML 中看见自己的画像，后续若要改成专用镜像必须先询问用户并说明
+  # 只读工具、挂载和权限边界会如何变化。
+  runtime_profile: analysis-core
+  required_capabilities: [python, bash, tabular]

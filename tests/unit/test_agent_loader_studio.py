@@ -9,7 +9,7 @@ import pytest
 
 from cygnusx.application.services.agent_service import AgentService
 from cygnusx.infrastructure.config import agent_loader
-from cygnusx.infrastructure.config.agent_loader import _load_single_agent
+from cygnusx.infrastructure.config.agent_loader import _load_single_agent, load_agent_configs
 from cygnusx.infrastructure.mcp.presets import (
     CYGNUSX_PLATFORM_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_ID,
@@ -32,6 +32,19 @@ def test_studio_section_parsed(tmp_path: Path):
     data = _load_single_agent(path)
     assert data is not None
     assert data["studio"] == {"enabled": True, "image": "cygnusx-sandbox:bio"}
+
+
+def test_every_enabled_agent_declares_a_studio_runtime():
+    """防止新 Agent 静默落到全局 analysis-core；画像必须在 Agent YAML 中可审计。"""
+    configs = load_agent_configs()
+    assert configs
+    missing = [
+        str(config.get("agent_id"))
+        for config in configs
+        if not isinstance(config.get("studio"), dict)
+        or not str((config.get("studio") or {}).get("image") or "").strip()
+    ]
+    assert missing == []
 
 
 @pytest.mark.unit

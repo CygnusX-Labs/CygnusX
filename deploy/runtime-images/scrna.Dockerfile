@@ -1,5 +1,8 @@
+# syntax=docker/dockerfile:1.7
 ARG CYGNUSX_IMAGE_TAG=v0.0.3dev
 FROM cygnusx-analysis:scrna-${CYGNUSX_IMAGE_TAG}
+
+ARG SANDBOX_GID=10001
 
 LABEL org.opencontainers.image.title="CygnusX Analysis Single Cell"
 LABEL org.cygnusx.runtime.profile="analysis-scrna"
@@ -24,16 +27,16 @@ RUN printf '%s\n' \
       '  - menpo' \
       '  - defaults' \
       > /home/mambauser/.condarc \
-    && chown $MAMBA_USER:$MAMBA_USER /home/mambauser/.condarc
+    && chown "$MAMBA_USER:$SANDBOX_GID" /home/mambauser/.condarc
 
 USER "$MAMBA_USER"
-RUN micromamba install -y -n base -c conda-forge -c bioconda \
+RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
+    micromamba install -y -n base -c conda-forge -c bioconda \
       r-data.table=1.18.6.1 \
       r-ggpubr=0.6.0 \
       r-ggsci=5.2.0 \
       r-patchwork=1.3.0 \
-      r-scales=1.4.0 \
-    && micromamba clean --all --yes
+      r-scales=1.4.0
 # 注意：r-qs 因与 RcppParallel/Seurat 存在 ABI 冲突，暂不预装
 # 如需使用 .qs 格式，可在沙盒内手动安装：
 #   micromamba install r-qs=0.25.7 --force-reinstall

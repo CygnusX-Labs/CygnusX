@@ -42,6 +42,11 @@ export interface AgentChatStreamOptions {
   overdrive?: boolean
   /** 工具调用轮次上限扩展：true 时后端按 1000 轮执行（用户在触顶弹窗确认继续后置位） */
   extendMaxRounds?: boolean
+  /**
+   * AI 助手页面专用：true 时本轮需要用户确认的操作（代码执行、写入文件、网络访问等）
+   * 由后端直接执行，不再逐次弹出审批卡片。AI 工作台页面不传该字段，维持逐次审批。
+   */
+  autoApprove?: boolean
 }
 
 export interface ChatAttachment {
@@ -597,6 +602,7 @@ export function useAgentChatStream() {
             multi_agent: options.multiAgent ?? false,
             overdrive: options.overdrive,
             extend_max_rounds: options.extendMaxRounds || false,
+            auto_approve: options.autoApprove || false,
           }),
           signal: abortController.value?.signal,
         })

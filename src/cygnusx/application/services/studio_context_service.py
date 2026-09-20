@@ -32,6 +32,7 @@ from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import BusinessError, CygnusXError, NotFoundError
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.infrastructure.config.deployment_config import get_deployment_config
+from cygnusx.infrastructure.config.runtime_image_loader import resolve_studio_image
 from cygnusx.infrastructure.config.storage_config import get_user_chat_upload_dir
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 from cygnusx.infrastructure.database.models.file import FileRecordModel
@@ -227,7 +228,10 @@ async def create_session_from_report(
     params = dict(task.parameters or {}) if task is not None else {}
 
     service = ChatService(db)
-    image = studio_cfg.get("image")
+    # 报告中心是系统代建会话，不经过 /studio/sessions 的请求解析层；必须
+    # 复用同一 Agent image/profile 解析规则，否则旧记录只有 runtime_profile
+    # 时会在沙盒管理器中静默落到 analysis-core。
+    image = resolve_studio_image(studio_cfg)
     dto = await service.create_session(
         user_id,
         agent.model_id,

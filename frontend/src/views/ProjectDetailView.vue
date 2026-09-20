@@ -3,9 +3,10 @@ import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NEmpty, NInput, NModal,
-  NPopconfirm, NSkeleton, NSpace, NSpin, NSwitch, NTabPane, NTabs, NTag, useMessage,
+  NIcon, NPopconfirm, NSkeleton, NSpace, NSpin, NSwitch, NTabPane, NTabs, NTag, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
+import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline } from '@vicons/ionicons5'
 import PageHeader from '@/components/PageHeader.vue'
 import { chatApi } from '@/api/chat'
 import {
@@ -376,7 +377,11 @@ onMounted(loadOverview)
       subtitle="项目元信息、会话管理与历史分析运行"
       back-to="/projects"
       back-label="返回项目列表"
-    />
+    >
+      <template #leading>
+        <div class="project-header-mark"><NIcon :size="19"><FolderOpenOutline /></NIcon></div>
+      </template>
+    </PageHeader>
 
     <template v-if="initialLoading">
       <NSkeleton height="200px" :sharp="false" class="skeleton-card" />
@@ -385,6 +390,30 @@ onMounted(loadOverview)
     </template>
 
     <template v-else-if="overview">
+      <section class="detail-summary" aria-label="项目摘要">
+        <div class="detail-summary-copy">
+          <span class="summary-eyebrow">PROJECT SPACE</span>
+          <div class="summary-identity">
+            <span class="summary-slug">{{ overview.project.slug }}</span>
+            <NTag size="small" :bordered="false" type="info">当前项目</NTag>
+          </div>
+          <p>{{ overview.project.description || '为这个项目补充一句描述，团队成员会更快了解当前分析目标。' }}</p>
+        </div>
+        <div class="detail-summary-stats">
+          <div class="summary-stat">
+            <NIcon :size="17"><ChatbubblesOutline /></NIcon>
+            <span><strong>{{ overview.sessions.total }}</strong><small>个会话</small></span>
+          </div>
+          <div class="summary-stat">
+            <NIcon :size="17"><GitBranchOutline /></NIcon>
+            <span><strong>{{ overview.runs.length }}</strong><small>次运行</small></span>
+          </div>
+          <div class="summary-stat">
+            <NIcon :size="17"><TimeOutline /></NIcon>
+            <span><strong>{{ formatDate(overview.project.updated_at).split(' ')[0] }}</strong><small>最近更新</small></span>
+          </div>
+        </div>
+      </section>
       <NCard title="项目信息" :bordered="false" class="detail-card">
         <NDescriptions label-placement="left" bordered :column="2">
           <NDescriptionsItem label="项目名称">{{ overview.project.name }}</NDescriptionsItem>
@@ -510,6 +539,38 @@ onMounted(loadOverview)
   padding: var(--page-padding);
 }
 
+.project-header-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: var(--arco-primary);
+  border: 1px solid color-mix(in srgb, var(--arco-primary) 20%, var(--neutral-border));
+  border-radius: 11px;
+  background: var(--brand-primary-light);
+}
+
+.detail-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: var(--space-2xl);
+  padding: 20px 24px;
+  border: 1px solid color-mix(in srgb, var(--arco-primary) 20%, var(--neutral-border));
+  border-radius: var(--radius-card);
+  background: linear-gradient(115deg, var(--brand-primary-light), var(--neutral-card) 56%);
+}
+.summary-eyebrow { color: var(--arco-primary); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; }
+.summary-identity { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.summary-slug { color: var(--neutral-text-1); font-size: 18px; line-height: 26px; font-weight: 600; }
+.detail-summary-copy p { max-width: 620px; margin: 5px 0 0; color: var(--neutral-text-2); font-size: 13px; line-height: 20px; }
+.detail-summary-stats { display: flex; flex: 0 0 auto; align-items: stretch; }
+.summary-stat { display: flex; align-items: center; gap: 9px; min-width: 104px; padding: 0 18px; color: var(--arco-primary); border-left: 1px solid var(--neutral-border); }
+.summary-stat span { display: flex; flex-direction: column; }
+.summary-stat strong { color: var(--neutral-text-1); font-size: 17px; line-height: 22px; font-weight: 650; }
+.summary-stat small { color: var(--neutral-text-3); font-size: 11px; line-height: 16px; }
+
 /* 卡片垂直节奏 24px（§33.2⑤），卡片标题 16px/24px/500（§5.2） */
 .detail-card {
   margin-bottom: var(--space-2xl);
@@ -520,6 +581,9 @@ onMounted(loadOverview)
   line-height: var(--font-card-title-height);
   font-weight: var(--font-card-title-weight);
 }
+
+.detail-card :deep(.n-descriptions-table) { border-radius: 10px; overflow: hidden; }
+.detail-card :deep(.n-descriptions-table-header) { color: var(--neutral-text-2); font-weight: 500; }
 
 /* 项目级科研模式默认值开关（WP3 任务 3 可选项） */
 .project-default-row {
@@ -583,5 +647,15 @@ onMounted(loadOverview)
   .project-detail-view {
     padding: var(--space-lg);
   }
+  .detail-summary { align-items: stretch; flex-direction: column; gap: 18px; }
+  .detail-summary-stats { width: 100%; }
+  .summary-stat { flex: 1; min-width: 0; padding: 0 12px; }
+}
+
+@media (max-width: 480px) {
+  .detail-summary { padding: 18px; }
+  .detail-summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .summary-stat { gap: 5px; padding: 0 8px; }
+  .summary-stat strong { font-size: 14px; }
 }
 </style>

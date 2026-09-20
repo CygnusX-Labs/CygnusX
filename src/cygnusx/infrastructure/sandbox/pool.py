@@ -16,7 +16,9 @@ import base64
 import contextlib
 import io
 import json
+import os
 import shutil
+import stat as statlib
 import tarfile
 import tempfile
 from collections.abc import AsyncIterator
@@ -33,6 +35,21 @@ _IMAGE_PREFIX = "%%IMAGE%%"
 _PLOTLY_PREFIX = "%%PLOTLY%%"
 _SENTINEL = object()
 _TIMEOUT = object()
+_SANDBOX_UID = 10001
+_SANDBOX_GID = 10001
+_MOUNT_DESTINATIONS = frozenset(
+    {"/tmp/chat_output", "/workspace/output", "/workspace/input"}
+)
+
+
+def _authorize_mount_dir(path: Path) -> None:
+    """授权沙盒运行身份访问 bind mount，权限不足时保留单机兼容回退。"""
+    try:
+        os.chown(path, _SANDBOX_UID, _SANDBOX_GID)
+        path.chmod(0o770)
+    except (PermissionError, OSError):
+        # 非 root 的本地开发进程无法修改宿主属主时，避免容器再次得到 0755 root 目录。
+        path.chmod(0o777)
 
 
 def _seccomp_security_opt(profile: str) -> str | None:
@@ -52,7 +69,7 @@ def _seccomp_security_opt(profile: str) -> str | None:
 
 
 def _pool_host_base(settings: Any) -> str | None:
-    """warm pool bind mount 宿主机基目录；配置为空时用系统临时目录。"""
+    """warm pool bind mount 宿主机基目录；空值仅用于本地测试回退。"""
     base = str(getattr(settings, "sandbox_pool_host_dir", "") or "").strip()
     return base or None
 
@@ -184,6 +201,13 @@ class SandboxPool:
                 await self.destroy(cid)
                 destroyed += 1
                 continue
+            if not self._container_mounts_are_writable(container):
+                # 镜像中的 chown 不会覆盖 bind mount；旧容器可能仍挂着 root:root
+                # 目录，即使容器的安全参数已经符合，也必须销毁后按新挂载契约重建。
+                logger.info(f"沙盒孤儿容器挂载目录不可写，销毁重建: {cid}")
+                await self.destroy(cid)
+                destroyed += 1
+                continue
             async with self._container_lock:
                 if len(self._managed_container_ids) >= self._max_pool_size():
                     room = False
@@ -261,8 +285,13 @@ class SandboxPool:
                 # 本机 Docker daemon 对 tmpfs 路径的 get_archive（copy-out 依赖）
                 # 取不到内容，bind mount 在 daemon 与容器两侧视图一致。
                 # 容器内路径与协议约定保持不变，copy-out / 附件注入 / R7 重置机制不受影响。
+                host_base = _pool_host_base(settings)
+                if host_base:
+                    # 该路径必须位于 Web 与 Docker daemon 共同可见的 bind mount
+                    # 中；如果创建失败直接让本次预热失败，禁止回退到 Web 私有 /tmp。
+                    Path(host_base).mkdir(parents=True, exist_ok=True)
                 host_dir = Path(
-                    tempfile.mkdtemp(prefix="cygnusx-sandbox-", dir=_pool_host_base(settings))
+                    tempfile.mkdtemp(prefix="cygnusx-sandbox-", dir=host_base)
                 )
                 volumes = {}
                 for sub, container_path in (
@@ -272,7 +301,7 @@ class SandboxPool:
                 ):
                     sub_dir = host_dir / sub
                     sub_dir.mkdir()
-                    sub_dir.chmod(0o777)  # 容器内非 root 用户可写
+                    _authorize_mount_dir(sub_dir)
                     volumes[str(sub_dir)] = {"bind": container_path, "mode": "rw"}
             container = client.containers.run(
                 image=settings.sandbox_image,
@@ -341,6 +370,62 @@ class SandboxPool:
         return not (
             seccomp_opt is not None and seccomp_opt.lower() not in security_opts
         )
+
+    @staticmethod
+    def _container_mounts_are_writable(container: Any) -> bool:
+        """Reject warm containers whose bind-mount sources cannot be written by the sandbox user.
+
+        Image-layer ownership does not survive a bind mount.  Docker inspect includes the
+        host source paths, so validate them before adopting a container left by an older
+        worker process.  Some unit-test doubles do not expose ``Mounts``; those retain the
+        previous adoption behavior.
+        """
+        mounts = (getattr(container, "attrs", None) or {}).get("Mounts")
+        if not mounts:
+            return True
+        by_destination = {
+            str(mount.get("Destination") or ""): mount for mount in mounts
+        }
+        if not _MOUNT_DESTINATIONS.issubset(by_destination):
+            return False
+        for destination in _MOUNT_DESTINATIONS:
+            source = Path(str(by_destination[destination].get("Source") or ""))
+            try:
+                mode = source.stat()
+            except (FileNotFoundError, OSError):
+                return False
+            if mode.st_uid == _SANDBOX_UID:
+                if not (mode.st_mode & statlib.S_IWUSR):
+                    return False
+            elif mode.st_gid == _SANDBOX_GID:
+                if not (mode.st_mode & statlib.S_IWGRP):
+                    return False
+            elif not (mode.st_mode & statlib.S_IWOTH):
+                # Non-root pool processes may only use the documented 0777 fallback.
+                return False
+        return True
+
+    async def container_is_usable(self, container_id: str | None) -> bool:
+        """检查会话复用的容器，避免旧坏挂载绕过 warm-pool 治理。"""
+        if not container_id:
+            return False
+        client = self._get_client()
+
+        def _check() -> bool:
+            try:
+                container = client.containers.get(container_id)
+                reload_fn = getattr(container, "reload", None)
+                if reload_fn is not None:
+                    reload_fn()
+                return (
+                    container.status == "running"
+                    and self._container_meets_security_baseline(container)
+                    and self._container_mounts_are_writable(container)
+                )
+            except Exception:
+                return False
+
+        return await asyncio.to_thread(_check)
 
     async def destroy(self, container_id: str | None) -> None:
         if not container_id:

@@ -2033,6 +2033,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       messageMetadata?: Record<string, unknown>
       /** 工具轮次触顶后用户确认继续：本次请求上限扩展到 1000 轮 */
       extendMaxRounds?: boolean
+      /**
+       * AI 助手页面专用：本轮需确认的操作（代码执行/写入文件/网络访问）由后端直接执行，
+       * 不再逐次弹审批卡。AI 工作台页面不传，维持逐次审批语义。
+       */
+      autoApprove?: boolean
     } = {},
   ): Promise<void> {
     const session = currentSession.value
@@ -2202,6 +2207,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         multiAgent: options.multiAgent ?? session.multi_agent ?? false,
         overdrive: effectiveOverdrive,
         extendMaxRounds: options.extendMaxRounds ?? false,
+        autoApprove: options.autoApprove ?? false,
       },
       {
         onText: (text, isReasoning) => {

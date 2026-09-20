@@ -61,6 +61,7 @@ const emit = defineEmits<{
 }>()
 
 interface ScrollerExpose {
+  /** DynamicScroller 内置的贴底逻辑会等待异步高度测量完成。 */
   scrollToBottom: () => void
   scrollToItem?: (index: number) => void
 }
@@ -122,6 +123,12 @@ function cancelFollowFrame() {
  * 自动跟随到底部。
  * 流式 token、Markdown 重排和 DynamicScroller 高度测量会在同一帧连续触发；
  * 统一合并到下一绘制帧后一次贴底，避免缓动 scrollTop 与列表校正互相拉扯。
+ *
+ * 注意不能只直接写 scroller.scrollTop。DynamicScroller 的消息项（工具卡、思考
+ * 区、Markdown）会在本帧之后才由 ResizeObserver 回填实际高度；直接写入会贴到
+ * "旧的" scrollHeight，随后列表校正高度时就表现为新内容没有自动下滑。
+ * DynamicScroller.scrollToBottom() 会持续等待这些未定高度完成，正是这里需要的
+ * 语义。
  * force=true（点击"回到底部" / 新审批 / 澄清事件）时取消缓动并立即贴底。
  */
 function scrollToBottom(force = false) {
@@ -137,15 +144,14 @@ function scrollToBottom(force = false) {
     hasNewWhileAway.value = false
     cancelScrollAnim()
     cancelFollowFrame()
-    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    scrollerRef.value?.scrollToBottom()
     return
   }
   if (followFrame !== null) return
   followFrame = requestAnimationFrame(() => {
     followFrame = null
-    const current = getScrollerEl()
-    if (!current || showScrollToBottom.value) return
-    current.scrollTop = Math.max(0, current.scrollHeight - current.clientHeight)
+    if (!getScrollerEl() || showScrollToBottom.value) return
+    scrollerRef.value?.scrollToBottom()
   })
 }
 
@@ -196,6 +202,15 @@ function handleScroll() {
   if (!awayFromBottom) hasNewWhileAway.value = false
 }
 
+/**
+ * 工具卡、Markdown 图片和 CodeMirror 等内容的高度可在 Vue 更新之后继续变化。
+ * DynamicScrollerItem 在真实尺寸变化时发出 resize；再次走同一个跟随调度，保证
+ * 已贴底的会话会继续贴底，同时仍会尊重用户主动上滑后的暂停状态。
+ */
+function handleItemResize() {
+  scrollToBottom()
+}
+
 defineExpose({ scrollToBottom, scrollToMessage })
 
 watch(
@@ -224,6 +239,44 @@ const tailVolume = computed(() => {
 })
 
 watch(tailVolume, () => {
+  nextTick(() => scrollToBottom())
+})
+
+/**
+ * 工具/审批/技能卡首次出现或切换状态时，正文和 stdout 的长度可能都不变，原来的
+ * tailVolume 不会触发贴底。这里保留影响卡片布局的轻量指纹，而不是 stringify 整个
+ * result/uiPayload（结果可能很大），确保实时执行流中每个新卡片也会跟随到底部。
+ */
+const layoutFingerprint = computed(() => props.messages.map((message) => {
+  const tools = (message.toolCalls || []).map((tool) => [
+    tool.id,
+    tool.status,
+    tool.output?.length || 0,
+    Object.keys(tool.arguments || {}).join(','),
+    Object.keys((tool.result && typeof tool.result === 'object' ? tool.result : {}) as Record<string, unknown>).join(','),
+    Object.keys(tool.uiPayload || {}).join(','),
+    tool.approval?.status || '',
+    tool.approval?.approval_id || '',
+  ].join(':')).join('|')
+  const skills = (message.skillInvocations || [])
+    .map((skill) => `${skill.id}:${skill.status}:${skill.count}:${skill.summary || ''}:${skill.error || ''}`)
+    .join('|')
+  return [
+    message.id,
+    message.status || '',
+    message.content.length,
+    message.thought?.length || 0,
+    tools,
+    skills,
+    message.timeline?.length || 0,
+    message.charts?.length || 0,
+    message.askRequest?.answered === false ? 'ask-pending' : '',
+    message.overdriveApproval?.status || '',
+    message.overdriveProgress?.phase || '',
+  ].join('~')
+}).join('\n'))
+
+watch(layoutFingerprint, () => {
   nextTick(() => scrollToBottom())
 })
 
@@ -269,6 +322,7 @@ onUnmounted(() => {
         <DynamicScrollerItem
           :item="item"
           :active="active"
+          :emit-resize="true"
           :size-dependencies="[
             item.content,
             item.thought,
@@ -284,6 +338,7 @@ onUnmounted(() => {
           ]"
           :data-index="index"
           :class="{ 'message-target': targetMessageId === item.id }"
+          @resize="handleItemResize"
         >
           <KimiMessageItem
             :message="item"

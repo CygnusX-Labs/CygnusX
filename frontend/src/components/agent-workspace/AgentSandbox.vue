@@ -58,7 +58,10 @@ watch(
       positiveText: '继续（扩展到 1000 轮）',
       negativeText: '不继续',
       onPositiveClick: () => {
-        void store.sendMessage('请继续完成刚才未完成的任务', { extendMaxRounds: true })
+        void store.sendMessage('请继续完成刚才未完成的任务', {
+          extendMaxRounds: true,
+          autoApprove: true,
+        })
       },
     })
   },
@@ -415,7 +418,9 @@ function handleSend(
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
   notifyDefaultProjectIfUnset()
-  void store.sendMessage(content, options)
+  // AI 助手页面：需确认的操作（写入文件、代码执行、网络访问等）默认自动执行，
+  // 不逐次弹审批卡；AI 工作台页面（StudioView）不传该标记，维持逐次审批。
+  void store.sendMessage(content, { ...options, autoApprove: true })
   input.value = ''
 }
 
@@ -436,7 +441,10 @@ async function handleRegenerate(messageId: string) {
   }
   const target = findSourceUserMessage(messageId)
   if (!target) return
-  await store.sendMessage(target.content, { attachments: target.attachments })
+  await store.sendMessage(target.content, {
+    attachments: target.attachments,
+    autoApprove: true,
+  })
 }
 
 function handleRetryWithModel() {
@@ -469,7 +477,7 @@ function handleConfirmTool(toolName: string, args: Record<string, unknown>) {
     : confirmationId
       ? `我已在确认卡上确认该操作。请使用与确认卡完全相同的参数再次调用 ${toolName}，并携带 "_confirmation_id": "${confirmationId}"；改动或省略任何参数都会使凭证失效。`
       : `确认执行 ${toolName}`
-  store.sendMessage(content, {})
+  store.sendMessage(content, { autoApprove: true })
 }
 
 function handleCreateCaseFromConsultation(summary: string, consultationId?: string) {

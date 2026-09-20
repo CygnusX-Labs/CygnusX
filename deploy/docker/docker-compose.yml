@@ -61,6 +61,7 @@ services:
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
+      - SANDBOX_POOL_HOST_DIR=${SANDBOX_POOL_HOST_DIR:-${STORAGE_PATH:-/data/cygnusx}/.sandbox-pool}  # 必须与 Docker daemon 共享，禁止使用 Web 私有 /tmp
       - RUN_MIGRATIONS=1                   # 容器启动时由 entrypoint 自动跑 alembic upgrade head
       - CYGNUSX_LOG_DIR=/app/logs          # 挂载到宿主机共享数据目录的 logs/app，保证容器重建后不丢失
       - SKILLS_DIR=${STORAGE_PATH:-/data/cygnusx}/skills  # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）

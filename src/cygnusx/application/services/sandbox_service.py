@@ -54,7 +54,18 @@ class SandboxService:
         """创建沙盒会话（会话亲和性：复用用户已有活跃会话）"""
         active = await self._repo.get_active_by_user(user_id)
         if active is not None:
-            return _to_dto(active)
+            # 会话可能跨 Web 重启复用旧容器。镜像更新或挂载根目录修复后，
+            # 必须先验证实际 bind mount；否则数据库中的旧 container_id 会继续
+            # 把 root:root 0755 目录带回下一次执行。
+            if await self._pool.container_is_usable(active.container_id):
+                return _to_dto(active)
+            logger.warning(
+                "沙盒会话容器不可复用，销毁并重新分配: session={} container={}",
+                active.id,
+                active.container_id,
+            )
+            await self._pool.destroy(active.container_id)
+            await self._domain.destroy(active.id)
 
         if not self._settings.sandbox_enabled:
             raise BusinessError("沙盒功能未启用")

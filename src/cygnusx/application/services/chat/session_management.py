@@ -227,13 +227,15 @@ class ChatSessionManagement:
 
     # --- 会话管理 ---
 
+    DEFAULT_PROJECT_NAME = "默认项目"
+
     async def _validate_project_binding(self, user_id: str, project_id: str | None) -> None:
-        """校验会话的项目边界：必须显式绑定一个存在且属于当前用户的项目。"""
-        from cygnusx.core.exceptions import AuthorizationError, ValidationError
+        """校验显式指定的项目边界：项目必须存在且属于当前用户。"""
+        from cygnusx.core.exceptions import AuthorizationError, NotFoundError
         from cygnusx.infrastructure.database.models.project import ProjectModel
 
         if not project_id:
-            raise ValidationError("创建会话必须绑定项目（project_id）")
+            return
         try:
             project_uuid = uuid.UUID(project_id)
         except ValueError as exc:
@@ -246,6 +248,44 @@ class ChatSessionManagement:
             raise NotFoundError(f"项目不存在：{project_id}")
         if str(project.user_id) != str(user_id):
             raise AuthorizationError("无权绑定其他用户的项目")
+
+    async def _resolve_default_project_id(self, user_id: str) -> str | None:
+        """未指定项目时自动归入「默认项目」：按名称复用，缺失则创建。
+
+        让"开始分析不必先选项目"成立：未选择的项目会话统一进默认项目收纳，
+        用户后续可在项目列表中整理迁移。仅 flush 不 commit，交给外层事务。
+        """
+        from cygnusx.infrastructure.database.models.project import ProjectModel
+        from cygnusx.infrastructure.storage.path_factory import project_slug
+
+        name = self.DEFAULT_PROJECT_NAME
+        try:
+            owner_id = uuid.UUID(str(user_id))
+        except (ValueError, AttributeError, TypeError):
+            return None
+        result = await self._db.execute(
+            select(ProjectModel).where(
+                ProjectModel.user_id == owner_id, ProjectModel.name == name
+            )
+            .limit(1)
+        )
+        project = result.scalar_one_or_none()
+        if project is None:
+            slug = project_slug(name) or "default"
+            result = await self._db.execute(
+                select(ProjectModel).where(
+                    ProjectModel.user_id == owner_id, ProjectModel.slug == slug
+                )
+                .limit(1)
+            )
+            project = result.scalar_one_or_none()
+        else:
+            slug = project.slug
+        if project is None:
+            project = ProjectModel(user_id=owner_id, name=name, slug=slug, description="")
+            self._db.add(project)
+        await self._db.flush()
+        return str(project.id)
 
     async def _project_research_mode_defaults(
         self, user_id: str, project_id: str | None
@@ -292,8 +332,12 @@ class ChatSessionManagement:
         project_id: str | None = None,
         require_project: bool = True,
     ) -> ChatSessionDTO:
-        if require_project:
+        # 显式 project_id：require_project 时强校验（缺失不再报错，见下）；
+        # 未指定：无论是否内部豁免，都自动归入「默认项目」，让"开始分析不必先选项目"
+        if project_id and require_project:
             await self._validate_project_binding(user_id, project_id)
+        if not project_id:
+            project_id = await self._resolve_default_project_id(user_id)
         # WP3 任务 3：项目 settings.research_mode 继承为会话初始值；
         # 调用方显式传入的 research_mode（如模板指定）优先，不覆盖。
         research_mode = await self._project_research_mode_defaults(user_id, project_id)

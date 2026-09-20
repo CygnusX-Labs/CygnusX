@@ -270,6 +270,7 @@ export const studioApi = {
     title?: string
     model_id?: string
     runtime_profile?: string
+    sandbox_capabilities?: Array<'code' | 'browser' | 'document'>
     project_id?: string
   }): Promise<StudioSessionDTO> {
     const res = await apiClient.post<StudioSessionDTO>('/studio/sessions', payload)

@@ -352,6 +352,12 @@ class AgentTeamsCapabilityRegistry:
                     "preferred_inputs": list(ability.get("preferred_inputs") or []),
                     "routing_hints": [str(value) for value in features.get("routing_hints") or []],
                     "capability_tags": capability_tags,
+                    # These compact role boundaries are part of the router summary
+                    # contract.  Full capability details remain in the detail layer.
+                    "default_role": str(features.get("default_role") or ""),
+                    "capability_scope": [
+                        str(value) for value in features.get("capability_scope") or []
+                    ],
                     "routing_notes": domain_registry.router_notes_for(
                         agent_id, features.get("domain")
                     ),

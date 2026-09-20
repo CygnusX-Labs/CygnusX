@@ -28,6 +28,10 @@ from cygnusx.application.services.chat_sandbox_tools import (
     CHAT_SANDBOX_TOOL_NAME,
     execute_chat_sandbox,
 )
+from cygnusx.application.services.network_request_tool import (
+    NETWORK_REQUEST_TOOL_NAME,
+    execute_network_request,
+)
 from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
 from cygnusx.application.services.mas_plan_adapter import MAS_PLAN_PREVIEW_TOOL_NAME
 from cygnusx.application.services.parallel_subagent_service import PARALLEL_SUBAGENTS_TOOL_NAME
@@ -62,6 +66,7 @@ async def _gate_chat_sandbox_approval(
     args: dict[str, Any],
     permission_mode: str | None,
     always_allow: set[str],
+    auto_approve: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """chat_sandbox_execute 的 supervised 审批闸，语义逐点对齐 legacy 手写循环
     （chat_service.py 的 is_chat_sandbox_tool 分支）：
@@ -77,7 +82,11 @@ async def _gate_chat_sandbox_approval(
       作为工具结果回灌 LLM 与前端。
 
     返回 (生效参数, 拒绝信封)：通过时拒绝信封为 None。
+
+    auto_approve=True（AI 助手页面）时不建审批记录、不下发事件，直接放行。
     """
+    if auto_approve:
+        return args, None
     if not needs_approval(permission_mode, CHAT_SANDBOX_TOOL_NAME, always_allow):
         return args, None
     approval_service = get_studio_approval_service()
@@ -157,6 +166,74 @@ async def _gate_chat_sandbox_approval(
     return args, None
 
 
+async def _gate_network_request_approval(
+    *,
+    emit: _EmitFn,
+    user_id: str,
+    session_id: str,
+    tool_call_id: str,
+    args: dict[str, Any],
+    permission_mode: str | None,
+    always_allow: set[str],
+    auto_approve: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """网络访问使用与沙盒相同的 Redis/SSE 审批协议。
+
+    auto_approve=True（AI 助手页面）时直接放行，不出审批卡。
+    """
+    if auto_approve:
+        return args, None
+    if not needs_approval(permission_mode, NETWORK_REQUEST_TOOL_NAME, always_allow):
+        return args, None
+    approval_service = get_studio_approval_service()
+    approval = await approval_service.create(
+        user_id=user_id,
+        session_id=session_id,
+        tool_call_id=tool_call_id,
+        tool_name=NETWORK_REQUEST_TOOL_NAME,
+        arguments=args,
+        risk_hint=_studio_risk_hint(NETWORK_REQUEST_TOOL_NAME, args),
+    )
+    await emit(ChatChunk(type="approval_request", metadata={
+        "approval_id": approval["approval_id"], "tool_call_id": tool_call_id,
+        "tool_name": NETWORK_REQUEST_TOOL_NAME, "arguments": args,
+        "risk_hint": approval["risk_hint"], "timeout_seconds": APPROVAL_TTL_SECONDS,
+    }))
+    resolution_task = asyncio.create_task(approval_service.wait_resolution(approval["approval_id"]))
+    try:
+        while not resolution_task.done():
+            await asyncio.wait({resolution_task}, timeout=15)
+            if not resolution_task.done():
+                await emit(ChatChunk(type="heartbeat"))
+        resolution = resolution_task.result()
+    finally:
+        if not resolution_task.done():
+            resolution_task.cancel()
+    action = str(resolution.get("action") or "timeout")
+    await emit(ChatChunk(type="approval_resolved", metadata={
+        "approval_id": approval["approval_id"], "tool_call_id": tool_call_id, "action": action,
+    }))
+    if action == "edited" and isinstance(resolution.get("modified_args"), dict):
+        args = resolution["modified_args"]
+        action = "approved"
+    if action == "approved" and resolution.get("always"):
+        always_allow.add(NETWORK_REQUEST_TOOL_NAME)
+    if action == "timeout":
+        await record_approval_audit(
+            user_id=str(user_id), approval_id=approval["approval_id"], session_id=str(session_id),
+            tool_name=NETWORK_REQUEST_TOOL_NAME, action="timeout", resolver="timeout",
+            arguments=args, method="EVENT",
+        )
+    if action != "approved":
+        reason = resolution.get("reason") or ("用户未响应（超时）" if action == "timeout" else "用户拒绝了该网络请求")
+        payload = {"success": False, "rejected": True, "result": {
+            "llm_payload": {"rejected": True, "error": reason},
+            "ui_payload": {"rejected": True, "error": reason},
+        }}
+        return args, payload
+    return args, None
+
+
 class LangGraphChatRuntime(DelegatingAgentRuntime):
     """LangGraph 请求的显式 Runtime 身份与通用 ReAct 流循环。"""
 
@@ -181,6 +258,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
         web_sources: list[dict[str, Any]] | None = None,
         handoff_handler: Any | None = None,
         extend_max_rounds: bool = False,
+        auto_approve: bool = False,
     ) -> AsyncIterator[ChatChunk]:
         """LangGraph 引擎路径：状态图驱动 ReAct 循环，事件协议与手写循环一致
 
@@ -189,6 +267,10 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
         state["ask_request"] 收尾，由本函数产出 ask_request 事件）；knowledge_search →
         self._service._knowledge_search_chat；MCP server 匹配 → MCPClient.call_tool；
         web_search → self._service._web_search；未挂载 → 报错信封。
+
+        auto_approve=True（AI 助手页面）时两个审批闸（chat_sandbox_execute /
+        network_request）直接跳过，操作即时执行；AI 工作台页面不传该标记，
+        维持 supervised 逐次审批。
         """
         runtime_state: dict[str, Any] = {
             "model_config": model_config,
@@ -206,6 +288,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
         # 审批闸上下文（对齐 legacy chat_service）：仅当会话显式携带
         # sandbox_meta.permissions.mode 时启用审批；always_allow 集合支持流内
         # always 批准动态补充，同流内后续调用直接放行。
+        # auto_approve（AI 助手页面）为真时两个闸整体跳过，见 _gate_* 早返回。
         approval_session = await self._service.get_session(session_id, user_id)
         approval_sandbox_meta = (
             dict(approval_session.sandbox_meta or {}) if approval_session else {}
@@ -244,6 +327,8 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 return "handoff"
             if tool_name == CHAT_SANDBOX_TOOL_NAME:
                 return "chat-sandbox"
+            if tool_name == NETWORK_REQUEST_TOOL_NAME:
+                return "network-request"
             if tool_name in SKILL_TOOL_NAMES:
                 return "skills"
             if tool_name in RESEARCH_TOOL_NAMES:
@@ -356,6 +441,20 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         )
                     )
                 return result
+            if tool_name == NETWORK_REQUEST_TOOL_NAME:
+                effective_args, rejection = await _gate_network_request_approval(
+                    emit=_emit,
+                    user_id=user_id,
+                    session_id=session_id,
+                    tool_call_id=tool_call_id,
+                    args=args,
+                    permission_mode=chat_permission_mode,
+                    always_allow=chat_always_allow,
+                    auto_approve=auto_approve,
+                )
+                if rejection is not None:
+                    return rejection
+                return await execute_network_request(effective_args)
             if tool_name == CHAT_SANDBOX_TOOL_NAME:
                 # 与 legacy 手写循环同一审批闸（supervised 模式经 Redis 审批 + SSE
                 # 事件下发/决议回写，audit_logs 留痕）；决议通过后才执行。执行本体
@@ -369,6 +468,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     args=args,
                     permission_mode=chat_permission_mode,
                     always_allow=chat_always_allow,
+                    auto_approve=auto_approve,
                 )
                 if rejection is not None:
                     return rejection

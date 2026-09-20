@@ -1,6 +1,10 @@
 studio:
   enabled: true
   # 默认走 micromamba 系 analysis 镜像（含 Python 3.12 + R 4.4 + uv + pip）；
+  # 这里只定义 Studio 的全局兜底和能力覆盖映射。Agent 的专用画像以
+  # data/ai/<agent>.yaml 的 studio.runtime_profile 经 runtime_images.yaml 解析为准。
+  # 不要把 default_image 当作所有 Agent 的镜像；修改默认镜像、能力映射或 tag 前，
+  # 必须先向用户询问，因为这会改变未显式覆盖请求的会话行为。
   # browser/document 能力会话仍按 capabilities 匹配到 browser-office 镜像。
   default_image: cygnusx-analysis:core-v0.0.2dev
   images:
@@ -15,7 +19,7 @@ studio:
       dockerfile: deploy/runtime-images/plot.Dockerfile
       capabilities: [code]
     analysis-scrna:
-      image: cygnusx-analysis:scrna-v0.0.2dev
+      image: cygnusx-analysis:scrna-v0.0.3dev
       runtime_profile: analysis-scrna
       dockerfile: deploy/runtime-images/scrna.Dockerfile
       capabilities: [code]
@@ -104,6 +108,8 @@ studio:
     - update_plan
     - pipeline_query
     - ask_user
+    # 公共元数据/API 访问：调用前由前端审批，不能用于大文件下载。
+    - network_request
     - browser_navigate
     - browser_screenshot
     - browser_click

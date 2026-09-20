@@ -231,7 +231,7 @@ docker-build-sandboxes: ## 重建全部沙盒/分析运行时镜像（runtime �
 	@echo ""
 	@echo "📋 镜像清单核对："
 	@ok=0; miss=0; \
-	for img in cygnusx-analysis:core-v0.0.2dev cygnusx-analysis:plot-v0.0.2dev cygnusx-analysis:scrna-v0.0.2dev \
+	for img in cygnusx-analysis:core-v0.0.2dev cygnusx-analysis:plot-v0.0.2dev cygnusx-analysis:scrna-v0.0.3dev \
 		cygnusx-sandbox-copilot:v0.0.2dev cygnusx-sandbox-base:v0.0.2dev cygnusx-sandbox-bio:v0.0.2dev cygnusx-sandbox-browser-office:v0.0.2dev cygnusx-sandbox-terminal:v0.0.2dev \
 		cygnusx-sandbox-rnaseq:v0.0.2dev cygnusx-sandbox-scrna:v0.0.2dev cygnusx-sandbox-gatk:v0.0.2dev \
 		cygnusx-sandbox-ggplot2:v0.0.2dev cygnusx-sandbox-assembly:v0.0.2dev cygnusx-sandbox-metagenomics:v0.0.2dev; do \
@@ -382,7 +382,7 @@ docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + R
 	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
 	@if docker image inspect cygnusx-analysis:core-v0.0.2dev >/dev/null 2>&1 && \
 	    docker image inspect cygnusx-analysis:plot-v0.0.2dev >/dev/null 2>&1 && \
-	    docker image inspect cygnusx-analysis:scrna-v0.0.2dev >/dev/null 2>&1; then \
+	    docker image inspect cygnusx-analysis:scrna-v0.0.3dev >/dev/null 2>&1; then \
 		echo "   ⏭️  cygnusx-analysis 三个运行时镜像均已存在，跳过构建"; \
 	else \
 		deploy/runtime-images/build.sh; \

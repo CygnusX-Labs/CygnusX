@@ -38,6 +38,8 @@ from cygnusx.infrastructure.storage.file_registry import FileRegistry
 from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 
 _UPLOAD_ID_RE = re.compile(r"^[a-fA-F0-9]{16,128}$")
+_SANDBOX_UID = 10001
+_SANDBOX_GID = 10001
 
 
 class PathEscapeError(ValueError):
@@ -114,16 +116,24 @@ class ScratchVolumeManager:
             self.volume.workspace / ".logs",
         ):
             sub.mkdir(parents=True, exist_ok=True)
+        mount_dirs = (
+            self.volume.workspace,
+            self.volume.platform,
+            self.volume.input,
+            self.volume.output,
+            self.volume.workspace / "scripts",
+            self.volume.workspace / "ref",
+            self.volume.workspace / ".logs",
+        )
         try:
-            # 容器内非 root 运行（uid 10001 / 1000）需要可写
-            os.chown(self.volume.workspace, 10001, 10001)
-            os.chown(self.volume.output, 10001, 10001)
-            os.chown(self.volume.input, 10001, 10001)
+            # 容器内统一以 uid/gid 10001 运行；嵌套目录也必须同步授权。
+            for path in mount_dirs:
+                os.chown(path, _SANDBOX_UID, _SANDBOX_GID)
+                path.chmod(0o770)
         except (PermissionError, OSError):
-            with contextlib.suppress(OSError):
-                self.volume.workspace.chmod(0o777)
-                self.volume.output.chmod(0o777)
-                self.volume.input.chmod(0o777)
+            for path in mount_dirs:
+                with contextlib.suppress(OSError):
+                    path.chmod(0o777)
         logger.info(
             "[ScratchVolume] 已分配 scratch: session=%s path=%s",
             self.session_id[:8],

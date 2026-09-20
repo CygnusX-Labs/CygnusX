@@ -36,6 +36,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from cygnusx.application.services.chat_message_event_service import message_event_service
+from cygnusx.application.services.network_request_tool import (
+    NETWORK_REQUEST_TOOL_NAME,
+    NETWORK_REQUEST_TOOL_SCHEMA,
+)
 from cygnusx.application.services.ptc_orchestrator import (
     PTC_DEFAULT_TIMEOUT_SECONDS,
     run_orchestration,
@@ -161,6 +165,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "onlyoffice_convert",
         "tool_orchestrate",
         "ask_user",
+        NETWORK_REQUEST_TOOL_NAME,
     }
 )
 
@@ -525,6 +530,7 @@ def _studio_function_schema(
 
 STUDIO_TOOL_SCHEMAS.extend(
     [
+        NETWORK_REQUEST_TOOL_SCHEMA,
         _studio_function_schema(
             "browser_navigate",
             "在会话专属 Chromium 中打开网页，返回标题、状态码、正文摘要和链接。仅允许 http/https；遵循沙箱网络白名单。",

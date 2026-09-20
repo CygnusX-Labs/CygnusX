@@ -63,6 +63,8 @@ from cygnusx.infrastructure.mcp.presets import (
     CYGNUSX_PLATFORM_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_NAME,
+    SEQOUT_SERVER_ID,
+    SEQOUT_SERVER_NAME,
     WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX,
     get_preset_by_name,
 )
@@ -77,6 +79,7 @@ _PRESET_IDS_BY_NAME: dict[str, uuid.UUID] = {
     "cygnusx-platform": CYGNUSX_PLATFORM_SERVER_ID,
     CYGNUSX_PIPELINES_SERVER_NAME: CYGNUSX_PIPELINES_SERVER_ID,
     CYGNUSX_TOOLS_SERVER_NAME: CYGNUSX_TOOLS_SERVER_ID,
+    SEQOUT_SERVER_NAME: SEQOUT_SERVER_ID,
     CONDA_META_MCP_SERVER_NAME: CONDA_META_MCP_SERVER_ID,
 }
 
@@ -261,8 +264,9 @@ class AgentService:
                     # 内置 Agent 的 MCP/Skill 绑定由 YAML tool_packs 声明驱动：以声明集合
                     # 为基础重建（而不是与历史值合并），从而清除历史漂移（如通用/代码/可视化
                     # 助手误挂 ensmbl/go-server/pipelines）与已失效的旧 server ID。
-                    # 核心 builtin 预设 cygnusx-tools（富集/绘图/记忆/交接/子Agent/Case 工具）
-                    # 与 cygnusx-platform（工作区文件）始终保留，其余 server 一律以声明为准。
+                    # 核心 builtin 预设 cygnusx-tools（富集/绘图/记忆/交接/子Agent/Case 工具）、
+                    # cygnusx-platform（工作区文件）与 seqout（公共数据库检索）始终保留，
+                    # 其余 server 一律以声明为准。
                     declared_mcp_ids = [
                         str(value)
                         for value in (cfg.get("mcp_ids") or [])
@@ -274,6 +278,7 @@ class AgentService:
                                 *declared_mcp_ids,
                                 str(CYGNUSX_TOOLS_SERVER_ID),
                                 str(CYGNUSX_PLATFORM_SERVER_ID),
+                                str(SEQOUT_SERVER_ID),
                             ]
                         )
                     )
@@ -330,6 +335,17 @@ class AgentService:
             features = dict(cfg.get("features") or {})
             if cfg.get("studio"):
                 features["studio"] = cfg["studio"]
+            # 新建 builtin Agent 同样保证三个核心预设在场：tools/platform/seqout
+            mcp_ids = list(
+                dict.fromkeys(
+                    [
+                        *(mcp_ids or []),
+                        str(CYGNUSX_TOOLS_SERVER_ID),
+                        str(CYGNUSX_PLATFORM_SERVER_ID),
+                        str(SEQOUT_SERVER_ID),
+                    ]
+                )
+            )
             agent_data = {
                 "agent_id": cfg["agent_id"],
                 "name": cfg.get("name", ""),
@@ -845,6 +861,7 @@ class AgentService:
             for preset_id, preset_name in (
                 (CYGNUSX_PLATFORM_SERVER_ID, "cygnusx-platform"),
                 (CYGNUSX_PIPELINES_SERVER_ID, CYGNUSX_PIPELINES_SERVER_NAME),
+                (SEQOUT_SERVER_ID, SEQOUT_SERVER_NAME),
                 (CONDA_META_MCP_SERVER_ID, CONDA_META_MCP_SERVER_NAME),
             ):
                 if preset_id in mcp_uuids and preset_id not in resolved_ids:

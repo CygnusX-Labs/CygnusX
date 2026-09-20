@@ -633,6 +633,7 @@ async def chat_stream(
                 overdrive=request.overdrive,
                 extend_max_rounds=request.extend_max_rounds,
                 page_context=request.page_context,
+                auto_approve=request.auto_approve,
             )
         else:
             if not request.model_id:

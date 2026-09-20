@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # OmicStudio 独立浏览器/文档能力镜像。
 # 先构建 base，再执行：
 ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
@@ -20,7 +21,8 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
         sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
     fi
 
-RUN mkdir -p /opt/playwright-browsers /tmp/chromium /tmp/downloads \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    mkdir -p /opt/playwright-browsers /tmp/chromium /tmp/downloads \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         chromium \
@@ -28,10 +30,10 @@ RUN mkdir -p /opt/playwright-browsers /tmp/chromium /tmp/downloads \
         libreoffice-calc \
         libreoffice-impress \
         fonts-liberation \
-    && pip install --no-cache-dir playwright python-docx python-pptx \
+    && python -m pip install --prefer-binary playwright python-docx python-pptx \
     && chown -R 10001:10001 /opt/playwright-browsers /tmp/chromium /tmp/downloads \
     && rm -rf /var/lib/apt/lists/*
 
-USER 10001
+USER 10001:10001
 WORKDIR /workspace
 CMD ["sh", "-c", "rm -f /workspace/.agent.sock && exec uvicorn --app-dir /opt/sandbox sandbox_agent:app --uds /workspace/.agent.sock"]

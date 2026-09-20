@@ -143,6 +143,29 @@ def test_router_catalog_carries_configured_persona_summary(tmp_path) -> None:
     assert "status_lines" not in entry["persona"]
 
 
+def test_router_catalog_carries_compact_role_scope(tmp_path) -> None:
+    registry = AgentTeamsCapabilityRegistry(
+        FlowRegistry.from_directory(tmp_path),
+        _Abilities(),
+        [
+            {
+                "agent_id": "agent-viz",
+                "name": "Visualization",
+                "category": "visualization",
+                "features": {
+                    **_features("agent-viz"),
+                    "default_role": "生成出版级图形",
+                    "capability_scope": ["统计图表", "火山图"],
+                },
+            }
+        ],
+    )
+
+    entry = registry.chat_router_catalog()[0]
+    assert entry["default_role"] == "生成出版级图形"
+    assert entry["capability_scope"] == ["统计图表", "火山图"]
+
+
 def test_capability_detail_context_carries_selected_agent_persona(tmp_path) -> None:
     features = _features("agent-code")
     features["persona"].update(
