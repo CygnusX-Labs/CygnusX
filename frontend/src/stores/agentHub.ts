@@ -164,9 +164,11 @@ export interface AvailableModel {
   is_default: boolean
   temperature?: number
   max_tokens?: number
-  /** 输入/输出单价（元 / M tokens），null = 未配置 */
+  /** 输入/输出/输入缓存/输出缓存单价（元 / M tokens），null = 未配置 */
   input_price?: number | null
   output_price?: number | null
+  input_cache_price?: number | null
+  output_cache_price?: number | null
 }
 
 export const useAgentHubStore = defineStore('agentHub', () => {
@@ -186,6 +188,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
   const contextCompressedNotice = ref<number | null>(null)
   /** 路由/交接命中 default_mode=studio 的 Agent 时置位，聊天界面据此自动跳转 AI 工作台 */
   const studioRedirect = ref<{ agentId: string; agentName: string } | null>(null)
+  /**
+   * 从 AI 助手「进入工作台」时携带的未发送草稿：正文 + 附件。
+   * StudioView 进入对应会话后回填到工作台输入框并清空，避免"进工作台草稿全丢、重新输入"。
+   */
+  const pendingStudioDraft = ref<{
+    sessionId: string
+    content: string
+    attachments: FileAttachment[]
+  } | null>(null)
 
   /** 目标 Agent 声明默认工作台模式且当前是普通聊天会话时，发起工作台跳转 */
   function maybeRedirectToStudio(agentId: string, agentName: string): void {
@@ -1615,7 +1626,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         visible?: boolean
         agent_name?: string
         created_at: string
-        tokens?: { input: number; output: number; total: number }
+        tokens?: { input: number; output: number; total: number; cached?: number }
       }>>(`/chat/sessions/${sessionId}/messages`)
       const session = sessions.value.find((s) => s.id === sessionId)
       if (!session) return
@@ -1633,7 +1644,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           modelName: (m.metadata_json?.model as string) || undefined,
           // usage is response metadata; keep it off user/system messages even if an old
           // backend row contains a stale tokens payload.
-          tokens: m.role === 'assistant' ? (m.tokens || { input: 0, output: 0, total: 0 }) : undefined,
+          tokens: m.role === 'assistant' ? (m.tokens || { input: 0, output: 0, total: 0, cached: 0 }) : undefined,
           visible: m.visible !== false && m.metadata_json?.visible !== false,
           type: typeof m.type === 'string'
             ? m.type
@@ -2085,7 +2096,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       toolCalls: [],
       timeline: [],
       createdAt: new Date().toISOString(),
-      tokens: { input: 0, output: 0, total: 0 },
+      tokens: { input: 0, output: 0, total: 0, cached: 0 },
     }
     if (!effectiveOverdrive) session.messages.push(aiMsgSeed)
     // 必须使用响应式数组返回的代理对象继续写入。
@@ -2789,12 +2800,13 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             const input = usage.prompt_tokens ?? usage.input_tokens ?? usage.input ?? 0
             const output = usage.completion_tokens ?? usage.output_tokens ?? usage.output ?? 0
             const total = usage.total_tokens ?? usage.total ?? input + output
+            const cached = usage.cached_tokens ?? 0
             // 以服务端返回的 assistant message_id 定位，避免流期间对象被替换后写入旧引用。
             const targetId = messageId || aiMsg.backendMessageId || aiMsg.id
             const target = session.messages.find(
               (item) => (item.id === targetId || item.backendMessageId === targetId) && item.role === 'assistant',
             )
-            ;(target || aiMsg).tokens = { input, output, total }
+            ;(target || aiMsg).tokens = { input, output, total, cached }
           }
           if (finishReason === 'length' && aiMsg.content.trim()) {
             aiMsg.content += '\n\n---\n⚠️ *回答因达到最大长度限制而截断，可尝试缩短提问或分步追问。*'
@@ -3173,6 +3185,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     roundLimitPrompt,
     contextCompressedNotice,
     studioRedirect,
+    pendingStudioDraft,
     maybeRedirectToStudio,
     clearStudioRedirect,
     studioSessionIds, currentPlan, studioPermissions,

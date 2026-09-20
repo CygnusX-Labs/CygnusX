@@ -379,9 +379,11 @@ export interface AIProviderConfig {
   max_tokens: number
   top_p: number
   timeout: number
-  /** 输入/输出单价（元 / M tokens），null = 未配置，费用估算回退到全局单价 */
+  /** 输入/输出/输入缓存/输出缓存单价（元 / M tokens），null = 未配置，费用估算回退到全局单价 */
   input_price?: number | null
   output_price?: number | null
+  input_cache_price?: number | null
+  output_cache_price?: number | null
   is_active: boolean
   is_default: boolean
   api_key?: string // 脱敏回显："********" 表示已配置，未配置为空

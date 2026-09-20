@@ -39,6 +39,8 @@ def _provider_to_yaml_dict(config: AIProviderConfig) -> dict[str, Any]:
         # 单价始终落盘（未配置写 null）：YAML 单一事实源，清空单价后重启同步才能真的清掉
         "input_price": config.input_price,
         "output_price": config.output_price,
+        "input_cache_price": config.input_cache_price,
+        "output_cache_price": config.output_cache_price,
         "is_default": config.is_default,
         "is_active": config.is_active,
         "extra_params": config.extra_params or {},

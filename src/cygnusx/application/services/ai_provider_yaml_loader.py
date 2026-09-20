@@ -107,6 +107,8 @@ class AIProviderYamlLoader:
                 timeout=int(item.get("timeout", base.timeout if base else 120)),
                 input_price=_opt_float(item.get("input_price", base.input_price if base else None)),
                 output_price=_opt_float(item.get("output_price", base.output_price if base else None)),
+                input_cache_price=_opt_float(item.get("input_cache_price", base.input_cache_price if base else None)),
+                output_cache_price=_opt_float(item.get("output_cache_price", base.output_cache_price if base else None)),
                 is_active=bool(item.get("is_active", base.is_active if base else True)),
                 is_default=is_default,
                 extra_params=item.get("extra_params", base.extra_params if base else {}),

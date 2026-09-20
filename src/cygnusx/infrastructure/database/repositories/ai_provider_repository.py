@@ -95,6 +95,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             timeout=model.timeout,
             input_price=model.input_price,
             output_price=model.output_price,
+            input_cache_price=model.input_cache_price,
+            output_cache_price=model.output_cache_price,
             is_active=model.is_active,
             is_default=model.is_default,
             extra_params=model.extra_params or {},
@@ -117,6 +119,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             timeout=config.timeout,
             input_price=config.input_price,
             output_price=config.output_price,
+            input_cache_price=config.input_cache_price,
+            output_cache_price=config.output_cache_price,
             is_active=config.is_active,
             is_default=config.is_default,
             extra_params=config.extra_params,
@@ -134,6 +138,8 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
         model.timeout = config.timeout
         model.input_price = config.input_price
         model.output_price = config.output_price
+        model.input_cache_price = config.input_cache_price
+        model.output_cache_price = config.output_cache_price
         model.is_active = config.is_active
         model.is_default = config.is_default
         model.extra_params = config.extra_params

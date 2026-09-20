@@ -51,6 +51,8 @@ def _to_dto(config: AIProviderConfig) -> AIProviderConfigDTO:
         timeout=config.timeout,
         input_price=config.input_price,
         output_price=config.output_price,
+        input_cache_price=config.input_cache_price,
+        output_cache_price=config.output_cache_price,
         is_active=config.is_active,
         is_default=config.is_default,
         extra_params=config.extra_params,
@@ -135,6 +137,8 @@ class AIProviderConfigService:
             timeout=dto.timeout,
             input_price=dto.input_price,
             output_price=dto.output_price,
+            input_cache_price=dto.input_cache_price,
+            output_cache_price=dto.output_cache_price,
             extra_params=dto.extra_params,
         )
         self._domain.validate(config)
@@ -161,6 +165,8 @@ class AIProviderConfigService:
         config.timeout = dto.timeout
         config.input_price = dto.input_price
         config.output_price = dto.output_price
+        config.input_cache_price = dto.input_cache_price
+        config.output_cache_price = dto.output_cache_price
         config.is_active = dto.is_active
         config.extra_params = dto.extra_params
         # 仅当提交了非空、且非脱敏哨兵的 Key 时才更新；

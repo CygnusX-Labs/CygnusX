@@ -55,9 +55,16 @@ const festivalEffectsEnabled = ref(false)
 // ===== AI 用量计费单价（元 / M tokens，localStorage 持久化） =====
 const tokenInputPrice = ref(DEFAULT_TOKEN_PRICING.inputPerM)
 const tokenOutputPrice = ref(DEFAULT_TOKEN_PRICING.outputPerM)
+const tokenInputCachePrice = ref(DEFAULT_TOKEN_PRICING.inputCachePerM)
+const tokenOutputCachePrice = ref(DEFAULT_TOKEN_PRICING.outputCachePerM)
 
 function updateTokenPricing() {
-  saveTokenPricing({ inputPerM: tokenInputPrice.value, outputPerM: tokenOutputPrice.value })
+  saveTokenPricing({
+    inputPerM: tokenInputPrice.value,
+    outputPerM: tokenOutputPrice.value,
+    inputCachePerM: tokenInputCachePrice.value,
+    outputCachePerM: tokenOutputCachePrice.value,
+  })
   // 通知已打开的工作台页面热更新单价
   window.dispatchEvent(new Event('token-pricing-changed'))
   message.success('AI 用量单价已保存')
@@ -223,6 +230,8 @@ onMounted(async () => {
   const pricing = loadTokenPricing()
   tokenInputPrice.value = pricing.inputPerM
   tokenOutputPrice.value = pricing.outputPerM
+  tokenInputCachePrice.value = pricing.inputCachePerM
+  tokenOutputCachePrice.value = pricing.outputCachePerM
   if (!authStore.isLoggedIn) {
     router.push('/login')
     return
@@ -612,7 +621,7 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
               <div class="pref-item">
                 <div class="pref-info">
                   <div class="pref-label">AI 用量单价（全局兜底）</div>
-                  <div class="pref-desc">按每 M（百万）tokens 计价（元）；模型在 AI 配置中心配置了单价时优先使用模型单价，此处作为未配置模型的兜底价</div>
+                  <div class="pref-desc">按每 M（百万）tokens 计价（元）；模型在 AI 配置中心配置了单价时优先使用模型单价，此处作为未配置模型的兜底价；缓存命中为输入中按缓存单价计费的重复部分</div>
                 </div>
                 <div class="pricing-inputs">
                   <span class="pricing-field">
@@ -637,6 +646,34 @@ const totpPolicyOptions: { key: SiteSettings['totp_policy']; label: string; desc
                       :min="0"
                       :precision="2"
                       :step="0.5"
+                      style="width: 110px"
+                      @update:value="updateTokenPricing"
+                    >
+                      <template #suffix>元/M</template>
+                    </NInputNumber>
+                  </span>
+                  <span class="pricing-field">
+                    <label>Cache In</label>
+                    <NInputNumber
+                      v-model:value="tokenInputCachePrice"
+                      size="small"
+                      :min="0"
+                      :precision="2"
+                      :step="0.25"
+                      style="width: 110px"
+                      @update:value="updateTokenPricing"
+                    >
+                      <template #suffix>元/M</template>
+                    </NInputNumber>
+                  </span>
+                  <span class="pricing-field">
+                    <label>Cache Out</label>
+                    <NInputNumber
+                      v-model:value="tokenOutputCachePrice"
+                      size="small"
+                      :min="0"
+                      :precision="2"
+                      :step="0.25"
                       style="width: 110px"
                       @update:value="updateTokenPricing"
                     >

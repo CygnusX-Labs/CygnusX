@@ -171,7 +171,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     await nextTick()
 
     expect(el.textContent).toContain('第一段正文，第二段正文')
-    expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, output: 6, total: 16 })
+    expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, output: 6, total: 16, cached: 0 })
     app.unmount()
     vi.unstubAllGlobals()
   })

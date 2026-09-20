@@ -7,6 +7,10 @@ export interface TokenInfo {
   input?: number
   output?: number
   total?: number
+  /** 缓存命中的输入 tokens，费用按输入缓存单价单独计价 */
+  cached?: number
+  /** 缓存命中的输出 tokens，费用按输出缓存单价单独计价 */
+  cachedOutput?: number
 }
 
 export interface WebSearchSource {

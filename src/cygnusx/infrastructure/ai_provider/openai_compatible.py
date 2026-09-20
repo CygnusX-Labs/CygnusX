@@ -131,6 +131,18 @@ def _dedupe_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique
 
 
+def _extract_cached_tokens(source: dict[str, Any]) -> int:
+    """从 usage 中提取缓存命中 tokens（OpenAI prompt_tokens_details / Anthropic cache_read_input_tokens）。"""
+    details = source.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached = _usage_int(details.get("cached_tokens"))
+        if cached > 0:
+            return cached
+    return _usage_int(
+        source.get("cached_tokens") or source.get("cache_read_input_tokens")
+    )
+
+
 def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None:
     """把不同 OpenAI 兼容服务的 usage 字段统一为标准三字段。"""
     if not isinstance(usage, dict):
@@ -145,11 +157,13 @@ def normalize_token_usage(usage: dict[str, Any] | None) -> dict[str, Any] | None
     total_tokens = _usage_int(source.get("total_tokens") or source.get("total"))
     if total_tokens <= 0:
         total_tokens = prompt_tokens + completion_tokens
+    cached_tokens = _extract_cached_tokens(source)
     normalized = dict(usage)
     normalized.update(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
+        cached_tokens=cached_tokens,
     )
     return normalized
 
@@ -169,6 +183,7 @@ def merge_token_usage(
         "prompt_tokens": left["prompt_tokens"] + right["prompt_tokens"],
         "completion_tokens": left["completion_tokens"] + right["completion_tokens"],
         "total_tokens": left["total_tokens"] + right["total_tokens"],
+        "cached_tokens": left["cached_tokens"] + right["cached_tokens"],
     }
 
 

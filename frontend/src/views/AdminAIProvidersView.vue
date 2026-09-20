@@ -53,6 +53,8 @@ const editForm = ref<Partial<AIProviderConfig> & { api_key?: string }>({
   timeout: 120,
   input_price: null,
   output_price: null,
+  input_cache_price: null,
+  output_cache_price: null,
   is_active: true,
   extra_params: {},
 })
@@ -74,10 +76,14 @@ const columns = [
   {
     title: '单价 (元/M)',
     key: 'price',
-    width: 110,
+    width: 190,
     render: (row: AIProviderConfig) =>
-      row.input_price != null || row.output_price != null
-        ? `${row.input_price ?? '-'} / ${row.output_price ?? '-'}`
+      row.input_price != null ||
+      row.output_price != null ||
+      row.input_cache_price != null ||
+      row.output_cache_price != null
+        ? `入 ${row.input_price ?? '-'} / 出 ${row.output_price ?? '-'} / ` +
+          `存入 ${row.input_cache_price ?? '-'} / 存出 ${row.output_cache_price ?? '-'}`
         : '未配置',
   },
   {
@@ -134,6 +140,8 @@ function openEdit(row?: AIProviderConfig) {
       timeout: 120,
       input_price: null,
       output_price: null,
+      input_cache_price: null,
+      output_cache_price: null,
       is_active: true,
       extra_params: {},
     }
@@ -268,6 +276,26 @@ onMounted(fetchConfigs)
             :step="0.5"
             :precision="4"
             placeholder="元 / M tokens"
+            style="width: 180px"
+          />
+        </NFormItem>
+        <NFormItem label="输入缓存单价">
+          <NInputNumber
+            v-model:value="editForm.input_cache_price"
+            :min="0"
+            :step="0.25"
+            :precision="4"
+            placeholder="缓存命中的输入 tokens，元 / M"
+            style="width: 180px"
+          />
+        </NFormItem>
+        <NFormItem label="输出缓存单价">
+          <NInputNumber
+            v-model:value="editForm.output_cache_price"
+            :min="0"
+            :step="0.25"
+            :precision="4"
+            placeholder="缓存命中的输出 tokens，元 / M"
             style="width: 180px"
           />
         </NFormItem>

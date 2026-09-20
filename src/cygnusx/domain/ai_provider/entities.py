@@ -25,9 +25,11 @@ class AIProviderConfig(BaseModel):
     max_tokens: int = 2048
     top_p: float = 1.0
     timeout: int = 120
-    # 输入/输出单价（元 / M tokens），供工作台会话费用估算；None = 未配置
+    # 输入/输出/输入缓存/输出缓存单价（元 / M tokens），供工作台会话费用估算；None = 未配置
     input_price: float | None = None
     output_price: float | None = None
+    input_cache_price: float | None = None
+    output_cache_price: float | None = None
     is_active: bool = True
     is_default: bool = False
     extra_params: dict[str, Any] = Field(default_factory=dict)
@@ -54,6 +56,8 @@ class AIProviderConfig(BaseModel):
         timeout: int = 120,
         input_price: float | None = None,
         output_price: float | None = None,
+        input_cache_price: float | None = None,
+        output_cache_price: float | None = None,
         extra_params: dict[str, Any] | None = None,
     ) -> "AIProviderConfig":
         return AIProviderConfig(
@@ -69,5 +73,7 @@ class AIProviderConfig(BaseModel):
             timeout=timeout,
             input_price=input_price,
             output_price=output_price,
+            input_cache_price=input_cache_price,
+            output_cache_price=output_cache_price,
             extra_params=extra_params or {},
         )

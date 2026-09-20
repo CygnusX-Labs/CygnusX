@@ -13,6 +13,7 @@ import {
   AnalyticsOutline,
   AddOutline,
   CheckmarkCircle,
+  SpeedometerOutline,
 } from '@vicons/ionicons5'
 import KimiMessageList from '@/components/ai-chat/KimiMessageList.vue'
 import OverdriveProgressCard from '@/components/ai-chat/OverdriveProgressCard.vue'
@@ -34,6 +35,7 @@ import { projectsApi, type ProjectItem } from '@/api/projects'
 import type { ChatMessage, FileAttachment } from '@/components/ai-chat/types'
 import { displayName } from '@/utils/displayName'
 import { parseTaskUnderstanding } from '@/utils/studioPresentation'
+import { formatTokensInM, loadTokenPricing, resolvePricing, summarizeUsage } from '@/utils/tokenCost'
 
 const store = useAgentHubStore()
 const authStore = useAuthStore()
@@ -169,13 +171,11 @@ async function handleProjectCreated(project: ProjectItem) {
   message.success(`已选中项目「${project.name}」，可以开始分析了`)
 }
 
-/** 新会话尚未落库且未选项目时拦截提交（与后端强制 project_id 校验对应） */
-function requireProjectForNewSession(): boolean {
+/** 新会话尚未选项目时不拦截：后端会自动归入「默认项目」，此处仅轻提示用户 */
+function notifyDefaultProjectIfUnset(): void {
   if (isNewSession.value && !session.value?.project_id) {
-    message.warning('请先选择所属项目，再开始新的分析会话')
-    return false
+    message.info('未选择项目，本次会话将自动归入「默认项目」，可稍后到项目列表中整理')
   }
-  return true
 }
 const overdriveEnabled = computed({
   get: () => Boolean(session.value?.overdrive),
@@ -209,6 +209,31 @@ const isEmpty = computed(() => (session.value?.messages.length ?? 0) === 0)
 const conversationMessages = computed(() =>
   conversationMessagesWithoutProgress(session.value?.messages || []),
 )
+
+// ---------- 会话 token 用量 / 费用 ----------
+// 单价取模型级配置（AI 配置中心，随 /chat/models 下发），未配置回退到
+// 设置 → 偏好设置 的全局单价（localStorage）；设置页保存后广播
+// 'token-pricing-changed'，此处热更新，无需刷新页面
+const tokenPricing = ref(loadTokenPricing())
+const sessionUsage = computed(() => {
+  if (!session.value) return null
+  const model = store.availableModels.find((m) => m.id === session.value?.model_id)
+  return summarizeUsage(
+    session.value.messages,
+    resolvePricing(tokenPricing.value, {
+      input: model?.input_price,
+      output: model?.output_price,
+      inputCache: model?.input_cache_price,
+      outputCache: model?.output_cache_price,
+    }),
+  )
+})
+function refreshTokenPricing() {
+  tokenPricing.value = loadTokenPricing()
+}
+window.addEventListener('token-pricing-changed', refreshTokenPricing)
+window.addEventListener('storage', refreshTokenPricing)
+
 /** 超频规划开始前先明确解析到的任务，保持与 AI 工作台一致的首屏认知反馈。 */
 const overdriveTaskUnderstanding = computed(() => {
   if (!session.value?.overdrive) return null
@@ -389,7 +414,7 @@ function handleSend(
 ) {
   if (!content.trim() && !options.attachments?.length) return
   if (store.isStreaming) return
-  if (!requireProjectForNewSession()) return
+  notifyDefaultProjectIfUnset()
   void store.sendMessage(content, options)
   input.value = ''
 }
@@ -473,12 +498,7 @@ function handleBack() {
 async function handleEnterStudio() {
   if (!agent.value || creatingStudio.value) return
   const sid = store.currentSessionId
-  const projectId = store.currentSession?.project_id || undefined
-  // 需要新建工作台会话（无会话或临时会话）时必须先选项目，与后端强制校验对应
-  if ((!sid || sid.startsWith('sess-')) && !projectId) {
-    message.warning('请先选择所属项目，再进入 AI 工作台')
-    return
-  }
+  notifyDefaultProjectIfUnset()
   creatingStudio.value = true
   try {
     let sessionId = ''
@@ -500,11 +520,22 @@ async function handleEnterStudio() {
       const created = await studioApi.createSession({
         agent_id: agent.value.id,
         runtime_profile: store.currentSession?.runtime_profile || undefined,
-        project_id: projectId,
+        project_id: store.currentSession?.project_id || undefined,
       })
       sessionId = created.session_id
     }
     store.markStudioSession(sessionId)
+    // 携带输入框未发送的草稿（正文 + 附件）进工作台，进入后回填，避免内容丢失需重新输入
+    const draftContent = input.value
+    const draftAttachments = composerRef.value?.getDraftAttachments() || []
+    if (draftContent.trim() || draftAttachments.length) {
+      store.pendingStudioDraft = {
+        sessionId,
+        content: draftContent,
+        attachments: draftAttachments,
+      }
+      input.value = ''
+    }
     message.info('已进入 AI 工作台，对话历史已带过去，可继续')
     router.push({ name: 'studio', params: { sessionId } })
   } catch (e: any) {
@@ -516,6 +547,8 @@ async function handleEnterStudio() {
 
 onUnmounted(() => {
   if (noticeTimer) clearTimeout(noticeTimer)
+  window.removeEventListener('token-pricing-changed', refreshTokenPricing)
+  window.removeEventListener('storage', refreshTokenPricing)
 })
 </script>
 
@@ -542,6 +575,18 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="header-right">
+        <NTooltip v-if="sessionUsage && sessionUsage.total > 0" trigger="hover">
+          <template #trigger>
+            <span class="token-usage-chip">
+              <NIcon size="13"><SpeedometerOutline /></NIcon>
+              <span>↑{{ formatTokensInM(sessionUsage.input) }}</span>
+              <span v-if="sessionUsage.cached > 0" title="缓存命中的输入 tokens">⚡{{ formatTokensInM(sessionUsage.cached) }}</span>
+              <span>↓{{ formatTokensInM(sessionUsage.output) }}</span>
+              <span class="usage-cost">¥{{ sessionUsage.cost < 0.01 ? sessionUsage.cost.toFixed(4) : sessionUsage.cost.toFixed(2) }}</span>
+            </span>
+          </template>
+          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens（缓存命中 {{ sessionUsage.cached.toLocaleString() }}），输出 {{ sessionUsage.output.toLocaleString() }} tokens；按模型单价（AI 配置中心）或设置页全局单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
+        </NTooltip>
         <div class="model-selector">
           <n-select
             v-if="modelOptions.length"
@@ -629,43 +674,6 @@ onUnmounted(() => {
 
         <!-- 输入区：单实例避免草稿/附件丢失；空会话在说明下方、活跃会话底部吸附（frontend.md §35.3） -->
         <div class="composer-slot">
-          <!-- 新建会话必选所属项目；会话落库后项目边界固定，选择器不再显示。
-               视觉上是输入框上方的一枚紧凑 pill：图标 + 项目名/占位文案 + 下拉箭头，不再用生硬的 label 行 -->
-          <div v-if="isEmpty" class="project-select-row">
-            <div
-              class="project-pill"
-              :class="{ 'project-pill--selected': selectedProjectId }"
-              role="group"
-              aria-label="所属项目（必选）"
-            >
-              <NIcon :size="14" class="project-pill-icon" aria-hidden="true">
-                <CheckmarkCircle v-if="selectedProjectId" />
-                <FolderOpenOutline v-else />
-              </NIcon>
-              <n-select
-                :value="selectedProjectId"
-                :options="projectOptions"
-                :loading="loadingProjects"
-                :disabled="!isNewSession"
-                :consistent-menu-width="false"
-                placeholder="选择所属项目（必选）"
-                filterable
-                size="small"
-                class="project-select"
-                @update:value="(value: string | null) => (selectedProjectId = value)"
-              >
-                <template v-if="!loadingProjects && !projects.length" #empty>
-                  <span class="project-select-empty">暂无项目，点击下方「创建新项目」开始</span>
-                </template>
-                <template #action>
-                  <button type="button" class="project-create-entry" @click="showCreateProject = true">
-                    <NIcon :size="14" aria-hidden="true"><AddOutline /></NIcon>
-                    创建新项目
-                  </button>
-                </template>
-              </n-select>
-            </div>
-          </div>
           <CreateProjectModal v-model:show="showCreateProject" @created="handleProjectCreated" />
           <KimiChatInput
             ref="composerRef"
@@ -680,7 +688,45 @@ onUnmounted(() => {
             @stop="store.stopStreaming"
             @toggle-overdrive="overdriveEnabled = !overdriveEnabled"
             @enter-workbench="handleEnterStudio"
-          />
+          >
+            <!-- 项目选择：作为「进入工作台」之后的一枚按钮常驻工具栏（新建会话可选，未选自动归入默认项目）。
+                 会话落库后项目边界固定，按钮不再显示。 -->
+            <template v-if="isNewSession" #after-workbench>
+              <div
+                class="project-pill project-pill--toolbar"
+                :class="{ 'project-pill--selected': selectedProjectId }"
+                role="group"
+                aria-label="所属项目"
+              >
+                <NIcon :size="14" class="project-pill-icon" aria-hidden="true">
+                  <CheckmarkCircle v-if="selectedProjectId" />
+                  <FolderOpenOutline v-else />
+                </NIcon>
+                <n-select
+                  :value="selectedProjectId"
+                  :options="projectOptions"
+                  :loading="loadingProjects"
+                  :disabled="!isNewSession"
+                  :consistent-menu-width="false"
+                  placeholder="选择项目"
+                  filterable
+                  size="small"
+                  class="project-select"
+                  @update:value="(value: string | null) => (selectedProjectId = value)"
+                >
+                  <template v-if="!loadingProjects && !projects.length" #empty>
+                    <span class="project-select-empty">暂无项目，点击下方「创建新项目」开始</span>
+                  </template>
+                  <template #action>
+                    <button type="button" class="project-create-entry" @click="showCreateProject = true">
+                      <NIcon :size="14" aria-hidden="true"><AddOutline /></NIcon>
+                      创建新项目
+                    </button>
+                  </template>
+                </n-select>
+              </div>
+            </template>
+          </KimiChatInput>
         </div>
 
         <!-- 快捷任务：语义图标 + 动词文案 + 预填行为，首页以居中芯片呈现（frontend.md §35.6） -->
@@ -803,6 +849,25 @@ onUnmounted(() => {
 .id-name { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--chat-text-primary, #1A1D33); }
 .agent-status { margin-top: 2px; color: var(--success-color, #18a058); font-size: 12px; line-height: 16px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.token-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--studio-border, #e8e8f2);
+  border-radius: 999px;
+  background: var(--studio-primary-soft, #f0edff);
+  color: var(--studio-text-sub, #8a8aa3);
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+.token-usage-chip .usage-cost {
+  color: var(--studio-primary, #6c5ce7);
+  font-weight: 600;
+}
 /* 工作台模式归为页面操作组，用次要弱化按钮，不与发送按钮竞争主层级（frontend.md §35.8.3） */
 .capability-btn {
   color: var(--stardust-blue);
@@ -847,13 +912,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-/* 项目选择：空会话首屏输入框上方的一枚紧凑 pill（必选，与后端强制 project_id 校验对应）。
+/* 项目选择：输入工具栏内「进入工作台」之后的一枚紧凑 pill（未选也可开始，未选自动归入默认项目）。
    pill 与 quick-chip 共用边框/底色 token，选中后描边转主题蓝作为轻量确认反馈 */
-.project-select-row {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 12px;
-}
 .project-pill {
   display: inline-flex;
   align-items: center;
@@ -864,6 +924,11 @@ onUnmounted(() => {
   border-radius: 999px;
   background: var(--chat-surface, var(--bg-card));
   transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.project-pill--toolbar {
+  max-width: 240px;
+  margin-left: 2px;
+  padding: 2px 8px 2px 12px;
 }
 .project-pill:hover {
   border-color: color-mix(in srgb, var(--stardust-blue, #4c6fff) 35%, transparent);
@@ -882,10 +947,14 @@ onUnmounted(() => {
 .project-pill--selected .project-pill-icon {
   color: var(--stardust-blue, #4c6fff);
 }
-/* 选择器本体透明无边框，视觉并入 pill；宽度随内容收缩，下拉浮层放宽上限 */
+/* 选择器本体透明无边框，视觉并入 pill；工具栏场景下宽度收紧，下拉浮层放宽上限 */
 .project-select {
   min-width: 200px;
   max-width: 340px;
+}
+.project-pill--toolbar .project-select {
+  min-width: 0;
+  max-width: 170px;
 }
 .project-select :deep(.n-base-selection) {
   --n-border: none !important;
@@ -1075,6 +1144,7 @@ onUnmounted(() => {
   .agent-sandbox { height: calc(100% - 24px); margin: 12px; border-radius: 14px; }
   .sandbox-header { padding-inline: 16px; }
   .header-right { gap: 6px; }
+  .token-usage-chip { display: none; }
   .model-selector :deep(.n-base-selection) { min-width: 124px; }
   .is-empty .chat-content-wrapper { padding: 24px 16px 32px; }
   .overdrive-progress-dock { padding-inline: 16px; }

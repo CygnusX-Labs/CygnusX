@@ -813,6 +813,8 @@ async def list_models(db: DbSession) -> list[dict]:
             "max_tokens": c.max_tokens,
             "input_price": c.input_price,
             "output_price": c.output_price,
+            "input_cache_price": c.input_cache_price,
+            "output_cache_price": c.output_cache_price,
         }
         for c in configs
     ]

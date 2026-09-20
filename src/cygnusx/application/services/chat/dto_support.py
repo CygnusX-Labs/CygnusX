@@ -41,6 +41,7 @@ class ChatDtoSupport:
         total_tokens = (
             usage.get("total_tokens", 0) or usage.get("total", 0) or input_tokens + output_tokens
         )
+        cached_tokens = usage.get("cached_tokens", 0) or 0
         # WP2 双读：有事件的消息在终态快照 metadata 之外附带过程态回放块；
         # 无事件的旧会话不传 replay，metadata 原样透传，行为与升级前完全一致
         metadata_json = dict(message.metadata_json or {})
@@ -58,6 +59,7 @@ class ChatDtoSupport:
                 "input": input_tokens,
                 "output": output_tokens,
                 "total": total_tokens,
+                "cached": cached_tokens,
             },
         )
 

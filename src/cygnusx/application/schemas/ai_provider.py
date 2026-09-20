@@ -15,9 +15,11 @@ class AIProviderConfigBaseDTO(BaseModel):
     max_tokens: int = 2048
     top_p: float = 1.0
     timeout: int = 120
-    # 输入/输出单价（元 / M tokens），工作台费用估算用；None/缺省 = 未配置
+    # 输入/输出/输入缓存/输出缓存单价（元 / M tokens），工作台费用估算用；None/缺省 = 未配置
     input_price: float | None = None
     output_price: float | None = None
+    input_cache_price: float | None = None
+    output_cache_price: float | None = None
     is_active: bool = True
     extra_params: dict[str, Any] = Field(default_factory=dict)
 

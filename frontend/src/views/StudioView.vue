@@ -157,20 +157,26 @@ const switchingPermissions = ref(false)
 async function handlePermissionChange(mode: 'supervised' | 'plan' | 'auto') {
   if (switchingPermissions.value) return
   switchingPermissions.value = true
-  try {
-    await store.setStudioPermissions(mode)
-    if (mode === 'auto') {
-      message.warning('已切换到放权模式：所有工具将自动执行，不再等待批准')
-    } else if (mode === 'plan') {
-      message.info('已切换到计划模式：先批准完整计划，再自动执行本轮步骤')
-    } else {
-      message.success('已切换到监督模式：关键操作需你批准后执行')
-    }
-  } catch {
-    message.error('权限模式切换失败，请重试')
-  } finally {
-    switchingPermissions.value = false
-  }
+  // 乐观切换立即生效（store 先置本地态）。流式执行期间聊天事务持有
+  // chat_sessions 行锁，本请求会排队到本轮结束才落库（实测可长达数分钟），
+  // 因此不 await 阻塞选择器：spinner 短暂展示，结果经 toast 反馈，
+  // 与 PATCH /ui 的"本地优先、服务端延迟落库"策略一致。
+  void store.setStudioPermissions(mode)
+    .then(() => {
+      if (mode === 'auto') {
+        message.warning('已切换到放权模式：所有工具将自动执行，不再等待批准')
+      } else if (mode === 'plan') {
+        message.info('已切换到计划模式：先批准完整计划，再自动执行本轮步骤')
+      } else {
+        message.success('已切换到监督模式：关键操作需你批准后执行')
+      }
+    })
+    .catch(() => {
+      message.error('权限模式切换失败，已还原为原来的模式')
+    })
+    .finally(() => {
+      switchingPermissions.value = false
+    })
 }
 
 function toggleRightSection(section: keyof typeof rightSections) {
@@ -400,6 +406,18 @@ watch(
       return
     }
     await enterSession(id)
+    // 从 AI 助手「进入工作台」携带的未发送草稿：回填到工作台输入框，避免进入后内容丢失需重新输入
+    const draft = store.pendingStudioDraft
+    if (draft && draft.sessionId === id) {
+      store.pendingStudioDraft = null
+      input.value = draft.content
+      await nextTick()
+      composerRef.value?.setDraftAttachments(draft.attachments || [])
+      if (draft.content.trim() || draft.attachments?.length) {
+        message.info('已从 AI 助手带入未发送的内容，确认后点击发送即可开始')
+        composerRef.value?.focusWithCursorAtEnd()
+      }
+    }
     loading.value = false
   },
   { immediate: true },
@@ -480,7 +498,12 @@ const sessionUsage = computed(() => {
   const model = store.availableModels.find((m) => m.id === session.value?.model_id)
   return summarizeUsage(
     session.value.messages,
-    resolvePricing(tokenPricing.value, { input: model?.input_price, output: model?.output_price }),
+    resolvePricing(tokenPricing.value, {
+      input: model?.input_price,
+      output: model?.output_price,
+      inputCache: model?.input_cache_price,
+      outputCache: model?.output_cache_price,
+    }),
   )
 })
 function refreshTokenPricing() {
@@ -1046,11 +1069,12 @@ function formatSessionTime(iso: string): string {
             <span class="token-usage-chip">
               <n-icon size="13"><SpeedometerOutline /></n-icon>
               <span>↑{{ formatTokensInM(sessionUsage.input) }}</span>
+              <span v-if="sessionUsage.cached > 0" title="缓存命中的输入 tokens">⚡{{ formatTokensInM(sessionUsage.cached) }}</span>
               <span>↓{{ formatTokensInM(sessionUsage.output) }}</span>
               <span class="usage-cost">¥{{ sessionUsage.cost < 0.01 ? sessionUsage.cost.toFixed(4) : sessionUsage.cost.toFixed(2) }}</span>
             </span>
           </template>
-          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens，输出 {{ sessionUsage.output.toLocaleString() }} tokens；按模型单价（AI 配置中心）或设置页全局单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
+          本会话累计：输入 {{ sessionUsage.input.toLocaleString() }} tokens（缓存命中 {{ sessionUsage.cached.toLocaleString() }}），输出 {{ sessionUsage.output.toLocaleString() }} tokens；按模型单价（AI 配置中心）或设置页全局单价估算费用 ¥{{ sessionUsage.cost.toFixed(4) }}
         </n-tooltip>
         <OverdriveToggle v-model="overdriveEnabled" :disabled="store.isStreaming" compact />
         <!-- 仅 studio 会话展示权限切换器：普通聊天会话后端一律 404，避免"切换失败"死按钮 -->
@@ -1070,6 +1094,7 @@ function formatSessionTime(iso: string): string {
             </span>
           </template>
           {{ permissionMode === 'auto' ? '放权模式：工具自动执行，仍受循环护栏保护' : permissionMode === 'plan' ? '计划模式：先批准完整计划，再自动执行本轮步骤' : '监督模式：关键操作需逐步批准' }}
+          <br />执行中切换会排队到本轮结束才落库，下一轮起完全生效
         </n-tooltip>
         <span class="sandbox-light" :title="`沙盒状态：${statusInfo.label}`">
           <span class="light-icon" :class="{ pulsing: store.isStreaming && sandboxStatus === 'running' }">{{ statusInfo.icon }}</span> {{ statusInfo.label }}

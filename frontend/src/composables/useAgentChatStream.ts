@@ -192,6 +192,8 @@ export interface TokenUsage {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
+  /** 缓存命中的输入 tokens（OpenAI prompt_tokens_details.cached_tokens / Anthropic cache_read_input_tokens） */
+  cached_tokens?: number
 }
 
 export interface RoomSpeechEvent {
