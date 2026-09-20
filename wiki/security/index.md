@@ -21,6 +21,7 @@ JWT_SECRET_KEY=your-random-secret-here
 APP_SECRET_KEY=your-random-secret-here
 REDIS_PASSWORD=your-redis-password-here
 AI_PROVIDER_KEY_ENCRYPTION_KEY=your-fernet-key-here
+FLOWER_BASIC_AUTH=user:password
 OMICHBUB_INIT_ADMIN_PASSWORD=your-strong-password
 ```
 

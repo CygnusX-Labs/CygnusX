@@ -50,14 +50,23 @@ Markdown 都能由 `make sync-knowledge` 载入运行中知识库。
 
 ## Worker、跨机与生产环境
 
-- Worker 通过 `data/worker_config.yaml` 管理共享数据目录和流程目录；请使用
+- Worker 通过 `data/worker_config.yaml` 管理共享数据目录和流程目录（`shared_data_dir` /
+  `pipeline_dir`），容器内统一映射为 `/data/cygnusx`；请使用
   `make docker-up-worker` 或 `./scripts/worker-compose.sh` 渲染并启动，不要手工跳过配置渲染。
-- 单机扩展、跨机器 Worker、Slurm 和 Kubernetes 的演进路线见根目录 `README.md` 的“从单机扩展到
-  HPC 与 Kubernetes”。
-- 生产环境应使用 `deploy/docker/docker-compose.prod.yml` 覆盖、私网数据库/Redis、固定镜像 digest、
-  SSL、备份和部署前健康检查。
+  **Web、Worker、计算节点必须看到一致的绝对路径**。
+- **跨机器**：控制面与每台 Worker 各自维护私有 `.env`（共享密钥相同，网络/挂载路径按节点配置），
+  分别执行 `make docker-up-cross-web` 与 `make docker-up-cross-worker`。
+- **生产**：`docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.prod.yml up -d`
+  （4 uvicorn worker + 关闭 DB/Redis 宿主端口 + SSL）；Worker 栈用
+  `./scripts/worker-compose.sh --scale worker=N up -d` 水平扩展。生产 `APP_ENV=production` 时默认密钥
+  会导致启动失败。
+- **私有镜像仓库**：云部署建议在 CI 构建并按 git SHA 推送 `cygnusx-backend` / `cygnusx-worker` /
+  `cygnusx-frontend` 及分析运行时镜像，节点只拉取不可变 digest；不要把 `.env`、密钥或数据目录打进镜像。
+- **HPC / Kubernetes**：Slurm 接入（Worker 转为 `sbatch` 提交器 + Snakemake profile）与 K8s 高可用
+  （无状态控制面 + 按队列拆分 Worker + RWX PVC）为规划路径，详见根目录
+  `report/07_K8s大规模部署方案.md`、`report/09_管理节点与任务节点分离方案.md`。
 - AgentTeams、RocketMQ、pgvector/PgBouncer 等可选组件按对应开关和部署文档启用，不应默认暴露到
-  公网。
+  公网；AgentTeams 开启步骤见 [开启 Multi-Agent 与 AgentTeams](agentteams-enablement)。
 
 ## 常见验证
 

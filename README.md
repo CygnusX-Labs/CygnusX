@@ -1,11 +1,48 @@
-# CygnusX · 天鹅座智能科研平台
+<p align="center">
+  <img src="docs/logo.png" alt="CygnusX Logo" width="250">
+</p>
 
-可复现的组学分析多 Agent 交付基础设施 —— 华中农业大学园艺林学学院
+<h1 align="center">CygnusX · 天鹅座智能科研平台</h1>
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python Version"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20Commons%20Clause-green" alt="License"></a>
+</p>
+
+<p align="center"><strong>可复现的组学分析多 Agent 交付基础设施 —— 华中农业大学园艺林学学院</strong></p>
 
 让每一次组学交付都**可审计、可验证、可复用**：以多 Agent 协同（AgentTeams）为组织层，以版本锁定的 Flow Framework 为执行层，以 Skills 沉淀领域经验，交付物附带 Case / Artifact / Evidence / Manifest 溯源证据包。
 
 > 📜 **Licensed under Apache-2.0 + Commons Clause — non-commercial use only.**
 > See [LICENSE](./LICENSE) for details. Commercial use requires a separate agreement.
+
+## 要解决的问题
+
+组学数据分析是药物研发、种业育种和科研服务中的高频长链路任务。传统工作方式需要在聊天工具、表格和命令行之间反复配置，结果产生后的增量需求要排队等待专业人员，人员变动后项目常陷入从脚本和聊天记录中"考古"的困境。具体表现为四类核心问题：
+
+1. **提交成本高且易出错**：标准分析需人工准备配置文件、样本表和对比组，字段遗漏往往到计算后期才暴露；
+2. **增量需求响应慢**：换对比、补富集、调整阈值等高频需求需生信人员重新理解和设计；
+3. **流程资产难复用**：更换比对器或增加 QC 步骤，往往意味着重写并重新审核整条管线；
+4. **交付缺乏可核验证据**：结果压缩包缺少当时的参数、环境、软件版本和重跑记录；大模型直接生成的流程虽灵活，却无法成为受控场景的可信执行依据。
+
+本项目要解决的工程问题是：**如何保留大模型处理自然语言需求的灵活性，同时让执行、质量判断和交付证据始终由可版本化、可审计的流程与规则决定。**
+
+## 核心机制：AI 只调度、不生成
+
+平台把经过专家搭建和审核的分析管线固化为声明式、版本化流程资产；Skill 用触发条件、输入契约、版本号、失败语义和权限边界描述稳定业务动作。AI 只完成需求解析、计划拆解、角色路由和结果解释，**不直接编写或改写执行流程**。
+
+能力边界由系统强制：Agent 无 shell、流程 YAML 与数据库写权限；高风险操作需短期审批令牌；提交采用幂等键避免重复计算；质量规则缺失或风险超阈值时任务自动转人工审批，而不由模型自行放行。每次执行自动关联流程版本、参数、环境快照、软件清单、产物指纹、随机种子和重跑命令，生成可核验的证据包与交付 README——**把可复现性变成分析任务的默认产物**，而非对用户的额外要求。
+
+参考 RNA-seq 场景的工程估算（**均为工程估算，不含计算运行时间，须以试点实测校准**）：
+
+| 指标 | 传统参考方式 | 平台目标 |
+|---|---|---|
+| 标准分析提交配置 | 约 20 分钟 | 约 5 分钟 |
+| 已沉淀 Skill 范围内的增量分析响应 | 约 480 分钟 | 30 分钟以内 |
+| 流程定制改造 | 约 5 人天 | 约 1 天 |
+| 人员交接后的项目核验 | 以周计且常失败 | 约 10 分钟照单核验 |
+
+> **适用边界**：平台面向 RNA-seq、单细胞、ATAC-seq 等科研/研发组学分析，适用于私有化或混合部署；不输出临床诊断报告，不把尚未完成的合规适配（GxP / 21 CFR Part 11）表述为已实现能力。
 
 ## 平台概览
 
@@ -24,83 +61,95 @@ CygnusX 提供从轻量探索到受控交付的四级入口（L1–L4），共�
 
 ## 平台愿景与核心理念
 
-### 核心定位
+### 平台定位
 
-**人只提出科研目标，系统负责组织整个计算实验。**
+**从科研现象出发，组织可验证、可复现、可追溯的计算实验。**
 
-这是 CygnusX 平台的终极愿景让科研人员专注于科学问题本身，将复杂的计算实验组织工作完全交给系统。
+CygnusX 面向生命科学研究，致力于建设连接**科学问题、计算实验与实验验证**的科研计算基础设施。传统平台通常以“上传数据、运行 Pipeline、获得结果”为入口；CygnusX 则希望逐步把入口提升到科研问题本身：研究者提出观察到的现象或待解决的问题，系统协助组织数据、流程、计算资源、质量控制和证据。
 
-### 愿景阐释
-
-在传统科研模式中，研究者需要：
-
-- 手动编写分析脚本
-- 配置复杂的环境依赖
-- 调试代码错误
-- 管理计算资源
-- 整理输出结果
-
-而在 CygnusX 平台上，研究者的工作流程将简化为：
-
-1. **提出目标**：用自然语言描述想要完成的科研任务与分析设想
-2. **自主交付**：系统自动规划分析链路、调度工具与容器、执行校验并生成交互式科研报告
-
-### 实现路径
-
-| 阶段 | 目标 | 关键能力 |
-|------|------|----------|
-| **当前** | 图形化工作流 | YAML 驱动、表单自动生成、可视化配置 |
-| **短期** | AI 辅助分析 | 对话式交互、工具调用、代码生成 |
-| **长期** | 全自动实验 | 自主规划、自动执行、智能诊断、报告生成 |
-
-### 最终形态
+例如，面对“候选分子 X 对非小细胞肺癌细胞具有抑制作用，可能的分子机制是什么？”这类问题，平台的长期方向不是直接生成一个看似确定的答案，而是协助建立一条可检查的研究链路：
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                    科研人员 (Researcher)                      │
-│                                                             │
-│  "我想分析单细胞数据中的 T 细胞亚群，找出差异表达基因"          │
-│                             ↓                               │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                   CygnusX 系统 (System)                       │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  1. 理解科研意图 → 拆解为可执行的分析步骤               │  │
-│  │  2. 自动选择合适流程 → 单细胞分析 Pipeline             │  │
-│  │  3. 准备环境 → 预置 Seurat/Scanpy 镜像                 │  │
-│  │  4. 执行计算 → 分布式任务调度、进度监控                │  │
-│  │  5. 生成报告 → 交互式图表 + 统计结果 + 可重复脚本       │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                             ↓                               │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  科研发现 (Scientific Insight)               │
-│                                                             │
-│  "找到 5 个新的 T 细胞亚群，CD8+ 效应 T 细胞与临床预后显著相关"   │
-│                                                             │
-│  🎯 聚焦科学：无需深陷底层工程调试，高效直达科学结论         │
-│  🔬 全程可溯：参数完全透明，全链路日志与数据版本有据可查     │
-│  🔁 一键复现：声明式配置 + 镜像环境，确保同行随时无损重现     │
-│  🛡️ 稳健可靠：内置数据质控与算法自检，输出可信分析结论       │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+实验现象 → 科学问题 → 研究假设 → 实验/测序方案
+    → 计算实验 → 结果与证据 → 实验验证 → 新的研究问题
 ```
 
-### 核心价值
+最终形成的是**人机协同的科研计算闭环**，而不是无人审核的自动化科研。
 
-| 维度 | 传统方式 | CygnusX 平台 |
-|------|---------|-------------|
-| **时间成本** | 数天至数周的脚本编写调试 | 几分钟描述目标 |
-| **技术门槛** | 需掌握编程、命令行、集群提交 | 只需科学问题思维 |
-| **可重复性** | 手工流程难以复现 | YAML 配置 + 容器化保证 |
-| **协作效率** | 本地环境差异导致问题 | 统一平台、结果一致 |
-| **知识沉淀** | 分散在个人电脑中 | 平台标准化资产积累 |
-| **结果可信** | 中间过程黑盒，难以验证 | 聚焦科学、全程可溯、一键复现、稳健可靠 |
+### 核心理念
+
+> **人提出科学问题，系统逐步组织计算实验；人判断科学证据，系统持续沉淀与执行。**
+
+CygnusX 的愿景是演进方向，不代表当前能力承诺。当前平台首先保证标准化计算任务能够可靠交付，再逐步增加 Agent 的理解、规划、编排和反馈能力。系统可以在明确边界内扩大自动化范围，但其行动始终受到以下约束：
+
+- 可用数据、分析流程与工具权限
+- 计算资源与成本策略
+- 质量规则、产物规范与合规要求
+- 计划审批、人工复核与交付门禁
+
+因此，自动化不是无限授权，而是**在可审计、可回退的边界内逐步扩大系统可以自主完成的工作范围**。Agent 可以辅助提出方案、调用工具、执行计算和整理证据，但模型生成的假设不能直接视为科学结论，关键判断仍由科研人员负责。
+
+### 从分析任务走向科研问题
+
+平台能力将从稳定交付明确任务开始，逐步向更高层次的科研问题组织能力演进：
+
+```text
+当前：数据 → 分析任务 → Pipeline → 计算结果
+
+演进：科研现象 → 科学问题 → 研究假设 → 实验设计
+      → 计算实验 → 证据整理 → 人工审核 → 实验验证
+```
+
+现有 L1–L4 入口对应这条演进路径的不同自动化和约束层级：工具箱负责确定性计算，星尘 AI 助手支持轻量探索，OmicStudio 支持交互式深度分析，多 Agent 协作室负责正式任务的计划、审批、执行、质控和交付。越靠近正式交付，权限、质量门和审计要求越严格。
+
+### 能力演进路线
+
+| 阶段 | 平台形态 | 重点能力 | 角色边界 |
+|---|---|---|---|
+| **Phase 1** | **Reliable Workflow** | YAML、版本化 Pipeline、容器、Snakemake、数据预检、QC、日志和标准化交付 | 系统可靠执行；研究者定义问题和参数 |
+| **Phase 2** | **AI-assisted Computing** | 自然语言交互、参数生成、工具调用、任务监控、异常诊断和报告整理 | Agent 辅助明确任务，不替代科研判断 |
+| **Phase 3** | **Controlled Agentic Execution** | 任务契约、允许的 Workflow/工具、计算策略、质量规则、Artifact 策略和审计轨迹 | Agent 在授权边界内自主编排，关键节点可审批、可回退 |
+| **Phase 4** | **Goal-oriented Computational Experiment** | 科研目标理解、实验计划建议、计算实验组织和多来源证据整合 | 系统协助组织研究过程，科研人员负责假设与结论 |
+| **Future Exploration** | **Closed-loop Scientific Discovery** | 计算结果 → 实验验证 → 新数据 → 下一轮研究任务 | 探索方向，不作为当前产品承诺 |
+
+### 从结果文件走向证据链
+
+CygnusX 不把 `DEG.csv`、火山图或富集表视为交付终点，而是将结果放回科研问题的上下文中，形成可追溯的证据链：
+
+```text
+Research Question
+        ↓
+Experimental Data → Computational Analysis → Quality Control
+        ↓                         ↓
+ Literature Evidence       Analysis Artifacts
+        └──────────────┬──────────────┘
+                       ↓
+              Evidence Report
+                       ↓
+                Human Review
+```
+
+正式交付通过 Case 受控流程组织，并附带 `Case / Artifact / Evidence / Manifest` 溯源证据包；结论明确区分**本平台计算、外部文献证据和综合推断**。这样交付的不只是“分析结果”，而是围绕科研问题组织起来、能够复核和复现的证据。
+
+### 长期愿景
+
+CygnusX 不试图在今天定义未来科研 Agent 的终点，而是建设一套能够随技术进步持续扩展的基础设施：
+
+```text
+可靠 Workflow
+    ↓
+AI-assisted Workflow
+    ↓
+Agentic Workflow
+    ↓
+受控计算实验
+    ↓
+面向科研目标的计算实验
+    ↓
+未来的科学发现协作
+```
+
+每一步都建立在前一步的可靠性、可审计性和可复现性之上。平台的长期目标可以概括为：**从可靠的科研计算工作流出发，逐步让系统具备理解任务、组织工具、执行计算、验证结果和协助实验设计的能力。**
 
 ## 技术栈与总体架构
 
@@ -156,105 +205,11 @@ make docker-up-all                       # 主栈 + Worker 一键全启
 
 访问 `http://<服务器地址>:8888`。首次无管理员时访问 `/setup` 创建首位管理员（创建后该入口永久关闭，后端强制校验）。
 
-> ⚠️ **改前端后必须重启 nginx 才能生效**：nginx bind mount `frontend/dist`，`docker up -d` 不会重启已运行容器。
->
-> 💡 dev compose 已把 `src/`、`data/`、`alembic/`、`flows/`、`tool_configs/` bind mount 进容器：
-> - 改代码 / 前端 / 流程 YAML → `make docker-dev-refresh`（秒级热刷新，不重建镜像）
-> - 改 `data/ai/*.yaml` 或提示词 → 刷新页面即生效（mtime 热重载）
-> - **仅** `pyproject.toml` / `uv.lock` / Dockerfile 变更才用 `make docker-reload`（重建镜像并刷新 pgvector 主栈 + RocketMQ + AgentTeams + Worker）
-
-## Make 命令速查
-
-完整说明见 `docs/update_info/26.6/Makefile_命令说明.md`；以下为按用途分组的核心命令。
-
-### 开发与测试
-
-| 命令 | 说明 |
-|---|---|
-| `make dev` / `make dev-worker` / `make dev-beat` | 启动后端 / Celery Worker / Beat |
-| `make dev-rocketmq-worker` | 启动 RocketMQ Worker |
-| `make test` / `make test-bridge` / `make test-frontend` | 后端测试 / AgentTeams Bridge 测试工程 / 前端单测+类型检查 |
-| `make test-all` / `make test-cov` | 全量测试 / 覆盖率报告 |
-| `make lint` / `make format` / `make type-check` | ruff 检查 / 格式化 / mypy |
-
-### 数据库迁移
-
-| 命令 | 说明 |
-|---|---|
-| `make migrate` / `make migrate-new m="..."` / `make migrate-rollback` | 执行 / 新建 / 回滚迁移 |
-| `make check-migrations` | 静态检查迁移链完整性（不连数据库；改迁移后必跑） |
-| `make check-alembic-heads` / `make migrate-merge` | 检测 / 修复 Multiple Heads 多分支 |
-
-### 部署与运行
-
-| 命令 | 说明 |
-|---|---|
-| `make docker-up` | 启动主栈（web/db/redis/nginx/beat/flower） |
-| `make docker-up-pgvector` | 主栈 + pgvector/PgBouncer/Exporter 验收叠加 |
-| `make docker-up-worker` / `make docker-up-all` | 启动 Worker 栈 / 主栈 + Worker |
-| `make docker-up-cross-web` / `make docker-up-cross-worker` | 跨机器控制面 / 计算节点 |
-| `make docker-up-agentteams` | 构建并启动 AgentTeams Bridge、Gateway 与生产 Worker |
-| `make docker-up-matrix-dev` | 本机开发用 Matrix(Synapse)+Element 栈 |
-| `make docker-dev-refresh` | 日常热刷新：前端 build + 重启 web/beat/nginx + 迁移 |
-| `make docker-reload` | 全量热重载：重建前端 + pgvector 主栈 + RocketMQ + AgentTeams + Worker |
-| `make docker-logs` / `make docker-logs-worker` | 查看主栈 / Worker 日志 |
-| `make docker-down` / `docker-down-all` / `docker-stop-all` | 停主栈 / 主栈+Worker / 全平台 |
-| `make docker-fix-permissions` | 修复 `/data/cygnusx` 权限事故（登录 500 / PermissionError 时） |
-
-### 镜像构建
-
-| 命令 | 说明 |
-|---|---|
-| `make docker-build-enrichment` / `docker-build-deg` / `docker-build-synteny` | 富集 / DEG / 共线性 R 运行时镜像 |
-| `make docker-build-sandboxes` | 全量重建 13 个沙盒/分析运行时镜像（含核对清单） |
-| `make docker-build-worker` / `docker-build-all-images` | Worker 镜像 / 一键重建所有镜像 |
-| `make runtime-images-build` | Studio 分析运行时三件套（core/plot/scrna） |
-
-镜像 tag 规范：发布产物必须打 git SHA 短号 tag（`IMAGE_TAG`），禁止 `latest` 裸推，见 `deploy/docker/README.md`。
-
-### 清理（按破坏性分级）
-
-| 命令 | 容器 | 数据卷 | 镜像 | 用途 |
-|---|---|---|---|---|
-| `make docker-clean` | down | 保留 | 保留 | 停服务，数据不动 |
-| `make docker-purge` | 删除 | 清空 | 删除 | ⚠️ 只清理不启动（宿主 `/data/cygnusx` 不受影响） |
-| `make docker-start` | purge + 重建 | 清空 | 重建 | ⚠️ 彻底重建并启动 |
-| `make clean` | — | — | — | 清理 Python 缓存 |
-
-### 其他
-
-`make init-admin` / `init-cookies`（初始化管理员 / 饼干定价）、`make knowledge-reindex`（重建知识库向量）、`make sync-knowledge`（同步通用/QC/Cloud 知识库到数据库）、`make pgvector-acceptance` / `polardb-verify`（pgvector / PolarDB 验收）、`make agentteams-worker-env`（从 Bridge 配置生成最小权限 Worker 令牌文件）。
-
-## 部署拓扑（deploy/）
-
-```
-deploy/
-├── docker/            主栈与 Worker 栈：docker-compose.yml / .worker / .prod / .pgvector /
-│                      cross-web / cross-worker 覆盖、各 Dockerfile、nginx、rocketmq 配置
-├── agentteams/        AgentTeams 栈：Bridge/Gateway/Worker compose、bridge.env|worker.env
-│                      模板、matrix-dev 开发栈、check_setup.sh 与各项验证脚本、kubernetes/
-├── runtime-images/    Studio 分析运行时三件套（core/plot/scrna Dockerfile + build.sh）
-├── studio/            OmicStudio 沙箱镜像（base/bio）、出站白名单代理、sandbox_agent
-├── sandbox/           AI Copilot 代码执行沙盒镜像（cygnusx-sandbox-copilot）
-├── mas/               MAS Apptainer Worker（systemd unit + env 模板）
-└── logrotate/         宿主机日志轮转配置（cygnusx-logs）
-```
-
-### 单机 / 跨机 / 生产
-
-- **单机**：一份 `.env` + `make docker-up-all`；数据库、Redis 等默认只监听 `127.0.0.1`。
-- **跨机器**：控制面与每台 Worker 各自维护私有 `.env`（共享密钥相同，网络/挂载路径按节点配置），分别执行 `make docker-up-cross-web` 与 `make docker-up-cross-worker`。Worker 路径统一由 `data/worker_config.yaml` 定义（`shared_data_dir` / `pipeline_dir`），容器内统一映射为 `/data/cygnusx`；**Web、Worker、计算节点必须看到一致的绝对路径**。
-- **生产**：`docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.prod.yml up -d`（4 uvicorn worker + 关闭 DB/Redis 宿主端口 + SSL）；Worker 栈用 `./scripts/worker-compose.sh --scale worker=N up -d` 水平扩展。生产 `APP_ENV=production` 时默认密钥会导致启动失败。
-- **私有镜像仓库**：云部署建议在 CI 构建并按 git SHA 推送 `cygnusx-backend` / `cygnusx-worker` / `cygnusx-frontend` 及分析运行时镜像，节点只拉取不可变 digest；不要把 `.env`、密钥或数据目录打进镜像。
-- **HPC / Kubernetes**：Slurm 接入（Worker 转为 `sbatch` 提交器 + Snakemake profile）与 K8s 高可用（无状态控制面 + 按队列拆分 Worker + RWX PVC）为规划路径，详见 `report/07_K8s大规模部署方案.md`、`report/09_管理节点与任务节点分离方案.md`。
-
-### 开启 Multi-Agent 与 AgentTeams
-
-1. 平台内 Multi-Agent：`.env` 设置 `UNIFIED_INTENT_ROUTER_ENABLED=true`、`MULTI_EXPERT_CONSULTATION_ENABLED=true`，验证配额与延迟后再开 `SUBAGENT_FANOUT_ENABLED=true`。
-2. AgentTeams Bridge：复制 `deploy/agentteams/bridge.env.example` 与 `worker.env.example`，为 Manager、Approval、Workflow Operator 与各专家身份（对应 `data/CygnusX.yaml` 启用的 19 个内置 Agent）设置不同随机令牌；执行 `deploy/agentteams/check_setup.sh deploy/agentteams/bridge.env` 预检。
-3. 预检通过后置 `AGENTTEAMS_BRIDGE_ENABLED=true`、`AGENTTEAMS_CHAT_ENTRY_ENABLED=true` 并填入 Bridge URL 与角色令牌；`make docker-up-agentteams` 拉起栈。
-
-> 不要在 `.env`、`bridge.env`、README 或日志中保存真实密钥与令牌；泄露后立即撤销轮换。
+> 📖 **部署与运维细节已收口到 `wiki/`**：Make 命令速查、deploy/ 部署拓扑、单机/跨机/生产、镜像构建、
+> Multi-Agent 与 AgentTeams 开启步骤，分别见
+> `wiki/operations/common-commands.md`、`wiki/deployment/index.md`、
+> `wiki/deployment/docker-deployment.md`、`wiki/deployment/agentteams-enablement.md`。
+> 完整说明另见 `docs/update_info/26.6/Makefile_命令说明.md` 与 `deploy/docker/README.md`。
 
 ## 项目结构
 
@@ -328,41 +283,16 @@ MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipeline
 
 OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-08-22.md`。
 
-## 数据与日志
+## 数据、日志与安全
 
-### 数据目录（`/data/cygnusx`，bind mount，`docker-purge` 不删）
-
-```
-/data/cygnusx/
-├── cygnusx_data/        集中数据区：_pgdata(PG) / _redis / jbrowse / knowledge / welcome
-├── users/<user_id>/     raw_data / workspace / temp（按用户隔离，注册时幂等创建）
-├── uploads/  bin/  refdata/  .tmp/  .conda_envs/
-└── logs/                app / celery/tasks / nginx / snakemake
-```
-
-备份迁移：停服后 `sudo rsync -aP /data/cygnusx/ <目标机>:/data/cygnusx/`（`_pgdata` 需 `-a` 保留属主）。
-
-### 日志排查
-
-日志统一收口 `/data/cygnusx/logs/`，应用/Celery 日志由 loguru 轮转（50MB/30天、20MB/7天），Nginx/Snakemake 由宿主机 logrotate 兜底（`deploy/logrotate/cygnusx-logs`），Docker stdout 限制 50m×3。常用：`tail -f logs/app/cygnusx.log`、按任务 `logs/celery/tasks/{task_id}.log`、JSON 日志用 `jq` 按 `trace_id` / `session_id` / `event` 过滤。详细策略见 `ARCHITECTURE_DESIN/log_architecture.md`。
-
-### 可观测性（OpenTelemetry + 业务级事件）
-
-统一埋点产出 Trace / Log / Metrics 三信号：日志自动注入 `trace_id`/`span_id`/`request_id`/`session_id`；`/metrics` 暴露 Prometheus 指标；AI 调用指标持久化到 `ai_call_metrics` 驱动管理端「AI 指标仪表盘」与阈值告警（错误率/p95/日成本，`AI_ALERT_*` 配置）；管理端「会话日志排查」（`/admin/session-logs`）可按会话时间线聚合全部事件。未配置 OTLP 端点时自动降级，**本地与测试零配置可用，遥测异常绝不中断业务**。覆盖 `ai.chat` / `mcp.call_tool` / `skill.execute` / `agent.run` / `celery.task` / `toolbox.*` 等 span，属性不落密钥。
-
-OTel 之上还有两层业务级观测：**统一生命周期事件框架**（所有执行路径的工具事件按同一 `tool_call_id` 串联 `agent_tool_call → started → result → context_reinjected`，Worker 事件经 Bridge 投影为协作室证据事件）与 **Case LLM 过程全量记录**（AgentTeams 每个 turn 的 prompt / reasoning / tool_calls / usage 全文写 MinIO append-only，PostgreSQL `agentteams_turn_records` 存摘要索引，OTel span 只存 `turn_record_uri` 引用——正文绝不进 span/日志/Redis；按角色服务端裁剪，member 不可见 prompt/reasoning 全文）。
-
-## 安全
-
-24 项安全加固已落地（路径穿越防护、`/tracks/` 内网白名单、生产默认密钥启动失败、Redis 认证、AI key Fernet 加密、MCP stdio/SSE 的 RCE/SSRF 防护、登录限流、JWT `token_version` 吊销、沙盒网络隔离、聊天附件按用户隔离等），叠加 Studio 沙箱容器安全基线（见上节），完整清单见 `docs/SECURITY_AUDIT.md` 与 `report/05_安全审查报告.md`。
-
-首次部署 `.env` 必填强随机值：`JWT_SECRET_KEY`、`APP_SECRET_KEY`、`REDIS_PASSWORD`、`AI_PROVIDER_KEY_ENCRYPTION_KEY`（Fernet key，**设置后不可更改**）、`FLOWER_BASIC_AUTH`。生产检查项：prod override 关闭 DB/Redis 端口与 Flower、挂载 SSL、`/tracks/` 仅受信内网、沙盒网络隔离开启、`pip-audit` 无高危漏洞。
-
-账号密码重置、数据库重置、聊天会话清理等运维操作见 `docs/update_info/26.6/Makefile_命令说明.md` 与 `scripts/` 下对应脚本。
+- **数据目录**：运行时数据统一收口宿主机 `/data/cygnusx`（bind mount，`docker-purge` 不删），按用户与 Case 严格隔离；目录结构与备份迁移见 `wiki/architecture/data-directory.md`。
+- **日志与可观测性**：日志统一收口 `/data/cygnusx/logs/`，loguru 轮转 + 宿主机 logrotate 兜底；OpenTelemetry 产出 Trace / Log / Metrics 三信号，`/metrics` 暴露 Prometheus 指标，管理端提供「AI 指标仪表盘」与「会话日志排查」（`/admin/session-logs`），未配置 OTLP 端点时自动降级、遥测异常绝不中断业务。详见 `wiki/architecture/logging.md` 与 `wiki/operations/troubleshooting.md`。
+- **安全**：24 项安全加固已落地（路径穿越防护、生产默认密钥启动失败、Redis 认证、AI key Fernet 加密、MCP RCE/SSRF 防护、JWT 吊销、沙盒网络隔离等），叠加 Studio 沙箱容器安全基线（`cap_drop ALL`、只读 rootfs、资源硬限制、默认 network none）。完整清单见 `wiki/security/hardening-checklist.md`、`docs/SECURITY_AUDIT.md` 与 `report/05_安全审查报告.md`。
+- **首次部署 `.env` 必填强随机值**：`JWT_SECRET_KEY`、`APP_SECRET_KEY`、`REDIS_PASSWORD`、`AI_PROVIDER_KEY_ENCRYPTION_KEY`（Fernet key，**设置后不可更改**）、`FLOWER_BASIC_AUTH`；生产检查项见 `wiki/deployment/production-checklist.md`。不要在 `.env`、`bridge.env`、README 或日志中保存真实密钥与令牌，泄露后立即撤销轮换。
 
 ## 文档索引
 
-- **使用与运维手册（wiki）**：`wiki/`（Home.md 门户；getting-started / architecture / features / development / deployment / operations / security 八个分区，面向用户、管理员与开发者的稳定说明层，正文自动同步平台知识库）
+- **使用与运维手册（wiki，权威层）**：`wiki/`（Home.md 门户；getting-started / architecture / features / development / deployment / operations / security 八个分区，部署拓扑、命令速查、AgentTeams 开启、日志排障与安全清单均以 wiki 为准，正文自动同步平台知识库）
 - **架构与设计**：`ARCHITECTURE_DESIN/README.md`（总索引）——Agent 执行框架与最终基线、协作室（AgentTeams）as-built 架构、记忆系统、MCP 子系统、沙箱安全基线、日志架构、Worker 镜像计划、平台愿景定义等
 - **竞赛/评审材料**：`docs/info/26.8.21/`（BioOps 初赛方案 PDF、协作室 L4 审查报告与实施手册）
 - **模块设计**：`docs/modules/`；**命令详表**：`docs/update_info/26.6/Makefile_命令说明.md`
