@@ -143,6 +143,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '团队协作室', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
       },
       {
+        path: 'department',
+        name: 'department',
+        component: () => import('@/views/DepartmentView.vue'),
+        meta: { title: '生物信息部门', requiresAuth: true }
+      },
+      {
         path: 'agent-teams/cases/:caseId',
         name: 'agent-teams-case',
         component: () => import('@/views/AgentTeamsCaseView.vue'),
