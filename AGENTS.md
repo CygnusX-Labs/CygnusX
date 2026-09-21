@@ -119,3 +119,58 @@ When an image is rebuilt or its tag changes, follow this order:
 - For the original `pull access denied` failure, check both the exact image tag
   and whether the image was built locally. A missing tag is a configuration
   synchronization error, not an R/Seurat package error.
+
+## Router Packaging and Dispatch Contract
+
+The Router is an LLM classifier, not a frontend keyword router and not a
+server-side domain rules engine. Preserve this separation when changing routing:
+
+- The runtime entrypoint is `ChatService._route_to_agent()` in
+  `src/cygnusx/application/services/chat_service.py`.
+- The LLM receives `ROUTER_SYSTEM_PROMPT` plus a runtime-generated candidate
+  catalog from `AgentTeamsCapabilityRegistry.snapshot()["chat_router_catalog"]`.
+  Do not maintain a second hard-coded Agent list in the Router.
+- Candidate descriptions, `capability_scope`, `capability_tags`,
+  `routing_hints`, `routing_notes`, `default_role`, and persona summaries are
+  the LLM's routing evidence. Domain-specific guidance belongs in
+  `data/ai/agent_ability.yaml`, `data/ai/<agent>.yaml`, or
+  `data/ai/domains/*.yaml`, not in post-hoc keyword overrides.
+- The model must return one JSON object with `agent_id`, `reason`,
+  `collaboration_intent`, `confidence`, and the optional handoff/fan-out fields.
+  `_extract_route_json()` tolerates surrounding reasoning, while
+  `normalize_decision()` only validates the schema and candidate IDs.
+- The backend may reject an unknown/unavailable target and fall back to the
+  runtime general candidate. It must not replace a valid LLM target merely
+  because the user text contains a domain keyword, file extension, or visual
+  request. Domain selection remains the LLM's decision.
+
+### Router output budget
+
+`ROUTER_MAX_TOKENS` is currently `10000`. This is intentional: DeepSeek V4 can
+emit reasoning tokens even when `deep_thinking=False`; with a 200-token budget,
+the model frequently reached `finish_reason=length` before emitting its JSON and
+the normal validator then appeared to route everything to `agent-general`.
+The production call and `scripts/evaluate_router_20.py` must use the same
+constant. Keep reasoning chunks out of `route_text`; only final text should be
+parsed as the routing JSON.
+
+Do not lower this budget without a live regression run. Also check provider/model
+context limits before raising it further: the injected catalog and flow catalog
+already consume several thousand prompt tokens. The provider's generic
+`OpenAICompatibleProvider` has no hidden 200-token cap; the important limits are
+the explicit Router budget, the model's context/output limits, and the JSON
+candidate validation described above.
+
+### Router evaluation
+
+Use the project interpreter, not the host `python3`:
+
+```bash
+.venv/bin/python scripts/evaluate_router_20.py
+```
+
+The script prints the original question, `model_agent`, validated `final_agent`,
+`intent`, `confidence`, and `reason`. `expected_agent` is only an evaluation
+benchmark; it must never be used to alter production routing. A missing or
+truncated model JSON is a failed model call and will be reported as the normal
+general fallback, not silently repaired by keyword rules.
