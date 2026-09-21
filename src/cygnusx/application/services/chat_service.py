@@ -340,6 +340,9 @@ MULTI_AGENT_SYSTEM_PROMPT_SUFFIX = """## Multi-agent 协作模式
 MULTI_AGENT_TOOL_NAMES = frozenset({PARALLEL_SUBAGENTS_TOOL_NAME, "create_agentteams_case"})
 
 # 星尘 AI 的实际运行时路由提示词：只做任务判断与 Agent 分派，不执行领域任务。
+# DeepSeek V4 可能在关闭深度思考后仍产生 reasoning token；路由 JSON 必须给足输出预算，
+# 否则模型会在 JSON 之前耗尽预算并触发通用助手兜底。
+ROUTER_MAX_TOKENS = 10000
 ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。根据用户消息、对话上下文和下面的
 运行时候选专家目录，选择一个最合适的专家处理本次请求。
 
@@ -353,6 +356,15 @@ ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。
 
 运行时可用分析流程提示（只用于理解领域能力，不代表用户已经请求执行）：
 {flow_catalog}
+
+文件与领域锚点（优先级高于泛化的“可视化”表述）：
+- `.qs`、`.rds`、`.h5ad` 是 Seurat/AnnData 等单细胞对象；消息明确引用这类文件时，
+  必须优先选择单细胞分析专家（`agent-scrna` 或目录中更匹配的单细胞子专家），不能因为
+  用户同时说“可视化”“画图”就改派通用助手。
+- 对单细胞对象中的细胞注释、亚群、marker/top 基因、FeaturePlot/DotPlot/热图等需求，
+  优先由单细胞专家负责分析语义与结果解释；只有输入已经整理成通用结果表、且需求仅是
+  版式/配色/出版级美化时，才选择可视化助手。
+- `.bam`、`.fastq`、`.count`、`.matrix` 且无单细胞锚点时，才按 bulk RNA-seq 候选判断。
 
 规则：
 1. 直接输出一行 JSON：{{"agent_id": "...", "reason": "...", "expect_handoff": false, "consult_agent_ids": [], "collaboration_intent": "transfer|fanout|consult|case|dag|chat", "overdrive_intent": "enable|disable|none", "fanout_tasks": [{{"agent_id":"...","task":"..."}}], "confidence": 0.0}}。
@@ -709,11 +721,11 @@ class ChatService(
                 messages=[{"role": "user", "content": router_input}],
                 system_prompt=system_prompt,
                 temperature=0,
-                max_tokens=200,
+                max_tokens=ROUTER_MAX_TOKENS,
                 tools=None,
                 deep_thinking=False,
             ):
-                if chunk.type == "text":
+                if chunk.type == "text" and not chunk.metadata.get("is_reasoning"):
                     route_text += chunk.content
             decision = _extract_route_json(route_text)
             if decision:

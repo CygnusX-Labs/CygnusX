@@ -446,7 +446,7 @@ class OpenAICompatibleProvider:
         model_name = f"{self.name} {self.model}".lower()
         if deep_thinking or "deepseek-v4" in model_name:
             # DeepSeek V4 默认可能开启思考；必须显式发送 False，避免路由阶段
-            # max_tokens=200 被思考内容耗尽后没有最终正文。
+            # 较小的 max_tokens 预算被思考内容耗尽后没有最终正文。
             payload["enable_thinking"] = deep_thinking
         headers = {
             "Authorization": f"Bearer {self._api_key}",

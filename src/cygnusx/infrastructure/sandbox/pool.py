@@ -629,7 +629,9 @@ class SandboxPool:
                         buffers[channel] += chunk.decode("utf-8", errors="replace")
                         while "\n" in buffers[channel]:
                             line, buffers[channel] = buffers[channel].split("\n", 1)
-                            loop.call_soon_threadsafe(queue.put_nowait, (channel, line))
+                            # 保留行尾换行：上层工具协议按增量字符串拼接，
+                            # 丢掉这里的分隔符会把整个 stdout 压成一行。
+                            loop.call_soon_threadsafe(queue.put_nowait, (channel, f"{line}\n"))
                 for channel, rest in buffers.items():
                     if rest:
                         loop.call_soon_threadsafe(queue.put_nowait, (channel, rest))
