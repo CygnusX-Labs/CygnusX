@@ -159,3 +159,39 @@ async def test_idle_timeout_rebuilds(monkeypatch):
     conn.last_used = conn.last_used - (client_module._MCP_SESSION_IDLE_TIMEOUT + 10)
     await mc._call_tool_external(server, "t2", {})
     assert len(sessions) == 2, "空闲超期应惰性回收并重建"
+
+
+@pytest.mark.asyncio
+async def test_list_tools_normalizes_sdk_schema_attribute(monkeypatch):
+    """MCP SDK 2.x uses input_schema while older versions used inputSchema."""
+    server = _server()
+    mc = client_module.MCPClient()
+    result = type(
+        "ToolResult",
+        (),
+        {
+            "tools": [
+                type(
+                    "Sdk2Tool",
+                    (),
+                    {"name": "package_search", "description": "search", "input_schema": {"type": "object"}},
+                )(),
+                type(
+                    "Sdk1Tool",
+                    (),
+                    {"name": "legacy", "description": "legacy", "inputSchema": {"type": "object"}},
+                )(),
+            ]
+        },
+    )()
+
+    async def fake_with_session(_server, _fn):
+        return result
+
+    monkeypatch.setattr(mc, "_with_external_session", fake_with_session)
+    tools = await mc._list_tools_external(server)
+
+    assert tools == [
+        {"name": "package_search", "description": "search", "inputSchema": {"type": "object"}},
+        {"name": "legacy", "description": "legacy", "inputSchema": {"type": "object"}},
+    ]
