@@ -36,6 +36,7 @@ const TOOL_LABELS: Record<string, string> = {
   workspace_write: '写入文件',
   workspace_edit: '修改文件',
   artifact_register: '登记产物',
+  network_request: '网络访问',
 }
 const toolLabel = computed(() => TOOL_LABELS[props.tool.name] || props.tool.name)
 /** sandbox_execute / chat_sandbox_execute 都以 code 字段预览与编辑 */
@@ -67,6 +68,15 @@ const LANG_BADGES: Record<string, string> = { python: 'Python', r: 'R', bash: 'B
 
 const path = computed(() => String(props.tool.arguments?.path || ''))
 const title = computed(() => String(props.tool.arguments?.title || ''))
+const networkUrl = computed(() => String(props.tool.arguments?.url || ''))
+const networkMethod = computed(() => String(props.tool.arguments?.method || 'GET').toUpperCase())
+const networkHost = computed(() => {
+  try {
+    return new URL(networkUrl.value).host || '未知主机'
+  } catch {
+    return '未知主机'
+  }
+})
 
 // ---------- 编辑态 ----------
 const editing = ref(false)
@@ -76,7 +86,7 @@ const editCode = ref(String(props.tool.arguments?.code ?? props.tool.arguments?.
 const editNewString = ref(String(props.tool.arguments?.new_string ?? ''))
 const oldString = computed(() => String(props.tool.arguments?.old_string ?? ''))
 
-const canEdit = computed(() => props.tool.name !== 'artifact_register')
+const canEdit = computed(() => !['artifact_register', 'network_request'].includes(props.tool.name))
 
 // ---------- 退回理由 ----------
 const rejecting = ref(false)
@@ -186,6 +196,13 @@ const statusMeta = computed(() => STATUS_META[approval.value?.status || ''] || n
         <div class="artifact-info">
           <div class="path-line" :title="path">📦 {{ path }}</div>
           <div v-if="title" class="artifact-title">标题：{{ title }}</div>
+        </div>
+      </template>
+      <template v-else-if="tool.name === 'network_request'">
+        <div class="network-request-preview">
+          <div class="path-line">🌐 {{ networkMethod }} · {{ networkHost }}</div>
+          <a :href="networkUrl" target="_blank" rel="noreferrer noopener">{{ networkUrl }}</a>
+          <div class="network-request-note">仅访问公开 HTTP(S)，不携带 Cookie 或 Authorization；响应大小受限。</div>
         </div>
       </template>
       <pre v-else class="code-view">{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
@@ -310,6 +327,18 @@ const statusMeta = computed(() => STATUS_META[approval.value?.status || ''] || n
 .artifact-title {
   font-size: 12px;
   color: var(--chat-text-muted, #888);
+}
+.network-request-preview a {
+  display: block;
+  color: var(--chat-accent, #4f8ef7);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.network-request-note {
+  margin-top: 6px;
+  color: var(--chat-text-muted, #888);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .edit-section-title {
   font-size: 11px;

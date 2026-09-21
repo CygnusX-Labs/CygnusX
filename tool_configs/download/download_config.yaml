@@ -6,13 +6,15 @@ features:
   cloud_storage: false
   direct_link: false
 
+# ⚠️ 二进制路径须与容器内实际挂载一致（/data/omichub/bin）；此处路径优先级高于
+#    env（EBI_DOWNLOAD_BINARY 等），改容器路径时必须同步这里。
 binaries:
-  ebi: "/data/cygnusx/bin/EBIDownload"
-  ebi_config: "/data/cygnusx/bin/EBIDownload.yaml"
+  ebi: "/data/omichub/bin/EBIDownload"
+  ebi_config: "/data/omichub/bin/EBIDownload.yaml"
   aria2c: "/usr/bin/aria2c"
-  ossutil: "/data/cygnusx/bin/ossutil"
-  tosutil: "/data/cygnusx/bin/tosutil"
-  obsutil: "/data/cygnusx/bin/obsutil"
+  ossutil: "/data/omichub/bin/ossutil"
+  tosutil: "/data/omichub/bin/tosutil"
+  obsutil: "/data/omichub/bin/obsutil"
 
 aria2:
   default_threads: 4

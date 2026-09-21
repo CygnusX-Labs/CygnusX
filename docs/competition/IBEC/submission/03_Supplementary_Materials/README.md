@@ -1,12 +1,12 @@
-# Supplementary Materials README — OmicHub BioOps
+# Supplementary Materials README — CygnusX
 
 Primary language: English. Chinese notes are added only where they clarify local context.
 
 ## 1. Package Overview
 
-Project title: `OmicHub BioOps: Auditable Agent × Skill Infrastructure for Controlled Omics Analysis Delivery`
+Project title: `CygnusX: Auditable Agent × Skill Infrastructure for Controlled Omics Analysis Delivery`
 
-Team name: `[Team name]` | Team ID: `[TEAM-ID]`
+Team name: `CygnusX` | Team ID: `IBEC26-35` | Institution: `Huazhong Agricultural University` | Track: `Bioinformatics Platform`
 
 This package contains `code / de-identified demo data / run results / interface screenshots / demo walkthroughs` and supports the claims made in the project report and technical abstract. 本包用于支撑项目报告与技术摘要中的全部量化结论。
 
@@ -17,10 +17,10 @@ submission_package/
   report.pdf
   technical_abstract.pdf
   supplementary_materials.pdf
-  code/            # OmicHub BioOps repository (src/cygnusx, frontend, pipelines)
+  code/            # CygnusX repository (src/cygnusx, frontend, pipelines)
   data/            # de-identified demo inputs (samples.csv, contrasts.csv, test FASTQ)
   results/         # run archives: projects/<slug>/runs/<task>-<timestamp>/
-  figures/         # F1 form submission, F2 Skill marketplace, F3 agent workspace, F4 project history
+  figures/         # F1 form submission, F2 Skill library, F3 agent workspace, F4 project history
   demo/            # walkthrough scripts for chains A (pass) / B (preflight-blocked) / C (manual review)
   README.md
 ```
@@ -83,4 +83,5 @@ All supplementary files are consistent with the project report and technical abs
 
 - `Efficiency figures (-75% / -90% / -80%) are measured as human operation + waiting time, excluding compute runtime; pilot-measured calibration is planned.`
 - `The multi-role collaboration layer is an experimental preview, disabled by default (MAS_ENABLED off in production), and is not part of the claimed core path.`
+- `The platform vision starts from research phenomena and progressively organizes verifiable computational experiments: research question -> computational experiment -> evidence chain -> experimental validation. Goal-oriented discovery is a research roadmap, not a current delivery claim; model-generated hypotheses do not replace expert judgment or experimental validation.`
 - `[Add: exact demo species/sample set once packaged; repository/platform URLs before submission.]`

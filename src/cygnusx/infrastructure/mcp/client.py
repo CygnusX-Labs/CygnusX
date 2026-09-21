@@ -613,7 +613,15 @@ class MCPClient:
             {
                 "name": t.name,
                 "description": t.description or "",
-                "inputSchema": t.inputSchema or {},
+                # MCP Python SDK 2.x exposes the Pydantic field as
+                # ``input_schema``; older SDK releases used ``inputSchema``.
+                # Normalize both to the transport-neutral key used by the
+                # rest of the application.
+                "inputSchema": (
+                    getattr(t, "input_schema", None)
+                    or getattr(t, "inputSchema", None)
+                    or {}
+                ),
             }
             for t in result.tools
         ]

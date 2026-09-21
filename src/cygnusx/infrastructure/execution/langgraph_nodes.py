@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cygnusx.application.services.execution_events import execution_chunk
+from cygnusx.application.services.artifact_manifest import normalize_tool_artifact_payload
 from cygnusx.core.telemetry import get_tracer
 from cygnusx.domain.execution.agent_state import AgentState
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
@@ -242,6 +243,11 @@ async def tool_exec_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
             llm_result = tool_output if tool_output is not None else result
         if not isinstance(llm_result, dict):
             llm_result = {"result": llm_result}
+        llm_result, ui_payload = normalize_tool_artifact_payload(
+            llm_result,
+            ui_payload,
+            tool_name=tool_name,
+        )
 
         await deps.emit_chunk(
             ChatChunk(

@@ -1,8 +1,8 @@
-"""会话强制绑定项目的校验测试 + 项目 customer 字段回归。
+"""会话项目绑定校验测试 + 未选项目归入默认项目 + 项目 customer 字段回归。
 
 覆盖：
 - ChatSessionManagement.create_session 的项目边界校验
-  （缺失 422 / 不存在 404 / 越权 403 / 内部豁免 require_project=False）
+  （未指定自动归入默认项目 / 不存在 404 / 越权 403 / 内部豁免 require_project=False）
 - ProjectService.create_project 持久化 customer 并随响应返回
 """
 
@@ -59,11 +59,33 @@ def _make_session_service(project) -> _SessionSvc:  # noqa: ANN001, ANN202
 
 
 @pytest.mark.asyncio
-async def test_create_session_requires_project_id() -> None:
+async def test_create_session_without_project_falls_back_to_default() -> None:
     svc = _make_session_service(project=None)
-    with pytest.raises(ValidationError):
-        await svc.create_session(str(uuid4()), uuid4())
-    svc._sessions.create.assert_not_awaited()
+
+    await svc.create_session(str(uuid4()), uuid4())
+
+    svc._sessions.create.assert_awaited_once()
+    assert svc._sessions.create.await_args.kwargs["project_id"]
+    # 默认项目缺失时应新建并入库
+    assert svc._db.add.called
+
+
+@pytest.mark.asyncio
+async def test_create_session_reuses_existing_default_project() -> None:
+    from cygnusx.infrastructure.database.models.project import ProjectModel
+
+    user_id = uuid4()
+    existing = ProjectModel(
+        user_id=user_id, name=ChatSessionManagement.DEFAULT_PROJECT_NAME, slug="default", description=""
+    )
+    existing.id = uuid4()
+    svc = _make_session_service(project=existing)
+
+    await svc.create_session(str(user_id), uuid4())
+
+    svc._sessions.create.assert_awaited_once()
+    assert svc._sessions.create.await_args.kwargs["project_id"] == str(existing.id)
+    svc._db.add.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -101,14 +123,14 @@ async def test_create_session_with_owned_project_passes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_session_internal_bypass_skips_validation() -> None:
+async def test_create_session_internal_bypass_skips_explicit_validation() -> None:
     svc = _make_session_service(project=None)
 
     await svc.create_session(str(uuid4()), uuid4(), require_project=False)
 
-    svc._db.execute.assert_not_awaited()
+    # 豁免仅跳过显式 project_id 的权属校验；未指定项目仍自动归入默认项目
     svc._sessions.create.assert_awaited_once()
-    assert svc._sessions.create.await_args.kwargs["project_id"] is None
+    assert svc._sessions.create.await_args.kwargs["project_id"]
 
 
 class _FakeDirectoryRepo:

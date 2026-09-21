@@ -871,14 +871,16 @@ class ChatRuntimeSupport:
 
         return {"success": False, "error": f"未知技能工具: {tool_name}"}
 
-    async def _web_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _web_search(
+        self, arguments: dict[str, Any], *, model_config: Any | None = None
+    ) -> dict[str, Any]:
         """执行默认联网搜索服务商，并返回统一结果结构。"""
         query = arguments.get("query", "")
         top_n = int(arguments.get("top_n", 5))
         if not query.strip():
             return {"success": False, "error": "缺少搜索关键词"}
         try:
-            result = await self._optimized_web_search(query, top_n=top_n)
+            result = await self._optimized_web_search(query, top_n=top_n, model_config=model_config)
             return {"success": True, "result": result}
         except Exception as exc:  # noqa: BLE001
             logger.warning("联网搜索工具调用失败: %s", exc)

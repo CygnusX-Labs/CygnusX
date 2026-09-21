@@ -38,5 +38,6 @@ class DelegatingAgentRuntime(ChatRuntime):
             extend_max_rounds=request.extend_max_rounds,
             project_id=request.project_id,
             runtime_context=request.runtime_context,
+            auto_approve=request.auto_approve,
         ):
             yield chunk

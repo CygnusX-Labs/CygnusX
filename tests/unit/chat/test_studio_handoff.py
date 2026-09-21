@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from cygnusx.application.services import chat_service
+from cygnusx.infrastructure.config import runtime_image_loader
 
 
 def test_resolve_handoff_studio_image_prefers_explicit_image() -> None:
@@ -25,7 +26,7 @@ def test_resolve_handoff_studio_image_from_runtime_profile(
             assert preferred_profile == "analysis-plot"
             return "analysis-plot", SimpleNamespace(image="cygnusx-studio-plot:latest")
 
-    monkeypatch.setattr(chat_service, "get_runtime_images", lambda: _Registry())
+    monkeypatch.setattr(runtime_image_loader, "get_runtime_images", lambda: _Registry())
     features = {"studio": {"runtime_profile": "analysis-plot"}}
     assert (
         chat_service._resolve_handoff_studio_image(features) == "cygnusx-studio-plot:latest"
@@ -39,7 +40,7 @@ def test_resolve_handoff_studio_image_bad_profile_falls_back(
         def select(self, caps: set, kind: str, preferred_profile: str | None = None):
             raise KeyError(preferred_profile)
 
-    monkeypatch.setattr(chat_service, "get_runtime_images", lambda: _Registry())
+    monkeypatch.setattr(runtime_image_loader, "get_runtime_images", lambda: _Registry())
     features = {"studio": {"runtime_profile": "missing-profile"}}
     assert chat_service._resolve_handoff_studio_image(features) is None
 

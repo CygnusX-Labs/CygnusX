@@ -57,6 +57,36 @@ def _conforming_attrs(
     }
 
 
+def _mount_attrs(tmp_path: Path, *, mode: int = 0o770) -> dict:
+    mounts = []
+    for name, destination in (
+        ("chat", "/tmp/chat_output"),
+        ("output", "/workspace/output"),
+        ("input", "/workspace/input"),
+    ):
+        source = tmp_path / name
+        source.mkdir()
+        source.chmod(mode)
+        mounts.append({"Source": str(source), "Destination": destination})
+    attrs = _conforming_attrs()
+    attrs["Mounts"] = mounts
+    return attrs
+
+
+@pytest.mark.unit
+def test_container_mounts_reject_root_0755_sources(tmp_path: Path) -> None:
+    container = _FakeContainer("bad-mount", attrs=_mount_attrs(tmp_path, mode=0o755))
+    assert not SandboxPool._container_mounts_are_writable(container)
+
+
+@pytest.mark.unit
+def test_container_mounts_accept_shared_uid_sources(tmp_path: Path) -> None:
+    # This simulates the documented non-root fallback: source ownership may differ,
+    # but all users can write the directory.
+    container = _FakeContainer("good-mount", attrs=_mount_attrs(tmp_path, mode=0o777))
+    assert SandboxPool._container_mounts_are_writable(container)
+
+
 class _FakeContainers:
     def __init__(self) -> None:
         self.created: list[_FakeContainer] = []
@@ -141,6 +171,8 @@ def test_parse_line_routes_plotly_marker_to_plotly_event() -> None:
     }
     # 非标记行不受影响
     assert SandboxPool._parse_line("stdout", "hello") == {"type": "stdout", "data": "hello"}
+    # 流读取器会保留行尾换行，避免多行 stdout 在上层拼接时粘成一行。
+    assert SandboxPool._parse_line("stdout", "hello\n") == {"type": "stdout", "data": "hello\n"}
     assert SandboxPool._parse_line("stderr", "warn") == {"type": "stderr", "data": "warn"}
 
 

@@ -37,9 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN printf '%s\n' \
     '[global]' \
     'index-url = https://pypi.mirrors.ustc.edu.cn/simple' \
-    'extra-index-url = https://mirrors.aliyun.com/pypi/simple/' \
     'timeout = 60' \
-    'retries = 10' \
+    'retries = 3' \
     > /etc/pip.conf
 
 # 4. 安装 Python 依赖（显式 -i 指定 USTC，与 /etc/pip.conf 双保险）

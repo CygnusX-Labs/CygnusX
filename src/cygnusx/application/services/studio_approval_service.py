@@ -37,8 +37,12 @@ APPROVAL_REQUIRED_TOOLS: frozenset[str] = frozenset(
         "tool_orchestrate",
         # 普通聊天的代码执行与 Studio sandbox_execute 同险，supervised 下同闸
         "chat_sandbox_execute",
+        # 公共 HTTP 元数据访问也必须由用户逐次确认，避免 Agent 隐式出网。
+        "network_request",
     }
 )
+
+NETWORK_REQUEST_TOOL_NAME = "network_request"
 
 APPROVAL_TTL_SECONDS = 300
 
@@ -72,7 +76,13 @@ def always_allow_set(sandbox_meta: dict[str, Any] | None) -> set[str]:
 
 
 def needs_approval(permission_mode: str | None, tool_name: str, always_allow: set[str]) -> bool:
-    """supervised 模式下受控工具是否需要逐次审批（always_allow 命中直接放行）。"""
+    """判断工具是否需要审批。
+
+    网络请求是跨越平台边界的副作用，即使会话没有显式选择 supervised，也必须
+    先显示 URL 审批卡片；用户可选择“本会话不再询问”降低重复确认成本。
+    """
+    if tool_name == NETWORK_REQUEST_TOOL_NAME:
+        return tool_name not in always_allow
     return (
         permission_mode == "supervised"
         and tool_name in approval_required_tools()

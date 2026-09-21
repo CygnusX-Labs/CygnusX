@@ -5,7 +5,9 @@
  * 吸附在聊天输入框上方，集中呈现当前会话的待处理事项：
  *  - 待审批工具调用（approval_request，supervised 模式）：工具名 + 参数摘要，
  *    【批准运行】直接批准，【编辑/查看】定位到消息流中的内联 ApprovalCard 做编辑后运行，
- *    【退回】让 AI 修改（可选填理由）。
+ *    【让 AI 修改】（可选填理由）。
+ *    头部【全部批准（本会话不再询问）】一键批准全部待处理项，并把对应工具记入本会话
+ *    always_allow：同会话相同工具后续直接放行，不再逐次询问（计划审批除外，切换权限模式后失效）。
  *  - 待回答的 ask_user 澄清：问题摘要 + 选项快捷回答。
  *
  * 数据源完全复用 agentHub store 中消息的 tool.approval / askRequest（由 StudioView
@@ -14,11 +16,11 @@
 import { ref, computed } from 'vue'
 import { NButton, NIcon, NInput, NTag, useMessage } from 'naive-ui'
 import {
-  ShieldCheckmarkOutline, CheckmarkOutline, ReturnUpBackOutline,
+  ShieldCheckmarkOutline, CheckmarkOutline, CheckmarkDoneOutline, ReturnUpBackOutline,
   LocateOutline, ChatboxEllipsesOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
-import { approvalErrorText } from './approvalErrors'
+import { approvalErrorText, isApprovalGone } from './approvalErrors'
 import type { ToolCall } from '@/components/ai-chat/types'
 
 export interface PendingApprovalItem {
@@ -103,6 +105,41 @@ async function handleReject(item: PendingApprovalItem) {
   }
 }
 
+/** 计划审批是一次性决议，不记入 always_allow（否则后续计划不再询问） */
+function isPlanApprovalItem(item: PendingApprovalItem): boolean {
+  return item.tool.approval?.approval_kind === 'plan' || item.tool.name === 'update_plan'
+}
+
+// ---------- 全部批准（本次会话全部同意） ----------
+const approvingAll = ref(false)
+
+/**
+ * 一键批准当前全部待处理项，并把这些工具记入本会话 always_allow：
+ * 之后同会话相同工具直接放行，不再逐次弹审批（切换权限模式后失效）。
+ * 单条失败不中断其余条目；已被其他入口决议（过期/并发消费）的条目视为成功。
+ */
+async function handleApproveAll() {
+  if (approvingAll.value || !props.approvals.length) return
+  approvingAll.value = true
+  let approved = 0
+  let failed = 0
+  for (const item of [...props.approvals]) {
+    try {
+      await store.approveToolCall(item.approvalId, undefined, !isPlanApprovalItem(item))
+      approved += 1
+    } catch (error) {
+      if (isApprovalGone(error)) approved += 1
+      else failed += 1
+    }
+  }
+  approvingAll.value = false
+  if (failed === 0) {
+    message.success(`已批准全部 ${approved} 项，本会话内相同工具不再逐次询问`)
+  } else {
+    message.warning(`已批准 ${approved} 项，${failed} 项失败，请单独处理`)
+  }
+}
+
 function toggleReject(item: PendingApprovalItem) {
   if (rejectingId.value === item.approvalId) {
     rejectingId.value = ''
@@ -132,6 +169,20 @@ async function handleAnswer(text: string) {
       <n-icon size="14" class="pending-icon"><ShieldCheckmarkOutline /></n-icon>
       <span class="pending-title">待你处理</span>
       <n-tag size="tiny" round :bordered="false" type="warning">{{ total }}</n-tag>
+      <n-button
+        v-if="approvals.length"
+        size="tiny"
+        type="success"
+        secondary
+        class="approve-all-btn"
+        :loading="approvingAll"
+        :disabled="Boolean(submittingId)"
+        title="一键批准全部待处理项，本会话内相同工具后续直接放行（切换权限模式后失效）"
+        @click="handleApproveAll"
+      >
+        <template #icon><n-icon><CheckmarkDoneOutline /></n-icon></template>
+        全部批准（本会话不再询问）
+      </n-button>
     </div>
 
     <div class="pending-list">
@@ -235,6 +286,10 @@ async function handleAnswer(text: string) {
   font-size: 12px;
   font-weight: 600;
   color: var(--chat-text-primary, #333);
+}
+.approve-all-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .pending-list {

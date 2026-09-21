@@ -11,6 +11,8 @@
 > 4. **快照 / 评审 / 提案 / 交接**等时点性文档以 `_YYYY-MM`（必要时 `_YYYY-MM-DD`）结尾，只增不改；
 > 5. **不再演进方向**的文档移入 `deprecated/` 子目录原样保留，登记到文末"废弃归档"；
 > 6. 新增文档请沿用本规则，并同步登记到本 README。
+>
+> **2026-09-20 新增说明**：新增 `agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
 
 
 **文档类型口径**：
@@ -36,6 +38,9 @@
 
 ## 2. Agent 执行架构
 
+### `agent_architecture.md` — 单 Agent 技术架构备忘录（as-built，2026-09-20）
+回答"一个 Agent 在 CygnusX 里到底怎么定义、怎么调用、怎么维持状态、怎么调工具、怎么跑起来、依赖什么、怎么和别的 Agent 协作"的实现细节层快照。Agent 是**数据驱动**（20 个 `data/ai/*.yaml` → `agent_templates` 表）而非基类继承；入口为 `POST /api/v1/chat/stream` SSE，出入参是 OpenAI 消息 dict 列表 → `AsyncIterator[ChatChunk>`；辨析两个同名 `AgentContext` 的职责边界；对话历史由**前端显式传入**、后端 per-request 无会话状态机，三层上下文裁剪；`AgentState` TypedDict 刻意不引入 LangChain 消息封装（reducer 用 `operator.add`）；checkpoint 仅编排图启用、单 Agent ReAct 图不用；工具调用的 OpenAI Function Calling 规范、tool_packs 请求级裁剪、MCP 三传输与 circuit breaker、双通道 `llm_payload`/`ui_payload`；轻量 Docker 沙箱（warm pool + Docker SDK exec）与 Studio 沙箱（一会话一容器 + Unix Socket）两种执行环境、MAS 执行准入策略、supervised 审批闸五步链路；全异步全流式与并发治理参数；依赖生态实测版本（langgraph 1.2.10 / langchain-core 仅间接依赖 / mcp 2.0.0 / 自研 httpx Provider，**无 Anthropic SDK、LlamaIndex、mem0**）；四种多 Agent 协同模式（Supervisor / Handoff / Map-Reduce / Group Chat）的落地位置。附关键实现位置索引（26 项）与 9 条改造约束。另记录一处配置漂移：`.env.example` 仍有 `MEM0_ENGINE_ENABLED=true` 但代码已无 mem0 引擎（实际为自研 Postgres FactStore + fastembed）。
+
 ### `agent_execution_framework.md` — 当前执行框架（as-built 主文档，2026-08-18；已吸收 observability 文档）
 Agent 执行面的唯一现状快照：多入口、共享工具契约、分路径执行；`execution_path` 六路径登记表（chat_legacy / chat_langgraph / studio_chat_loop / agentteams_manager_consultation / agentteams_worker_react / agentteams_tool_execution，含 degraded 降级语义）；Legacy ReAct、LangGraph 节点（`llm_call_node`/`tool_exec_node`/双 route）、Worker 受限 ReAct（独立 child_session、五条禁止）三类闭环；AgentTeams 协助室意图四态判定与 Case 执行链；统一事件框架（七字段、生命周期事件 + 已并入的 `agent_tool_call`/`agent_tool_started`/`agent_tool_result` 三级工具事件链、`tool_call_id` 贯穿、Worker→房间证据投影表、前端事件→文案映射与"默认展开底层事件"）；运行保护（轮次治理、`StudioLoopGuard`、`duplicate_tool_call` 与无进展 Guard 语义）；消息/Case/Workspace 状态边界；修改扩展规则与验证清单。
 
@@ -43,7 +48,7 @@ Agent 执行面的唯一现状快照：多入口、共享工具契约、分路�
 配置驱动 Tool Agent 的规范基线：`data/ai/` 配置 → `ensure_builtin_agents()` → 数据库运行时链，改 md 提示词必须经营理端 API 发布；七个内置 Agent 清单与请求执行链路；工具与提示词契约——工作区五工具白名单一致性约束、Skill 三层渐进披露、时效检索降级契约、记忆与 Handoff 契约（`allowed_targets`、`max_hops_per_session`）、ask_user 全执行器统一中断语义与数据缺失澄清、会话隔离（`.s{session_id}` 标记）；Router/双执行器/Studio 边界；MAS 启用五前置条件；修改扩展流程与"不要采用的方式"反模式清单（prompt 假装执行、shell 拼接、任意 subprocess、高权限工具全发）；发布验收清单与验证证据；P1–P4 能力状态历史与优化方案实施边界（附录）。
 
 ### `agent_architecture_review_2026-07.md` — 架构评审细读 + RAP 提案（历史快照/提案，2026-07-28）
-前半为带 `path:line` 引用的评审细读：三层形态（Chat 专家、Studio 十工具与双通道、MAS 六步链路）、web_search 双触发与 knowledge_search 子串匹配现状、Prompt Registry 热重载、mermaid 时序图、四层治理机制（轮次治理与 `round_limit` 续轮、历史附件继承、256K 上下文压缩与 `context_compressed` 事件、会话文件治理）。后半为**未实施**的 RAP（检索增强计划生成）三层提案：提示词策略层、代码强制预检索注入、向量检索质量层，含实施顺序与验收清单。as-built 部分多数机制已被上两份文档承接，行号引用易腐化。
+前半为带 `path:line` 引用的评审细读：三层形态（Chat 专家、Studio 十工具与双通道、MAS 六步链路）、web_search 双触发与 knowledge_search 子串匹配现状、Prompt Registry 热重载、mermaid 时序图、四层治理机制（轮次治理与 `round_limit` 续轮、历史附件继承、256K 上下文压缩与 `context_compressed` 事件、会话文件治理）。后半为**未实施**的 RAP（检索增强计划生成）三层提案：提示词策略层、代码强制预检索注入、向量检索质量层，含实施顺序与验收清单。as-built 部分多数机制已被 `agent_architecture.md` / `agent_execution_framework.md` / `agent_framework_baseline.md` 三份承接，行号引用易腐化。
 
 ### `chat_execution_layers_2026-08.md` — Chat Runtime 分层与事件契约（施工快照，2026-08-23）
 Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway → ChatRouterService → ChatRuntime → 编排层 → ChatEventService SSE 出口的分层边界；`request_preparation.prepare_agent_request()`、`AgentContextBuilder`、`DelegatingAgentRuntime`、`DirectChatRuntime`；事件契约与 `ChatEventService` 唯一状态机校验点、`StudioLoopGuard` 熔断降级 supervised；`chat_runtime_refactor_enabled` 灰度回退、`agent.runtime.legacy_entry` 退役依据、golden record + `DualRunComparator` 双跑门禁；当前边界（ChatService 未瘦身至 <1000 行）与 99 项回归验证。

@@ -149,7 +149,12 @@ def _tail(text: str, limit: int) -> tuple[str, bool]:
 
 
 def _append_bounded_text(current: str, data: str, limit: int) -> tuple[str, bool]:
-    combined = f"{current}\n{data}" if current else data
+    separator = (
+        ""
+        if not current or current.endswith(("\n", "\r")) or data.startswith(("\n", "\r"))
+        else "\n"
+    )
+    combined = f"{current}{separator}{data}" if current else data
     return _tail(combined, limit)
 
 

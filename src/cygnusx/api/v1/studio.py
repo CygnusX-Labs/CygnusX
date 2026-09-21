@@ -94,7 +94,10 @@ from cygnusx.core.exceptions import (
 )
 from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
-from cygnusx.infrastructure.config.runtime_image_loader import get_runtime_images
+from cygnusx.infrastructure.config.runtime_image_loader import (
+    get_runtime_images,
+    resolve_studio_image,
+)
 from cygnusx.infrastructure.config.studio_loader import get_studio_config
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 from cygnusx.infrastructure.database.models.user import UserModel
@@ -362,6 +365,21 @@ async def create_studio_session(
     复用聊天会话创建逻辑，workspace_id 取会话 ID（沙盒容器与工作区均按此命名）；
     Agent yaml studio.image 解析后存入 sandbox_meta，供后续沙盒懒启动使用。
     Agent 未声明 studio 段时默认开放（P0），显式 enabled: false 才拒绝。
+
+    镜像优先级（这里是防止回归的关键契约）：
+
+    1. 请求中的 ``runtime_profile``：用户明确指定，最高优先级；
+    2. 请求中的 ``sandbox_capabilities``：用户明确要求额外能力时，按能力选择；
+    3. Agent 的 ``studio.image``：Agent 配置的默认专用镜像；
+    4. Agent 的 ``studio.runtime_profile``：用于修复旧数据库记录只有 profile、没有
+       image 的情况；
+    5. 以上都没有才允许后续沙盒管理器使用全局默认镜像。
+
+    绝不能因为请求未传能力列表就自动补成 ``code+browser+document``，也不能在
+    profile/image 解析失败时静默回退到 ``analysis-core``。这两种回退会把可视化
+    任务错误地放进通用容器，而且错误通常只会在 R/patchwork 执行时才暴露。
+    后续如需调整优先级、默认能力或回退策略，必须先向用户询问并确认，不要凭
+    “兼容旧客户端”自行修改。
     """
     agent_service = AgentService(db)
     agent = await agent_service.get_agent(req.agent_id)
@@ -375,11 +393,22 @@ async def create_studio_session(
     if model_id is None:
         raise BusinessError("Agent 未绑定模型，请显式指定 model_id")
 
-    requested_capabilities = _normalize_sandbox_capabilities(req.sandbox_capabilities)
+    # 能力列表是可选覆盖项。未提供时必须尊重 Agent YAML 的 runtime_profile/image；
+    # 旧的默认值 [code,browser,document] 会把 agent-viz 等所有 Agent 错配到
+    # browser-office，绕过已构建的 analysis-plot / analysis-scrna 镜像。
+    # 这是有意保留 None，而不是立即规范化成 ["code"]：None 表示“没有覆盖意图”，
+    # 后面仍要走 Agent 专用镜像分支。若修改此处，请先向用户确认镜像选择语义。
+    requested_capabilities = (
+        _normalize_sandbox_capabilities(req.sandbox_capabilities)
+        if req.sandbox_capabilities is not None
+        else None
+    )
     allowed_capabilities = _normalize_sandbox_capabilities(
         studio_cfg.get("sandbox_capabilities") or ["code", "browser", "document"]
     )
-    if not set(requested_capabilities).issubset(set(allowed_capabilities)):
+    if requested_capabilities is not None and not set(requested_capabilities).issubset(
+        set(allowed_capabilities)
+    ):
         emit_audit(
             "sandbox.capability_denied",
             session_id=None,
@@ -393,7 +422,10 @@ async def create_studio_session(
         )
         raise BusinessError("请求的沙盒能力未获该 Agent 授权")
 
-    image = studio_cfg.get("image")
+    # 默认先取 Agent 的 image；只有显式 runtime_profile 或显式能力覆盖才替换它。
+    # 不要把这一行改成 `get_studio_config().default_image`，全局默认只是最终兜底，
+    # 不是 Agent 的运行时画像。
+    image = resolve_studio_image(studio_cfg)
     if req.runtime_profile and req.runtime_profile.strip():
         # 显式指定的运行时 profile 优先于按能力匹配的镜像
         try:
@@ -403,10 +435,18 @@ async def create_studio_session(
             image = selected_profile.image
         except (KeyError, ValueError) as exc:
             raise BusinessError(f"运行时选择失败：{exc}") from exc
-    elif set(requested_capabilities) != {"code"}:
+    elif requested_capabilities is not None:
+        # 这是用户主动提出能力覆盖后的分支。能力匹配可以选择 browser-office，
+        # 但只能在请求明确包含 browser/document 时发生，不能作为 Agent 默认路径。
         image = get_studio_config().image_for_capabilities(requested_capabilities)
         if not image:
             raise BusinessError("当前部署未配置覆盖所请求能力的 Studio 沙盒镜像")
+    # Agent image is the default. If a stale DB row has only runtime_profile,
+    # resolve it here rather than falling back to the global core image.
+    # 这段是兼容旧数据库记录，不是允许修改 Agent 画像的入口；如需改变兼容策略，
+    # 先向用户报告受影响的 Agent/session 范围并询问确认。
+    # resolve_studio_image 已处理旧记录的 runtime_profile-only 形态；这里保留
+    # image=None 表示 Agent 没有画像，才允许沙盒管理器采用全局默认镜像。
     title = req.title or f"与 {agent.name} 的工作台"
     project_id = resolve_agent_project_scope(
         agent_project_id=agent.project_id,
@@ -420,7 +460,14 @@ async def create_studio_session(
         mode="studio",
         sandbox_meta={
             "image": image,
-            "sandbox_capabilities": requested_capabilities,
+            **(
+                {
+                    "sandbox_capabilities": requested_capabilities
+                    or get_studio_config().capabilities_for_image(image)
+                }
+                if image
+                else {}
+            ),
         },
         project_id=project_id,
     )
@@ -462,7 +509,9 @@ async def promote_session_to_studio(
     image: str | None = None
     runtime_profile = (req.runtime_profile if req else None) or ""
     if runtime_profile.strip():
-        # 显式指定的运行时 profile 优先于目标 Agent 的 studio.image
+        # 显式指定的运行时 profile 优先于目标 Agent 的 studio.image。
+        # 这是用户主动覆盖，不是路由器或 Agent 可以自行改变的默认值；若要扩展
+        # 这个入口，请先询问用户并说明会重建当前会话容器。
         try:
             _, selected_profile = get_runtime_images().select(
                 set(), "studio", preferred_profile=runtime_profile.strip()
@@ -473,8 +522,10 @@ async def promote_session_to_studio(
     elif target_agent_id:
         agent = await AgentService(db).get_agent(target_agent_id)
         if agent is not None:
+            # 路由/交接升级时沿用目标 Agent 的专用镜像，避免把可视化交接留在
+            # 源 Agent 的 analysis-core 容器中。旧记录若只有 profile，则解析 profile。
             studio_cfg = (agent.features or {}).get("studio") or {}
-            image = studio_cfg.get("image")
+            image = resolve_studio_image(studio_cfg)
 
     if session.mode == "studio":
         await asyncio.to_thread(ensure_checkpoint_repository, session.session_id)

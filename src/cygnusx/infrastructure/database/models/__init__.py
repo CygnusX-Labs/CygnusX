@@ -79,6 +79,11 @@ from cygnusx.infrastructure.database.models.mas import (
     MASReworkGuardModel,
     MASRunModel,
 )
+from cygnusx.infrastructure.database.models.mas_room import (
+    MASRoomEventModel,
+    MASRoomMessageModel,
+    MASRoomRunModel,
+)
 from cygnusx.infrastructure.database.models.mcp import MCPServerModel
 from cygnusx.infrastructure.database.models.mcp_builder import (
     MCPBuildModel,
@@ -181,6 +186,9 @@ __all__ = [
     "MASA2AEventModel",
     "MASApprovalModel",
     "MASReworkGuardModel",
+    "MASRoomMessageModel",
+    "MASRoomRunModel",
+    "MASRoomEventModel",
     "ReportModel",
     "ReportFileModel",
     "SandboxSessionModel",

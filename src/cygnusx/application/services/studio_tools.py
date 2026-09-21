@@ -36,6 +36,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from cygnusx.application.services.chat_message_event_service import message_event_service
+from cygnusx.application.services.network_request_tool import (
+    NETWORK_REQUEST_TOOL_NAME,
+    NETWORK_REQUEST_TOOL_SCHEMA,
+)
 from cygnusx.application.services.ptc_orchestrator import (
     PTC_DEFAULT_TIMEOUT_SECONDS,
     run_orchestration,
@@ -161,6 +165,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "onlyoffice_convert",
         "tool_orchestrate",
         "ask_user",
+        NETWORK_REQUEST_TOOL_NAME,
     }
 )
 
@@ -525,6 +530,7 @@ def _studio_function_schema(
 
 STUDIO_TOOL_SCHEMAS.extend(
     [
+        NETWORK_REQUEST_TOOL_SCHEMA,
         _studio_function_schema(
             "browser_navigate",
             "在会话专属 Chromium 中打开网页，返回标题、状态码、正文摘要和链接。仅允许 http/https；遵循沙箱网络白名单。",
@@ -676,7 +682,13 @@ def _tail(text: str, limit: int) -> tuple[str, bool]:
 
 def _append_bounded_text(current: str, data: str, limit: int) -> tuple[str, bool]:
     """追加输出并只保留尾部，避免慢客户端或异常工具撑大 Web 进程内存。"""
-    combined = f"{current}\n{data}" if current else data
+    # 流读取器保留行尾换行；兼容旧的无换行事件，但不为已有分隔符重复补行。
+    separator = (
+        ""
+        if not current or current.endswith(("\n", "\r")) or data.startswith(("\n", "\r"))
+        else "\n"
+    )
+    combined = f"{current}{separator}{data}" if current else data
     return _tail(combined, limit)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from cygnusx.application.services.network_request_tool import NETWORK_REQUEST_TOOL_SCHEMA
 from cygnusx.infrastructure.config.prompt_loader import get_prompt
 
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [

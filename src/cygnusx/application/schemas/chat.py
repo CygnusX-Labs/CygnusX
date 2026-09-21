@@ -71,6 +71,12 @@ class ChatStreamRequest(BaseModel):
         False,
         description="工具调用轮次上限扩展：False=100 轮，True=1000 轮（用户确认继续后由前端置位）",
     )
+    auto_approve: bool | None = Field(
+        None,
+        description="AI 助手页面默认开启：本轮需要用户确认的操作（代码执行、写入文件、"
+        "网络访问等）直接执行，不再逐次弹出审批卡片。AI 工作台页面不传该字段，"
+        "维持会话权限模式（supervised）的逐次审批语义。",
+    )
 
 
 class ChatMessageDTO(BaseModel):

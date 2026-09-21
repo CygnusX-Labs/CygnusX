@@ -1,9 +1,9 @@
 # CygnusX 沙箱增强架构（安全基线与 Capability 路由）
 
-> **时点说明**：本文件为 2026-08-22 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
+> **时点说明**：本文件为 2026-09-20 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
 
 **版本**：v1.1  
-**日期**：2026-08-22  
+**日期**：2026-09-20
 **状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现
 
 ## 1. 目标与边界
@@ -97,6 +97,40 @@ images:
 | 工作区配额 | 默认 10 GiB；agent 30 秒统计并保护写操作 | 跨文件系统兜底方案；XFS project quota 可用时升级为硬配额 |
 
 容器复用时会重新校验网络与安全基线。发现旧容器缺少硬 CPU、PID、只读根、`cap_drop=ALL` 或 `no-new-privileges` 时，管理器停止并删除它，然后以当前基线重建，避免旧容器绕过新策略。
+
+### 4.1 统一运行身份与挂载目录授权
+
+沙盒镜像、分析运行时镜像和聊天沙盒统一使用数值身份 `UID=10001`、`GID=10001`，
+组名为 `cygnusx-sandbox`。镜像构建阶段负责创建该用户/组，并将镜像内的
+`/workspace`、缓存目录和 agent 文件设置为 `10001:10001`；运行时注册表同步记录
+`runtime_uid`、`runtime_gid` 和 `runtime_group`，供编排器和验收工具核对。
+
+必须区分镜像层权限与挂载层权限：Docker bind mount、named volume 或 Kubernetes
+volume 会覆盖镜像中的目录及属主，镜像 Dockerfile 中的 `chown` 对挂载源无效。因此，
+`StudioSandboxManager`、`SandboxPool`、`ScratchVolumeManager` 以及其他运行时编排器在创建容器前都必须预创建并授权
+挂载目录。`workspace/output`、日志和临时交付目录至少对 `cygnusx-sandbox` 组可写，
+`workspace/input` 按数据策略只读；容器始终以 `10001:10001` 运行，不通过 root 运行时
+修复权限。
+
+Kubernetes 部署使用 `runAsUser: 10001`、`runAsGroup: 10001` 和适用的 `fsGroup: 10001`；
+Docker host bind mount 则由宿主编排器在启动前执行 `chown 10001:10001` 或等价的组/ACL
+授权。启动前写入探针必须检查实际 mount source、owner、group 和 mode，权限不符合时拒绝
+执行并给出可定位的审计信息。该规则是防止 `/workspace/output`、`/tmp/chat_output`
+出现 root:root、`0755` 导致 uid 10001 无法交付产物的必要基线。
+
+挂载源路径必须同时被 Web 编排进程和 Docker daemon 看见。生产默认使用
+`${STORAGE_PATH}/.sandbox-pool`（`SANDBOX_POOL_HOST_DIR`），而不是 Web 容器私有的
+`/tmp`。若控制面在容器内创建了 daemon 不可见的 `/tmp/cygnusx-sandbox-*`，Docker 会
+自动补建宿主源目录并赋予 `root:root 0755`，即使 sandbox 镜像内的用户和 `chown` 完全
+正确，运行时仍会得到 `PermissionError`。
+
+沙盒池收养旧 warm 容器时还必须重新检查 `/tmp/chat_output`、`/workspace/output` 和
+`/workspace/input` 的实际 bind mount source。若 source 缺失、不是 `10001:10001` 且不可
+组/其他用户写入，容器不得继续复用，必须销毁并按当前挂载契约重建。原因是 bind mount
+会遮蔽镜像层目录，单独重建镜像无法修复已经运行容器中的 `root:root 0755` 挂载目录。
+
+镜像构建使用 BuildKit cache mount 保留 conda package cache 和 pip cache；依赖层不应反复
+执行 `mamba clean --all` 或关闭 pip cache，否则每次依赖变更都会重新下载大型科学计算包。
 
 ## 5. 独立 browser-office 镜像
 

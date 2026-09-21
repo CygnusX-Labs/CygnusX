@@ -34,6 +34,7 @@ class ChatRuntimeRequest:
     extend_max_rounds: bool = False
     project_id: str | None = None
     runtime_context: dict[str, Any] = field(default_factory=dict)
+    auto_approve: bool | None = None
 
 
 class ChatRuntime(ABC):

@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     mas_apptainer_binary: str = "apptainer"
     mas_apptainer_image: str = ""
     mas_apptainer_pipeline_root: str = "/opt/cygnusx/pipelines/RNAFlow"
-    mas_scrna_docker_image: str = "cygnusx-analysis:scrna-v0.0.2dev"
+    mas_scrna_docker_image: str = "cygnusx-analysis:scrna-v0.0.3dev"
     mas_scrna_timeout_seconds: int = 7200
     # ===== Persistent Goal Runtime (opt-in, isolated from chat SSE) =====
     goal_runtime_enabled: bool = False
@@ -436,10 +436,10 @@ class Settings(BaseSettings):
     sandbox_seccomp_profile: str = "default"
     # /tmp 的 tmpfs 大小（nosuid,nodev,noexec，同 Studio 基线）
     sandbox_tmpfs_size: str = "512m"
-    # 交付/输入目录 bind mount 的宿主机基目录（空 = 系统临时目录）。
-    # 只读 rootfs 下 /tmp/chat_output、/workspace/output、/workspace/input
-    # 以 per-container 宿主机目录 bind 进容器，保证 copy-out（get_archive）可用
-    sandbox_pool_host_dir: str = ""
+    # 交付/输入目录 bind mount 的宿主机基目录。必须是 Web 容器与 Docker
+    # daemon 共同可见的路径；不要使用 Web 容器私有的 /tmp，否则 daemon 会把
+    # 不存在的 source 自动创建成 root:root 0755，导致 uid 10001 无法写入。
+    sandbox_pool_host_dir: str = "/data/cygnusx/.sandbox-pool"
 
     # ===== 云端沙盒终端 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。

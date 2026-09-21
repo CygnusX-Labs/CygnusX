@@ -370,7 +370,17 @@ function focusWithCursorAtEnd() {
   const end = el.value.length
   el.setSelectionRange(end, end)
 }
-defineExpose({ focus, focusWithCursorAtEnd })
+
+/** 读取当前草稿附件（进入工作台携带草稿时使用，返回副本不清空） */
+function getDraftAttachments(): FileAttachment[] {
+  return attachments.value.map((a) => ({ ...a }))
+}
+
+/** 恢复草稿附件（工作台进入后回填草稿时使用，整体替换） */
+function setDraftAttachments(items: FileAttachment[]) {
+  attachments.value = (items || []).map((a) => ({ ...a }))
+}
+defineExpose({ focus, focusWithCursorAtEnd, getDraftAttachments, setDraftAttachments })
 
 const agentTeamsCaseVisible = ref(false)
 const agentTeamsCaseSubmitting = ref(false)
@@ -518,7 +528,10 @@ function handleCompositionEnd() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (isComposing.value || e.isComposing) return
+  // `isComposing` 在部分浏览器/输入法的首次 Enter 事件上会短暂为 true，
+  // 即使组件没有进入 compositionstart 状态。只信任组件实际跟踪到的组合态，
+  // 或传统 IME 使用的 keyCode=229，避免普通文本的 Enter 被放成换行。
+  if (isComposing.value || e.keyCode === 229) return
   // compositionend 刚结束后的短窗口内忽略 Enter，拦住 IME 确认候选词后的幽灵 Enter
   if (e.key === 'Enter' && Date.now() - lastCompositionEndTime.value < 200) return
   if (showMcpMenu.value && e.key === 'Escape') {
@@ -1622,6 +1635,8 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
             </template>
             切换到 AI 工作台以执行代码、运行脚本并保存产物；当前对话历史会一并带过去
           </n-tooltip>
+          <!-- 工作台入口之后的外挂区域（如项目选择器），由调用方按需注入 -->
+          <slot name="after-workbench" />
         </div>
 
         <div class="toolbar-right">

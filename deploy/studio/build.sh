@@ -5,9 +5,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TAG="${CYGNUSX_IMAGE_TAG:-v0.0.2dev}"
+SANDBOX_UID="${SANDBOX_UID:-10001}"
+SANDBOX_GID="${SANDBOX_GID:-10001}"
+SANDBOX_GROUP="${SANDBOX_GROUP:-cygnusx-sandbox}"
+
+COMMON_BUILD_ARGS=(
+  --build-arg "SANDBOX_UID=${SANDBOX_UID}"
+  --build-arg "SANDBOX_GID=${SANDBOX_GID}"
+  --build-arg "SANDBOX_GROUP=${SANDBOX_GROUP}"
+)
 
 echo "==> 构建 cygnusx-sandbox-base:${TAG}"
 docker build -t "cygnusx-sandbox-base:${TAG}" \
+  "${COMMON_BUILD_ARGS[@]}" \
   -f "${SCRIPT_DIR}/base.Dockerfile" "${SCRIPT_DIR}"
 
 echo "==> 构建 cygnusx-sandbox-bio:${TAG}"

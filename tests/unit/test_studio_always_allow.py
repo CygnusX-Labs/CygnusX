@@ -83,6 +83,14 @@ def test_needs_approval_non_supervised_or_missing_mode_allows() -> None:
     assert needs_approval("", "chat_sandbox_execute", set()) is False
 
 
+@pytest.mark.unit
+def test_network_request_requires_approval_outside_supervised_and_can_be_allowed_for_session() -> None:
+    # 出网是跨越平台边界的副作用，普通聊天也必须先由前端确认。
+    assert needs_approval(None, "network_request", set()) is True
+    assert needs_approval("auto", "network_request", set()) is True
+    assert needs_approval("auto", "network_request", {"network_request"}) is False
+
+
 # ---------------------------------------------------------------------------
 # approval_required_tools：硬编码 ∪ schema requires_confirm，失败回退
 # ---------------------------------------------------------------------------

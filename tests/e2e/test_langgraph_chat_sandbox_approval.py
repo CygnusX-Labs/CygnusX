@@ -464,3 +464,49 @@ async def test_always_allow_session_skip_and_user_resolution_audit(
     detail = json.loads(row["detail"])
     assert detail["action"] == "approved"
     assert detail["resolver"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_auto_approve_skips_approval_gate_entirely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AI 助手页面（auto_approve=True）：supervised 会话也不弹审批卡，工具直接执行。"""
+    monkeypatch.setenv("REDIS_HOST", _REDIS_HOST)
+    sandbox_execute = AsyncMock(
+        return_value={
+            "success": True,
+            "result": {"llm_payload": {"ok": True}, "ui_payload": {"ok": True}},
+        }
+    )
+    monkeypatch.setattr(lg_module, "execute_chat_sandbox", sandbox_execute)
+    monkeypatch.setattr(
+        lg_module.provider_manager, "chat_stream", _fake_chat_stream(_rounds())
+    )
+    runtime = LangGraphChatRuntime(
+        _Service({"permissions": {"mode": "supervised"}})  # type: ignore[arg-type]
+    )
+
+    chunks: list[ChatChunk] = []
+    async for chunk in runtime._stream_agent_chat_langgraph(
+        user_id=USER_ID,
+        session_id=SESSION_ID,
+        ai_message_id="e2e-message-auto-approve",
+        model_config=SimpleNamespace(model="e2e-model"),
+        llm_messages=[{"role": "user", "content": "帮我跑段代码"}],
+        system_prompt=None,
+        tools=[],
+        temperature=0.2,
+        max_tokens=256,
+        deep_thinking=False,
+        active_mcp_servers=[],
+        mcp_client=SimpleNamespace(),
+        tool_context=SimpleNamespace(agent_id="agent-e2e"),
+        auto_approve=True,
+    ):
+        chunks.append(chunk)
+
+    types = [c.type for c in chunks]
+    assert "approval_request" not in types
+    assert "approval_resolved" not in types
+    assert "tool_result" in types
+    assert sandbox_execute.await_count == 1

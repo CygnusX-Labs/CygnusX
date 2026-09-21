@@ -92,6 +92,10 @@ def _studio_risk_hint(tool_name: str, args: dict[str, Any]) -> str:
     if tool_name in {"sandbox_execute", "chat_sandbox_execute"}:
         language = str(args.get("language") or "python")
         return f"将在沙盒中执行 {language} 代码"
+    if tool_name == "network_request":
+        from cygnusx.application.services.network_request_tool import network_request_risk_hint
+
+        return network_request_risk_hint(args)
     if tool_name == "workspace_write":
         return f"将写入工作区文件 {args.get('path') or ''}".strip()
     if tool_name == "workspace_edit":

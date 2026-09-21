@@ -50,7 +50,7 @@ IMAGES: dict[str, dict] = {
         "desc": "科研绘图运行时",
     },
     "scrna": {
-        "image": "cygnusx-analysis:scrna-v0.0.2dev",
+        "image": "cygnusx-analysis:scrna-v0.0.3dev",
         "prefix": ["micromamba", "run", "-n", "base"],
         "desc": "单细胞分析运行时",
     },

@@ -83,7 +83,8 @@ handoff:
 
 studio:
   enabled: true
-  # 通用助手在 Studio 中直接执行文件处理与全部数值计算；避免为简单任务转交代码助手。
+  # 通用助手在 Studio 中直接执行文件处理与全部数值计算；运行时使用单细胞能力
+  # 完整的镜像，避免遇到 RDS/Seurat 任务时仍落到没有 Seurat 的 analysis-core。
   default_mode: studio
-  runtime_profile: analysis-core
-  required_capabilities: [python, r, bash]
+  runtime_profile: analysis-scrna
+  required_capabilities: [python, r, bash, single-cell, hdf5]

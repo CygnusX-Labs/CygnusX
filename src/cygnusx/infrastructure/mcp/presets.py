@@ -23,6 +23,10 @@ from cygnusx.infrastructure.mcp.pipeline_preset import (
     build_pipeline_preset,
 )
 
+# seqout builtin preset 的确定性 UUID
+SEQOUT_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "seqout.builtin")
+SEQOUT_SERVER_NAME = "seqout"
+
 # cygnusx-tools builtin preset 的确定性 UUID（uuid5 DNS namespace + name）
 CYGNUSX_TOOLS_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "cygnusx-tools.builtin")
 CYGNUSX_TOOLS_SERVER_NAME = "cygnusx-tools"
@@ -1451,6 +1455,208 @@ async def _platform_room_state_query(
     return await query(context.db)
 
 
+# ====================== Seqout 公共数据库检索 (builtin) ======================
+
+async def _seqout_handler(
+    arguments: dict[str, Any],
+    tool_name: str = "",
+    user_id: str | None = None,
+    context: ToolInvocationContext | None = None,
+) -> dict[str, Any]:
+    """Seqout builtin preset 的统一 handler — 调用 seqout.org API"""
+    import httpx
+    import json
+
+    BASE_URL = "https://seqout.org/api"
+
+    def _parse_search_response(data: dict | list, limit: int = 5) -> list[dict]:
+        """解析搜索结果"""
+        if isinstance(data, dict):
+            raw_items = data.get("results", data.get("hits", data))
+        else:
+            raw_items = data
+
+        if not isinstance(raw_items, list):
+            return []
+
+        results = []
+        for item in raw_items[:limit]:
+            results.append({
+                "accession": item.get("accession") or item.get("id"),
+                "title": item.get("title"),
+                "organism": item.get("organism"),
+                "sample_count": item.get("samples_count") or item.get("n_samples"),
+                "source_db": item.get("database"),
+                "summary": (item.get("summary") or item.get("description") or "")[:200] + "...",
+            })
+        return results
+
+    def _parse_samples_response(data: dict | list, limit: int = 30) -> list[dict]:
+        """解析样本清单"""
+        if isinstance(data, dict):
+            samples_list = data.get("samples", data.get("data", []))
+        else:
+            samples_list = data
+
+        if not isinstance(samples_list, list):
+            return []
+
+        manifest = []
+        for s in samples_list[:limit]:
+            manifest.append({
+                "sample_accession": s.get("accession") or s.get("geo_accession"),
+                "title": s.get("title"),
+                "characteristics": s.get("characteristics_ch1") or s.get("attributes") or [],
+                "source_name": s.get("source_name_ch1") or s.get("source_name"),
+            })
+        return manifest
+
+    async def _seqout_request(endpoint: str, params: dict | None = None) -> dict:
+        """发送 Seqout API 请求"""
+        # seqout.org 对默认 httpx UA 返回 403，须携带浏览器 UA
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            try:
+                response = await client.get(f"{BASE_URL}{endpoint}", params=params)
+                response.raise_for_status()
+                
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise Exception(f"服务端返回 HTML 页面：{response.text[:200]}")
+                
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    raise Exception("触发速率限制 (Rate Limit)，请稍后重试")
+                raise Exception(f"Seqout API 错误 {e.response.status_code}: {e.response.text[:200]}")
+            except httpx.TimeoutException:
+                raise Exception("请求超时")
+            except json.JSONDecodeError:
+                raise Exception("响应解析失败：非 JSON 格式")
+
+    try:
+        if tool_name == "seqout_search":
+            data = await _seqout_request("/search", {"q": arguments.get("query", ""), "limit": arguments.get("limit", 5)})
+            return {"success": True, "data": _parse_search_response(data, arguments.get("limit", 5))}
+        
+        elif tool_name == "seqout_search_geo":
+            data = await _seqout_request("/search", {"database": "geo", "q": arguments.get("query", ""), "limit": arguments.get("limit", 5)})
+            return {"success": True, "data": _parse_search_response(data, arguments.get("limit", 5))}
+        
+        elif tool_name == "seqout_search_sra":
+            data = await _seqout_request("/search", {"database": "sra", "q": arguments.get("query", ""), "limit": arguments.get("limit", 5)})
+            return {"success": True, "data": _parse_search_response(data, arguments.get("limit", 5))}
+        
+        elif tool_name == "seqout_search_structured":
+            params = {}
+            if arguments.get("organism"):
+                params["organism"] = arguments.get("organism")
+            if arguments.get("assay"):
+                params["assay"] = arguments.get("assay")
+            params["limit"] = arguments.get("limit", 5)
+            data = await _seqout_request("/search/structured", params)
+            return {"success": True, "data": _parse_search_response(data, arguments.get("limit", 5))}
+        
+        elif tool_name == "seqout_get_project_detail":
+            data = await _seqout_request(f"/project/{arguments.get('accession', '')}")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_project_metadata":
+            data = await _seqout_request(f"/project/{arguments.get('accession', '')}/metadata")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_project_citation":
+            data = await _seqout_request(f"/project/{arguments.get('accession', '')}/citation")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_project_enriched":
+            data = await _seqout_request(f"/project/{arguments.get('accession', '')}/enriched")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_experiments":
+            data = await _seqout_request(f"/study/{arguments.get('study_accession', '')}/experiments")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_runs":
+            data = await _seqout_request(f"/study/{arguments.get('study_accession', '')}/runs")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_run_download":
+            data = await _seqout_request(f"/run/{arguments.get('run_accession', '')}/download")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_sample_metadata":
+            data = await _seqout_request(f"/sample/{arguments.get('accession', '')}/metadata")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_sample_detail":
+            data = await _seqout_request(f"/sample/{arguments.get('accession', '')}")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_sample_manifest":
+            data = await _seqout_request(f"/geo/{arguments.get('accession', '')}/samples", 
+                                         {"max_samples": arguments.get("max_samples", 30)})
+            return {"success": True, "data": _parse_samples_response(data, arguments.get("max_samples", 30))}
+        
+        elif tool_name == "seqout_resolve_accession":
+            data = await _seqout_request(f"/resolve/{arguments.get('accession', '')}")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_resolve_prj":
+            data = await _seqout_request(f"/resolve/prj/{arguments.get('prj_accession', '')}")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_ontology_term":
+            data = await _seqout_request(f"/ontology/{arguments.get('term', '')}")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_organisms":
+            data = await _seqout_request("/organisms")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_common_name":
+            data = await _seqout_request(f"/organism/{arguments.get('organism_id', '')}/common-name")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_beacon_info":
+            data = await _seqout_request("/beacon/info")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_beacon_runs":
+            data = await _seqout_request("/beacon/runs")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_stats_growth":
+            data = await _seqout_request("/stats/growth")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_organism_totals":
+            data = await _seqout_request("/stats/organism-totals")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_platform_totals":
+            data = await _seqout_request("/stats/platform-totals")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_download_links":
+            data = await _seqout_request("/download-links")
+            return {"success": True, "data": data}
+        
+        elif tool_name == "seqout_get_metadata_csv":
+            data = await _seqout_request("/metadata-csv")
+            return {"success": True, "data": data}
+        
+        else:
+            return {"success": False, "error": f"未知工具：{tool_name}"}
+    
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 PLATFORM_PRESET_TOOLS = [
     {
         "name": "europe_pmc_search",
@@ -1903,6 +2109,281 @@ PLATFORM_HANDLERS = {
 }
 
 
+# ====================== Seqout 公共数据库检索工具定义 ======================
+
+SEQOUT_PRESET_TOOLS = [
+    {
+        "name": "seqout_search",
+        "description": "在 GEO/SRA/ENA/GSA 等公共数据库中搜索匹配的组学项目",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "检索关键词（如:'CD8 T cell exhaust','HCC single cell'）"},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20, "description": "最多返回的项目数量"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "seqout_search_geo",
+        "description": "仅搜索 GEO 数据库中的基因表达数据集",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "检索关键词"},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "seqout_search_sra",
+        "description": "仅搜索 SRA 数据库中的测序原始数据项目",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "检索关键词"},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "seqout_search_structured",
+        "description": "使用元数据过滤器结构化搜索（按物种、实验类型等）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "organism": {"type": "string", "description": "物种名称（可选）"},
+                "assay": {"type": "string", "description": "实验类型（可选）"},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+            },
+        },
+    },
+    {
+        "name": "seqout_get_project_detail",
+        "description": "获取项目详情（实验设计、平台、文献引用）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "项目登录号（GSE/PRJNA 等）"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_project_metadata",
+        "description": "获取项目标题和描述信息",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "项目登录号"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_project_citation",
+        "description": "获取项目引用文献 (BibTeX 格式)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "项目登录号"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_project_enriched",
+        "description": "获取 AI 增强的样本元数据",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "项目登录号"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_experiments",
+        "description": "列出研究中的所有实验",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_accession": {"type": "string", "description": "研究登录号"},
+            },
+            "required": ["study_accession"],
+        },
+    },
+    {
+        "name": "seqout_get_runs",
+        "description": "列出 FASTQ 下载链接",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_accession": {"type": "string", "description": "研究登录号"},
+            },
+            "required": ["study_accession"],
+        },
+    },
+    {
+        "name": "seqout_get_run_download",
+        "description": "获取单个运行的下载链接",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "run_accession": {"type": "string", "description": "运行登录号（SRR 等）"},
+            },
+            "required": ["run_accession"],
+        },
+    },
+    {
+        "name": "seqout_get_sample_metadata",
+        "description": "获取样本元数据",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "样本登录号（GSM 等）"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_sample_detail",
+        "description": "获取完整的样本详细信息",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "样本登录号"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_get_sample_manifest",
+        "description": "获取数据集的样本清单，包含样本组织来源、实验处理组与对照组标记",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "GEO Series 编号（如 'GSE123456'）"},
+                "max_samples": {"type": "integer", "default": 30, "minimum": 1, "maximum": 100, "description": "返回的最大样本数量预览"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_resolve_accession",
+        "description": "反查样本归属的项目编号（从 GSM/SRR 反查 GSE/PRJNA）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "accession": {"type": "string", "description": "样本或 Run 编号（如:'GSM456789','SRR1234567'）"},
+            },
+            "required": ["accession"],
+        },
+    },
+    {
+        "name": "seqout_resolve_prj",
+        "description": "将 BioProject 解析到研究级别",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prj_accession": {"type": "string", "description": "BioProject 登录号"},
+            },
+            "required": ["prj_accession"],
+        },
+    },
+    {
+        "name": "seqout_get_ontology_term",
+        "description": "查询本体论术语信息",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "term": {"type": "string", "description": "术语 ID 或名称"},
+            },
+            "required": ["term"],
+        },
+    },
+    {
+        "name": "seqout_get_organisms",
+        "description": "列出所有支持的物种",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_common_name",
+        "description": "获取物种的常用名称",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "organism_id": {"type": "string", "description": "物种 ID"},
+            },
+            "required": ["organism_id"],
+        },
+    },
+    {
+        "name": "seqout_beacon_info",
+        "description": "获取 Beacon 元数据",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_beacon_runs",
+        "description": "浏览测序运行记录",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_stats_growth",
+        "description": "获取数据库增长统计",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_organism_totals",
+        "description": "获取每个物种的实验总数",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_platform_totals",
+        "description": "获取平台实验总数或过滤选项",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_download_links",
+        "description": "获取 TSV 格式的下载链接",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "seqout_get_metadata_csv",
+        "description": "下载合并的元数据 CSV",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+]
+
+SEQOUT_HANDLERS = {t["name"]: _seqout_handler for t in SEQOUT_PRESET_TOOLS}
+
+
 # 预设服务定义
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
@@ -1913,6 +2394,13 @@ PRESET_SERVERS: list[dict[str, Any]] = [
         "handlers": PLATFORM_HANDLERS,
     },
     build_pipeline_preset(),
+    {
+        "name": SEQOUT_SERVER_NAME,
+        "description": f"公共数据库检索 MCP - {SEQOUT_SERVER_NAME}.org API 完整覆盖，支持 GEO/SRA/ENA/GSA 项目搜索、样本清单、accession 解析等 26 个工具",
+        "transport": "builtin",
+        "tools": SEQOUT_PRESET_TOOLS,
+        "handlers": SEQOUT_HANDLERS,
+    },
 ]
 
 
@@ -1993,6 +2481,14 @@ def get_preset_by_name(name: str) -> dict[str, Any] | None:
         return _build_cygnusx_tools_preset()
     if name == CYGNUSX_PIPELINES_SERVER_NAME:
         return build_pipeline_preset()
+    if name == SEQOUT_SERVER_NAME:
+        return {
+            "name": SEQOUT_SERVER_NAME,
+            "description": f"公共数据库检索 MCP - {SEQOUT_SERVER_NAME}.org API 完整覆盖，支持 GEO/SRA/ENA/GSA 项目搜索、样本清单、accession 解析等 26 个工具",
+            "transport": "builtin",
+            "tools": SEQOUT_PRESET_TOOLS,
+            "handlers": SEQOUT_HANDLERS,
+        }
     for p in PRESET_SERVERS:
         if p["name"] == name:
             return p
@@ -2007,6 +2503,10 @@ __all__ = [
     "WORKSPACE_FILES_SYSTEM_PROMPT_SUFFIX",
     "CYGNUSX_PIPELINES_SERVER_ID",
     "CYGNUSX_PIPELINES_SERVER_NAME",
+    "SEQOUT_SERVER_ID",
+    "SEQOUT_SERVER_NAME",
+    "SEQOUT_PRESET_TOOLS",
+    "SEQOUT_HANDLERS",
     "PLATFORM_PRESET_TOOLS",
     "PLATFORM_HANDLERS",
     "get_preset_by_name",

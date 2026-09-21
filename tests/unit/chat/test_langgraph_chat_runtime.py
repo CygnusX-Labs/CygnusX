@@ -308,3 +308,59 @@ async def test_gate_timeout_records_audit_and_rejects(
             "method": "EVENT",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_gate_bypassed_when_auto_approve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AI 助手页面（auto_approve）：supervised 下也不建审批记录、直接放行。"""
+    service = _FakeApprovalService({"action": "approved"})
+    monkeypatch.setattr(lg_module, "get_studio_approval_service", lambda: service)
+
+    args, rejection = await _gate_chat_sandbox_approval(
+        **_gate_kwargs(auto_approve=True)
+    )
+
+    assert rejection is None
+    assert service.created == []
+
+
+@pytest.mark.asyncio
+async def test_network_gate_bypassed_when_auto_approve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """出网审批同样受 auto_approve 旁路（普通聊天未声明权限模式时本就询问）。"""
+    from cygnusx.application.services.chat.runtimes.langgraph_runtime import (
+        _gate_network_request_approval,
+    )
+
+    service = _FakeApprovalService({"action": "approved"})
+    monkeypatch.setattr(lg_module, "get_studio_approval_service", lambda: service)
+
+    args, rejection = await _gate_network_request_approval(
+        **_gate_kwargs(
+            args={"url": "https://example.com"},
+            permission_mode=None,
+            auto_approve=True,
+        )
+    )
+
+    assert rejection is None
+    assert service.created == []
+
+
+@pytest.mark.asyncio
+async def test_network_gate_still_asks_without_auto_approve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不传 auto_approve（AI 工作台页面）时出网仍逐次询问，语义不回退。"""
+    from cygnusx.application.services.chat.runtimes.langgraph_runtime import (
+        _gate_network_request_approval,
+    )
+
+    service = _FakeApprovalService({"action": "approved"})
+    monkeypatch.setattr(lg_module, "get_studio_approval_service", lambda: service)
+
+    _, rejection = await _gate_network_request_approval(
+        **_gate_kwargs(args={"url": "https://example.com"}, permission_mode=None)
+    )
+
+    assert rejection is None
+    assert len(service.created) == 1

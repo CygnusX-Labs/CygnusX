@@ -12,15 +12,33 @@ from cygnusx.application.schemas.chat import ChatSessionDTO
 
 
 class CreateStudioSessionRequest(BaseModel):
-    """创建 Studio 会话请求"""
+    """创建 Studio 会话请求。
+
+    镜像选择有意区分“Agent 默认画像”和“用户显式能力覆盖”：
+
+    * ``sandbox_capabilities is None`` 表示用户没有提出镜像覆盖要求，后端必须
+      沿用 Agent YAML 中声明的 ``studio.image`` / ``runtime_profile``；
+    * 只有用户明确传入能力列表时，后端才允许按能力匹配镜像（例如明确要求
+      ``browser`` 才切换到 browser-office）。
+
+    不要把 ``sandbox_capabilities`` 改回带有 ``code/browser/document`` 的默认值。
+    那会让所有 Agent 看起来都需要浏览器和文档能力，并覆盖 agent-viz 的
+    ``analysis-plot``、单细胞 Agent 的 ``analysis-scrna`` 等专用镜像。
+    如果要改变这个优先级或默认行为，必须先向用户说明影响范围并获得确认。
+    """
 
     agent_id: str = Field(..., description="绑定的 Agent ID")
     title: str | None = Field(None, description="会话标题，缺省为「与 <Agent名> 的工作台」")
-    project_id: str = Field(..., max_length=64, description="项目边界标识（必填，会话强制绑定项目）")
+    project_id: str | None = Field(
+        None, max_length=64, description="项目边界标识；缺省自动归入「默认项目」"
+    )
     model_id: UUID | None = Field(None, description="模型配置 ID，缺省用 Agent 绑定模型")
-    sandbox_capabilities: list[Literal["code", "browser", "document"]] = Field(
-        default_factory=lambda: ["code", "browser", "document"],
-        description="请求的沙盒运行能力；默认开放代码、浏览器和文档能力，仍受部署镜像约束",
+    sandbox_capabilities: list[Literal["code", "browser", "document"]] | None = Field(
+        None,
+        description=(
+            "可选的沙盒运行能力；未提供时沿用 Agent 声明的 runtime_profile/image，"
+            "显式提供时才按能力匹配镜像"
+        ),
     )
     runtime_profile: str | None = Field(
         None,

@@ -17,7 +17,11 @@ import pytest
 
 import cygnusx.application.services.chat_service as chat_service_module
 from cygnusx.application.schemas.agent import AgentTemplateDTO
-from cygnusx.application.services.chat_service import ROUTER_SYSTEM_PROMPT, ChatService
+from cygnusx.application.services.chat_service import (
+    ROUTER_MAX_TOKENS,
+    ROUTER_SYSTEM_PROMPT,
+    ChatService,
+)
 from cygnusx.infrastructure.config import agent_loader
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +100,7 @@ class _FakeCapabilityRegistry:
 
 
 def test_runtime_router_prompt_keeps_decision_on_stardust_ai() -> None:
+    assert ROUTER_MAX_TOKENS == 10000
     assert "星尘 AI" in ROUTER_SYSTEM_PROMPT
     assert "不要执行分析" in ROUTER_SYSTEM_PROMPT
     assert "前端关键词规则" in ROUTER_SYSTEM_PROMPT
@@ -103,6 +108,9 @@ def test_runtime_router_prompt_keeps_decision_on_stardust_ai() -> None:
     assert "领域词只用于选择合适的专家" in ROUTER_SYSTEM_PROMPT
     assert "不能仅因“单细胞”创建流程型 Case" in ROUTER_SYSTEM_PROMPT
     assert "emoji" in ROUTER_SYSTEM_PROMPT
+    assert ".qs" in ROUTER_SYSTEM_PROMPT
+    assert ".h5ad" in ROUTER_SYSTEM_PROMPT
+    assert "单细胞对象中的细胞注释" in ROUTER_SYSTEM_PROMPT
 
 
 class _FakeAgentService:
@@ -287,74 +295,83 @@ async def test_question_routes_to_expected_expert(
 
 
 @pytest.mark.unit
-async def test_bulk_rnaseq_guard_corrects_scrna_model_misroute(
+async def test_text_intake_no_longer_bypasses_router(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
-    _mock_router_output(
-        monkeypatch,
-        json.dumps(
-            {
-                "agent_id": "agent-scrna",
-                "reason": "误把怎么开始理解为单细胞上游",
-                "confidence": 0.82,
-            }
-        ),
-    )
+    """缺参数只影响专家后续 intake，不能在 Router 前强制改派通用助手。"""
+    captured: dict[str, Any] = {}
 
-    ctx, info = await service._route_to_agent(router_ctx, "RNA-seq 差异表达分析怎么开始")
+    async def route_with_model(**kwargs: Any):
+        captured.update(kwargs)
+        yield SimpleNamespace(
+            type="text",
+            content=json.dumps({"agent_id": "agent-rnaseq", "reason": "转录组研究计划"}),
+            metadata={},
+        )
 
-    assert ctx is not None and ctx.agent_id == "agent-rnaseq"
-    assert info is not None and info["agent_id"] == "agent-rnaseq"
-    assert "纠正单细胞专家误匹配" in info["reason"]
-
-
-@pytest.mark.unit
-async def test_ambiguous_tp53_plan_routes_to_general_intake_before_experts(
-    service: ChatService, router_ctx: Any, monkeypatch
-):
-    async def should_not_route_with_model(**_kwargs: Any):
-        raise AssertionError("模糊研究计划应由确定性 intake 门槛拦截")
-        yield SimpleNamespace(type="text", content="", metadata={})
-
-    monkeypatch.setattr(
-        chat_service_module.provider_manager, "chat_stream", should_not_route_with_model
-    )
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_with_model)
     ctx, info = await service._route_to_agent(
         router_ctx,
         "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
     )
 
-    assert ctx is not None and ctx.agent_id == "agent-general"
-    assert info is not None and info["needs_clarification"] is True
-    assert len(info["clarification_questions"]) == 3
-    assert "先由通用助手" in info["reason"]
+    assert ctx is not None and ctx.agent_id == "agent-rnaseq"
+    assert info is not None and info["reason"] == "转录组研究计划"
+    assert "TP53" in captured["messages"][0]["content"]
 
 
 @pytest.mark.unit
-async def test_image_attachment_bypasses_ambiguous_intake_and_explains_general_route(
+async def test_router_receives_uploaded_file_manifest_and_can_select_visualization_expert(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
     captured: dict[str, Any] = {}
 
-    async def route_image_question(**kwargs: Any):
+    async def route_visualization_request(**kwargs: Any):
         captured.update(kwargs)
         yield SimpleNamespace(
             type="text",
-            content=json.dumps({"agent_id": "agent-general", "reason": "图片问题"}),
+            content=json.dumps({"agent_id": "agent-viz", "reason": "差异表达可视化交付"}),
             metadata={},
         )
 
-    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_image_question)
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", route_visualization_request)
     ctx, info = await service._route_to_agent(
         router_ctx,
-        "我有两个 TP53 分组，想挖掘新颖发现，请写详细计划",
-        attachments=[{"type": "image", "mime_type": "image/png"}],
+        "请基于上传的差异表达 CSV 生成火山图和热图，并给出结果总结。",
+        attachments=[
+            {
+                "name": "synthetic_gene_expression_3000 - Untitled.csv",
+                "type": "file",
+                "mime_type": "text/csv",
+            }
+        ],
+    )
+
+    assert ctx is not None and ctx.agent_id == "agent-viz"
+    assert info is not None and info["reason"] == "差异表达可视化交付"
+    assert "synthetic_gene_expression_3000 - Untitled.csv" in captured["messages"][0]["content"]
+    assert "附件清单" in captured["messages"][0]["content"]
+
+
+@pytest.mark.unit
+async def test_router_does_not_override_model_target_with_keyword_rules(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    """专家目标必须来自 Router JSON；用户文本中的关键词不能覆盖模型决策。"""
+    _mock_router_output(
+        monkeypatch,
+        json.dumps({"agent_id": "agent-general", "reason": "模型决定由通用助手处理"}),
+    )
+
+    ctx, info = await service._route_to_agent(
+        router_ctx,
+        "@inbox/raw-data/integration_harmony.qs 帮我可视化这个细胞注释结果，并展示特定亚群的top基因",
     )
 
     assert ctx is not None and ctx.agent_id == "agent-general"
-    assert info is not None and info["needs_clarification"] is False
-    assert info["reason"] == "已附图片，通用助手将先识别图片内容并直接回答当前问题"
-    assert "包含图片附件" in captured["messages"][0]["content"]
+    assert info is not None and info["agent_id"] == "agent-general"
+    assert info["reason"] == "模型决定由通用助手处理"
+
 
 
 # ---------------------------------------------------------------------------

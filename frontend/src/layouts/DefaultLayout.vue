@@ -284,6 +284,7 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
   { key: 'agent-teams-room', label: '团队协作室', to: '/agent-teams/room', icon: PeopleOutline },
+  { key: 'department', label: '生物信息部门', to: '/department', icon: PeopleOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
 ])
 
