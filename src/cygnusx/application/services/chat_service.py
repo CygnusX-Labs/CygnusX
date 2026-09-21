@@ -37,6 +37,7 @@ from cygnusx.application.services.agent_handoff_service import (
 from cygnusx.application.services.agentteams_bridge_settings_service import (
     AgentTeamsBridgeSettingsService,
 )
+from cygnusx.application.services.artifact_manifest import normalize_tool_artifact_payload
 from cygnusx.application.services.biomedical_literature_service import (
     BiomedicalLiteratureService,
 )
@@ -5124,7 +5125,9 @@ class ChatService(
                                 content=query,
                                 metadata={"status": "searching"},
                             )
-                            result = await self._web_search(args)
+                            result = await self._web_search(
+                                args, model_config=model_config
+                            )
                             search_payload = (
                                 result.get("result") if isinstance(result, dict) else None
                             )
@@ -5181,6 +5184,11 @@ class ChatService(
                         llm_result = tool_output if tool_output is not None else result
                     if not isinstance(llm_result, dict):
                         llm_result = {"result": llm_result}
+                    llm_result, ui_payload = normalize_tool_artifact_payload(
+                        llm_result,
+                        ui_payload,
+                        tool_name=tool_name,
+                    )
 
                     if loop_guard is not None:
                         error_type = "unknown_error"
