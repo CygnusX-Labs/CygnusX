@@ -1,5 +1,32 @@
 # OmicHub Agent Instructions
 
+## Architecture-First Investigation Workflow
+
+Before investigating, designing, or modifying a non-trivial feature, first read
+`ARCHITECTURE_DESIN/README.md`. Use its index to identify the relevant current
+architecture document, then read that document before inspecting or changing
+implementation code. Treat documents marked **as-built** or **规范** as the
+current baseline; treat proposals and dated historical snapshots as context,
+not as proof of the current implementation.
+
+For every issue, record the applicable architecture document and verify the
+actual code path against it. When the implementation and architecture differ,
+describe the drift and update the appropriate architecture document in the
+same change when the new behavior is intentional. Do not create a competing
+architecture note without registering it in `ARCHITECTURE_DESIN/README.md`.
+
+For token, model pricing, cache usage, AI cost, or cookie balance work, the
+required first document is
+`ARCHITECTURE_DESIN/token_billing_architecture.md`, followed by the relevant
+Chat/Agent, database, logging, or frontend document listed by the README.
+
+Minimum workflow:
+
+1. Read `ARCHITECTURE_DESIN/README.md` and the relevant architecture document.
+2. Trace the current implementation and data contracts from source of truth to UI or ledger.
+3. State any architecture drift, unit mismatch, missing audit field, or stale documentation.
+4. Make the smallest aligned change, update the architecture documentation when behavior changes, and add focused verification.
+
 ## Deployment and Image Rules
 
 These rules apply to every Agent that changes files under `deploy/`, `data/ai/`,

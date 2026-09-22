@@ -14,6 +14,7 @@
 >
 > **2026-09-20 新增说明**：新增 `agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
 > **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `agent_architecture.md`、`agent_execution_framework.md` 与 `cygnusx_sandbox_architecture_2026-08-22.md` 的新增 as-built 小节为准。
+> **2026-09-22 更新说明**：新增 `token_billing_architecture.md`，记录 Provider usage 归一化、缓存 token 计费、工具循环累计、会话落库、饼干扣费、元估算和对账排查流程。涉及 token、费用、余额或模型价格的修改，必须以该文档为当前实现基线。
 
 
 **文档类型口径**：
@@ -92,6 +93,9 @@ MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py
 
 ### `database_architecture.md` — 数据库基础设施基线（as-built + 规范，2026-09-11）
 `session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 87 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
+
+### `token_billing_architecture.md` — Token 与饼干消耗架构（as-built + 对账规范，2026-09-22）
+记录模型 Provider `usage` 到消息、会话、饼干流水、统计 API 和前端元估算的完整数据流；统一字段映射与多轮合并规则；输入/输出缓存 token 的识别、子集约束和分项价格公式；`ai_token_cookie_rate` 的逐消息舍入、幂等扣费、余额封顶与折扣语义；平台饼干和供应商元账单的边界；token/金额不一致时的逐步对账流程与修改验证清单。该文档是 token、缓存、费用、余额相关改动的唯一架构基线。
 
 ### `log_architecture.md` — 统一日志架构（as-built + 更新规范）
 统一日志根 `/data/cygnusx/logs/`（app/celery/nginx/snakemake/audit 五域）；`core/logging.py` loguru 四 sink 与 `CYGNUSX_LOG_*` 环境变量、trace_id 注入；`LoggedTask` 单任务日志、DB `tasks.logs` 截断；Nginx `cygnusx_json` 格式、Snakemake 落盘、审计 `audit_logs` 表 + JSON 备份；Docker 挂载矩阵、Loki/Promtail 预留、清理策略与容量治理、排障速查。与日志无关的 terminal/参考基因组记录已迁至 database_architecture.md 附录。
