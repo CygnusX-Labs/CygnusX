@@ -13,6 +13,7 @@
 > 6. 新增文档请沿用本规则，并同步登记到本 README。
 >
 > **2026-09-20 新增说明**：新增 `agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
+> **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `agent_architecture.md`、`agent_execution_framework.md` 与 `cygnusx_sandbox_architecture_2026-08-22.md` 的新增 as-built 小节为准。
 
 
 **文档类型口径**：

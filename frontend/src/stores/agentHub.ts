@@ -137,6 +137,8 @@ export interface AgentSession {
   runtime_profile?: string | null
   /** 工作区已归档休眠（WP1；与 status='archived' 软删语义无关，仍可点击恢复） */
   workspace_archive?: WorkspaceArchiveInfo | null
+  /** 普通 AI 助手的会话级分析归档索引 */
+  analysis_archive?: Record<string, unknown> | null
   /** 科研模式设置（WP3 任务 3；null/undefined = 未开启，旧数据兼容） */
   research_mode?: ResearchModeSettings | null
 }
@@ -1039,6 +1041,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         multi_agent?: boolean
         overdrive?: boolean
         workspace_archive?: WorkspaceArchiveInfo | null
+        analysis_archive?: Record<string, unknown> | null
         research_mode?: ResearchModeSettings | null
         created_at: string
         updated_at: string
@@ -1061,6 +1064,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           multi_agent: Boolean(s.multi_agent),
           overdrive: Boolean(s.overdrive),
           workspace_archive: s.workspace_archive ?? null,
+          analysis_archive: s.analysis_archive ?? null,
           research_mode: s.research_mode ?? null,
         }))
       // 合并正在流式中的临时会话，避免刷新时丢失
@@ -1588,6 +1592,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         updated_at: s.updated_at,
         model_id: s.model_id || undefined,
         workspace_archive: s.workspace_archive ?? null,
+        analysis_archive: s.analysis_archive ?? null,
       }))
     return {
       title_matches,

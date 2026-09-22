@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -22,6 +23,10 @@ from uuid import UUID
 from loguru import logger
 
 from cygnusx.application.services.artifact_manifest import build_file_entry, reconcile_declared
+from cygnusx.application.services.chat_archive_service import (
+    archive_chat_execution,
+    ensure_chat_archive,
+)
 from cygnusx.application.services.chat_message_event_service import message_event_service
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
@@ -394,6 +399,7 @@ async def _inject_session_files(
                     "name": existing[0],
                     "path": f"{CHAT_INPUT_CONTAINER_DIR}/{existing[0]}",
                     "size": stat.st_size,
+                    "source": str(target),
                 }
             )
             continue
@@ -414,6 +420,8 @@ async def _inject_session_files(
                 "name": arcname,
                 "path": f"{CHAT_INPUT_CONTAINER_DIR}/{arcname}",
                 "size": stat.st_size,
+                # 仅供会话归档复制；对 LLM/UI 的 input_files 映射会剥离该字段。
+                "source": str(target),
             }
         )
 
@@ -435,6 +443,45 @@ async def _inject_session_files(
     # 只报告容器里确实存在的文件：本轮写入的 + 签名未变的存量
     valid_names = {value[0] for value in injected.values()}
     return [m for m in metas if m["name"] in valid_names]
+
+
+async def _probe_chat_environment(service: Any, user_id: UUID, sandbox_id: Any) -> dict[str, str]:
+    """在同一聊天容器中读取 Python 发行包版本，作为环境快照的实测补充。"""
+    probe = (
+        "import importlib.metadata as m, json, platform\n"
+        "packages = {}\n"
+        "for d in m.distributions():\n"
+        "    name = str(d.metadata.get('Name') or '').strip()\n"
+        "    if name and len(packages) < 500: packages[name] = str(d.version)\n"
+        "payload = {'python': platform.python_version(), 'packages': packages}\n"
+        "print('__CYGNUSX_ENV__' + json.dumps(payload, sort_keys=True))\n"
+    )
+    output: list[str] = []
+    try:
+        async for event in service.execute_code(
+            user_id, sandbox_id, probe, timeout_sec=45, language="python"
+        ):
+            if event.get("type") == "stdout":
+                output.append(str(event.get("data") or ""))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[ChatSandbox] 环境探针失败: {}", exc)
+        return {}
+    marker = "__CYGNUSX_ENV__"
+    raw = "".join(output)
+    for line in raw.splitlines():
+        if marker not in line:
+            continue
+        try:
+            payload = json.loads(line.split(marker, 1)[1])
+        except (TypeError, ValueError):
+            continue
+        observed: dict[str, str] = {}
+        if payload.get("python"):
+            observed["python"] = str(payload["python"])
+        for name, version in sorted((payload.get("packages") or {}).items()):
+            observed[f"python-package:{name}"] = str(version)
+        return observed
+    return {}
 
 
 async def execute_chat_sandbox(
@@ -549,6 +596,32 @@ async def execute_chat_sandbox(
             stdout_full = "".join(stdout_parts)
             stderr_full = "".join(stderr_parts)
 
+            # 普通 AI 助手也按会话维护项目运行目录，并复用 Studio 的归档文档格式。
+            # 归档是 best-effort：任何文档或环境探针故障都不能丢失本次聊天结果。
+            archive_info: dict[str, Any] = {}
+            if session_id:
+                try:
+                    archive_context = await ensure_chat_archive(db, user_id, str(session_id))
+                    if archive_context is not None:
+                        observed_software = await _probe_chat_environment(
+                            service, UUID(user_id), session.id
+                        )
+                        archive_info = await archive_chat_execution(
+                            db,
+                            archive_context,
+                            sandbox_session_id=str(session.id),
+                            language=language,
+                            code=code,
+                            artifacts=artifact_manifest,
+                            input_files=input_files,
+                            stdout=stdout_full,
+                            stderr=stderr_full,
+                            success=error is None,
+                            observed_software=observed_software,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"[ChatSandbox] 会话分析归档失败（继续返回结果）: {exc}")
+
             llm_stdout, _ = _tail(stdout_full, 2000)
             llm_stderr, _ = _tail(stderr_full, 1000)
 
@@ -590,6 +663,13 @@ async def execute_chat_sandbox(
                 )
             if error:
                 llm_payload["error"] = error
+            if archive_info:
+                llm_payload["analysis_archive"] = archive_info
+                llm_payload["analysis_documents"] = archive_info.get("document_files", [])
+                llm_payload["analysis_archive_note"] = (
+                    "当前会话已持续归档到分析运行目录，README.md、environment.json 和 "
+                    "manifest.json 可供后续对话和会话管理使用。"
+                )
 
             ui_payload: dict[str, Any] = {
                 "language": language,
@@ -608,6 +688,12 @@ async def execute_chat_sandbox(
                 ui_payload["missing_artifacts"] = missing_artifacts
             if error:
                 ui_payload["error"] = error
+            if archive_info:
+                ui_payload["analysis_archive"] = archive_info
+                if archive_info.get("document_files"):
+                    ui_payload["artifacts"] = list(ui_payload.get("artifacts") or []) + list(
+                        archive_info["document_files"]
+                    )
 
             return _ok_result(llm_payload, ui_payload)
 

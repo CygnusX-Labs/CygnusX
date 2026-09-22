@@ -6326,6 +6326,13 @@ class ChatService(
                 )
                 else None
             ),
+            analysis_archive=(
+                dict(analysis_marker)
+                if isinstance(
+                    (analysis_marker := (s.sandbox_meta or {}).get("analysis_archive")), dict
+                )
+                else None
+            ),
             # WP3 科研模式三开关：sandbox_meta.research_mode 原样透出；未开启/非法为 None
             research_mode=_extract_research_mode(s.sandbox_meta),
         )

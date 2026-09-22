@@ -708,6 +708,7 @@ Arco 项目可遵守 Vue 3 `<script setup lang="ts">`、kebab-case 模板属性�
 - 打印/下载按钮使用图标 + 文字，提供 `aria-label` 或可读文本；缩放百分比用 `aria-live="polite"` 播报；缩放/hover 过渡在 `prefers-reduced-motion` 下关闭。
 - 预览不加载完整文件到内存；大文件使用 Range 请求或后端截断。
 - **权威实现**：`frontend/src/components/ai-chat/MessageArtifactGallery.vue`（AI 消息产物画廊）、`frontend/src/components/studio/StudioArtifactsPanel.vue`（Studio 产物面板）；AI 场景细则见 §18.4.4。文件管理预览（`FilePreviewModal`）等其余入口新增图片/PDF 预览时必须按本节对齐。
+- **普通助手归档文档**：`chat_sandbox_execute` 返回的 `analysis_documents`（`README.md`、`environment.json`、`manifest.json`）与普通产物共享 `MessageArtifactGallery.vue`；会话列表通过 `analysis_archive` 显示“分析记录”状态。归档文件使用 `/api/v1/files/{file_id}/download`，不得新增绕过统一文件权限的下载接口。
 
 ## 18. AI 对话与流式界面
 
