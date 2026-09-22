@@ -15,6 +15,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -546,6 +547,9 @@ async def execute_chat_sandbox(
             echarts: list[Any] = []
             plotly_figures: list[Any] = []
             error: str | None = None
+            exit_code: int | None = None
+            duration_ms: int | None = None
+            timed_out = False
 
             async for event in service.execute_code(
                 UUID(user_id), session.id, code, timeout, language=language
@@ -571,12 +575,26 @@ async def execute_chat_sandbox(
                         plotly_figures.append(figure)
                 elif etype == "error":
                     error = str(event.get("detail", "执行错误"))
+                    timed_out = timed_out or "超时" in error
                 elif etype == "done":
-                    pass
+                    raw_exit_code = event.get("exit_code")
+                    exit_code = int(raw_exit_code) if raw_exit_code is not None else None
+                    raw_duration = event.get("duration_ms")
+                    duration_ms = int(raw_duration) if raw_duration is not None else None
+
+                    # A non-zero exit without a preceding stderr/error event is
+                    # still a failed execution; do not let it look successful.
+                    if exit_code not in (None, 0) and error is None:
+                        error = f"代码执行失败（退出码 {exit_code}）"
 
             # SandboxService 只负责状态流转并 flush；该工具使用独立 session，
             # 必须显式提交，才能让 5 分钟回收任务看到最新 last_activity/status。
-            await db.commit()
+            try:
+                await db.commit()
+            except BaseException:
+                with suppress(Exception):
+                    await db.rollback()
+                raise
 
             declared_raw = args.get("artifacts")
             declared: list[str] | None = None
@@ -587,14 +605,34 @@ async def execute_chat_sandbox(
             artifacts, artifact_manifest, missing_artifacts = await _collect_artifacts(
                 session.container_id, user_id, session.id, db=db, declared=declared
             )
+            if missing_artifacts and error is None:
+                error = "声明的交付文件未生成: " + ", ".join(missing_artifacts)
             # 产物注册到 file_records 后需要再提交一次，确保元数据持久化
             try:
                 await db.commit()
             except Exception as exc:  # noqa: BLE001
+                with suppress(Exception):
+                    await db.rollback()
                 logger.warning(f"[ChatSandbox] 产物注册后提交失败: {exc}")
+            except BaseException:
+                with suppress(Exception):
+                    await db.rollback()
+                raise
 
             stdout_full = "".join(stdout_parts)
             stderr_full = "".join(stderr_parts)
+            logger.info(
+                "[ChatSandbox] 执行完成: session={} language={} timeout={} timed_out={} "
+                "exit_code={} duration_ms={} stdout_tail={!r} stderr_tail={!r}",
+                session.id,
+                language,
+                timeout,
+                timed_out,
+                exit_code,
+                duration_ms,
+                stdout_full[-4000:],
+                stderr_full[-4000:],
+            )
 
             # 普通 AI 助手也按会话维护项目运行目录，并复用 Studio 的归档文档格式。
             # 归档是 best-effort：任何文档或环境探针故障都不能丢失本次聊天结果。
@@ -695,7 +733,10 @@ async def execute_chat_sandbox(
                         archive_info["document_files"]
                     )
 
-            return _ok_result(llm_payload, ui_payload)
+            return {
+                "success": error is None,
+                "result": {"llm_payload": llm_payload, "ui_payload": ui_payload},
+            }
 
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ChatSandbox] 执行异常: {e}")

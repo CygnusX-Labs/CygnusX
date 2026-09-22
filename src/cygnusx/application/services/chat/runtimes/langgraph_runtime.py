@@ -923,6 +923,35 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                                 "timeline": timeline,
                             },
                         )
+                        if not success and tool_name == CHAT_SANDBOX_TOOL_NAME:
+                            failure_payload = llm_result if isinstance(llm_result, dict) else {}
+                            tool_error = str(
+                                failure_payload.get("error")
+                                or "沙盒代码执行失败，请检查执行日志和产物路径后重试。"
+                            )
+                            await self._service.update_message_content(
+                                ai_message_id,
+                                full_content,
+                                "error",
+                                {
+                                    "error": tool_error,
+                                    "tool_invocations": persisted_tool_invocations,
+                                    "timeline": timeline,
+                                },
+                            )
+                            yield chunk
+                            yield ChatChunk(
+                                type="error",
+                                content=tool_error,
+                                metadata={
+                                    "session_id": session_id,
+                                    "message_id": ai_message_id,
+                                    "tool_name": tool_name,
+                                },
+                            )
+                            for terminal_chunk in _failed_terminal_events(tool_error):
+                                yield terminal_chunk
+                            return
                         yield chunk
                     else:
                         # 其余事件直接透传（metadata 已对齐 legacy）

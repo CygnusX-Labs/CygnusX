@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -613,6 +614,19 @@ class SandboxPool:
                 container_id, cmd=command, tty=False
             )["Id"]
         )
+        code_digest = hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
+        command_preview = [command[0], command[1], f"<source_sha256:{code_digest}>"]
+        logger.info(
+            "沙盒执行开始: container={} exec_id={} language={} timeout={} command={} "
+            "code_sha256={} code_bytes={}",
+            container_id,
+            exec_id,
+            language,
+            timeout,
+            command_preview,
+            code_digest,
+            len(code.encode("utf-8")),
+        )
 
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -664,6 +678,9 @@ class SandboxPool:
 
         pump = asyncio.create_task(asyncio.to_thread(_pump))
         timed_out = False
+        pump_error: str | None = None
+        stdout_tail = ""
+        stderr_tail = ""
 
         async def _timeout_guard() -> None:
             nonlocal timed_out
@@ -681,8 +698,13 @@ class SandboxPool:
                     break
                 channel, line = item
                 if channel == "__error__":
+                    pump_error = line
                     yield {"type": "error", "detail": f"代码执行异常：{line}"}
                     continue
+                if channel == "stdout":
+                    stdout_tail = (stdout_tail + line)[-4000:]
+                else:
+                    stderr_tail = (stderr_tail + line)[-4000:]
                 event = self._parse_line(channel, line)
                 if event is not None:
                     yield event
@@ -704,6 +726,27 @@ class SandboxPool:
                 except Exception:  # noqa: BLE001
                     pass
             duration = int((datetime.now() - started).total_seconds() * 1000)
+            log_message = (
+                "沙盒执行结束: container={} exec_id={} language={} timeout={} "
+                "timed_out={} exit_code={} duration_ms={} pump_error={} stdout_tail={!r} "
+                "stderr_tail={!r}"
+            )
+            log_args = (
+                container_id,
+                exec_id,
+                language,
+                timeout,
+                timed_out,
+                exit_code,
+                duration,
+                pump_error,
+                stdout_tail,
+                stderr_tail,
+            )
+            if timed_out or pump_error or exit_code not in (0, -1):
+                logger.warning(log_message, *log_args)
+            else:
+                logger.info(log_message, *log_args)
             if timed_out:
                 yield {"type": "error", "detail": f"代码执行超时（{timeout}s）"}
             yield {"type": "done", "exit_code": exit_code, "duration_ms": duration}

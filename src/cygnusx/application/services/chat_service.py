@@ -5355,6 +5355,50 @@ class ChatService(
                             "timeline": timeline,
                         },
                     )
+                    if is_chat_sandbox_tool and not bool(result.get("success")):
+                        failure_payload = llm_result if isinstance(llm_result, dict) else {}
+                        tool_error = str(
+                            failure_payload.get("error")
+                            or "沙盒代码执行失败，请检查执行日志和产物路径后重试。"
+                        )
+                        await self.update_message_content(
+                            ai_message.message_id,
+                            full_content,
+                            "error",
+                            {
+                                "error": tool_error,
+                                "tool_invocations": persisted_tool_invocations,
+                                "timeline": timeline,
+                            },
+                        )
+                        yield ChatChunk(
+                            type="error",
+                            content=tool_error,
+                            metadata={
+                                "session_id": current_session_id,
+                                "message_id": ai_message.message_id,
+                                "tool_name": tool_name,
+                            },
+                        )
+                        yield execution_chunk(
+                            "agent_turn_failed",
+                            session_id=current_session_id,
+                            run_id=execution_run_id,
+                            agent_id=execution_agent_id,
+                            round_number=round_number,
+                            execution_path=execution_path,
+                            message_id=ai_message.message_id,
+                            error=tool_error,
+                        )
+                        yield ChatChunk(
+                            type="done",
+                            metadata={
+                                "session_id": current_session_id,
+                                "message_id": ai_message.message_id,
+                                "status": "error",
+                            },
+                        )
+                        return
                     if loop_guard_triggered:
                         break
                     if is_agentteams_case_tool and bool(result.get("success")):
