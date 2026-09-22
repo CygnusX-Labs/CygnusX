@@ -299,6 +299,53 @@ OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `documen
 - **部署细节**：`deploy/docker/README.md`、`deploy/agentteams/README.md`、`deploy/docker/POLARDB_POSTGRES.md`
 - **审查与规划报告**：`report/`（架构梳理、安全审查、任务调度、K8s、存储迁移等）
 
+## TODO · HPC / Systems Agent (`agent-hpc`)
+
+高性能计算 Agent，用于编写、编译并运行 Rust 等高性能系统代码，解决大规模基因组/单细胞分析中的瓶颈计算。
+
+### [Phase 1: Agent Definition & Architecture]
+- [ ] **Define Agent Responsibilities (`agent-hpc`)**:
+  - 核心职责：针对大规模基因组/单细胞瓶颈计算（如超大 BAM/VCF 流式解析、k-mer 频数统计、定制化高性能算法）编写、编译并运行高性能系统代码。
+  - 支持能力：Rust CLI 自动化编译与运行 (`cargo run/build --release`)、Polars 高性能数据流处理、与 Python (PyO3) / C-ABI 互操作。
+- [ ] **Register Agent in Platform Config**:
+  - 新增 Agent：`agent-hpc`（或 `agent-compute`）
+  - 映射运行时沙箱类型：`analysis-hpc` -> `cygnusx-analysis:hpc-v0.0.1dev`
+
+### [Phase 2: Dockerfile & Environment for `analysis-hpc`]
+- [ ] **Base OS & Build Toolchain**:
+  - [ ] 基础镜像：基于轻量稳定 Linux 镜像（如 `debian:bookworm-slim` 或 `ubuntu:24.04`）
+  - [ ] 预装必备编译依赖：`build-essential`, `clang`, `lld` (加速链接), `cmake`, `pkg-config`, `libssl-dev`, `zlib1g-dev`
+- [ ] **Rust Toolchain Configuration**:
+  - [ ] 通过 `rustup` 安装 Stable 官方工具链（含 `rustc`, `cargo`, `rustfmt`, `clippy`）
+  - [ ] 配置 Cargo 缓存路径与并行编译优化环境变量（如 `RUSTFLAGS="-C target-cpu=native"` 或基于通用体系架构的优化）
+  - [ ] 预装常用辅助开发 CLI 工具：
+    - `cargo-binstall` (极速二进制安装工具)
+    - `sccache` (编译缓存加速工具，降低 Agent 反复编译开销)
+- [ ] **Pre-cached Bioinformatics & Numerical Rust Crates**:
+  *(在镜像构建阶段预先下载并编译常用基础依赖，极大缩短 Agent 运行时首编译耗时)*
+  - [ ] **生物信息核心库**：`noodles` (高性能 BAM/VCF/FASTQ 解析生态), `bio` (bio-rs 算法库), `needletail` (超快 FASTA/FASTQ 解析)
+  - [ ] **高性能数据与数值计算**：`polars` (带 SIMD/并行加速), `rayon` (数据并行库), `ndarray`, `sprs` (稀疏矩阵)
+  - [ ] **多线程与系统抽象**：`tokio`, `crossbeam`, `serde`, `serde_json`, `clap`
+
+### [Phase 3: Image Build, Smoke Tests & Registry Push]
+- [ ] **Compiler Smoke Test**:
+  - [ ] 验证 `cargo --version` 与 `rustc --version`
+  - [ ] 执行一段轻量测试代码（例如使用 `noodles` 读取 BAM header 或 `needletail` 统计 base quality），验证链接与编译链路通畅
+- [ ] **Build & Push Image**:
+  - [ ] 构建并推送镜像：`cygnusx-analysis:hpc-v0.0.1dev`
+
+### [Phase 4: Agent Audit & Platform Verification]
+- [ ] **Run Platform Audit Check**:
+  - 确认沙箱检查通过并正确列出新增 Agent：
+    ```bash
+    PASS: audited 20 enabled agents
+      ...
+      agent-atacseq     analysis-atac    cygnusx-analysis:atac-v0.0.1dev
+      agent-hpc         analysis-hpc     cygnusx-analysis:hpc-v0.0.1dev
+    ```
+- [ ] **End-to-End Task Validation**:
+  - 让 `agent-hpc` 接收一个密集数据处理任务（如生成一个统计 FASTQ GC 含量的 Rust CLI 并运行），验证沙箱内从写代码到 `cargo run --release` 的闭环稳定性。
+
 ## TODO · 桌面客户端（规划中）
 
 除网页端外，将推出**桌面客户端**：用户在本地服务器或云端服务器部署分析服务（Docker Compose 一键全启），安装客户端后填入服务器地址即可使用全部分析能力——客户端只做展示与交互，分析仍在服务端执行，数据不出用户自己的服务器。
