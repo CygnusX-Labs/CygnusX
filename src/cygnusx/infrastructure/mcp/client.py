@@ -52,6 +52,19 @@ _DENIED_STDIO_COMMANDS = {
 }
 
 
+def _result_is_error(result: Any) -> bool:
+    """读取不同 MCP SDK 版本的 CallToolResult 错误字段。
+
+    MCP SDK 1.x 暴露 ``isError``，而较新的 Pydantic 模型使用
+    ``is_error``。直接访问旧字段会让一次正常工具调用在结果序列化阶段
+    变成 connection_error。
+    """
+    value = getattr(result, "is_error", None)
+    if value is None:
+        value = getattr(result, "isError", False)
+    return bool(value)
+
+
 def _is_internal_host(host: str) -> bool:
     """判断主机名是否为内网、回环、链路本地、组播或 metadata 地址。"""
     if host == "169.254.169.254":
@@ -640,7 +653,8 @@ class MCPClient:
         )
         return {
             "content": [c.model_dump() for c in result.content] if result.content else [],
-            "isError": result.isError,
+            # 保持现有内部 wire key，兼容 MCP SDK 1.x/2.x 的字段命名差异。
+            "isError": _result_is_error(result),
         }
 
     def _open_session(self, server: MCPServer) -> Any:
