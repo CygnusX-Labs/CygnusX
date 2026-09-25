@@ -30,6 +30,7 @@ from cygnusx.api.v1 import (
     prompts,
     reminders,
     reports,
+    runs,
     sandbox,
     schedules,
     site_content,
@@ -73,6 +74,7 @@ api_router.include_router(docs.router, prefix="/docs", tags=["Docs"])
 api_router.include_router(flows.router, prefix="/flows", tags=["Flows"])
 api_router.include_router(goals.router, prefix="/goals", tags=["Goals"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
+api_router.include_router(runs.router, prefix="/runs", tags=["Runs"])
 api_router.include_router(schedules.router, prefix="/schedules", tags=["Schedules"])
 api_router.include_router(reminders.router, prefix="/reminders", tags=["Reminders"])
 api_router.include_router(pipelines.router, prefix="/pipelines", tags=["Pipelines"])
