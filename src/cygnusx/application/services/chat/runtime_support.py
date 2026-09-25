@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ipaddress
+import hashlib
+import re
 import time
 import uuid
 from pathlib import Path
@@ -17,10 +19,21 @@ from sqlalchemy import select
 from cygnusx.application.services.overdrive_planning_service import build_research_queries
 from cygnusx.application.services.research_search_optimizer import ResearchSearchOptimizer
 from cygnusx.application.services.search_provider_service import SearchProviderService
+from cygnusx.application.services.chat.context_estimate import calibration_ratio, estimate_context
+from cygnusx.application.services.chat.context_compaction import (
+    CompactionCancelled,
+    CompactionPolicy,
+    compact,
+    externalize_large_outputs,
+    write_compaction_archive,
+)
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.domain.skill.services import SKILL_RESOURCE_TOOL_NAME, USE_SKILL_TOOL_NAME
-from cygnusx.infrastructure.ai_provider.openai_compatible import provider_manager
+from cygnusx.infrastructure.ai_provider.openai_compatible import (
+    normalize_token_usage,
+    provider_manager,
+)
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 
@@ -69,6 +82,67 @@ def is_docx_attachment(mime_type: str, filename: str) -> bool:
 
 class ChatRuntimeSupport:
     """供聊天 Runtime 复用的无状态能力混入。"""
+
+    _context_calibration_ratios: dict[str, float] = {}
+    _context_last_estimates: dict[str, int] = {}
+    _context_compaction_policies: dict[str, CompactionPolicy] = {}
+    _last_context_compaction: dict[str, Any] | None = None
+
+    @classmethod
+    def _context_calibration_key(cls, session_id: str | None, model_config: Any) -> str:
+        model_id = getattr(model_config, "id", None) or getattr(model_config, "model", "default")
+        return f"{session_id or 'unknown'}:{model_id}"
+
+    @classmethod
+    def _record_context_usage(
+        cls,
+        session_id: str | None,
+        model_config: Any,
+        prompt_tokens: int | None,
+    ) -> None:
+        key = cls._context_calibration_key(session_id, model_config)
+        cls._context_calibration_ratios[key] = calibration_ratio(
+            cls._context_calibration_ratios.get(key),
+            prompt_tokens,
+            cls._context_last_estimates.get(key),
+        )
+
+    async def _persist_context_compaction_audit(
+        self,
+        *,
+        tokens: int,
+        calibrated_tokens: float,
+        estimate: Any | None = None,
+    ) -> None:
+        """Best-effort session audit; the compacted projection is never persisted."""
+        session_id = getattr(self, "_active_context_session_id", None)
+        if not session_id or not hasattr(self, "_db"):
+            return
+        policy = self._context_compaction_policies.get(
+            self._context_calibration_key(session_id, getattr(self, "_active_model_config", None))
+        )
+        try:
+            result = await self._db.execute(
+                select(ChatSessionModel).where(ChatSessionModel.session_id == session_id)
+            )
+            session = result.scalar_one_or_none()
+            if session is None:
+                return
+            metadata = dict(session.sandbox_meta or {})
+            metadata["context_compaction"] = {
+                "context_estimate_calibrated_total": calibrated_tokens,
+                "context_estimate_total": tokens,
+                "context_estimate": estimate.as_dict() if estimate is not None else {"total": tokens},
+                "compaction_failure_streak": policy.failure_streak if policy else 0,
+                "compaction_low_yield_streak": policy.low_yield_streak if policy else 0,
+                "compaction_circuit_open": policy.circuit_open if policy else False,
+                "compaction_circuit_reason": policy.circuit_reason if policy else None,
+                "last_compaction_yield_ratio": (self._last_context_compaction or {}).get("yield_ratio"),
+            }
+            session.sandbox_meta = metadata
+            await self._db.flush()
+        except Exception as exc:  # noqa: BLE001 - audit must not affect chat
+            logger.warning(f"上下文压缩审计写入失败: {exc}")
 
     async def _link_session_files_to_workspace(
         self,
@@ -276,12 +350,7 @@ class ChatRuntimeSupport:
             }
         return new_messages
 
-    # --- 上下文压缩（256K 窗口保护） ---
-
-    # 256K 上下文窗口预留输出/系统词/工具定义空间后的触发阈值
-    _CONTEXT_COMPRESS_THRESHOLD_TOKENS = 200_000
-    # 压缩时保留原文的最近消息条数
-    _CONTEXT_KEEP_RECENT_MESSAGES = 10
+    # --- 上下文压缩（per-model 窗口保护） ---
 
     @staticmethod
     def _message_text(message: dict[str, Any]) -> str:
@@ -291,35 +360,38 @@ class ChatRuntimeSupport:
         return str(content)
 
     @classmethod
-    def _estimate_messages_tokens(cls, messages: list[dict[str, Any]]) -> int:
-        """粗略估算 token 数：中英混合按 2 字符 ≈ 1 token 的保守口径。"""
-        return sum(len(cls._message_text(m)) // 2 + 4 for m in messages)
+    def _estimate_messages_tokens(
+        cls,
+        messages: list[dict[str, Any]],
+        *,
+        tool_schemas: Any = (),
+        system_prompt: str | None = None,
+    ) -> int:
+        """Estimate provider input using CJK-aware accounting."""
+        return estimate_context(
+            messages, tool_schemas, system_prompt=system_prompt
+        ).total
 
-    async def _compress_context_if_needed(
+    async def _legacy_compress_context_if_needed(
         self,
         messages: list[dict[str, Any]],
         model_config: Any,
+        *,
+        keep_recent: int,
     ) -> tuple[list[dict[str, Any]], bool, int]:
-        """估算 token 超过阈值时，把较早消息压缩为摘要，仅保留最近若干条原文。
-
-        返回 (messages, 是否压缩, 压缩前估算 token)。摘要复用当前模型生成；
-        摘要调用失败时降级为"保留首条 + 最近 N 条"的硬截断，保证请求可继续。
-        """
-        tokens = self._estimate_messages_tokens(messages)
-        keep = self._CONTEXT_KEEP_RECENT_MESSAGES
-        if tokens <= self._CONTEXT_COMPRESS_THRESHOLD_TOKENS or len(messages) <= keep + 2:
-            return messages, False, tokens
-
-        old, recent = messages[:-keep], messages[-keep:]
+        """Exact opt-in rollback path for deployments retaining the old behavior."""
+        legacy_threshold = 200_000
+        legacy_keep = 10
+        original_tokens = sum(len(self._message_text(message)) // 2 + 4 for message in messages)
+        if original_tokens <= legacy_threshold or len(messages) <= legacy_keep + 2:
+            return messages, False, original_tokens
+        old, recent = messages[:-legacy_keep], messages[-legacy_keep:]
         digest_lines: list[str] = []
-        for m in old:
-            text = self._message_text(m)[:2000]
+        for message in old:
+            text = self._message_text(message)[:2000]
             if text.strip():
-                digest_lines.append(f"[{m.get('role', '?')}] {text}")
-        summary = ""
+                digest_lines.append(f"[{message.get('role', '?')}] {text}")
         try:
-            from cygnusx.infrastructure.ai_provider.openai_compatible import provider_manager
-
             parts: list[str] = []
             async for chunk in provider_manager.chat_stream(
                 config=model_config,
@@ -340,25 +412,281 @@ class ChatRuntimeSupport:
                 if chunk.type == "text":
                     parts.append(chunk.content)
             summary = "".join(parts).strip()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"上下文压缩摘要生成失败，降级为硬截断: {e}")
+        except Exception as exc:  # noqa: BLE001 - explicit rollback preserves legacy semantics
+            logger.warning(f"上下文压缩摘要生成失败，降级为硬截断: {exc}")
 
         if summary:
             compressed = [
                 {
                     "role": "system",
-                    "content": ("[早期对话已压缩为摘要，后续请基于摘要与最近对话继续]\n" + summary),
+                    "content": "[早期对话已压缩为摘要，后续请基于摘要与最近对话继续]\n" + summary,
                 }
             ] + recent
             logger.info(
-                f"上下文已压缩: 估算 {tokens} tokens，{len(old)} 条早期消息 → 摘要 + 最近 {len(recent)} 条"
+                f"上下文已压缩: 估算 {original_tokens} tokens，{len(old)} 条早期消息 → 摘要 + 最近 {len(recent)} 条"
             )
-            return compressed, True, tokens
+            return compressed, True, original_tokens
 
-        # 降级：摘要失败时保留首条用户消息 + 最近 N 条
-        fallback = [m for m in old[:1] if m.get("role") == "user"] + recent
-        logger.info(f"上下文硬截断: 估算 {tokens} tokens，保留 {len(fallback)}/{len(messages)} 条")
-        return fallback, True, tokens
+        fallback = [message for message in old[:1] if message.get("role") == "user"] + recent
+        logger.info(
+            f"上下文硬截断: 估算 {original_tokens} tokens，保留 {len(fallback)}/{len(messages)} 条"
+        )
+        return fallback, True, original_tokens
+
+    async def _compress_context_if_needed(
+        self,
+        messages: list[dict[str, Any]],
+        model_config: Any,
+        *,
+        tool_schemas: Any = (),
+        system_prompt: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool, int]:
+        """Prepare a compact request view; failures keep the complete input."""
+        original_messages = messages
+        self._last_context_compaction = None
+        self._last_context_compaction_policy = None
+        compaction = get_settings().context_compaction
+        keep = max(1, int(compaction.keep_recent_min))
+        if getattr(compaction, "legacy_fallback", False):
+            return await self._legacy_compress_context_if_needed(
+                messages, model_config, keep_recent=keep
+            )
+        session_part = re.sub(
+            r"[^A-Za-z0-9_.-]+",
+            "_",
+            str(getattr(self, "_active_context_session_id", "unknown")),
+        ).strip("._-") or "unknown"
+        archive_root = Path(get_settings().storage_path) / "context-archive" / session_part
+        try:
+            messages, archived_count = externalize_large_outputs(
+                messages,
+                archive_root,
+                threshold_chars=int(compaction.large_output_chars),
+                preview_chars=int(compaction.preview_chars),
+                workspace_dir=getattr(self, "_active_context_workspace_dir", None),
+            )
+        except Exception as exc:  # noqa: BLE001 - externalization is best effort
+            archived_count = 0
+            logger.warning(f"上下文大输出外化失败，保留原文: {exc}")
+        original_estimate = estimate_context(
+            original_messages, tool_schemas, system_prompt=system_prompt
+        )
+        original_tokens = original_estimate.total
+        tokens = self._estimate_messages_tokens(
+            messages, tool_schemas=tool_schemas, system_prompt=system_prompt
+        )
+        context_window = max(1, int(getattr(model_config, "context_window", 262_144) or 262_144))
+        key = self._context_calibration_key(
+            getattr(self, "_active_context_session_id", None), model_config
+        )
+        ratio = self._context_calibration_ratios.get(key, 1.0)
+        calibrated_tokens = tokens * ratio
+        self._context_last_estimates[key] = tokens
+
+        def _set_provider_estimate(value: int) -> None:
+            """Keep calibration paired with the view sent to the provider."""
+            self._context_last_estimates[key] = max(0, int(value))
+
+        trigger = context_window * float(compaction.trigger_ratio)
+        if calibrated_tokens <= trigger or len(messages) <= max(keep + 2, int(compaction.min_messages)):
+            if archived_count:
+                _set_provider_estimate(tokens)
+                self._last_context_compaction = {
+                    "tokens_before": original_tokens,
+                    "tokens_after": tokens,
+                    "yield_ratio": max(0.0, (original_tokens - tokens) / max(1, original_tokens)),
+                    "archived_count": archived_count,
+                    "note_preview_sha256": "",
+                }
+                message_id = getattr(self, "_active_context_message_id", None)
+                if message_id:
+                    try:
+                        from cygnusx.application.services.chat_message_event_service import message_event_service
+
+                        await message_event_service.append_compaction_event(
+                            message_id,
+                            **self._last_context_compaction,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(f"context_compacted 事件排队失败: {exc}")
+                await self._persist_context_compaction_audit(
+                    tokens=original_tokens,
+                    calibrated_tokens=original_tokens * ratio,
+                    estimate=original_estimate,
+                )
+                # The request view is smaller because large outputs were
+                # externalized, but the event/UI "before" value must describe
+                # the original DB-backed context rather than the projected view.
+                return messages, True, original_tokens
+            _set_provider_estimate(original_tokens)
+            await self._persist_context_compaction_audit(
+                tokens=original_tokens,
+                calibrated_tokens=original_tokens * ratio,
+                estimate=original_estimate,
+            )
+            return original_messages, False, original_tokens
+
+        async def chat_fn(request: list[dict[str, Any]], *, max_tokens: int, temperature: float) -> dict[str, Any]:
+            parts: list[str] = []
+            metadata: dict[str, Any] = {}
+            async for chunk in provider_manager.chat_stream(
+                config=model_config,
+                messages=request,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            ):
+                if chunk.type == "text":
+                    parts.append(chunk.content)
+                elif chunk.type == "done":
+                    metadata.update(chunk.metadata)
+            metadata["content"] = "".join(parts)
+            return metadata
+
+        policy = self._context_compaction_policies.setdefault(
+            key,
+            CompactionPolicy(
+                min_yield_ratio=float(compaction.min_yield_ratio),
+                breaker_attempts=int(compaction.breaker_attempts),
+                circuit_retry_growth=float(compaction.circuit_retry_growth),
+            ),
+        )
+        # Settings are reloadable at runtime. Keep existing session policies in
+        # sync so a hot reload takes effect without restarting the process.
+        policy.min_yield_ratio = float(compaction.min_yield_ratio)
+        policy.breaker_attempts = int(compaction.breaker_attempts)
+        policy.circuit_retry_growth = float(compaction.circuit_retry_growth)
+        circuit_was_open = policy.circuit_open
+        try:
+            result = await policy.prepare(
+                messages,
+                compact_fn=lambda: compact(
+                    messages,
+                    chat_fn=chat_fn,
+                    context_window=context_window,
+                    model_config=model_config,
+                    tool_schemas=tool_schemas,
+                    system_prompt=system_prompt,
+                    host_state_fact=getattr(self, "_active_context_host_state_fact", None),
+                    keep_recent=keep,
+                    tail_ratio=float(compaction.tail_ratio),
+                    summary_max_tokens=max(8192, int(getattr(model_config, "max_tokens", 0) or 0)),
+                    summary_max_chars=int(compaction.summary_max_chars),
+                ),
+                context_total=tokens,
+            )
+        except CompactionCancelled:
+            _set_provider_estimate(original_tokens)
+            logger.info("[compaction cancelled] 用户中断，保留完整上下文且不累计 failure_streak")
+            self._last_context_compaction_policy = {
+                "failure_streak": policy.failure_streak,
+                "low_yield_streak": policy.low_yield_streak,
+                "circuit_open": policy.circuit_open,
+                "circuit_reason": policy.circuit_reason,
+            }
+            return original_messages, False, original_tokens
+        except Exception as exc:  # noqa: BLE001 - compaction must never kill chat
+            _set_provider_estimate(original_tokens)
+            logger.warning(f"[compaction fallback] 上下文压缩失败，保留完整上下文继续: {exc}")
+            self._last_context_compaction_policy = {
+                "failure_streak": policy.failure_streak,
+                "low_yield_streak": policy.low_yield_streak,
+                "circuit_open": policy.circuit_open,
+                "circuit_reason": policy.circuit_reason,
+            }
+            return original_messages, False, original_tokens
+        if result is None or result.tokens_after >= result.tokens_before:
+            _set_provider_estimate(original_tokens)
+            if circuit_was_open and not policy.circuit_open:
+                logger.info("[compaction retry] context grew，熔断自动恢复")
+            if policy.circuit_open:
+                logger.info("[compaction skipped] circuit open，保留完整上下文")
+            else:
+                logger.info(f"[compaction low-yield] 保留完整上下文: {tokens} tokens")
+            self._last_context_compaction_policy = {
+                "failure_streak": policy.failure_streak,
+                "low_yield_streak": policy.low_yield_streak,
+                "circuit_open": policy.circuit_open,
+                "circuit_reason": policy.circuit_reason,
+            }
+            await self._persist_context_compaction_audit(
+                tokens=original_tokens,
+                calibrated_tokens=original_tokens * ratio,
+                estimate=original_estimate,
+            )
+            return original_messages, False, original_tokens
+        logger.info(
+            f"[compacted] 估算 {result.tokens_before}->{result.tokens_after} tokens，"
+            f"保留 {len(result.projected)} 条投影消息"
+        )
+        yield_ratio = max(0.0, (result.tokens_before - result.tokens_after) / max(1, result.tokens_before))
+        note = next((m for m in result.projected if m.get("compaction_handoff")), {})
+        note_hash = hashlib.sha256(str(note.get("content") or "").encode("utf-8")).hexdigest()
+        compaction_metadata = {
+            "tokens_before": result.tokens_before,
+            "tokens_after": result.tokens_after,
+            "yield_ratio": yield_ratio,
+            "archived_count": archived_count,
+            "note_preview_sha256": note_hash,
+        }
+        if result.archive_payload:
+            try:
+                session_part = re.sub(
+                    r"[^A-Za-z0-9_.-]+",
+                    "_",
+                    str(getattr(self, "_active_context_session_id", "session")),
+                ).strip("._-") or "session"
+                archive_id = f"{session_part}-{time.time_ns()}"
+                archive_path = write_compaction_archive(
+                    Path(get_settings().storage_path) / "context-archive" / session_part,
+                    result.archive_payload,
+                    archive_id=archive_id,
+                )
+                compaction_metadata["archive_ref"] = archive_path
+            except Exception as exc:  # noqa: BLE001 - archive is best effort
+                _set_provider_estimate(original_tokens)
+                policy.failure_streak += 1
+                if policy.failure_streak >= policy.breaker_attempts:
+                    policy.circuit_open = True
+                    policy.circuit_open_total = tokens
+                    policy.circuit_reason = "archive failure"
+                self._last_context_compaction_policy = {
+                    "failure_streak": policy.failure_streak,
+                    "low_yield_streak": policy.low_yield_streak,
+                    "circuit_open": policy.circuit_open,
+                    "circuit_reason": policy.circuit_reason,
+                }
+                logger.warning(f"[compaction fallback] 上下文压缩归档失败，放弃采用压缩投影: {exc}")
+                await self._persist_context_compaction_audit(
+                    tokens=original_tokens,
+                    calibrated_tokens=original_tokens * ratio,
+                    estimate=original_estimate,
+                )
+                return original_messages, False, original_tokens
+        _set_provider_estimate(result.tokens_after)
+        self._last_context_compaction = compaction_metadata
+        self._last_context_compaction_policy = {
+            "failure_streak": policy.failure_streak,
+            "low_yield_streak": policy.low_yield_streak,
+            "circuit_open": policy.circuit_open,
+            "circuit_reason": policy.circuit_reason,
+        }
+        message_id = getattr(self, "_active_context_message_id", None)
+        if message_id:
+            try:
+                from cygnusx.application.services.chat_message_event_service import message_event_service
+
+                await message_event_service.append_compaction_event(
+                    message_id,
+                    **self._last_context_compaction,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"context_compacted 事件排队失败: {exc}")
+        await self._persist_context_compaction_audit(
+            tokens=original_tokens,
+            calibrated_tokens=original_tokens * ratio,
+            estimate=original_estimate,
+        )
+        return result.projected, True, result.tokens_before
 
     @staticmethod
     async def _build_multimodal_messages(
@@ -628,18 +956,11 @@ class ChatRuntimeSupport:
         usage: dict[str, Any] | None,
     ) -> None:
         """把 LLM 返回的 usage 累加到会话 total_tokens，并写入消息 metadata。"""
-        if not usage:
+        normalized = normalize_token_usage(usage)
+        if not normalized:
             return
         try:
-            total = int(
-                usage.get("total_tokens")
-                or usage.get("total")
-                or (
-                    int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-                    + int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-                )
-                or 0
-            )
+            total = int(normalized.get("total_tokens") or 0)
             if total <= 0:
                 return
             msg_result = await self._db.execute(
@@ -648,6 +969,16 @@ class ChatRuntimeSupport:
             msg = msg_result.scalar_one_or_none()
             if not msg:
                 return
+            self._record_context_usage(
+                str(msg.session_id),
+                getattr(self, "_active_model_config", None),
+                int(normalized.get("prompt_tokens") or 0),
+            )
+            # Store the canonical usage shape so historical messages and the
+            # statistics endpoint use the same provider-independent counters.
+            msg_metadata = dict(msg.metadata_json or {})
+            msg_metadata["usage"] = normalized
+            msg.metadata_json = msg_metadata
             session_result = await self._db.execute(
                 select(ChatSessionModel).where(ChatSessionModel.session_id == msg.session_id)
             )

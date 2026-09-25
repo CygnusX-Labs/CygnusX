@@ -193,6 +193,37 @@ def test_execute_marks_missing_declared_artifacts_as_failure(
     assert "声明的交付文件未生成" in payload["error"]
 
 
+def test_stream_chat_sandbox_has_hard_deadline_when_execution_never_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Docker/API 卡死时必须发失败信封，不能只持续 heartbeat。"""
+
+    async def _stuck_execute(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(60)
+        return {"success": True}
+
+    async def _flush(_message_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(chat_sandbox_tools, "execute_chat_sandbox", _stuck_execute)
+    monkeypatch.setattr(chat_sandbox_tools, "CHAT_SANDBOX_HARD_TIMEOUT_GRACE_SECONDS", 0.01)
+    monkeypatch.setattr(chat_sandbox_tools.message_event_service, "flush_message_events", _flush)
+
+    async def _collect() -> list[Any]:
+        return [
+            item
+            async for item in chat_sandbox_tools.stream_chat_sandbox_tool(
+                {"language": "python", "code": "print(1)", "timeout": 1},
+                _USER_ID,
+            )
+        ]
+
+    events = asyncio.run(_collect())
+    assert events
+    assert events[-1]["success"] is False
+    assert "整体时限" in events[-1]["result"]["llm_payload"]["error"]
+
+
 def test_collect_artifacts_dedupes_unchanged_files_within_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

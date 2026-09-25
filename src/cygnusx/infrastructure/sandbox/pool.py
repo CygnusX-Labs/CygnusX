@@ -609,10 +609,16 @@ class SandboxPool:
 
         command = self._build_exec_command(language, code)
 
-        exec_id = await asyncio.to_thread(
-            lambda: api.exec_create(
-                container_id, cmd=command, tty=False
-            )["Id"]
+        # Docker SDK calls use a blocking Unix-socket client.  A daemon/socket
+        # failure must not hold the request forever before the async timeout
+        # guard has even started.
+        exec_id = await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: api.exec_create(
+                    container_id, cmd=command, tty=False
+                )["Id"]
+            ),
+            timeout=10,
         )
         code_digest = hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
         command_preview = [command[0], command[1], f"<source_sha256:{code_digest}>"]
@@ -666,13 +672,19 @@ class SandboxPool:
                     "r": "Rscript -",
                     "bash": "bash -s",
                 }.get(language, "")
-                kill_id = await asyncio.to_thread(
-                    lambda: api.exec_create(
-                        container_id,
-                        cmd=["pkill", "-9", "-f", process_pattern],
-                    )["Id"]
+                kill_id = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        lambda: api.exec_create(
+                            container_id,
+                            cmd=["pkill", "-9", "-f", process_pattern],
+                        )["Id"]
+                    ),
+                    timeout=5,
                 )
-                await asyncio.to_thread(api.exec_start, kill_id)
+                await asyncio.wait_for(
+                    asyncio.to_thread(api.exec_start, kill_id),
+                    timeout=5,
+                )
             except Exception:  # noqa: BLE001
                 pass
 
@@ -686,8 +698,11 @@ class SandboxPool:
             nonlocal timed_out
             await asyncio.sleep(timeout)
             timed_out = True
-            await _kill_exec()
+            # Wake the consumer first.  Killing an exec talks to Docker over a
+            # blocking socket and must never be the thing that prevents the
+            # timeout event from reaching the caller.
             await queue.put(_TIMEOUT)
+            await _kill_exec()
 
         guard = asyncio.create_task(_timeout_guard())
 

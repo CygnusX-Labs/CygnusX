@@ -2633,6 +2633,7 @@ class ChatService(
 
         ctx = prepared_request.context
         model_config = prepared_request.model_config
+        self._active_model_config = model_config
         sensitive_keywords = prepared_request.sensitive_keywords
         effective_max_tokens = prepared_request.effective_max_tokens
 
@@ -2845,6 +2846,25 @@ class ChatService(
         # 发布会话 ID 到上下文（覆盖 Agent + Studio 工作台）：本次流式任务内所有
         # AI/MCP/技能日志都会带上 session_id；同时写入 agent.run span 便于按会话查 trace。
         session_id_var.set(current_session_id)
+        self._active_context_session_id = current_session_id
+        self._active_context_workspace_dir = None
+        if mode == "studio":
+            try:
+                from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
+
+                scratch = studio_sandbox_manager.scratch_volume(current_session_id)
+                self._active_context_workspace_dir = (
+                    scratch.volume.workspace
+                    if scratch is not None
+                    else studio_sandbox_manager.workspace_dir(current_session_id)
+                )
+            except Exception as exc:  # noqa: BLE001 - workspace copy is best effort
+                logger.debug(f"上下文 workspace 归档目录不可用，保留 host 归档: {exc}")
+        self._active_context_host_state_fact = (
+            f"Unknown for Session {current_session_id} — in-memory variables are NOT assumed "
+            "to exist; recover continuity from chat_messages, workspace files, and recorded "
+            "artifacts."
+        )
         try:
             from opentelemetry import trace as _otel_trace
 
@@ -2953,6 +2973,7 @@ class ChatService(
             status="streaming",
             metadata={"model": model_config.name, "agent_id": agent_id},
         )
+        self._active_context_message_id = ai_message.message_id
 
         route_info: dict[str, Any] | None = pre_route_info
         unified_route_notice: dict[str, Any] | None = None
@@ -3305,21 +3326,23 @@ class ChatService(
         if history_file_ctx:
             llm_messages = self._append_context_to_last_user_message(llm_messages, history_file_ctx)
 
-        # 4.2 上下文压缩：估算 token 接近模型上下文窗口（256K）时，
-        # 把较早的对话压缩为摘要，只保留最近若干条原文，避免超窗报错。
-        llm_messages, context_compressed, tokens_before = await self._compress_context_if_needed(
-            llm_messages, model_config
-        )
-        if context_compressed:
-            yield ChatChunk(
-                type="context_compressed",
-                content="对话历史较长，已将早期内容压缩为摘要后继续",
-                metadata={
-                    "session_id": current_session_id,
-                    "estimated_tokens_before": tokens_before,
-                },
-            )
+        # 路由可能在占位消息创建后切换到目标 Agent；校准必须绑定实际 provider。
+        self._active_model_config = model_config
 
+        # 4.2 准备 Studio 归档工作区；上下文压缩在最终 tools/system_prompt
+        # 组装完成后执行，确保常驻 provider 输入也计入窗口估算。
+        if studio_mode and self._active_context_workspace_dir is None:
+            try:
+                from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
+
+                scratch = studio_sandbox_manager.scratch_volume(current_session_id)
+                self._active_context_workspace_dir = (
+                    scratch.volume.workspace
+                    if scratch is not None
+                    else studio_sandbox_manager.workspace_dir(current_session_id)
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(f"Studio workspace 归档目录不可用，使用 host 归档: {exc}")
         # 动态追加联网搜索工具。普通聊天保持 Agent 全量 MCP/Skill 行为；
         # Studio 使用元数据目录 + 会话级按需加载，未加载能力不进入 prompt/tools。
         search_required = self._requires_fresh_web_search(user_content, ctx.features)
@@ -4037,6 +4060,7 @@ class ChatService(
                 handoff_session.agent_id = target_ctx.agent.agent_id
                 handoff_session.model_id = target_model.id
                 handoff_session.updated_at = datetime.now(UTC)
+            self._active_model_config = target_model
             return {
                 "model_config": target_model,
                 # 保留完整消息历史，packet 作为最新一条 user 消息追加，
@@ -4181,6 +4205,33 @@ class ChatService(
                 round_checkpoint_requested = False
                 # 父单轮工具回合内 fan-out 调用计数（subagent_max_children_per_message 护栏）
                 subagent_calls_this_round = 0
+
+                llm_messages, context_compressed, tokens_before = await self._compress_context_if_needed(
+                    llm_messages,
+                    model_config,
+                    tool_schemas=tools,
+                    system_prompt=system_prompt,
+                )
+                if context_compressed:
+                    metadata: dict[str, Any] = {
+                        "session_id": current_session_id,
+                        "estimated_tokens_before": tokens_before,
+                    }
+                    if self._last_context_compaction:
+                        metadata.update(
+                            {
+                                "tokens_after": self._last_context_compaction.get("tokens_after"),
+                                "yield_ratio": self._last_context_compaction.get("yield_ratio"),
+                                "archived_count": self._last_context_compaction.get("archived_count"),
+                            }
+                        )
+                    if getattr(self, "_last_context_compaction_policy", None):
+                        metadata["compaction_policy"] = self._last_context_compaction_policy
+                    yield ChatChunk(
+                        type="context_compressed",
+                        content="对话历史较长，已将早期内容压缩为摘要后继续",
+                        metadata=metadata,
+                    )
 
                 async for chunk in provider_manager.chat_stream(
                     config=model_config,
@@ -5355,50 +5406,10 @@ class ChatService(
                             "timeline": timeline,
                         },
                     )
-                    if is_chat_sandbox_tool and not bool(result.get("success")):
-                        failure_payload = llm_result if isinstance(llm_result, dict) else {}
-                        tool_error = str(
-                            failure_payload.get("error")
-                            or "沙盒代码执行失败，请检查执行日志和产物路径后重试。"
-                        )
-                        await self.update_message_content(
-                            ai_message.message_id,
-                            full_content,
-                            "error",
-                            {
-                                "error": tool_error,
-                                "tool_invocations": persisted_tool_invocations,
-                                "timeline": timeline,
-                            },
-                        )
-                        yield ChatChunk(
-                            type="error",
-                            content=tool_error,
-                            metadata={
-                                "session_id": current_session_id,
-                                "message_id": ai_message.message_id,
-                                "tool_name": tool_name,
-                            },
-                        )
-                        yield execution_chunk(
-                            "agent_turn_failed",
-                            session_id=current_session_id,
-                            run_id=execution_run_id,
-                            agent_id=execution_agent_id,
-                            round_number=round_number,
-                            execution_path=execution_path,
-                            message_id=ai_message.message_id,
-                            error=tool_error,
-                        )
-                        yield ChatChunk(
-                            type="done",
-                            metadata={
-                                "session_id": current_session_id,
-                                "message_id": ai_message.message_id,
-                                "status": "error",
-                            },
-                        )
-                        return
+                    # 沙盒失败是工具结果，不是模型/API 失败。结果已经以 role=tool
+                    # 回灌到 llm_messages，继续下一轮让 Agent 根据 stderr/error 修正
+                    # 参数或代码并重试；不能在这里发 agent_turn_failed/return，
+                    # 否则前端会把整轮渲染成“模型受到干扰”并丢失可恢复上下文。
                     if loop_guard_triggered:
                         break
                     if is_agentteams_case_tool and bool(result.get("success")):
@@ -5492,6 +5503,7 @@ class ChatService(
                         ctx = target_ctx
                         agent_id = target_ctx.agent.agent_id
                         model_config = target_model
+                        self._active_model_config = target_model
                         bound_skills = target_skills
                         bound_mcp_servers = target_servers
                         if studio_mode:

@@ -88,6 +88,12 @@ CHAT_ARTIFACT_CONTAINER_DIR = "/tmp/chat_output"
 # 与上面的 /tmp/chat_output 并行收集，保证两种写法都能在消息里出现预览/下载。
 CHAT_WORKSPACE_OUTPUT_CONTAINER_DIR = "/workspace/output"
 
+# Code execution has its own timeout, but post-processing (Docker copy-out,
+# archive writes, and environment probing) also runs before tool_result is
+# emitted.  Keep a bounded grace window around the complete tool task so a
+# stuck Docker/API call cannot leave the UI in a permanent running state.
+CHAT_SANDBOX_HARD_TIMEOUT_GRACE_SECONDS = 30
+
 # 用户上传附件的注入目录：执行前由后端把本会话上传文件 docker cp 进容器，
 # 模型按执行结果 input_files 里的真实路径读取。
 CHAT_INPUT_CONTAINER_DIR = "/workspace/input"
@@ -137,11 +143,33 @@ _STREAM_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 
 def _error_result(message: str) -> dict[str, Any]:
-    payload = {"error": message}
+    payload = {
+        "success": False,
+        "error": message,
+        "retryable": True,
+        "error_source": "sandbox",
+        "next_action": "请根据 stderr/error 修正代码或参数后重新调用 chat_sandbox_execute，不要将此结果当作模型/API 失败。",
+    }
     return {
         "success": False,
         "result": {"llm_payload": payload, "ui_payload": dict(payload)},
     }
+
+
+def chat_sandbox_hard_timeout(args: dict[str, Any]) -> float:
+    """Return the deadline for the complete tool call, including post-processing."""
+    try:
+        requested = max(1, int(args.get("timeout") or 300))
+    except (TypeError, ValueError):
+        requested = 300
+    return requested + CHAT_SANDBOX_HARD_TIMEOUT_GRACE_SECONDS
+
+
+def chat_sandbox_timeout_result(hard_timeout: float) -> dict[str, Any]:
+    return _error_result(
+        f"沙盒执行超过整体时限（{hard_timeout}s），已终止本次执行；"
+        "如果代码本身很快，请检查 Docker 沙箱或产物收集服务。"
+    )
 
 
 def _ok_result(llm_payload: dict[str, Any], ui_payload: dict[str, Any]) -> dict[str, Any]:
@@ -641,9 +669,17 @@ async def execute_chat_sandbox(
                 try:
                     archive_context = await ensure_chat_archive(db, user_id, str(session_id))
                     if archive_context is not None:
-                        observed_software = await _probe_chat_environment(
-                            service, UUID(user_id), session.id
-                        )
+                        # 环境快照是归档增强信息，不能阻塞用户已经完成的代码结果。
+                        # Docker exec/copy 的异常路径可能不会及时结束，因此在工具层
+                        # 的整体 deadline 之外再给探针一个短的 best-effort 窗口。
+                        try:
+                            observed_software = await asyncio.wait_for(
+                                _probe_chat_environment(service, UUID(user_id), session.id),
+                                timeout=15,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("[ChatSandbox] 环境探针超时或失败: {}", exc)
+                            observed_software = {}
                         archive_info = await archive_chat_execution(
                             db,
                             archive_context,
@@ -701,6 +737,11 @@ async def execute_chat_sandbox(
                 )
             if error:
                 llm_payload["error"] = error
+                llm_payload["retryable"] = True
+                llm_payload["next_action"] = (
+                    "请根据 stderr/error 修正代码或参数后重新调用 chat_sandbox_execute，"
+                    "不要将此结果当作模型/API 失败。"
+                )
             if archive_info:
                 llm_payload["analysis_archive"] = archive_info
                 llm_payload["analysis_documents"] = archive_info.get("document_files", [])
@@ -726,6 +767,7 @@ async def execute_chat_sandbox(
                 ui_payload["missing_artifacts"] = missing_artifacts
             if error:
                 ui_payload["error"] = error
+                ui_payload["retryable"] = True
             if archive_info:
                 ui_payload["analysis_archive"] = archive_info
                 if archive_info.get("document_files"):
@@ -766,14 +808,25 @@ async def stream_chat_sandbox_tool(
     task = asyncio.create_task(
         execute_chat_sandbox(args, user_id, on_output=_on_output, session_id=session_id)
     )
+    hard_timeout = chat_sandbox_hard_timeout(args)
+    requested_timeout = hard_timeout - CHAT_SANDBOX_HARD_TIMEOUT_GRACE_SECONDS
+    deadline = time.monotonic() + hard_timeout
+    deadline_expired = False
 
     last_emit = time.monotonic()
     while True:
         if task.done() and queue.empty():
             break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            deadline_expired = True
+            break
         try:
-            stream, data = await asyncio.wait_for(queue.get(), timeout=0.05)
+            stream, data = await asyncio.wait_for(queue.get(), timeout=min(0.05, remaining))
         except TimeoutError:
+            if time.monotonic() >= deadline:
+                deadline_expired = True
+                break
             if time.monotonic() - last_emit >= _STREAM_HEARTBEAT_INTERVAL_SECONDS:
                 last_emit = time.monotonic()
                 yield ChatChunk(type="heartbeat")
@@ -795,9 +848,39 @@ async def stream_chat_sandbox_tool(
             stream=stream,
             data=data,
         )
-    await message_event_service.flush_message_events(message_id or "")
+    if deadline_expired:
+        task.cancel()
+        with suppress(BaseException):
+            await task
+        await message_event_service.flush_message_events(message_id or "")
+        logger.error(
+            "[ChatSandbox] 工具整体超时: session={} timeout={} hard_timeout={}",
+            session_id,
+            requested_timeout,
+            hard_timeout,
+        )
+        yield chat_sandbox_timeout_result(hard_timeout)
+        return
     try:
-        yield await task
+        # The code runner emits its own timeout event, but this outer deadline
+        # also covers session setup, artifact copy-out, database commits, and
+        # archive/environment bookkeeping.
+        result = await asyncio.wait_for(task, timeout=hard_timeout)
+        await message_event_service.flush_message_events(message_id or "")
+        yield result
+    except TimeoutError:
+        task.cancel()
+        with suppress(BaseException):
+            await task
+        await message_event_service.flush_message_events(message_id or "")
+        logger.error(
+            "[ChatSandbox] 工具整体超时: session={} timeout={} hard_timeout={}",
+            session_id,
+            requested_timeout,
+            hard_timeout,
+        )
+        yield chat_sandbox_timeout_result(hard_timeout)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ChatSandbox] 流式执行异常: {e}")
+        await message_event_service.flush_message_events(message_id or "")
         yield _error_result(f"工具执行失败: {e}")

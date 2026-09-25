@@ -39,6 +39,7 @@ export interface ChatMessageDTO {
     output: number
     total: number
     cached?: number
+    cachedOutput?: number
   }
 }
 

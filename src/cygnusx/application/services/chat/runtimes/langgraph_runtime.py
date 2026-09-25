@@ -26,6 +26,8 @@ from cygnusx.application.services.chat.utils import (
 )
 from cygnusx.application.services.chat_sandbox_tools import (
     CHAT_SANDBOX_TOOL_NAME,
+    chat_sandbox_hard_timeout,
+    chat_sandbox_timeout_result,
     execute_chat_sandbox,
 )
 from cygnusx.application.services.network_request_tool import (
@@ -284,6 +286,22 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             "skills": list(skills or []),
             "skill_pins": skill_pins or {},
         }
+
+        async def _prepare_messages(
+            current_messages: list[dict[str, Any]],
+        ) -> tuple[list[dict[str, Any]], bool, int]:
+            """Compact only the provider view; graph state keeps full history."""
+            result = await self._service._compress_context_if_needed(
+                current_messages,
+                runtime_state["model_config"],
+                tool_schemas=runtime_state["tools"],
+                system_prompt=runtime_state["system_prompt"],
+            )
+            _prepare_messages.last_compaction = self._service._last_context_compaction
+            _prepare_messages.last_compaction_policy = getattr(
+                self._service, "_last_context_compaction_policy", None
+            )
+            return result
         persisted_web_sources = web_sources if web_sources is not None else []
         # 审批闸上下文（对齐 legacy chat_service）：仅当会话显式携带
         # sandbox_meta.permissions.mode 时启用审批；always_allow 集合支持流内
@@ -472,9 +490,25 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 )
                 if rejection is not None:
                     return rejection
-                return await execute_chat_sandbox(
-                    effective_args, user_id, session_id=session_id
-                )
+                hard_timeout = chat_sandbox_hard_timeout(effective_args)
+                try:
+                    # LangGraph intentionally uses the single-result executor rather
+                    # than the legacy incremental wrapper. Apply the same complete
+                    # deadline here so setup, artifact copy-out, archive, and probe
+                    # cannot leave the assistant tool card in "running" forever.
+                    return await asyncio.wait_for(
+                        execute_chat_sandbox(
+                            effective_args, user_id, session_id=session_id
+                        ),
+                        timeout=hard_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "[LangGraph] chat sandbox overall timeout: session={} timeout={}",
+                        session_id,
+                        hard_timeout,
+                    )
+                    return chat_sandbox_timeout_result(hard_timeout)
             if tool_name == MAS_PLAN_PREVIEW_TOOL_NAME:
                 # 对齐 legacy chat_service.py:4391-4392：adapt 返回的信封
                 # （success/result 双通道）直接作为工具结果，不再二次封装。
@@ -794,6 +828,8 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     run_id=execution_run_id,
                     agent_id=execution_agent_id,
                     execution_path=execution_path,
+                    prepare_messages=_prepare_messages,
+                    message_id=ai_message_id,
                 )
                 deps_holder["deps"] = deps
                 runtime = LangGraphRuntimeService(deps, max_rounds=max_rounds)
@@ -817,6 +853,11 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         yield chunk
                     elif chunk.type == "error":
                         error = chunk.content or "LangGraph Runtime 返回错误"
+                        if chunk.metadata.get("tool_execution_error"):
+                            # 工具错误是可恢复的执行反馈，不是模型/API 终止错误。
+                            # tool_result 随后会把 error 信封回灌给 Agent，继续下一轮。
+                            yield chunk
+                            continue
                         # 正文保留已累计内容，错误原因写入 metadata.error
                         await self._service.update_message_content(
                             ai_message_id,
@@ -923,35 +964,10 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                                 "timeline": timeline,
                             },
                         )
-                        if not success and tool_name == CHAT_SANDBOX_TOOL_NAME:
-                            failure_payload = llm_result if isinstance(llm_result, dict) else {}
-                            tool_error = str(
-                                failure_payload.get("error")
-                                or "沙盒代码执行失败，请检查执行日志和产物路径后重试。"
-                            )
-                            await self._service.update_message_content(
-                                ai_message_id,
-                                full_content,
-                                "error",
-                                {
-                                    "error": tool_error,
-                                    "tool_invocations": persisted_tool_invocations,
-                                    "timeline": timeline,
-                                },
-                            )
-                            yield chunk
-                            yield ChatChunk(
-                                type="error",
-                                content=tool_error,
-                                metadata={
-                                    "session_id": session_id,
-                                    "message_id": ai_message_id,
-                                    "tool_name": tool_name,
-                                },
-                            )
-                            for terminal_chunk in _failed_terminal_events(tool_error):
-                                yield terminal_chunk
-                            return
+                        # 沙盒失败仍是可恢复的工具结果：tool_exec_node 已将
+                        # llm_payload（含 stderr/error）写入 role=tool，继续下一轮
+                        # 让 Agent 自己修正并重试。不要升级成 agent_turn_failed，
+                        # 否则前端会显示模型/API 级失败并结束整段对话。
                         yield chunk
                     else:
                         # 其余事件直接透传（metadata 已对齐 legacy）
