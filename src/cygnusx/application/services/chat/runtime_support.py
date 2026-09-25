@@ -36,6 +36,7 @@ from cygnusx.infrastructure.ai_provider.openai_compatible import (
 )
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+from cygnusx.infrastructure.database.retry import execute_read_with_retry
 
 _chat_meter = get_meter("cygnusx.chat")
 _skill_count = _chat_meter.create_counter("skill.execute.count", description="技能工具执行次数")
@@ -169,7 +170,8 @@ class ChatRuntimeSupport:
 
         # 历史轮次的上传同样需要挂载才能在沙盒读取（多轮分析场景）
         try:
-            result = await self._db.execute(
+            result = await execute_read_with_retry(
+                self._db,
                 select(ChatMessageModel)
                 .where(ChatMessageModel.session_id == session_id)
                 .order_by(ChatMessageModel.created_at)
@@ -218,7 +220,8 @@ class ChatRuntimeSupport:
         chat_sandbox_execute，不能再用"执行时自动注入沙盒"的说法。
         """
         exclude = exclude_file_ids or set()
-        result = await self._db.execute(
+        result = await execute_read_with_retry(
+            self._db,
             select(ChatMessageModel)
             .where(ChatMessageModel.session_id == session_id)
             .order_by(ChatMessageModel.created_at)
@@ -963,7 +966,8 @@ class ChatRuntimeSupport:
             total = int(normalized.get("total_tokens") or 0)
             if total <= 0:
                 return
-            msg_result = await self._db.execute(
+            msg_result = await execute_read_with_retry(
+                self._db,
                 select(ChatMessageModel).where(ChatMessageModel.message_id == message_id)
             )
             msg = msg_result.scalar_one_or_none()
