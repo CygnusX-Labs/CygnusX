@@ -37,6 +37,7 @@ from cygnusx.infrastructure.ai_provider.openai_compatible import (
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
 from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
 from cygnusx.infrastructure.database.retry import execute_read_with_retry
+from cygnusx.infrastructure.database.session import get_session_factory
 
 _chat_meter = get_meter("cygnusx.chat")
 _skill_count = _chat_meter.create_counter("skill.execute.count", description="技能工具执行次数")
@@ -116,6 +117,42 @@ class ChatRuntimeSupport:
         estimate: Any | None = None,
     ) -> None:
         """Best-effort session audit; the compacted projection is never persisted."""
+        session_id = getattr(self, "_active_context_session_id", None)
+        if not session_id or not hasattr(self, "_db"):
+            return
+        if getattr(self, "_defer_compaction_audit", False):
+            # LangGraph 路径在独立 task 中执行 llm_call，图内直接写请求级
+            # session 会与消费协程的 update_message_content 并发 flush，
+            # 触发 "Session is already flushing" 并打坏 asyncpg 连接。
+            # 这里只暂存最后一次结果，由消费协程收尾时统一落库。
+            self._deferred_compaction_audit = {
+                "tokens": tokens,
+                "calibrated_tokens": calibrated_tokens,
+                "estimate": estimate,
+            }
+            return
+        await self._write_compaction_audit(
+            tokens=tokens, calibrated_tokens=calibrated_tokens, estimate=estimate
+        )
+
+    async def _flush_deferred_compaction_audit(self) -> None:
+        """消费协程在图执行结束后落库暂存的压缩审计（请求级 session 内串行安全）。"""
+        payload = getattr(self, "_deferred_compaction_audit", None)
+        if not payload:
+            return
+        self._deferred_compaction_audit = None
+        try:
+            await self._write_compaction_audit(**payload)
+        except Exception as exc:  # noqa: BLE001 - audit must not affect chat
+            logger.warning(f"上下文压缩审计写入失败: {exc}")
+
+    async def _write_compaction_audit(
+        self,
+        *,
+        tokens: int,
+        calibrated_tokens: float,
+        estimate: Any | None = None,
+    ) -> None:
         session_id = getattr(self, "_active_context_session_id", None)
         if not session_id or not hasattr(self, "_db"):
             return
@@ -1145,20 +1182,23 @@ class ChatRuntimeSupport:
             pinned_rev = (skill_pins or {}).get(skill.skill_id)
             if pinned_rev:
                 # 会话 pin：读取会话启动时锁定 revision 的快照正文，
-                # 会话中途升级/回滚不影响进行中的任务
+                # 会话中途升级/回滚不影响进行中的任务。
+                # 工具执行可能在 LangGraph 图 task 内运行，版本快照为已提交
+                # 数据，用独立会话读取，避免与消费协程并发使用请求级 session。
                 try:
                     from cygnusx.infrastructure.database.models.skill import (
                         SkillVersionModel,
                     )
 
-                    snap = (
-                        await self._db.execute(
-                            select(SkillVersionModel).where(
-                                SkillVersionModel.skill_id == skill.skill_id,
-                                SkillVersionModel.revision == int(pinned_rev),
+                    async with get_session_factory()() as pin_db:
+                        snap = (
+                            await pin_db.execute(
+                                select(SkillVersionModel).where(
+                                    SkillVersionModel.skill_id == skill.skill_id,
+                                    SkillVersionModel.revision == int(pinned_rev),
+                                )
                             )
-                        )
-                    ).scalar_one_or_none()
+                        ).scalar_one_or_none()
                     if snap and (snap.prompt or "").strip():
                         body = snap.prompt
                         pinned_from = f"r{snap.revision}"
@@ -1270,16 +1310,22 @@ class ChatRuntimeSupport:
         )
         candidates: list[dict[str, Any]] = []
         errors: list[str] = []
-        for refined_query in refinement["queries"][:4]:
-            try:
-                candidates.extend(
-                    await SearchProviderService(self._db).search_default(
-                        refined_query,
-                        max(5, min(int(top_n), 12)),
-                    )
-                )
-            except Exception as exc:  # noqa: BLE001 - partial query success is useful
-                errors.append(str(exc)[:300])
+        # 工具执行可能在 LangGraph 图 task 内运行，与消费协程共享请求级
+        # session 会并发触发 flush；搜索源配置是已提交数据，用独立会话读取。
+        try:
+            async with get_session_factory()() as search_db:
+                for refined_query in refinement["queries"][:4]:
+                    try:
+                        candidates.extend(
+                            await SearchProviderService(search_db).search_default(
+                                refined_query,
+                                max(5, min(int(top_n), 12)),
+                            )
+                        )
+                    except Exception as exc:  # noqa: BLE001 - partial query success is useful
+                        errors.append(str(exc)[:300])
+        except Exception as exc:  # noqa: BLE001 - provider config read failure
+            errors.append(str(exc)[:300])
         if not candidates and errors:
             raise RuntimeError(errors[0])
         results = await optimizer.rerank(query, candidates, limit=max(5, min(int(top_n), 8)))
@@ -1301,7 +1347,10 @@ class ChatRuntimeSupport:
         from cygnusx.application.services.studio_tools import _knowledge_search
 
         try:
-            return await _knowledge_search(arguments, self._db, project_id=project_id)
+            # 工具执行可能在 LangGraph 图 task 内运行，知识库为已提交数据，
+            # 用独立会话读取，避免与消费协程并发使用请求级 session。
+            async with get_session_factory()() as kb_db:
+                return await _knowledge_search(arguments, kb_db, project_id=project_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("知识库检索工具调用失败: %s", exc)
             return {"success": False, "error": "知识库检索失败，已跳过"}
