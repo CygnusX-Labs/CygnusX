@@ -22,6 +22,8 @@ interface ArtifactItem {
   mtime?: number
   /** 直接下载地址（如聊天沙盒产物）；提供时不走 studio 会话下载 */
   url?: string
+  /** 与下载地址分离的预览地址（AgentTeams HTML/报告等） */
+  previewUrl?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -111,7 +113,16 @@ function artifactUrl(value: unknown): string | undefined {
     return value
   }
   const item = asRecord(value)
-  const url = item?.url ?? item?.download_url
+  // AgentTeams/Overdrive events are normalized to camelCase in the store,
+  // while persisted tool payloads use snake_case. Accept both shapes so the
+  // gallery does not silently fall back to a Studio session URL.
+  const url = item?.url ?? item?.download_url ?? item?.downloadUrl
+  return typeof url === 'string' && url ? url : undefined
+}
+
+function artifactPreviewUrl(value: unknown): string | undefined {
+  const item = asRecord(value)
+  const url = item?.preview_url ?? item?.previewUrl
   return typeof url === 'string' && url ? url : undefined
 }
 
@@ -152,6 +163,7 @@ function artifactDetails(value: unknown): ArtifactItem | undefined {
     size: typeof item?.size === 'number' ? item.size : undefined,
     mtime: typeof item?.mtime === 'number' ? item.mtime : undefined,
     url: artifactUrl(value),
+    previewUrl: artifactPreviewUrl(value),
   }
 }
 
@@ -168,6 +180,7 @@ function artifactDetailsFromEntry(pathValue: unknown, metadata: unknown): Artifa
     size: typeof item?.size === 'number' ? item.size : undefined,
     mtime: typeof item?.mtime === 'number' ? item.mtime : undefined,
     url: artifactUrl(metadata) ?? artifactUrl(pathValue),
+    previewUrl: artifactPreviewUrl(metadata) ?? artifactPreviewUrl(pathValue),
   }
 }
 
@@ -326,6 +339,7 @@ const artifactItems = computed(() => {
           size: artifact.size ?? existing.size,
           mtime: artifact.mtime ?? existing.mtime,
           url: artifact.url ?? existing.url,
+          previewUrl: artifact.previewUrl ?? existing.previewUrl,
         }
       : artifact)
   }
@@ -387,16 +401,23 @@ function clearPreviews() {
 }
 
 async function fetchArtifactBlobData(artifact: ArtifactItem): Promise<Blob> {
-  if (artifact.url) {
-    if (artifact.url.startsWith('data:')) {
-      return await (await fetch(artifact.url)).blob()
+  const sourceUrl = artifact.url
+  if (sourceUrl) {
+    if (sourceUrl.startsWith('data:')) {
+      return await (await fetch(sourceUrl)).blob()
     }
     // apiClient baseURL 为 /api/v1，剥掉前缀后直连产物下载地址
-    const res = await apiClient.get(artifact.url.replace(/^\/api\/v1/, ''), { responseType: 'blob' })
+    const res = await apiClient.get(sourceUrl.replace(/^\/api\/v1/, ''), { responseType: 'blob' })
     return res.data as Blob
   }
   const objectUrl = await studioApi.fetchArtifactBlob(props.sessionId, artifact.path)
   return await (await fetch(objectUrl)).blob()
+}
+
+async function fetchPreviewBlobData(artifact: ArtifactItem): Promise<Blob> {
+  if (!artifact.previewUrl || artifact.previewUrl === artifact.url) return fetchArtifactBlobData(artifact)
+  const res = await apiClient.get(artifact.previewUrl.replace(/^\/api\/v1/, ''), { responseType: 'blob' })
+  return res.data as Blob
 }
 
 async function fetchArtifactObjectUrl(artifact: ArtifactItem): Promise<string> {
@@ -497,11 +518,11 @@ function printMediaPreview() {
 async function loadPreviewUrls(items: ArtifactItem[]) {
   const targets = items.filter((artifact) => artifact.url || props.sessionId)
   await Promise.all(targets.map(async (artifact) => {
-    const sourceKey = artifact.url || ''
+    const sourceKey = `${artifact.url || ''}:${artifact.previewUrl || ''}`
     // 同一产物按相同来源加载过则跳过;URL 从空补齐为直连地址时来源变化,需重拉
     if (previewUrls.value[artifact.path] && loadedUrlByPath.value[artifact.path] === sourceKey) return
     try {
-      const objectUrl = await fetchArtifactObjectUrl(artifact)
+      const objectUrl = URL.createObjectURL(await fetchPreviewBlobData(artifact))
       const stale = previewUrls.value[artifact.path]
       if (stale) URL.revokeObjectURL(stale)
       previewUrls.value[artifact.path] = objectUrl
@@ -565,7 +586,7 @@ async function downloadArtifact(path: string) {
 watch(
   () => [
     props.sessionId,
-    previewArtifacts.value.map((artifact) => `${artifact.path}:${artifact.url || ''}`).join('|'),
+    previewArtifacts.value.map((artifact) => `${artifact.path}:${artifact.url || ''}:${artifact.previewUrl || ''}`).join('|'),
   ],
   () => {
     // 产物被移除时释放对应 object URL

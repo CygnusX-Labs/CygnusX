@@ -61,6 +61,7 @@ describe('aiAssistantSidebar store', () => {
     expect(options).toMatchObject({
       modelId: 'm1',
       sessionId: undefined,
+      autoApprove: true,
       messages: [{ role: 'user', content: '你好' }],
     })
 

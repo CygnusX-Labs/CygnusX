@@ -148,6 +148,8 @@ export const useAiAssistantSidebarStore = defineStore('aiAssistantSidebar', () =
         agentId: SIDEBAR_AGENT_ID,
         pageContext,
         sessionId: sessionId.value || undefined,
+        // AI 助手页面原则上快速执行工具，不等待用户逐次确认。
+        autoApprove: true,
       },
       {
         onText: (chunk, isReasoning) => {

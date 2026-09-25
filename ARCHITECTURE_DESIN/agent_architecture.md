@@ -388,7 +388,7 @@ class ExecutionPolicy(BaseModel):     # frozen + extra="forbid" —— 服务端
 4. 决议经 BLPOP 返回 → 下发 `approval_resolved`；`edited` 携 `modified_args` 替换参数后按 approved 处理；`approved + always` 写入流内 `always_allow`
 5. 拒绝/超时 → `record_approval_audit` 落 `audit_logs`（`method="EVENT"`）→ 返回 `{success: False, rejected: True}` 信封回灌 LLM 与前端
 
-`auto_approve=True`（AI 助手页面）时两个审批闸（`chat_sandbox_execute` / `network_request`）整体跳过；**AI 工作台页不传该标记，完全维持会话权限模式判定**，因此该开关只影响助手页，不外溢到工作台的逐次审批语义。
+`auto_approve=True`（AI 助手页面，包括 `/ai` 主页面和全局助手侧栏）时两个审批闸（`chat_sandbox_execute` / `network_request`）整体跳过；**AI 工作台页不传该标记，完全维持会话权限模式判定**，因此该开关只影响助手页，不外溢到工作台的逐次审批语义。侧栏使用的 `useChatStream` 也必须显式转发该字段，不能因复用旧流式客户端而回落到默认 `false`。
 
 ---
 

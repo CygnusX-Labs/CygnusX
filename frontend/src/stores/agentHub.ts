@@ -2812,12 +2812,15 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             const output = usage.completion_tokens ?? usage.output_tokens ?? usage.output ?? 0
             const total = usage.total_tokens ?? usage.total ?? input + output
             const cached = usage.cached_tokens ?? 0
+            const cachedOutput = usage.cached_output_tokens
+              ?? usage.completion_tokens_details?.cached_tokens
+              ?? 0
             // 以服务端返回的 assistant message_id 定位，避免流期间对象被替换后写入旧引用。
             const targetId = messageId || aiMsg.backendMessageId || aiMsg.id
             const target = session.messages.find(
               (item) => (item.id === targetId || item.backendMessageId === targetId) && item.role === 'assistant',
             )
-            ;(target || aiMsg).tokens = { input, output, total, cached }
+            ;(target || aiMsg).tokens = { input, output, total, cached, cachedOutput }
           }
           if (finishReason === 'length' && aiMsg.content.trim()) {
             aiMsg.content += '\n\n---\n⚠️ *回答因达到最大长度限制而截断，可尝试缩短提问或分步追问。*'
