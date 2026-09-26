@@ -27,6 +27,12 @@
 
 ## 1. 平台总览与总体规范
 
+### `platform_architecture_maps.md` — 当前平台架构图汇总（简练版 + 详细版，2026-09-26）
+以仓库现状为依据，提供一页简图，以及部署拓扑、Chat 请求、Agent 工具边界、Studio 沙箱、AgentTeams/Worker、FlowFrame、生信分析链和数据/事件横切面的 Mermaid 详细图。该文档是看图入口，具体契约仍以各领域 as-built 文档为准。
+
+### `chat_openai4s_integration_architecture.md` — Chat 与 OpenAI4S 融合架构调查（as-built，2026-09-26）
+记录 OpenAI4S 契约在 OmicHub 中的实际衔接边界：上下文估算、校准、滚动摘要、handoff、大输出外置、双熔断和归档；同时按一次请求的时序串联前端 SSE、FastAPI、Agent 装配、LangGraph、OpenAI-compatible Provider、MCP、Skill、Chat/Studio 沙箱、AgentTeams 和 Workflow/Worker。明确“数据库原文权威、压缩视图只供模型请求”的差异，以及已实现能力和 Docker/Postgres/外部服务待验收项。本文是跨子系统调查导航，专项契约仍以 `agent_execution_framework.md`、`mcp_architecture.md`、`skill_architecture.md` 和沙箱基线文档为准。
+
 ### `cygnusx_architecture.md` — 平台架构总览（as-built 导航，2026-08-22）
 全系统"一页地图"：Vue3 前端 → FastAPI → Application/Orchestration → AI/MCP、Celery/Worker、持久化 → Docker 沙箱/MinIO/Nginx 的总体分层；四条执行链路（Chat/Agent、Studio、AgentTeams、Pipeline/Worker）各自的请求路径；第 5 章 Agent 五形态（Legacy ReAct / LangGraph / Studio / Worker ReAct / AgentTeams）与 loop guard、`llm_payload`/`ui_payload` 双通道；第 6–10 章摘要 AgentTeams 四层拓扑、Studio 沙箱安全基线与 capability、MCP 三层体系、记忆/知识分层、Worker 边界与任务状态机；第 11–14 章前端、日志审计、部署发布、安全隔离模型；第 15 章区分"已具备主干能力"与"待验收项"；第 16–17 章为全目录文档索引。本文是导航与摘要，详细契约以各领域文档为准。
 
