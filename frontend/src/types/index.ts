@@ -97,6 +97,8 @@ export interface FlowDefinition {
   author?: string | null
   parameter_count?: number
   has_sample_sheet?: boolean
+  status?: string
+  badge?: string
 }
 
 export interface DataFile {
