@@ -303,6 +303,9 @@ function handleHistorySelect(session: AgentSession, messageId?: string) {
 }
 :deep(.agent-picker-modal.n-card),
 :deep(.agent-picker-modal .n-card) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   height: min(72vh, 860px);
   max-height: calc(100dvh - 32px);
   overflow: hidden;
@@ -319,7 +322,12 @@ function handleHistorySelect(session: AgentSession, messageId?: string) {
 
 :deep(.agent-picker-modal .n-card__content),
 :deep(.agent-picker-modal.n-card .n-card__content) {
-  height: 100%;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: auto;
   max-height: none;
   padding: var(--space-2xl, 24px) var(--space-3xl, 32px) var(--space-xl, 20px);
   overflow: hidden;
@@ -518,6 +526,7 @@ function handleHistorySelect(session: AgentSession, messageId?: string) {
 }
 
 .agent-picker-scroll {
+  min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
@@ -526,7 +535,12 @@ function handleHistorySelect(session: AgentSession, messageId?: string) {
   scrollbar-width: thin;
 }
 .agent-picker-scroll :deep(.agent-hub.compact) {
+  display: block;
+  flex: none;
   min-height: 100%;
+}
+.agent-picker-scroll :deep(.agent-hub.compact .hub-inner) {
+  margin: 0;
 }
 
 .agent-picker-footer {

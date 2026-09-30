@@ -95,13 +95,16 @@ const visibleGroups = computed(() => props.categoryFilter ? groupedAgents.value.
   padding: 40px var(--page-padding, 32px) 80px;
 }
 .agent-hub.compact {
+  display: block;
+  flex: none;
+  min-height: 100%;
   padding: 0;
   overflow: visible;
 }
 .hub-inner {
   width: 100%;
   max-width: 1100px;
-  margin: auto;
+  margin: 0 auto;
 }
 .hub-header {
   text-align: center;
