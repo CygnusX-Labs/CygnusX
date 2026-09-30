@@ -38,7 +38,7 @@ providers:
 - name: doubao-seed-evolving
   provider_type: openai_compatible
   model: doubao-seed-evolving
-  base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+  base_url: https://ark.cn-beijing.volces.com/api/v3
   api_key: ${ARK_API_KEY}
   temperature: 0.7
   max_tokens: 8192
