@@ -71,6 +71,18 @@ function dismissHint() {
 const inputValue = ref('')
 const listEl = ref<HTMLElement | null>(null)
 
+// 每个页面使用独立的侧栏会话。首次挂载也清理持久化历史，避免从其他页面带入上下文。
+watch(
+  () => route.fullPath,
+  () => {
+    store.newChat()
+    inputValue.value = ''
+    hintVisible.value = false
+    if (hidden.value && store.open) store.open = false
+  },
+  { immediate: true },
+)
+
 const modelOptions = computed(() =>
   store.models.map((m) => ({
     value: m.id,
