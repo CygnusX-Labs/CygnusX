@@ -80,7 +80,7 @@ uv run ruff check src/ tests/ && uv run mypy src/cygnusx/ \
 
 **关键资产目录**：`data/ai/`（20 个 Agent YAML + prompts 注册表 + skills 磁盘真相源 + runtime_images/studio 沙箱配置）· `data/MODULE_LOCKED.yaml`（17 模块注册表）· `tool_configs/`（`tools_schema.yaml` LLM 工具 schema + 各工具契约）· `flows/`（声明式流程 catalog）· `deploy/`（compose×7 + runtime-images/studio/sandbox/agentteams Dockerfile + image-mapping）· `mcp-server/` · `pipelines/`（RNAFlow/ATACFlow/scrna/EBIDownload/tools 子模块 + jbrowse2 产物）· `Protocol/`（生效协议）· `evidence/`、`logs/`（运行证据，不入提交）。
 
-**权威文档索引**（改对应域前必读）：总览 `cygnusx_architecture.md` + `platform_architecture_maps.md`（看图入口）；Agent/Chat `agent_execution_framework.md`/`agent_framework_baseline.md`/`agent_architecture.md`；Token 计费 `token_billing_architecture.md`；DB `database_architecture.md`；沙箱 `cygnusx_sandbox_architecture_2026-08-22.md`（唯一规范）；MCP `mcp_architecture.md`；记忆/知识/技能各同名文档；前端 36 章 `frontend.md`；模块设计六原则 `cygnusx_design.md`。
+**权威文档索引**（改对应域前必读）：总览 `cygnusx_architecture.md` + `platform_architecture_maps.md`（看图入口）；Agent/Chat `agent_execution_framework.md`/`agent_framework_baseline.md`/`agent_architecture.md`；Token 计费 `token_billing_architecture.md`；DB `database_architecture.md`；沙箱 `cygnusx_sandbox_architecture_2026-10-01.md`（唯一规范）；MCP `mcp_architecture.md`；记忆/知识/技能各同名文档；前端 36 章 `frontend.md`；模块设计六原则 `cygnusx_design.md`。
 
 **保护/冻结模块（只许小步渐进修改，禁止盲目重构）：**
 - `data/MODULE_LOCKED.yaml` — 模块注册唯一数据源，后端启动硬校验（语法错/key 重复直接拒启），前端路由守卫 + 后端 API 拦截共同消费。

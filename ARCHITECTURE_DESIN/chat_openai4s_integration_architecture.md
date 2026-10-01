@@ -45,7 +45,7 @@ OpenAI4S 的主要融合点是上下文压缩和运行时契约，而不是模�
 - `ARCHITECTURE_DESIN/agent_execution_framework.md`：Agent 执行路径、事件和运行保护。
 - `ARCHITECTURE_DESIN/mcp_architecture.md`：MCP 注册、发现、安全和 Builder。
 - `ARCHITECTURE_DESIN/skill_architecture.md`：平台 Skill 生命周期和调用契约。
-- `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-08-22.md`：Studio 沙箱和 capability 安全基线。
+- `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-10-01.md`：Studio 沙箱和 capability 安全基线。
 - `docs/info/26.9.25/openai4s-long-conversation-architecture.md`：OpenAI4S 长对话参照。
 - `docs/info/26.9.23/migration-spec-openai4s-to-omichub.md`：上下文压缩迁移规格和验收状态。
 

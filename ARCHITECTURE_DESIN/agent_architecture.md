@@ -235,7 +235,7 @@ class AgentState(TypedDict, total=False):
 
 ### 2.5 Studio 侧的文件型记忆
 
-与数据库记忆并行的另一套：`MEMORY.md` 索引 + `.memory/*.md` 文件 + Git 检查点，落在工作区（见 `cygnusx_sandbox_architecture_2026-08-22.md`）。
+与数据库记忆并行的另一套：`MEMORY.md` 索引 + `.memory/*.md` 文件 + Git 检查点，落在工作区（见 `cygnusx_sandbox_architecture_2026-10-01.md`）。
 
 ---
 

@@ -517,7 +517,7 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 | Chat Runtime 分层与事件契约 | `chat_execution_layers_2026-08.md` |
 | AgentTeams | `deprecated/agentteams_room_architecture.md`、`deprecated/agentteams_department_collaboration.md` |
 | Studio | `cygnusx_studio_handover_2026-07.md` |
-| 沙箱安全与能力路由 | `cygnusx_sandbox_architecture_2026-08-22.md` |
+| 沙箱安全与能力路由 | `cygnusx_sandbox_architecture_2026-10-01.md` |
 | MCP | `mcp_architecture.md`（含 §5 MCP 构建师 agent-mcp-builder as-built 章节，原 `mcp_builder_agent.md` 已于 2026-09-18 并入） |
 | 记忆 | `memory_architecture.md` |
 | 知识库 | `knowledge_architecture.md` |
@@ -539,7 +539,7 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 - `log_architecture.md`
 - `cygnusx_design.md`
 - `cygnusx_studio_handover_2026-07.md`
-- `cygnusx_sandbox_architecture_2026-08-22.md`
+- `cygnusx_sandbox_architecture_2026-10-01.md`
 - `frontend.md`
 - `mas_a2a_plan_2026-07.md`
 - `agent_framework_baseline.md`

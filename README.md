@@ -303,7 +303,7 @@ MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipeline
 
 ### Studio 沙箱安全基线
 
-OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-08-22.md`。
+OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-10-01.md`。
 
 ## 数据、日志与安全
 

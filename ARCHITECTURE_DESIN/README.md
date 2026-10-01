@@ -13,7 +13,7 @@
 > 6. 新增文档请沿用本规则，并同步登记到本 README。
 >
 > **2026-09-20 新增说明**：新增 `agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
-> **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `agent_architecture.md`、`agent_execution_framework.md` 与 `cygnusx_sandbox_architecture_2026-08-22.md` 的新增 as-built 小节为准。
+> **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `agent_architecture.md`、`agent_execution_framework.md` 与 `cygnusx_sandbox_architecture_2026-10-01.md` 的新增 as-built 小节为准。
 > **2026-09-22 更新说明**：新增 `token_billing_architecture.md`，记录 Provider usage 归一化、缓存 token 计费、工具循环累计、会话落库、饼干扣费、元估算和对账排查流程。涉及 token、费用、余额或模型价格的修改，必须以该文档为当前实现基线。
 
 
@@ -84,8 +84,8 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `cygnusx_studio_handover_2026-07.md` — OmicStudio 实施进度与交接文档（历史快照，2026-07-17）
 P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文件 API、路径防护）、StudioSandboxManager 与三个已修复 bug、`studio.yaml`、10 个 Studio 内置工具（`sandbox_execute`/`workspace_*`/`datahub_import`/`artifact_register`/`update_plan` 等）、SSE 事件协议、Studio REST API 全表与前端清单；P1 per-user 只读挂载安全决策、Context Packager、报告版本树；P2/P3 diff 回滚、Celery 长任务、MCP/Skills 渐进披露、egress 代理、分享导出、Skill 提炼。已声明"勿按本文档再次执行"，现行沙箱基线见下一份。
 
-### `cygnusx_sandbox_architecture_2026-08-22.md` — 沙箱强化架构（规范+进度，v1.1）
-不替换 OmicStudio 编排前提下的容器隔离强化与 capability 路由：`code`/`browser`/`document` 三运行能力、Agent `features.studio.sandbox_capabilities` 授权源、`sandbox_meta` 持久化与 `studio.images` 镜像选择（含"未配置默认放行"实现偏差记录）；容器安全基线表（nano_cpus、pids_limit、cap_drop=ALL、no-new-privileges、uid 10001、只读根、tmpfs、network 白名单、10GiB 配额）；独立 browser-office 镜像；阶段 0–2 施工记录（`audit.py` 六类生命周期事件、配额兜底方案）与 gVisor/Kata 升级触发条件、验收状态。沙箱安全与 capability 的唯一规范来源。
+### `cygnusx_sandbox_architecture_2026-10-01.md` — 沙箱强化架构（规范+进度，v1.2）
+不替换 OmicStudio 编排前提下的容器隔离强化与 capability 路由：`code`/`browser`/`document` 三运行能力、Agent `features.studio.sandbox_capabilities` 授权源、`sandbox_meta` 持久化与 `studio.images` 镜像选择（含"未配置默认放行"实现偏差记录）；容器安全基线表（nano_cpus、pids_limit、cap_drop=ALL、no-new-privileges、uid 10001、只读根、tmpfs、network 白名单、10GiB 配额）；独立 browser-office 镜像；阶段 0–2 施工记录（`audit.py` 六类生命周期事件、配额兜底方案）与 gVisor/Kata 升级触发条件、验收状态；§8.7 镜像 ↔ Agent 声明对账修复（scrna 补装 Scanpy/Seurat、只读 rootfs 装包指引纠偏、studio.yaml 失效条目清理、copilot miniforge3 重建）。沙箱安全与 capability 的唯一规范来源。
 
 ### `research_loop_architecture_2026-09.md` — 科研闭环 as-built（WP0–WP4，2026-09-18）
 会话工作区生命周期（休眠打包/平台侧归档/解包恢复/到期清理/管理页）、不可变执行历史（`chat_message_events` 事件表 + 双读重建 + 信封 payload_hash + 产物 sha256 对账）、声明式环境还原（micromamba 一次性还原 + 科研模式门控）、长任务 job 三契约（先落盘/终态不可重开/reconcile-only）、科研形态（cell 投影 / .ipynb 确定性导出 / research_mode 三开关）、PTC llm_query（system 锚定 + 同窗审计）、chat warm pool 硬化对齐 Studio 基线、LangGraph 审批闸（ADR-0002）。含新增配置/迁移/beat/API 速查表与已知限制（生产只读 rootfs 下 env restore 降级等）。施工依据 `docs/info/26.9.18/OmicHub科研闭环-实施手册.md`。
@@ -169,6 +169,7 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 | `agentteams_department_collaboration_architecture.md` | `agentteams_department_collaboration.md` | 去冗余 architecture 后缀 |
 | `agentteams_room_current_architecture_2026-08-21.md` | `agentteams_room_architecture.md` | 活基线去日期与"current" |
 | `cygnusx_sandbox_enhancement_architecture_2026-08-22.md` | `cygnusx_sandbox_architecture_2026-08-22.md` | 简化，保留快照日期 |
+| `cygnusx_sandbox_architecture_2026-08-22.md` | `cygnusx_sandbox_architecture_2026-10-01.md` | 快照日期随 v1.2 as-built 更新前移 |
 | `cygnusx_studio.md` | `cygnusx_studio_handover_2026-07.md` | 时点快照实名化并补日期 |
 | `execution_layers.md` | `chat_execution_layers_2026-08.md` | 补领域前缀与快照日期 |
 | `knowledge_db.md` | `knowledge_architecture.md` | 子系统命名统一为 *_architecture |

@@ -1,10 +1,10 @@
 # CygnusX 沙箱增强架构（安全基线与 Capability 路由）
 
-> **时点说明**：本文件为 2026-09-20 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
+> **时点说明**：本文件为 2026-10-01 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
 
-**版本**：v1.1  
-**日期**：2026-09-20
-**状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现
+**版本**：v1.2  
+**日期**：2026-10-01
+**状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现；镜像 ↔ Agent 声明对账已完成一轮修复（见 8.7）
 
 ## 1. 目标与边界
 
@@ -233,3 +233,23 @@ Studio 容器现在显式设置：
 - [ ] 生产 Docker inspect：daemon seccomp、存储驱动、实际用户和旧容器存量。
 - [ ] Docker 真机 egress T1–T7：当前环境无 Docker daemon 权限，尚未执行。
 - [ ] XFS project quota 可用性：需在生产宿主执行 `docker info` 与文件系统探测后决定是否升级为方案 A。
+
+### 8.7 镜像与 Agent 声明对账修复（2026-10-01 as-built）
+
+对 `deploy/runtime-images/`（core→plot→scrna）、`deploy/studio/`（base→bio→browser-office）、`deploy/sandbox/`（copilot）全部 Dockerfile/build.sh/image-mapping，19 个 Agent YAML 的 runtime_profile/capabilities、`shared/sandbox_protocol.md` 与各 prompt 的工具声明做了逐声明对账，并用本地新构建镜像 `docker run` 实测验证。工作目录与权限体系（uid 10001、`/workspace` 预建、`/workspace/.agent.sock`）完全对齐；差异项已按 P0/P1/P2 全部修复：
+
+| 级别 | 问题 | 修复 |
+| --- | --- | --- |
+| P0 | `analysis-scrna` 镜像未安装 Agent 声明的 Scanpy/Seurat 栈 | `scrna.Dockerfile` 补装 scanpy 1.10.4 / anndata 0.11.1 / leidenalg / python-igraph / r-seurat 5.5.1 / bioconductor-singlecellexperiment 1.28.0，并加构建期 import/library 强制校验层。关键坑：micromamba 不执行 conda post-link，须显式 `RUN PREFIX=/opt/conda micromamba run -n base installBiocDataPackage.sh genomeinfodbdata-1.2.13`（随包 tarball 是 0 字节占位符）。`data/ai/runtime_images.yaml` 声明同步改为 5.5.1/1.28.0（原声明 5.1.0/1.28.1 无 r44 构建） |
+| P0 | 共享沙箱协议教 Agent `micromamba install` 现场装包，但 Studio 只读 rootfs + network none 使其必然失败 | `sandbox_protocol.md` 重写"现场装包"为"只读不支持装包 + 缺包上报流程"；同类漂移清扫：`bio_packages.md`（表头 + 81 处 install 指令改为 `channel/包名` 坐标）、`prompts/skills/index.md`、`prompts/skills/wrapper.md`、`prompts/visualization.md`、`prompts/scrna.md` |
+| P1 | `agent-code` prompt 声明的 NGS CLI（samtools 等）在目标镜像 analysis-core 中不存在 | `prompts/code.md` 改为"默认无 NGS CLI，先查能力目录，不具备则如实转交" |
+| P1 | `general.md` 镜像名文字与装配不符 | 改为 analysis-scrna（与 general.yaml 有意绑定一致） |
+| P2 | `studio.yaml` 残留已不存在的 `base` 镜像条目 | 移除该条目；`deploy/image-mapping.yaml` sandbox-base 的 config_files 改为 `[deploy/studio/base.Dockerfile]`；`tests/unit/test_studio_loader.py` 同步删断言 |
+| P2 | copilot 镜像基于已EOL的 mambaforge，旧 BuildKit 缓存混有失效 channel 元数据致 `mamba install` 崩溃 | `deploy/sandbox/Dockerfile` 改 `condaforge/miniforge3:24.3.0-0`（apt sed 改 Debian 兼容写法），4 处 cache mount 固定 `id=cygnusx-copilot-pkgs`，pip 层加 `"anndata>=0.11.1,<0.12" "zarr<3" "setuptools<81"` 修复 scvi/squidpy 预存在的 import 失败 |
+
+**验证**（本地构建后 `docker run` 实测）：scrna 镜像 scanpy/anndata/leidenalg/igraph、Seurat 5.5.1/SCE 1.28.0 全部可导入；copilot 镜像 scvi 1.4.2 / squidpy 1.6.6 / celltypist / decoupler + Seurat/scater/ggtree 正常；uid=10001、WORKDIR /workspace 符合契约。104 个相关单测通过；`deploy/validate_image_mapping.py` 通过（14 images）；`scripts/test_studio_agent_runtime.py` PASS。
+
+**遗留**（不在本轮范围）：
+
+- `workspace_env_restore_service.py` 的科研模式还原脚本 `micromamba install --name base` 在 Studio 只读 rootfs 下必然失败且被静默降级，需单独立项处理。
+- 提示词改动须经管理端 API 发布才写入 DB 生效。

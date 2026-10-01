@@ -199,7 +199,7 @@ flowchart LR
     LongJob --> Artifact
 ```
 
-当前沙箱能力由 `code`、`browser`、`document` 等 capability 控制；普通 Chat 轻量沙箱与 Studio 一会话一容器是两条不同路径。隔离、挂载和出站边界以 `cygnusx_sandbox_architecture_2026-08-22.md` 与 `network_architecture_2026-09.md` 为准。
+当前沙箱能力由 `code`、`browser`、`document` 等 capability 控制；普通 Chat 轻量沙箱与 Studio 一会话一容器是两条不同路径。隔离、挂载和出站边界以 `cygnusx_sandbox_architecture_2026-10-01.md` 与 `network_architecture_2026-09.md` 为准。
 
 ## 6. 详细版：AgentTeams 协作与异步 Worker
 
@@ -311,7 +311,7 @@ flowchart TB
 
 - 总体与执行：`cygnusx_architecture.md`、`agent_architecture.md`、`agent_execution_framework.md`
 - Chat 与 OpenAI4S：`chat_openai4s_integration_architecture.md`、`chat_execution_layers_2026-08.md`
-- Studio 与网络：`cygnusx_sandbox_architecture_2026-08-22.md`、`network_architecture_2026-09.md`、`research_loop_architecture_2026-09.md`
+- Studio 与网络：`cygnusx_sandbox_architecture_2026-10-01.md`、`network_architecture_2026-09.md`、`research_loop_architecture_2026-09.md`
 - MCP、Skill、记忆、知识：`mcp_architecture.md`、`skill_architecture.md`、`memory_architecture.md`、`knowledge_architecture.md`
 - 数据、日志、计费：`database_architecture.md`、`log_architecture.md`、`token_billing_architecture.md`
 - 多 Agent 与流程：`mas_a2a_plan_2026-07.md`、`multi_agent_fanout_2026-07.md`、`Protocol/FlowFrame/README.md`
