@@ -158,7 +158,7 @@ plotly 与 ECharts，目标是 publication-ready 图表。
 |---|---|---|
 | `ggpubr` | `theme_pubclean()` 来源 | **已预装进 analysis-plot/scrna/copilot/deg 镜像**（2026-09-16），直接 `library(ggpubr)`，勿现场安装 |
 | `scCustomize` | `DimPlot_scCustom()` 来源，**GitHub 独占包** | 沙盒白名单无法访问 GitHub，**不可现场安装**；需要时告知用户联系管理员预装进镜像 |
-| `ggrastr` | 大规模散点栅格化 | `micromamba install -y -n base r-ggrastr` |
+| `ggrastr` | 大规模散点栅格化 | 先查 conda 坐标（conda-forge `r-ggrastr`），未预装则如实说明、建议做进镜像；不要现场安装 |
 | `patchwork` | 多图拼版 | 已预装，直接 `library(patchwork)` |
 
 上表未覆盖的 R 包装前先用 `conda-meta-mcp` 查询确认 channel 与版本，查询失败退回 `micromamba search <pkg>`。

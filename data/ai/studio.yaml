@@ -23,10 +23,6 @@ studio:
       runtime_profile: analysis-scrna
       dockerfile: deploy/runtime-images/scrna.Dockerfile
       capabilities: [code]
-    base:
-      image: cygnusx-sandbox-base:v0.0.2dev
-      dockerfile: deploy/studio/base.Dockerfile
-      capabilities: [code]
     bio:
       image: cygnusx-sandbox-bio:v0.0.2dev
       runtime_profile: bio
@@ -89,7 +85,9 @@ studio:
       proxy_container: cygnusx-studio-egress-proxy
       proxy_host: studio-egress-proxy
       proxy_port: 3128
-      # 包源白名单：允许沙盒内 uv/micromamba 现场安装依赖；仅放行包源域名，保持其余断网。
+      # 包源白名单：仅放行包源域名，保持其余断网。注意沙盒 rootfs 只读，
+      # 不支持容器内现场装包；包源域名服务于科研模式环境还原等经代理的声明式
+      # 环境链路（见 application/services/workspace_env_restore_service.py）。
       # mirrors.nju.edu.cn 必配：ustc anaconda 镜像对部分频道（实测 menpo）302 重定向到
       # nju，不放行则容器内任何涉及该频道的 conda 事务整体失败（WP2 环境还原链路实测）。
       allow: [conda.anaconda.org, pypi.org, files.pythonhosted.org, mirrors.aliyun.com, mirrors.ustc.edu.cn, mirrors.nju.edu.cn, pypi.mirrors.ustc.edu.cn]

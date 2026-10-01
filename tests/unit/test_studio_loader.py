@@ -129,14 +129,12 @@ def test_real_studio_config_registers_all_runtime_images():
         "analysis-core",
         "analysis-plot",
         "analysis-scrna",
-        "base",
         "bio",
         "browser-office",
     } <= set(config.images)
     assert config.images["analysis-core"].runtime_profile == "analysis-core"
     assert config.images["analysis-plot"].runtime_profile == "analysis-plot"
     assert config.images["analysis-scrna"].runtime_profile == "analysis-scrna"
-    assert config.images["base"].image == "cygnusx-sandbox-base:v0.0.2dev"
     assert config.capabilities_for_image(
         "cygnusx-sandbox-browser-office:v0.0.2dev"
     ) == ["code", "browser", "document"]

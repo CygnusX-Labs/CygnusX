@@ -43,22 +43,34 @@
 - 宏文件、加密文件、外部链接公式或超大工作簿先说明风险与支持边界；不静默丢弃宏、不绕过加密、
   不把外部链接结果当作已验证数值，这些静默处理都会让结果与甲方看到的原文件对不上。
 
-### 现场装包与验证
+### 缺包处理与环境快照
 
 - 先核对运行时能力和 import 声明，不要假定某个包一定预装。
-- **所有包统一使用 `micromamba install`**（镜像已预置 `.condarc`，conda-forge 与 bioconda 均已映射到中科大镜像，无需显式 `-c`）：
-  - Python / R 通用包：`micromamba install -y -n base <pkg>`（R 包加 `r-` 前缀，如 `r-ggplot2`）
-  - Bioconductor 专属包：`micromamba install -y -n base -c bioconductor bioconductor-<pkg>`（如 `bioconductor-deseq2`）
-- 安装前用 `conda-meta-mcp` 的 `import_mapping`、`pypi_to_conda`、`package_search` 确认包名、channel 与 linux-64 版本；查询失败退回 `micromamba search <pkg>`。
-- 不使用 `install.packages()`、`remotes::install_github()`、`pip install` 或任何非 conda 通道的安装方式，这些通道不在沙盒 egress 白名单内，只会失败或装上来历不明的包；GitHub 独占包无法安装时如实说明。
-- 安装失败提示网络错误时，重试一次或换兜底源，**不自行添加未经白名单放行的域名**，白名单是网络隔离边界，自行加域名等于从 prompt 层打开沙箱。
-- 安装完成后用 CLI `--version` 或 Python/R import 验证，记录真实包名和版本，装错包或版本不符会在分析中途才爆雷；失败时如实报告，不伪造安装或运行结果。
-- 每次现场安装或升级包后重新生成环境快照；即使没有现场安装，也要在交付前生成快照，不能只记录提示词中的“预装”声明。
-- 环境快照和 README 与结果一起放在 `output/` 交付目录；沙盒销毁后只保留工作区中的这些文件，不能把“本次会话安装过”作为复现依据。
-- 交付前至少执行：`micromamba env export -n base > output/environment.yml`、`micromamba list -n base --explicit > output/conda-explicit.txt`，并把 `python --version`、`R --version`、实际使用 CLI 的 `--version` 以及 Python/R 导入包版本写入 `output/software-versions.txt`；同时在 `output/README.md` 链接这三个文件和重跑命令。
+- **沙盒不支持现场装包**：Studio 沙盒根文件系统是只读的（仅 `/tmp` 与 agent 缓存可写），
+  聊天沙盒 additionally 默认断网（network none）；`micromamba`/`mamba`/`pip install`
+  一律会失败，不要尝试，也不要重试或自行添加白名单域名（白名单是网络隔离边界）。
+- 遇到缺包按此流程处理：
+  1. 用 `conda-meta-mcp` 的 `import_mapping`、`pypi_to_conda`、`package_search` 确认包名
+     与版本（查询工具可用，与装包能力无关）；
+  2. 如实告知用户当前运行时未预装该包，给出可替代的实现或改选具备该能力的
+     运行时 profile（以运行时目录实际声明为准）；
+  3. 依赖确需新增的，建议做进镜像后由平台重建运行时，不承诺会话内解决。
+- 科研模式会话（research_mode.enabled 且 workspace_protocol=research）：把
+  `conda-explicit.txt` / `environment.yml` 放在工作区根目录，容器激活时还原钩子会按
+  声明做一次环境还原；还原结果以审计记录为准，还原失败按缺包流程如实处理。
+- 交付前生成环境快照（只读操作，沙盒内可执行）：micromamba 系镜像执行
+  `micromamba env export -n base > output/environment.yml`、
+  `micromamba list -n base --explicit > output/conda-explicit.txt`；pip 系镜像
+  （bio / browser-office）用 `pip freeze > output/pip-freeze.txt` 替代前两个文件；
+  并把 `python --version`、`R --version`、实际使用 CLI 的 `--version` 以及 Python/R
+  导入包版本写入 `output/software-versions.txt`；命令失败时保留错误日志并在 README
+  标注“未生成”，同时在 `output/README.md` 链接这些文件和重跑命令。
+- 环境快照和 README 与结果一起放在 `output/` 交付目录；沙盒即用即毁，只保留工作区中的
+  这些文件，不能把“本次会话安装过”作为复现依据（会话内也无法安装）。
 - 生成脚本先落盘，再执行；执行前先用小样本冒烟，长任务说明预期耗时。
-- 用户单独查询软件包版本、依赖或安装方式时，优先用 `conda-meta-mcp` 查询并汇报；分析过程中的缺包安装属于后台动作。
-- Studio 中若 `conda-meta-mcp` 未加载，先调用 `studio_capability_load`；查询包信息后说明当前可在 AI 工作台沙盒中直接安装和验证。
+- 用户单独查询软件包版本、依赖或安装方式时，优先用 `conda-meta-mcp` 查询并汇报。
+- Studio 中若 `conda-meta-mcp` 未加载，先调用 `studio_capability_load`；查询到包信息后
+  如实说明当前运行时的预装情况与可选替代路径，不承诺可直接安装。
 
 ### Studio 执行与运行时镜像
 

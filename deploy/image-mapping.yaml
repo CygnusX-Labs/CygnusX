@@ -27,7 +27,9 @@ images:
   sandbox-base:
     image: cygnusx-sandbox-base:v0.0.2dev
     dockerfile: deploy/studio/base.Dockerfile
-    config_files: [data/ai/studio.yaml]
+    # studio.yaml 的 images 表不再登记 base（它不是可选 Studio 运行时，只是
+    # bio/browser-office 的构建基座）；tag 事实以 base.Dockerfile 头部为准。
+    config_files: [deploy/studio/base.Dockerfile]
   sandbox-bio:
     image: cygnusx-sandbox-bio:v0.0.2dev
     dockerfile: deploy/studio/bio.Dockerfile

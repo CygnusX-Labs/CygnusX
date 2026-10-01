@@ -85,7 +85,7 @@ profiles:
     dockerfile: deploy/runtime-images/scrna.Dockerfile
     extends: analysis-plot
     executor_compatibility: [studio, toolbox]
-    description: 面向单细胞 RNA-seq 的隔离镜像，提供 Scanpy/AnnData、Seurat 5.1、降维、聚类、注释和 HDF5 读写；默认无外网。
+    description: 面向单细胞 RNA-seq 的隔离镜像，提供 Scanpy/AnnData、Seurat 5.5、降维、聚类、注释和 HDF5 读写；默认无外网。
     capabilities: [python, r, bash, tabular, statistics, plotting, single-cell, hdf5]
     task_tags: [scrna, scanpy, seurat, clustering, annotation, trajectory]
     software:
@@ -93,9 +93,9 @@ profiles:
       anndata: "0.11.1"
       leidenalg: "0.10.2"
       python-igraph: "0.11.8"
-      r-seurat: "5.1.0"
+      r-seurat: "5.5.1"
       r-ggpubr: "0.6.0"
-      bioconductor-singlecellexperiment: "1.28.1"
+      bioconductor-singlecellexperiment: "1.28.0"
     resources: {cpu: 4, memory: 12g, pids: 1024}
     network_policy: none
 

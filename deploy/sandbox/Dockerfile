@@ -8,11 +8,12 @@ ARG SANDBOX_GROUP=cygnusx-sandbox
 # 构建：docker build -t cygnusx-sandbox-copilot:v0.0.2dev -f deploy/sandbox/Dockerfile deploy/sandbox
 #
 # 设计（符合 1 人运维 / 单机部署原则）：
-# - 基于 condaforge/mambaforge，通过 bioconda 预装 scanpy + R/Seurat 交互式分析栈
+# - 基于 condaforge/miniforge3（mambaforge 已停止更新，24.3.0-0 为最后一版；
+#   miniforge3 同样自带 mamba，见 micromamba-shim.sh），通过 bioconda 预装 scanpy + R/Seurat 交互式分析栈
 # - 工具链聚焦"交互式单细胞分析"（UMAP/聚类/差异），NGS 比对类重工具由 Snakemake 流程单独承载
 # - sitecustomize.py 在 Python 启动时注入 sc/np/pd/show_echarts/show_image，配合后端池的 `python -` 执行协议
 # - matplotlib 无头（Agg），图表通过 %%ECHARTS%% / %%IMAGE%% 标记行回传
-FROM condaforge/mambaforge:24.3.0-0
+FROM condaforge/miniforge3:24.3.0-0
 
 ARG SANDBOX_UID=10001
 ARG SANDBOX_GID=10001
@@ -67,8 +68,12 @@ RUN printf '%s\n' \
       'retries = 3' \
       > /etc/pip.conf
 
-# 构建期切换中科大 apt 源，加速 apt-get（基础镜像为 Ubuntu focal）
-RUN sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g; s@//security.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list
+# 构建期切换中科大 apt 源，加速 apt-get（miniforge3 基础镜像为 Debian，兼容 debian.sources 与旧版 sources.list）
+RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/debian.sources; \
+    else \
+        sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+    fi
 
 # 系统依赖（R 编译需要 build-essential；hdf5/lapack 为数值栈运行时依赖）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -89,7 +94,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 不再用 conda config 调整（strict + 重复加渠道会导致混渠道求解脆弱）。
 
 # 创建 cygnusx 环境（Python 3.11），预装核心生信 Python 栈
-RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=cygnusx-copilot-pkgs,uid=10001,gid=10001,sharing=locked \
     mamba create -n cygnusx python=3.11 -y \
     && mamba install -n cygnusx -y \
         scanpy=1.10.2 \
@@ -115,15 +120,21 @@ RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked
 # 先装 CPU-only PyTorch（走 USTC 镜像的 pytorch 渠道）：
 # 否则下一步 pip 装 scvi-tools 时会从 PyPI 拉 torch 及其 NVIDIA CUDA 依赖（约 3GB），极慢且沙盒用不到 CUDA。
 # conda 的 pytorch 包自带 torch dist-info，pip 会判定 torch 依赖已满足。
-RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=cygnusx-copilot-pkgs,uid=10001,gid=10001,sharing=locked \
     mamba install -n cygnusx -y -c pytorch -c conda-forge \
         pytorch=2.4 \
         cpuonly
 
-# conda 缺少的较新单细胞工具走 pip
+# conda 缺少的较新单细胞工具走 pip。
+# 注意：pip 会把 conda 的 scanpy/numpy 升级到更新版本（squidpy/scvi 的依赖要求），
+# 必须同时显式带 anndata>=0.11——conda 层装的 anndata 0.10.8 没有 anndata.io 子模块，
+# 会导致 scvi-tools/squidpy import 直接失败（2026-10-01 实测）。
 SHELL ["conda", "run", "-n", "cygnusx", "/bin/bash", "-c"]
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --prefer-binary --timeout 60 --retries 3 -i https://pypi.mirrors.ustc.edu.cn/simple \
+        "anndata>=0.11.1,<0.12" \
+        "zarr<3" \
+        "setuptools<81" \
         "squidpy>=1.4.0" \
         "scvi-tools>=1.1.0" \
         "celltypist>=1.6.0" \
@@ -135,7 +146,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 # R + Seurat + IRkernel
 # 注意：r-base 必须 >=4.5 —— Python 栈已引入 icu 78（libharfbuzz 依赖），
 # r-base 4.3/4.4 仅接受 icu 72~75，会与 Python 栈无解（2026-07-28 实测）。
-RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=cygnusx-copilot-pkgs,uid=10001,gid=10001,sharing=locked \
     mamba install -n cygnusx -c conda-forge -c bioconda -y \
         r-base=4.5 \
         r-irkernel \
@@ -156,7 +167,7 @@ RUN conda run -n cygnusx R -e "IRkernel::installspec(user = FALSE)"
 
 # 可视化提示词约定 ggpubr::theme_pubclean() 为 R 出图默认主题，预装避免现场安装失败。
 # 独立层，避免变更上层 R/Seurat 依赖的构建缓存。
-RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=cygnusx-copilot-pkgs,uid=10001,gid=10001,sharing=locked \
     mamba install -n cygnusx -c conda-forge -y \
         r-ggpubr
 

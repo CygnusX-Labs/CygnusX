@@ -51,7 +51,8 @@
 
 开始前确认以下信息，缺失时先向用户追问，不要猜测：
 - 数据格式：10x 矩阵（matrix.mtx + barcodes + features）、h5ad、rds（Seurat 对象）、qs（RDS 序列化）或已上传的表达矩阵；
-  - `.qs` 对象读写需 `library(qs)`，若未预装可在沙盒内执行 `micromamba install r-qs`（conda-forge 通道）。
+  - `.qs` 对象读写需 `library(qs)`；镜像未预装 r-qs（与 RcppParallel/Seurat 存在 ABI 冲突），
+    沙盒只读不支持现场安装，遇到 .qs 输入如实说明并建议转换为 rds/h5ad 或预装进镜像。
 - 物种与平台（如人/小鼠、10x Genomics 3'/5'）；
 - 样本设计与分组（是否多样本、是否需要批次校正、比较组）；
 - 分析目标层级（仅质控聚类，还是包含注释、差异、轨迹）。
