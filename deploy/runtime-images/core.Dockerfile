@@ -4,14 +4,17 @@ FROM mambaorg/micromamba:2.0.5
 ARG SANDBOX_UID=10001
 ARG SANDBOX_GID=10001
 ARG SANDBOX_GROUP=cygnusx-sandbox
+ARG TOOLS_MANIFEST_DIGEST=unknown
 
 LABEL org.opencontainers.image.title="CygnusX Analysis Core"
 LABEL org.opencontainers.image.description="Independent micromamba Python/R task runtime for OmicStudio and toolbox executors"
 LABEL org.cygnusx.runtime.family="cygnusx-analysis"
 LABEL org.cygnusx.runtime.profile="analysis-core"
+LABEL org.cygnusx.tools-manifest.path="/opt/agent-tools.json"
+LABEL org.cygnusx.tools-manifest.digest="${TOOLS_MANIFEST_DIGEST}"
 
 USER root
-COPY requirements-agent.txt /tmp/requirements-agent.txt
+COPY deploy/studio/requirements-agent.txt /tmp/requirements-agent.txt
 RUN usermod --uid "$SANDBOX_UID" "$MAMBA_USER" \
     && groupmod --gid "$SANDBOX_GID" "$MAMBA_USER" \
     && groupmod --new-name "$SANDBOX_GROUP" "$MAMBA_USER" \
@@ -66,6 +69,7 @@ RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked
       scipy=1.14.1 \
       scikit-learn=1.5.2 \
       statsmodels=0.14.4 \
+      pyyaml=6.0.2 \
       openpyxl=3.1.5 \
       pyarrow=18.1.0 \
       bioconductor-deseq2=1.46.0 \
@@ -74,12 +78,12 @@ RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked
     && micromamba run -n base python -m pip install --prefer-binary -r /tmp/requirements-agent.txt
 
 # agent 脚本变动频繁，放在重型依赖层之后，改动时不触发 micromamba 重装
-COPY --chown=10001:10001 sandbox_agent.py /opt/cygnusx/sandbox_agent.py
+COPY --chown=10001:10001 deploy/studio/sandbox_agent.py /opt/cygnusx/sandbox_agent.py
 
 # sitecustomize.py：Python 启动时自动注入 show_plotly 图表回传 helper，
 # 与聊天轻量沙盒（deploy/sandbox/sitecustomize.py）同一 %%PLOTLY%% 标记协议；
 # plot/scrna 派生镜像自动继承本层
-COPY --chown=10001:10001 sitecustomize.py /opt/conda/lib/python3.12/site-packages/sitecustomize.py
+COPY --chown=10001:10001 deploy/studio/sitecustomize.py /opt/conda/lib/python3.12/site-packages/sitecustomize.py
 
 # 终端体验工具（独立层，与科学生态栈解耦）：btop / zsh / oh-my-posh / oh-my-zsh
 # 参考 tool_configs/terminal/docker/Dockerfile；plot/scrna 派生镜像自动继承本层
@@ -90,8 +94,42 @@ RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked
       git \
       oh-my-posh \
     && micromamba run -n base git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git /opt/cygnusx/oh-my-zsh
-COPY --chown=10001:10001 studio-zshrc /opt/cygnusx/zdotdir/.zshrc
-COPY --chown=10001:10001 studio.omp.json /opt/cygnusx/themes/studio.omp.json
+COPY --chown=10001:10001 deploy/studio/studio-zshrc /opt/cygnusx/zdotdir/.zshrc
+COPY --chown=10001:10001 deploy/studio/studio.omp.json /opt/cygnusx/themes/studio.omp.json
+
+# 构建期清单必须由当前镜像实际探测生成，不能只复制注册表声明。
+COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
+COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
+      --profile analysis-core \
+      --image cygnusx-analysis:core-v0.0.2dev \
+      --output /tmp/agent-tools.json \
+      --tool python:python \
+      --tool micromamba:micromamba \
+      --tool Rscript:Rscript \
+      --tool btop:btop \
+      --tool zsh:zsh \
+      --tool git:git \
+      --tool oh-my-posh:oh-my-posh \
+      --python-import pandas:pandas \
+      --python-import numpy:numpy \
+      --python-import scipy:scipy \
+      --python-import scikit-learn:sklearn \
+      --python-import statsmodels:statsmodels \
+      --python-import pyyaml:yaml \
+      --python-import openpyxl:openpyxl \
+      --python-import pyarrow:pyarrow \
+      --r-library bioconductor-deseq2:DESeq2 \
+      --r-library r-edgeR:edgeR \
+      --r-library r-limma:limma
+RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
+      --profile analysis-core \
+      --manifest /tmp/agent-tools.json
+
+USER root
+RUN install -o 10001 -g 10001 -m 0644 /tmp/agent-tools.json /opt/agent-tools.json \
+    && rm -f /tmp/agent-tools.json
+USER "$MAMBA_USER"
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MPLBACKEND=Agg SANDBOX_WORKSPACE=/workspace
 WORKDIR /workspace

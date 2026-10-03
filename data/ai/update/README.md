@@ -78,8 +78,8 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | --- | --- | --- | --- | --- |
 | `router.yaml` / `agent-router` | 星尘 AI | 统一理解用户意图，选择专家并组织交接；不替代领域专家执行完整分析。 | Chat | Legacy / `analysis-core` |
 | `general.yaml` / `agent-general` | 通用助手 | 需求澄清、研究设计、数据契约、质量控制计划、跨专家协调和综合方案。 | Chat | LangGraph / `analysis-core` |
-| `rnaseq.yaml` / `agent-rnaseq` | RNA-seq 分析师 | Bulk RNA-seq 原理咨询、实验设计、QC、差异表达、富集、网络分析、流水线执行与结果解释。 | Studio | LangGraph / `analysis-core` |
-| `atacseq.yaml` / `agent-atacseq` | ATAC-seq 分析师 | Bulk ATAC-seq、染色质开放性、实验设计、QC、峰识别、差异可及性、motif/footprinting 与多组学解释。 | Studio | LangGraph / `analysis-core` |
+| `rnaseq.yaml` / `agent-rnaseq` | RNA-seq 分析师 | Bulk RNA-seq 原理咨询、实验设计、QC、差异表达、富集、网络分析、流水线执行与结果解释。 | Studio | LangGraph / `analysis-rnaseq` |
+| `atacseq.yaml` / `agent-atacseq` | ATAC-seq 分析师 | Bulk ATAC-seq、染色质开放性、实验设计、QC、峰识别、差异可及性、motif/footprinting 与多组学解释。 | Studio | LangGraph / `analysis-atacseq` |
 | `scrna.yaml` / `agent-scrna` | 单细胞分析师 | 单细胞质控、整合聚类、细胞注释、Marker、轨迹、通讯和完整分析规划。 | Studio | LangGraph / `analysis-scrna` |
 | `scrna_upstream.yaml` / `agent-scrna-upstream` | 单细胞上游与样本质控专家 | FASTQ、Cell Ranger、建库 Chemistry、样本纳入、原始矩阵和上游 QC。 | Studio | LangGraph / `analysis-scrna` |
 | `scrna_integration.yaml` / `agent-scrna-integration` | 单细胞整合与聚类专家 | 细胞 QC、双细胞、批次校正、HVG、降维、聚类和 Marker 初筛。 | Studio | LangGraph / `analysis-scrna` |
@@ -87,7 +87,7 @@ YAML 为权威来源持续同步，避免后台临时编辑造成配置漂移。
 | `code.yaml` / `agent-code` | 代码助手 | Python、R、Bash 脚本设计、调试、沙盒执行和可复现性说明。 | Studio | Legacy / `analysis-core` |
 | `viz.yaml` / `agent-viz` | 可视化助手 | 统计图、出版级绘图、图表说明、结果报告呈现和绘图脚本。 | Studio | Legacy / `analysis-plot` |
 | `data.yaml` / `agent-data` | 数据管理员 | BioOps Case 内部的数据契约、项目元数据、样本表和输入完整性预检。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
-| `qc.yaml` / `agent-qc` | 质量审计员 | 测序原始数据、预处理、比对覆盖、变异/区间文件、跨样本报告与 Artifact 的独立质量审查。 | Studio | LangGraph / `analysis-core` |
+| `qc.yaml` / `agent-qc` | 质量审计员 | 测序原始数据、预处理、比对覆盖、变异/区间文件、跨样本报告与 Artifact 的独立质量审查。 | Studio | LangGraph / `analysis-qc` |
 | `delivery.yaml` / `agent-delivery` | 交付报告员 | BioOps Case 内部的交付 manifest、运行说明和证据汇总。当前为无专用 Skill 的骨架。 | Studio | LangGraph / `analysis-core` |
 | `cloud_ops.yaml` / `agent-cloud-ops` | 云运维工程师 | 管理员平台健康巡检、云资源与存储检查、故障分诊、容量风险和变更/回滚方案审查。 | Studio | LangGraph / `analysis-core` |
 | `shania.yaml` / `shania` | 傻妞 | 通用对话、数据与基因问题、多组学思路和研究陪伴。 | Chat | Legacy / `analysis-core` |

@@ -33,11 +33,13 @@ profiles:
       scipy: "1.14.1"
       scikit-learn: "1.5.2"
       statsmodels: "0.14.4"
+      pyyaml: "6.0.2"
       bioconductor-deseq2: "1.46.0"
-      r-edgeR: "4.4.2"
-      r-limma: "3.62.2"
+      r-edgeR: "4.4.0"
+      r-limma: "3.62.1"
     resources: {cpu: 2, memory: 4g, pids: 512}
     network_policy: none
+    tools_manifest_digest: null
 
   analysis-plot:
     # 可视化 Agent 的专用构建镜像。agent-viz 在 data/ai/viz.yaml 中显式绑定此 profile；
@@ -73,6 +75,7 @@ profiles:
       r-plotly: "4.10.4"
     resources: {cpu: 2, memory: 4g, pids: 512}
     network_policy: none
+    tools_manifest_digest: null
 
   analysis-scrna:
     name: 单细胞分析运行时
@@ -98,6 +101,87 @@ profiles:
       bioconductor-singlecellexperiment: "1.28.0"
     resources: {cpu: 4, memory: 12g, pids: 1024}
     network_policy: none
+    tools_manifest_digest: null
+
+  analysis-rnaseq:
+    name: RNA-seq 分析运行时
+    image: cygnusx-analysis:rnaseq-v0.0.1dev
+    family: cygnusx-analysis
+    isolation_class: task-analysis-heavy
+    runtime_uid: 10001
+    runtime_gid: 10001
+    runtime_group: cygnusx-sandbox
+    dockerfile: deploy/runtime-images/rnaseq.Dockerfile
+    extends: analysis-core
+    executor_compatibility: [studio, toolbox]
+    description: 面向 bulk RNA-seq 的比对、定量和跨样本 QC 运行时。
+    capabilities: [python, r, bash, tabular, statistics, machine-learning, ngs, rnaseq, qc]
+    task_tags: [rnaseq, alignment, quantification, qc]
+    software:
+      star: ">=2.7"
+      salmon: ">=1.10"
+      rsem: ">=1.3"
+      samtools: ">=1.20"
+      fastp: ">=0.23"
+      multiqc: ">=1.24"
+      subread: ">=2.0"
+    resources: {cpu: 8, memory: 32g, pids: 1024}
+    network_policy: none
+    tools_manifest_digest: null
+
+  analysis-atacseq:
+    name: ATAC-seq 分析运行时
+    image: cygnusx-analysis:atacseq-v0.0.1dev
+    family: cygnusx-analysis
+    isolation_class: task-analysis-heavy
+    runtime_uid: 10001
+    runtime_gid: 10001
+    runtime_group: cygnusx-sandbox
+    dockerfile: deploy/runtime-images/atacseq.Dockerfile
+    extends: analysis-core
+    executor_compatibility: [studio, toolbox]
+    description: 面向 ATAC-seq 比对、峰识别、信号计算和质量控制的运行时。
+    capabilities: [python, r, bash, tabular, statistics, machine-learning, ngs, atacseq, qc]
+    task_tags: [atacseq, alignment, peak-calling, differential-accessibility, qc]
+    software:
+      bowtie2: ">=2.5"
+      chromap: ">=0.2"
+      macs2: ">=2.2"
+      samtools: ">=1.20"
+      bedtools: ">=2.31"
+      deeptools: ">=3.5"
+      fastp: ">=0.23"
+      multiqc: ">=1.24"
+    resources: {cpu: 8, memory: 32g, pids: 1024}
+    network_policy: none
+    tools_manifest_digest: null
+
+  analysis-qc:
+    name: 测序质量控制运行时
+    image: cygnusx-analysis:qc-v0.0.1dev
+    family: cygnusx-analysis
+    isolation_class: task-analysis
+    runtime_uid: 10001
+    runtime_gid: 10001
+    runtime_group: cygnusx-sandbox
+    dockerfile: deploy/runtime-images/qc.Dockerfile
+    extends: analysis-core
+    executor_compatibility: [studio, toolbox]
+    description: 面向 FASTQ、BAM、VCF 和跨样本报告的通用测序质量控制运行时。
+    capabilities: [python, r, bash, tabular, statistics, ngs, qc]
+    task_tags: [qc, fastq, bam, vcf, multiqc]
+    software:
+      fastqc: ">=0.12"
+      fastp: ">=0.23"
+      multiqc: ">=1.24"
+      samtools: ">=1.20"
+      bcftools: ">=1.20"
+      deeptools: ">=3.5"
+      qualimap: ">=2.3"
+      fastq-screen: ">=0.16"
+    resources: {cpu: 4, memory: 16g, pids: 1024}
+    network_policy: none
+    tools_manifest_digest: null
 
   bio:
     name: Studio 生物信息学沙盒

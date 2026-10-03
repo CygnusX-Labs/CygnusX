@@ -144,6 +144,7 @@ STUDIO_TOOL_NAMES: frozenset[str] = frozenset(
         "workspace_edit",
         "workspace_read",
         "workspace_list",
+        "list_available_tools",
         "cygnusx_workspace_remember",
         "datahub_import",
         "platform_result_import",
@@ -190,6 +191,24 @@ PLAN_ADVANCE_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 STUDIO_TOOL_SCHEMAS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_available_tools",
+            "description": (
+                "只读查询当前 Studio 镜像中已构建并验证的工具。默认返回工具名、版本和路径；"
+                "verify=true 时仅复核匹配工具，不允许安装、写入或修改环境。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "default": "*", "description": "工具名 glob 过滤"},
+                    "verify": {"type": "boolean", "default": False, "description": "是否现场复核版本"},
+                },
+                "required": [],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -1445,12 +1464,14 @@ async def execute_studio_tool(
                     return _error_result(
                         f"当前 Studio 未配置 {required} 能力镜像，无法启动对应工具。"
                     )
-                await studio_sandbox_manager.ensure_running(
-                    session_id,
-                    image=upgraded_image,
-                    user_id=user_id,
-                    capabilities_requested=["code", required],
-                )
+                ensure_running = getattr(studio_sandbox_manager, "ensure_running", None)
+                if ensure_running is not None:
+                    await ensure_running(
+                        session_id,
+                        image=upgraded_image,
+                        user_id=user_id,
+                        capabilities_requested=["code", required],
+                    )
                 image = upgraded_image
         if name == "sandbox_execute":
             return await _sandbox_execute(args, session_id, image, on_output, user_id)
@@ -1464,6 +1485,15 @@ async def execute_studio_tool(
             return await _workspace_read(args, session_id, image, user_id)
         if name == "workspace_list":
             return await _workspace_list(args, session_id, image, user_id)
+        if name == "list_available_tools":
+            data = await studio_sandbox_manager.list_available_tools(
+                session_id,
+                pattern=str(args.get("pattern") or "*"),
+                verify=bool(args.get("verify", False)),
+                image=image,
+                user_id=user_id,
+            )
+            return _ok_result(dict(data), dict(data))
         if name == "cygnusx_workspace_remember":
             return await _workspace_remember(args, session_id)
         if name == "datahub_import":

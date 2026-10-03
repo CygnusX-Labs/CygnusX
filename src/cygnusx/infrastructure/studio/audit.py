@@ -18,6 +18,7 @@ _SANDBOX_EVENTS = {
     "sandbox.reuse",
     "sandbox.reclaim",
     "sandbox.quota_exceeded",
+    "sandbox.tool_probe",
 }
 
 

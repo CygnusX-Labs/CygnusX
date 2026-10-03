@@ -1,10 +1,10 @@
 # CygnusX 沙箱增强架构（安全基线与 Capability 路由）
 
-> **时点说明**：本文件为 2026-10-01 时点的设计/施工快照，所述计划已执行或已演进，部分引用（路径、行号）已失效；当前实现以代码为准。
+> **时点说明**：本文件为 2026-10-04 的 as-built 记录，所述实现以代码、配置和构建验证为准；生产 Docker/egress 验收状态见 8.8。
 
-**版本**：v1.2  
-**日期**：2026-10-01
-**状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现；镜像 ↔ Agent 声明对账已完成一轮修复（见 8.7）
+**版本**：v1.3
+**日期**：2026-10-04
+**状态**：阶段 0–2 代码已落地；六个分析运行时 profile 与 Agent 声明已同步；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现；整改落地见 8.8。
 
 ## 这个沙箱模块如何发挥作用
 
@@ -308,3 +308,69 @@ Studio 容器现在显式设置：
 
 - `workspace_env_restore_service.py` 的科研模式还原脚本 `micromamba install --name base` 在 Studio 只读 rootfs 下必然失败且被静默降级，需单独立项处理。
 - 提示词改动须经管理端 API 发布才写入 DB 生效。
+
+### 8.8 沙箱整改落地（2026-10-04 as-built）
+
+本轮按 `docs/info/26.10.3/agent-sandbox-remediation-plan.md` 落地 P1–P4，且不扩大
+`analysis-core` 的职责。三个领域 Agent 已从通用运行时迁移到专用运行时：
+
+| Agent | Runtime profile | 镜像 | 主要构建期校验 |
+| --- | --- | --- | --- |
+| `agent-rnaseq` | `analysis-rnaseq` | `cygnusx-analysis:rnaseq-v0.0.1dev` | STAR、Salmon、RSEM、samtools、fastp、MultiQC、featureCounts |
+| `agent-atacseq` | `analysis-atacseq` | `cygnusx-analysis:atacseq-v0.0.1dev` | Bowtie2、Chromap、MACS2、samtools、bedtools、deepTools、fastp、MultiQC |
+| `agent-qc` | `analysis-qc` | `cygnusx-analysis:qc-v0.0.1dev` | FastQC、fastp、MultiQC、samtools、bcftools、deepTools、Qualimap、fastq-screen |
+
+六个 `analysis-*` 镜像（core、plot、scrna 及上述三个领域镜像）均在构建时生成
+`/opt/agent-tools.json`。`render_tools_manifest.py` 从实际 PATH、Python import 和 R namespace
+探针生成版本、路径、来源和探针状态；子镜像合并父镜像清单，任一声明工具缺失或探针失败都会
+使构建失败。随后 `validate_manifest.py` 将实测工具名和版本与 profile 声明逐项比对，发现缺项或
+版本约束冲突时同样阻断构建。清单还包含稳定的 `manifest_digest`；运行时注册表的
+`tools_manifest_digest` 字段由发布构建回填，`StudioSandboxManager.ensure_running()` 在容器就绪后
+读取清单并将摘要缓存到会话，发现不一致时写入 `sandbox.rebuild` 审计并在 prompt 标记
+`manifest_stale: true`。清单是镜像内事实来源，运行时注册表仍负责能力路由和 Agent 选择。
+
+发布构建完成后使用 `deploy/runtime-images/scripts/sync_manifest_digests.py` 回填注册表：脚本支持
+`--manifest PROFILE=PATH` 离线输入或 `--image PROFILE=IMAGE` 从 Docker 镜像只读提取，默认 dry-run，
+只有显式传入 `--write` 才修改配置；同时传入 `--mapping` 时会同步更新
+`deploy/image-mapping.yaml`。因此开发树保留 `null` 不会伪造摘要，而发布树可以把实际镜像摘要
+固定在运行时注册表和部署清单中供运行期漂移检测。
+
+```mermaid
+flowchart LR
+    Registry[data/ai/runtime_images.yaml] --> Mapping[deploy/image-mapping.yaml]
+    Mapping --> Build[build.sh + profile Dockerfile]
+    Build --> Probe[render_tools_manifest.py]
+    Probe --> Manifest[/opt/agent-tools.json]
+    Manifest --> Agent[sandbox-agent /tools/list]
+    Agent --> Audit[sandbox.tool_probe audit]
+    Agent --> Prompt[Agent runtime prompt disclosure]
+```
+
+新增的 `POST /tools/list` 仅读取镜像清单，支持 glob `pattern` 和可选的 `verify=true`。验证只对
+清单中的工具执行固定的 `--version` 探针，不接受任意命令、安装参数或写入路径；结果通过
+`StudioSandboxManager.list_available_tools()` 暴露给已注册的 `list_available_tools` Studio 工具，
+并记录 `sandbox.tool_probe` 审计事件。网络仍保持镜像 profile 的 `network: none` 约束。
+
+```mermaid
+sequenceDiagram
+    participant Agent as Agent
+    participant Manager as StudioSandboxManager
+    participant Socket as sandbox-agent UDS
+    participant Manifest as /opt/agent-tools.json
+    participant Audit as Audit event store
+    Agent->>Manager: list_available_tools(pattern, verify)
+    Manager->>Socket: POST /tools/list
+    Socket->>Manifest: read-only load + glob filter
+    alt verify=true
+        Socket->>Socket: bounded --version probe
+    end
+    Socket-->>Manager: tools + profile + image
+    Socket->>Audit: sandbox.tool_probe
+    Manager-->>Agent: verified availability result
+```
+
+**验证状态**：`deploy/validate_image_mapping.py`、`scripts/test_studio_agent_runtime.py`、运行时加载器和
+Studio 工具分发测试已通过；manifest 生成器的 CLI 探针和摘要测试已通过。当前环境没有可用 Docker
+daemon，rootless `buildah`/`nerdctl` 也因 user-namespace 权限不可用，因此六个镜像的实际构建、
+`docker run` 权限探针、发布构建回填 digest 和生产 egress T1–T7 仍须在构建宿主补做。运行时提示已
+明确 `/opt/agent-tools.json`、实际摘要和 `list_available_tools(verify=true)` 的复核入口。

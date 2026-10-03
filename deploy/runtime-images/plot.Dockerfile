@@ -3,9 +3,12 @@ ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
 FROM cygnusx-analysis:core-${CYGNUSX_IMAGE_TAG}
 
 ARG SANDBOX_GID=10001
+ARG TOOLS_MANIFEST_DIGEST=unknown
 
 LABEL org.opencontainers.image.title="CygnusX Analysis Plot"
 LABEL org.cygnusx.runtime.profile="analysis-plot"
+LABEL org.cygnusx.tools-manifest.path="/opt/agent-tools.json"
+LABEL org.cygnusx.tools-manifest.digest="${TOOLS_MANIFEST_DIGEST}"
 
 USER root
 
@@ -74,3 +77,31 @@ RUN micromamba run -n base R -q -e '\
       }; \
       if (length(failed)) stop("plot image missing required R packages: ", paste(failed, collapse = ", ")); \
       cat("plot runtime OK: all", length(required), "packages loadable, ", R.version.string, "\n")'
+
+COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
+COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+USER root
+RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
+      --profile analysis-plot \
+      --image cygnusx-analysis:plot-v0.0.2dev \
+      --base /opt/agent-tools.json \
+      --output /opt/agent-tools.json \
+      --python-import matplotlib:matplotlib \
+      --python-import seaborn:seaborn \
+      --python-import plotly:plotly \
+      --r-library r-ggplot2:ggplot2 \
+      --r-library r-dplyr:dplyr \
+      --r-library r-stringr:stringr \
+      --r-library r-ggrepel:ggrepel \
+      --r-library r-ggpubr:ggpubr \
+      --r-library bioconductor-ggtree:ggtree \
+      --r-library bioconductor-treeio:treeio \
+      --r-library r-ape:ape \
+      --r-library r-patchwork:patchwork \
+      --r-library r-plotly:plotly \
+      --r-library r-cairo:Cairo \
+      --r-library r-phytools:phytools
+RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
+      --profile analysis-plot \
+      --manifest /opt/agent-tools.json
+USER mambauser

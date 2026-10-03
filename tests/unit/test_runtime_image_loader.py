@@ -14,6 +14,9 @@ def test_real_runtime_registry_resolves_profiles():
     core = config.resolved_profile("analysis-core")
     plot = config.resolved_profile("analysis-plot")
     scrna = config.resolved_profile("analysis-scrna")
+    rnaseq = config.resolved_profile("analysis-rnaseq")
+    atacseq = config.resolved_profile("analysis-atacseq")
+    qc = config.resolved_profile("analysis-qc")
     assert core.image == "cygnusx-analysis:core-v0.0.2dev"
     assert core.runtime_uid == 10001
     assert core.runtime_gid == 10001
@@ -30,6 +33,11 @@ def test_real_runtime_registry_resolves_profiles():
         "r-ggrepel",
     } <= set(plot.software)
     assert {"single-cell", "plotting", "r"} <= scrna.capabilities
+    assert {"ngs", "rnaseq", "qc"} <= rnaseq.capabilities
+    assert {"ngs", "atacseq", "qc"} <= atacseq.capabilities
+    assert {"ngs", "qc"} <= qc.capabilities
+    assert "STAR" not in rnaseq.software
+    assert "star" in rnaseq.software
 
     assert "base" not in config.profiles
 
@@ -73,13 +81,33 @@ def test_runtime_manifest_uses_resolved_software_and_actual_image():
     assert "r-ggrepel" in manifest
 
 
+def test_runtime_manifest_marks_observed_digest_and_stale_state():
+    config = RuntimeImageRegistryManager("data/ai/runtime_images.yaml").get_config()
+    profile = config.resolved_profile("analysis-qc")
+    manifest = render_runtime_manifest(
+        "analysis-qc",
+        profile,
+        {
+            "manifest_digest": "sha256:observed",
+            "manifest_stale": True,
+            "tools": [{"name": "fastqc"}],
+        },
+    )
+    assert "sha256:observed" in manifest
+    assert "manifest_stale: true" in manifest
+    assert "已从沙盒读取 1 项" in manifest
+
+
 def test_all_registered_profiles_selectable_for_studio_executor():
-    """AI 助手页运行时选择器依赖：5 个 profile 都必须能被 studio 执行器显式选中。"""
+    """AI 助手页运行时选择器依赖：所有 profile 都必须能被 studio 执行器显式选中。"""
     config = RuntimeImageRegistryManager("data/ai/runtime_images.yaml").get_config()
     expected_images = {
         "analysis-core": "cygnusx-analysis:core-v0.0.2dev",
         "analysis-plot": "cygnusx-analysis:plot-v0.0.2dev",
         "analysis-scrna": "cygnusx-analysis:scrna-v0.0.3dev",
+        "analysis-rnaseq": "cygnusx-analysis:rnaseq-v0.0.1dev",
+        "analysis-atacseq": "cygnusx-analysis:atacseq-v0.0.1dev",
+        "analysis-qc": "cygnusx-analysis:qc-v0.0.1dev",
         "bio": "cygnusx-sandbox-bio:v0.0.2dev",
         "browser-office": "cygnusx-sandbox-browser-office:v0.0.2dev",
     }

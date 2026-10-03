@@ -84,5 +84,5 @@ studio:
   enabled: true
   # 差异表达等正式分析属于交付任务：选中该 Agent（含路由/转介进入）时默认进入 AI 工作台会话
   default_mode: studio
-  runtime_profile: analysis-core
-  required_capabilities: [python, r, statistics]
+  runtime_profile: analysis-rnaseq
+  required_capabilities: [python, r, statistics, ngs, rnaseq, qc]

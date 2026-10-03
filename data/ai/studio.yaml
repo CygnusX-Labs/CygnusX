@@ -23,6 +23,21 @@ studio:
       runtime_profile: analysis-scrna
       dockerfile: deploy/runtime-images/scrna.Dockerfile
       capabilities: [code]
+    analysis-rnaseq:
+      image: cygnusx-analysis:rnaseq-v0.0.1dev
+      runtime_profile: analysis-rnaseq
+      dockerfile: deploy/runtime-images/rnaseq.Dockerfile
+      capabilities: [code]
+    analysis-atacseq:
+      image: cygnusx-analysis:atacseq-v0.0.1dev
+      runtime_profile: analysis-atacseq
+      dockerfile: deploy/runtime-images/atacseq.Dockerfile
+      capabilities: [code]
+    analysis-qc:
+      image: cygnusx-analysis:qc-v0.0.1dev
+      runtime_profile: analysis-qc
+      dockerfile: deploy/runtime-images/qc.Dockerfile
+      capabilities: [code]
     bio:
       image: cygnusx-sandbox-bio:v0.0.2dev
       runtime_profile: bio

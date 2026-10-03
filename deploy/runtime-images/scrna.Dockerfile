@@ -6,9 +6,12 @@ ARG CYGNUSX_IMAGE_TAG=v0.0.2dev
 FROM cygnusx-analysis:plot-${CYGNUSX_IMAGE_TAG}
 
 ARG SANDBOX_GID=10001
+ARG TOOLS_MANIFEST_DIGEST=unknown
 
 LABEL org.opencontainers.image.title="CygnusX Analysis Single Cell"
 LABEL org.cygnusx.runtime.profile="analysis-scrna"
+LABEL org.cygnusx.tools-manifest.path="/opt/agent-tools.json"
+LABEL org.cygnusx.tools-manifest.digest="${TOOLS_MANIFEST_DIGEST}"
 
 # 预置中科大镜像源，加速 bioconda 包下载（见 Protocol/镜像构建国内加速规范_v1.md §4）；
 # 安装以 mambauser 执行，condarc 必须落在其 HOME。
@@ -71,6 +74,26 @@ RUN micromamba run -n base python -c 'import scanpy, anndata, leidenalg, igraph;
       }; \
       if (length(failed)) stop("scrna image missing required R packages: ", paste(failed, collapse = ", ")); \
       cat("scrna R stack OK\n")'
+
+COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
+COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+USER root
+RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
+      --profile analysis-scrna \
+      --image cygnusx-analysis:scrna-v0.0.3dev \
+      --base /opt/agent-tools.json \
+      --output /opt/agent-tools.json \
+      --python-import scanpy:scanpy \
+      --python-import anndata:anndata \
+      --python-import leidenalg:leidenalg \
+      --python-import python-igraph:igraph \
+      --r-library r-seurat:Seurat \
+      --r-library r-ggpubr:ggpubr \
+      --r-library bioconductor-singlecellexperiment:SingleCellExperiment
+RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
+      --profile analysis-scrna \
+      --manifest /opt/agent-tools.json
+USER mambauser
 # 注意：r-qs 因与 RcppParallel/Seurat 存在 ABI 冲突，暂不预装
 # 如需使用 .qs 格式，可在沙盒内手动安装：
 #   micromamba install r-qs=0.25.7 --force-reinstall

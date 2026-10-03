@@ -37,6 +37,7 @@ class RuntimeProfile(BaseModel):
     software: dict[str, str] = Field(default_factory=dict)
     resources: RuntimeResources = Field(default_factory=RuntimeResources)
     network_policy: Literal["none", "whitelist"] = "none"
+    tools_manifest_digest: str | None = None
 
     @field_validator(
         "image", "family", "isolation_class", "dockerfile", "runtime_group"
@@ -131,7 +132,11 @@ class RuntimeImageRegistryConfig(BaseModel):
         return None
 
 
-def render_runtime_manifest(profile_id: str, profile: RuntimeProfile) -> str:
+def render_runtime_manifest(
+    profile_id: str,
+    profile: RuntimeProfile,
+    observed_manifest: Mapping[str, Any] | None = None,
+) -> str:
     """渲染可注入 Agent 系统提示词的当前运行时软件清单。"""
     languages = ", ".join(
         f"{name} {version}" for name, version in sorted(profile.languages.items())
@@ -141,15 +146,29 @@ def render_runtime_manifest(profile_id: str, profile: RuntimeProfile) -> str:
         for name, version in sorted(profile.software.items())
     ) or "未声明"
     capabilities = ", ".join(sorted(profile.capabilities)) or "未声明"
+    observed = observed_manifest or {}
+    observed_tools = observed.get("tools") if isinstance(observed.get("tools"), list) else []
+    observed_digest = str(observed.get("manifest_digest") or "").strip()
+    stale = bool(observed.get("manifest_stale"))
+    observed_line = (
+        f"- 实际清单：已从沙盒读取 {len(observed_tools)} 项，摘要 `{observed_digest or '未知'}`"
+        + ("（`manifest_stale: true`，禁止据此宣称工具可用）" if stale else "")
+        if observed_manifest is not None
+        else "- 实际清单：尚未从沙盒读取；需要时调用 `list_available_tools(pattern, verify=true)`"
+    )
     return (
         "## 当前 Studio 运行时（镜像声明）\n"
         f"- Profile：`{profile_id}`\n"
         f"- 镜像：`{profile.image}`\n"
+        f"- 工具清单摘要：`{profile.tools_manifest_digest or '运行时清单提供'}`\n"
+        f"{observed_line}\n"
         f"- 语言：{languages}\n"
         f"- 能力：{capabilities}\n"
         f"- 已安装软件：{software}\n"
+        "- 构建期清单：`/opt/agent-tools.json`（由镜像构建时的可执行性探针生成）\n"
         "- 使用规则：上述是当前镜像的已声明软件；优先直接使用，不要重复安装。"
-        "如果需要未列出的软件或验证实际版本，再在沙箱中检查。"
+        "需要确认实际版本或当前可执行性时，调用只读工具 `list_available_tools`，"
+        "不要安装软件或修改镜像。"
     )
 
 

@@ -78,5 +78,5 @@ handoff:
 studio:
   enabled: true
   default_mode: studio
-  runtime_profile: analysis-core
-  required_capabilities: [python, r, statistics]
+  runtime_profile: analysis-atacseq
+  required_capabilities: [python, r, statistics, ngs, atacseq, qc]

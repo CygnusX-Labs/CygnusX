@@ -8,10 +8,12 @@ images:
     image: cygnusx-analysis:core-v0.0.2dev
     dockerfile: deploy/runtime-images/core.Dockerfile
     config_files: [data/ai/runtime_images.yaml, data/ai/studio.yaml]
+    tools_manifest_digest: null
   analysis-plot:
     image: cygnusx-analysis:plot-v0.0.2dev
     dockerfile: deploy/runtime-images/plot.Dockerfile
     config_files: [data/ai/runtime_images.yaml, data/ai/studio.yaml]
+    tools_manifest_digest: null
   analysis-scrna:
     image: cygnusx-analysis:scrna-v0.0.3dev
     dockerfile: deploy/runtime-images/scrna.Dockerfile
@@ -20,6 +22,22 @@ images:
       - data/ai/studio.yaml
       - .env.example
       - src/cygnusx/core/config.py
+    tools_manifest_digest: null
+  analysis-rnaseq:
+    image: cygnusx-analysis:rnaseq-v0.0.1dev
+    dockerfile: deploy/runtime-images/rnaseq.Dockerfile
+    config_files: [data/ai/runtime_images.yaml, data/ai/studio.yaml]
+    tools_manifest_digest: null
+  analysis-atacseq:
+    image: cygnusx-analysis:atacseq-v0.0.1dev
+    dockerfile: deploy/runtime-images/atacseq.Dockerfile
+    config_files: [data/ai/runtime_images.yaml, data/ai/studio.yaml]
+    tools_manifest_digest: null
+  analysis-qc:
+    image: cygnusx-analysis:qc-v0.0.1dev
+    dockerfile: deploy/runtime-images/qc.Dockerfile
+    config_files: [data/ai/runtime_images.yaml, data/ai/studio.yaml]
+    tools_manifest_digest: null
   sandbox-copilot:
     image: cygnusx-sandbox-copilot:v0.0.2dev
     dockerfile: deploy/sandbox/Dockerfile
@@ -73,8 +91,30 @@ content_checks:
       - 'docker build -t "cygnusx-analysis:core-${TAG}"'
       - 'docker build -t "cygnusx-analysis:plot-${TAG}"'
       - 'docker build -t "cygnusx-analysis:scrna-${SCRNA_TAG}"'
+      - 'docker build -t "cygnusx-analysis:rnaseq-${RNASEQ_TAG}"'
+      - 'docker build -t "cygnusx-analysis:atacseq-${ATACSEQ_TAG}"'
+      - 'docker build -t "cygnusx-analysis:qc-${QC_TAG}"'
   - file: deploy/runtime-images/scrna.Dockerfile
     contains: ['FROM cygnusx-analysis:plot-${CYGNUSX_IMAGE_TAG}']
+  - file: deploy/runtime-images/core.Dockerfile
+    contains:
+      - 'render_tools_manifest.py'
+      - 'validate_manifest.py'
+      - 'org.cygnusx.tools-manifest.digest'
+  - file: deploy/runtime-images/scripts/sync_manifest_digests.py
+    contains:
+      - 'tools_manifest_digest'
+      - '--write'
+  - file: deploy/runtime-images/plot.Dockerfile
+    contains: ['validate_manifest.py']
+  - file: deploy/runtime-images/scrna.Dockerfile
+    contains: ['validate_manifest.py']
+  - file: deploy/runtime-images/rnaseq.Dockerfile
+    contains: ['validate_manifest.py']
+  - file: deploy/runtime-images/atacseq.Dockerfile
+    contains: ['validate_manifest.py']
+  - file: deploy/runtime-images/qc.Dockerfile
+    contains: ['validate_manifest.py']
   - file: .env.example
     contains:
       - 'CYGNUSX_SCRNA_IMAGE_TAG=v0.0.3dev'
@@ -84,6 +124,9 @@ makefile_images:
   - cygnusx-analysis:core-v0.0.2dev
   - cygnusx-analysis:plot-v0.0.2dev
   - cygnusx-analysis:scrna-v0.0.3dev
+  - cygnusx-analysis:rnaseq-v0.0.1dev
+  - cygnusx-analysis:atacseq-v0.0.1dev
+  - cygnusx-analysis:qc-v0.0.1dev
   - cygnusx-sandbox-copilot:v0.0.2dev
   - cygnusx-sandbox-base:v0.0.2dev
   - cygnusx-sandbox-bio:v0.0.2dev

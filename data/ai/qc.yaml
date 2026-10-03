@@ -79,5 +79,5 @@ handoff:
   max_hops_per_session: 10
 studio:
   enabled: true
-  runtime_profile: analysis-core
-  required_capabilities: [tabular, statistics]
+  runtime_profile: analysis-qc
+  required_capabilities: [tabular, statistics, ngs, qc]

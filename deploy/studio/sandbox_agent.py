@@ -22,10 +22,12 @@ import contextlib
 import difflib
 import errno
 import fcntl
+import fnmatch
 import json
 import os
 import pty
 import signal
+import shutil
 import struct
 import subprocess
 import termios
@@ -62,6 +64,7 @@ MAX_EXEC_TIMEOUT = 3600
 MCP_BUILDS_DIR = "mcp-builds"  # MCP Builder 生成代码约定目录（相对 /workspace）
 MCP_MAX_SERVERS = 8  # 单容器内同时运行的实验 MCP 上限
 MCP_SESSION_TIMEOUT = 30  # MCP 初始化/工具调用默认超时（秒）
+TOOLS_MANIFEST_PATH = Path(os.environ.get("SANDBOX_TOOLS_MANIFEST", "/opt/agent-tools.json"))
 WORKSPACE_QUOTA_BYTES = int(os.environ.get("SANDBOX_WORKSPACE_QUOTA_BYTES", "0") or 0)
 QUOTA_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("SANDBOX_WORKSPACE_QUOTA_CHECK_INTERVAL_SECONDS", "30") or 30
@@ -359,6 +362,11 @@ class DocumentConvertRequest(BaseModel):
     output_path: str = ""
 
 
+class ToolsQueryRequest(BaseModel):
+    pattern: str = "*"
+    verify: bool = False
+
+
 class OnlyOfficeConvertRequest(DocumentConvertRequest):
     async_mode: bool = False
 
@@ -367,6 +375,80 @@ class OnlyOfficeConvertRequest(DocumentConvertRequest):
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _probe_manifest_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    """Recheck one manifest entry without allowing arbitrary command execution."""
+    name = str(tool.get("name") or "")
+    path = str(tool.get("path") or "")
+    probe_type = str(tool.get("probe_type") or "cli")
+    if probe_type == "python_import":
+        executable = path if path and Path(path).is_file() else shutil.which("python")
+        target = str(tool.get("probe_target") or name)
+        command = [executable, "-c", f"import {target}; print(getattr({target}, '__version__', 'installed'))"] if executable else []
+    elif probe_type == "r_library":
+        executable = path if path and Path(path).is_file() else shutil.which("R")
+        target = str(tool.get("probe_target") or name)
+        command = [
+            executable,
+            "-q",
+            "-e",
+            f"if (!requireNamespace('{target}', quietly=TRUE)) quit(status=1); cat(as.character(packageVersion('{target}')))"
+        ] if executable else []
+    else:
+        executable = path if path and Path(path).is_file() else shutil.which(name)
+        command = [executable, "--version"] if executable else []
+    if not executable:
+        return {**tool, "probe_status": "missing", "path": None}
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        output = (result.stdout or result.stderr).strip().splitlines()
+        return {
+            **tool,
+            "path": executable,
+            "version": output[0][:200] if output else str(tool.get("version") or "unknown"),
+            "probe_status": "ok" if result.returncode == 0 else "version_probe_failed",
+        }
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {**tool, "path": executable, "probe_status": f"probe_failed: {exc}"}
+
+
+@app.post("/tools/list")
+async def list_available_tools(req: ToolsQueryRequest) -> dict[str, Any]:
+    """Return the build-time tool manifest, optionally with a bounded recheck."""
+    if not TOOLS_MANIFEST_PATH.is_file():
+        raise HTTPException(status_code=503, detail="运行时工具清单不存在")
+    try:
+        manifest = json.loads(TOOLS_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail="运行时工具清单不可读") from exc
+    pattern = req.pattern.strip() or "*"
+    tools = [
+        item for item in manifest.get("tools", [])
+        if fnmatch.fnmatch(str(item.get("name") or ""), pattern)
+    ]
+    if req.verify:
+        tools = [_probe_manifest_tool(item) for item in tools]
+    logger.bind(
+        event="sandbox.tool_probe",
+        component="studio_sandbox",
+        pattern=pattern,
+        verify=req.verify,
+        count=len(tools),
+    ).info("Studio sandbox tool manifest probe")
+    return {
+        "profile": manifest.get("profile"),
+        "image": manifest.get("image"),
+        "manifest_digest": manifest.get("manifest_digest"),
+        "source": "runtime_probe" if req.verify else "build_manifest",
+        "tools": tools,
+    }
 
 
 # ===== 代码执行 =====
@@ -1356,7 +1438,7 @@ async def onlyoffice_convert(req: OnlyOfficeConvertRequest) -> dict[str, Any]:
 # ===== MCP Builder：容器内实验 MCP Server 生命周期管理 =====
 # 生成的 MCP Server 以 STDIO 子进程运行在本容器内（网络隔离 + 资源限制天然继承），
 # 宿主侧经 UDS 调用本组端点完成 tools/list 与 tools/call，无需暴露任何 TCP 端口。
-# 设计参考：docs/26.7.30/mcp_builder_framework.md §8.1 / ARCHITECTURE_DESIN/mcp_architecture.md §5.5（as-built 沙箱执行层）
+# 设计参考：docs/26.7.30/mcp_builder_framework.md §8.1 / ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md §5.5（as-built 沙箱执行层）
 
 
 class MCPStartRequest(BaseModel):
