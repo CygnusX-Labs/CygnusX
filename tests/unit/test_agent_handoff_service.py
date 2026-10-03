@@ -26,6 +26,24 @@ def test_runtime_communication_contract_applies_to_every_standard_agent() -> Non
     assert "自己在助手列表中猜测" in prompt
 
 
+def test_runtime_output_convention_applies_to_every_agent() -> None:
+    """输出内容协定必须注入所有 Agent（含路由与自定义 Agent）。"""
+
+    def _convention(prompt: str) -> bool:
+        return "## 输出内容协定" in prompt and "禁止使用" in prompt and "——" in prompt
+
+    standard = AgentTemplateModel(agent_id="agent-custom", name="自定义专家", is_active=True)
+    assert _convention(AgentService._append_communication_contract("原始提示词", standard))
+
+    router = AgentTemplateModel(
+        agent_id="agent-router", name="星尘 AI", features={"router": True}, is_active=True
+    )
+    assert _convention(AgentService._append_communication_contract("路由提示词", router))
+
+    empty = AgentTemplateModel(agent_id="agent-blank", name="空提示词", is_active=True)
+    assert _convention(AgentService._append_communication_contract("", empty))
+
+
 def test_router_uses_a_strict_routing_communication_contract() -> None:
     router = AgentTemplateModel(
         agent_id="agent-router", name="星尘 AI", features={"router": True}, is_active=True

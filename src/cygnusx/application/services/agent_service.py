@@ -123,6 +123,12 @@ AGENT_COMMUNICATION_SYSTEM_PROMPT_SUFFIX = """## 平台沟通与执行规范
   自己在助手列表中猜测该选谁。
 """
 
+AGENT_OUTPUT_CONVENTION_SYSTEM_PROMPT_SUFFIX = """## 输出内容协定
+
+- 输出内容中禁止使用“——”（破折号，含单个“—”）；需要停顿、补充说明或转折时，
+  一律使用“,”替代。
+"""
+
 ROUTER_COMMUNICATION_SYSTEM_PROMPT_SUFFIX = """## 路由输出纪律
 
 - 你的职责是理解意图、选择可用专家并输出规定的路由 JSON；不要执行分析、不要生成工作台
@@ -1065,7 +1071,9 @@ class AgentService:
             if features.get("router")
             else AGENT_COMMUNICATION_SYSTEM_PROMPT_SUFFIX
         )
-        return f"{system_prompt}\n\n{suffix}" if system_prompt else suffix
+        system_prompt = f"{system_prompt}\n\n{suffix}" if system_prompt else suffix
+        # 输出内容协定对路由 Agent 同样生效（其 JSON 输出同样不得使用破折号）。
+        return f"{system_prompt}\n\n{AGENT_OUTPUT_CONVENTION_SYSTEM_PROMPT_SUFFIX}"
 
     async def _agentteams_chat_entry_enabled(self) -> bool:
         settings = get_settings()
