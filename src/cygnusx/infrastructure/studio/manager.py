@@ -40,6 +40,7 @@ from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.infrastructure.cache.redis_client import get_redis
 from cygnusx.infrastructure.config.deployment_config import get_deployment_config
+from cygnusx.infrastructure.config.runtime_image_loader import get_runtime_images
 from cygnusx.infrastructure.config.studio_loader import (
     StudioConfig,
     StudioConfigManager,
@@ -129,7 +130,17 @@ class StudioSandboxManager:
     # session_id -> 最近一次还原结果（成功/失败/跳过 + 原因），供详情接口
     # 透传给前端做一次性 warning 提示；失败不阻断会话。
     _env_restore_state: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _runtime_manifests: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # 会诊子代理工作目录挂载（Gap 3 挂载断裂修复）：child session_id ->
+    # (宿主 workdir, 容器内挂载点)。容器创建时读取；容器复用前校验，
+    # 挂载缺失或源不匹配即重建。容器内路径固定 /workspace/workdir，
+    # 与提示词承诺的"分配工作目录"绑定。
+    _workdir_mounts: dict[str, tuple[str, str]] = field(default_factory=dict)
     _env_restore_lock: asyncio.Lock | None = field(default=None, init=False, repr=False)
+
+    # 会诊子代理工作目录的容器内挂载点（提示词 agentteams_workspace_execution
+    # 告知的"分配工作目录"，宿主源由 parallel_subagent_service 注册）。
+    WORKDIR_CONTAINER_MOUNT = "/workspace/workdir"
 
     def _restore_lock(self) -> asyncio.Lock:
         if self._env_restore_lock is None:
@@ -171,6 +182,23 @@ class StudioSandboxManager:
         if candidate.parent != root:
             raise StudioSandboxUnavailableError(f"非法 session_id: {session_id!r}")
         return candidate
+
+    def register_workdir_mount(self, session_id: str, host_workdir: str | Path) -> None:
+        """为会诊子代理会话注册工作目录挂载（幂等）。
+
+        注册后该 session 的容器创建时会把宿主 workdir 以 rw 挂载到
+        /workspace/workdir；已存在的旧容器缺挂载时复用校验会触发重建。
+        必须在首次 ensure_running 之前调用（容器创建后 mount 不可变）。
+        """
+        workdir = Path(host_workdir).resolve()
+        # 防逃逸：workdir 必须位于存储根内（含等于根本身）
+        storage_root = Path(get_settings().storage_path).resolve()
+        if storage_root != workdir and storage_root not in workdir.parents:
+            raise StudioSandboxUnavailableError(
+                f"workdir 越出存储根，拒绝挂载: {workdir}（root={storage_root}）"
+            )
+        workdir.mkdir(parents=True, exist_ok=True)
+        self._workdir_mounts[session_id] = (str(workdir), self.WORKDIR_CONTAINER_MOUNT)
 
     @staticmethod
     def ensure_workspace_dirs(workspace: Path) -> None:
@@ -473,6 +501,12 @@ class StudioSandboxManager:
             volumes: dict[str, dict[str, str]] = {
                 str(workspace): {"bind": "/workspace", "mode": "rw"}
             }
+            # 会诊子代理工作目录（Gap 3 挂载断裂修复）：注册过的 session
+            # 额外以 rw 挂载宿主 workdir → /workspace/workdir，让提示词
+            # 承诺的"分配工作目录"在容器内真实可见、可写。
+            workdir_mount = self._workdir_mounts.get(session_id)
+            if workdir_mount is not None:
+                volumes[workdir_mount[0]] = {"bind": workdir_mount[1], "mode": "rw"}
             # P1 数据不搬家：当前用户数据目录只读挂入容器，input/ 软链经它解析。
             # 多租户红线：只挂 users/{user_id}，绝不整根挂 storage_path。
             expected_platform_source = None
@@ -514,7 +548,7 @@ class StudioSandboxManager:
                             container.remove(force=True)
                         container = None
                 if container is not None and not self._container_mounts_match(
-                    container, expected_platform_source
+                    container, expected_platform_source, session_id
                 ):
                     # 挂载功能上线前创建的陈旧容器没有 /data/platform 挂载，
                     # 或其源指向其他用户目录；复用会让 input/ 软链不可读，直接重建。
@@ -682,10 +716,53 @@ class StudioSandboxManager:
             image=image,
             workspace_dir=workspace,
         )
+        await self._load_runtime_manifest(handle)
         # 还原钩子（WP2 任务 3）：容器新建/重建后的首次激活，在工作区声明文件
         # 存在时于容器内跑一次一次性安装；失败仅降级 + 记日志/审计，不阻断启动。
         await self._maybe_restore_environment(handle, user_id=user_id)
         return handle
+
+    def runtime_manifest(self, session_id: str) -> dict[str, Any] | None:
+        """Return the last read-only manifest observed from a running sandbox."""
+        manifest = self._runtime_manifests.get(session_id)
+        return dict(manifest) if manifest is not None else None
+
+    async def _load_runtime_manifest(self, handle: SandboxHandle) -> None:
+        """Read the image manifest once after readiness and record digest drift."""
+        try:
+            async with self._agent_client(handle.agent_socket, _AGENT_TIMEOUT) as client:
+                response = await client.request(
+                    "POST", "/tools/list", json={"pattern": "*", "verify": False}
+                )
+                response.raise_for_status()
+                manifest = response.json()
+            if not isinstance(manifest, dict):
+                return
+            profile_match = get_runtime_images().profile_for_image(handle.image)
+            expected = (
+                profile_match[1].tools_manifest_digest
+                if profile_match is not None
+                else None
+            )
+            actual = str(manifest.get("manifest_digest") or "")
+            stale = bool(expected and actual and expected != actual)
+            manifest["manifest_stale"] = stale
+            self._runtime_manifests[handle.session_id] = manifest
+            if stale:
+                emit_audit(
+                    "sandbox.rebuild",
+                    session_id=handle.session_id,
+                    image=handle.image,
+                    rebuild_reason=(
+                        f"工具清单摘要不一致: expected={expected}, actual={actual}"
+                    ),
+                )
+                logger.warning(
+                    "[Studio] 会话 {} 工具清单摘要过期: expected={}, actual={}",
+                    handle.session_id[:8], expected, actual,
+                )
+        except Exception as exc:  # noqa: BLE001 - manifest is observability, not startup gate
+            logger.warning("[Studio] 读取运行时工具清单失败: {}", exc)
 
     @staticmethod
     def _validate_isolated_network(client: Any, config: StudioConfig) -> None:
@@ -718,18 +795,29 @@ class StudioSandboxManager:
                 f"Studio 沙盒网络不安全: expected={expected}, attached={sorted(attached)}"
             )
 
-    @staticmethod
-    def _container_mounts_match(container: Any, expected_platform_source: str | None) -> bool:
+    def _container_mounts_match(
+        self, container: Any, expected_platform_source: str | None, session_id: str = ""
+    ) -> bool:
         """复用前校验挂载基线：期望的平台只读挂载必须存在且源为当前用户数据目录。
 
         expected_platform_source 为 None（无用户上下文或 cloud scratch 模式）时不强制。
+        注册了 workdir 挂载的 session（会诊子代理）还须校验 workdir 挂载存在且
+        源一致——挂载后 mount 不可变，缺失说明容器创建于注册之前，须重建。
         """
-        if expected_platform_source is None:
-            return True
         mounts = (getattr(container, "attrs", {}) or {}).get("Mounts") or []
-        return any(
+        platform_ok = expected_platform_source is None or any(
             str(mount.get("Destination")) == PLATFORM_CONTAINER_MOUNT
             and str(mount.get("Source")) == expected_platform_source
+            for mount in mounts
+        )
+        if not platform_ok:
+            return False
+        workdir_mount = self._workdir_mounts.get(session_id)
+        if workdir_mount is None:
+            return True
+        return any(
+            str(mount.get("Destination")) == workdir_mount[1]
+            and str(mount.get("Source")) == workdir_mount[0]
             for mount in mounts
         )
 
@@ -1156,6 +1244,24 @@ class StudioSandboxManager:
         """列出工作区目录（含名称/类型/大小/mtime）。"""
         return await self._agent_call(
             session_id, "GET", "/files/list", params={"path": path}, image=image, user_id=user_id
+        )
+
+    async def list_available_tools(
+        self,
+        session_id: str,
+        pattern: str = "*",
+        verify: bool = False,
+        image: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Read the build-time tool manifest or recheck matching executables."""
+        return await self._agent_call(
+            session_id,
+            "POST",
+            "/tools/list",
+            json={"pattern": pattern, "verify": verify},
+            image=image,
+            user_id=user_id,
         )
 
     async def read_file(

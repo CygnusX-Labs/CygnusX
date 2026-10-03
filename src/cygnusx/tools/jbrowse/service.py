@@ -3,7 +3,7 @@
 设计要点：
 - 服务无状态、不依赖 DB（用户身份由 API 层 JWT 注入，user_id 作为目录归属依据）；
 - 所有文件系统操作（scan / stat / 索引检查）走 asyncio.to_thread，避免阻塞事件循环；
-- 生成浏览器配置时，对用户提交的轨道路径做【归属校验】：只允许 /data/cygnusx/users/{user_id}/
+- 生成浏览器配置时，对用户提交的轨道路径做【归属校验】：只允许存储根下 users/{user_id}/
   下的文件，拒绝越权读取他人数据（/tracks/ 虽由 nginx 静态暴露，但配置层不主动协助越权）；
 - 轨道 URI 一律经 to_tracks_uri 换算，与 storage_config.data_root 保持单一数据源。
 """

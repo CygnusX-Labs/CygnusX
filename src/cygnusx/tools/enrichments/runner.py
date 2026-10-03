@@ -5,7 +5,7 @@
 - asyncio.create_subprocess_exec 执行，事件循环不阻塞；
 - 捕获 stdout / stderr，超时则 kill 容器进程。
 
-路径约定：宿主 /data/cygnusx 与容器内 /data/cygnusx 同路径挂载，故 input/output
+路径约定：宿主 enrichment_data_mount 与容器内 /data/cygnusx 挂载交换，故 input/output
 直接用宿主绝对路径即可，容器内所见一致。基因列表与结果 CSV 经此挂载交换。
 """
 

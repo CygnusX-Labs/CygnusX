@@ -1,6 +1,6 @@
 """对话内并行子 Agent fan-out 运行时。
 
-设计文档：ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md §4。
+设计文档：ARCHITECTURE_DESIN/CygnusX_multi_agent_fanout.md §4。
 
 父 Agent 一次工具调用提交相互独立的子任务列表，本服务在请求内并行运行
 受限子 ReAct 循环（可调用 builtin 工具），失败隔离后结构化汇总回父上下文。
@@ -39,8 +39,8 @@ from cygnusx.application.services.studio_tools import (
     _knowledge_search,
     execute_studio_tool,
 )
-from cygnusx.core.config import get_settings
 from cygnusx.core.agentteams_context import agentteams_ctx_var
+from cygnusx.core.config import get_settings
 from cygnusx.domain.skill.services import (
     SKILL_TOOL_NAMES,
     USE_SKILL_TOOL_NAME,
@@ -60,6 +60,7 @@ PARALLEL_SUBAGENTS_TOOL_NAME = "parallel_subagents"
 _CONTROL_TOOL_NAMES = frozenset(
     {
         PARALLEL_SUBAGENTS_TOOL_NAME,  # C2 防递归 fan-out
+        "skill_route",  # Skill scout 不得递归启动另一个 scout
         "transfer_to_agent",  # C3 子任务不能切换父会话
         "create_agentteams_case",  # 子任务不得创建跨会话交付 Case
         "cygnusx_save_memory",  # 子任务是临时工，不写长期记忆
@@ -1359,6 +1360,16 @@ class ParallelSubAgentService:
         async with get_session_factory()() as session:
             try:
                 if workspace_access and tool_name in _OVERDRIVE_WORKSPACE_TOOL_NAMES:
+                    # Gap 3 挂载断裂修复：沙盒类工具进入 Studio 会话沙盒前，
+                    # 把分配的宿主 workdir 注册进容器挂载（/workspace/workdir），
+                    # 使提示词承诺的工作目录在容器内真实可见、可写。
+                    # 必须在首次 ensure_running 之前注册（mount 创建后不可变，
+                    # 旧容器缺挂载时由 manager 复用校验触发重建）。
+                    from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
+
+                    studio_sandbox_manager.register_workdir_mount(
+                        parent_session_id or child_session_id, workdir
+                    )
                     return await execute_studio_tool(
                         tool_name,
                         args,

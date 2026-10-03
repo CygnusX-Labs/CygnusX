@@ -88,7 +88,8 @@ class AutoScanConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    scan_paths: list[str] = Field(default_factory=lambda: ["/data/cygnusx/users/{user_id}/bam/"])
+    # 用户轨道扫描路径；须与 .env STORAGE_PATH 一致（YAML 显式配置优先）
+    scan_paths: list[str] = Field(default_factory=lambda: ["/data/omichub/users/{user_id}/bam/"])
     extensions: list[str] = Field(
         default_factory=lambda: [".bam", ".bw", ".bigwig", ".vcf.gz", ".bed.gz"]
     )
@@ -101,7 +102,7 @@ class UploadConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    upload_dir: str = "/data/cygnusx/users/{user_id}/uploads/"
+    upload_dir: str = "/data/omichub/users/{user_id}/uploads/"
     max_file_size: int = 10  # GB
     allowed_types: list[str] = Field(default_factory=lambda: [".bam", ".bw", ".vcf.gz", ".fasta"])
     auto_index_after_upload: bool = True
@@ -216,7 +217,7 @@ def _data_root() -> Path:
 
 
 def to_tracks_uri(abs_path: str) -> str:
-    """把 /data/cygnusx/ref/rice/x.fasta 换算成 /tracks/ref/rice/x.fasta。
+    """把存储根下 ref/rice/x.fasta 换算成 /tracks/ref/rice/x.fasta。
 
     供 JBrowse 2 通过 nginx /tracks/ 路径流式读取。路径不在 data_root 下时，
     退化为只保留文件名，避免泄漏目录结构。

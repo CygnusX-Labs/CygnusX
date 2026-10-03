@@ -65,7 +65,7 @@ multiqc:
   timeout: 1800
 
 storage:
-  root: "/data/cygnusx/qc/tasks"
+  root: "/data/omichub/qc/tasks"
   subdirs:
     - "input"
     - "output"

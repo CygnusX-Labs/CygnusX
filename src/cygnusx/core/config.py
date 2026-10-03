@@ -1,6 +1,7 @@
 """应用配置 - 基于 Pydantic Settings，从环境变量读取"""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -149,7 +150,7 @@ class Settings(BaseSettings):
     # 依据: 待测（经验初值）— 预览只取报告头部，20MB 为经验上限；验证: 统计真实报告体积分布再校准
     agentteams_report_preview_max_mb: int = 20
     # 依据: 上游契约 — 与平台日志保留口径一致（loguru retention 30 天，README.md:1069、
-    # ARCHITECTURE_DESIN/log_architecture.md:69）
+    # ARCHITECTURE_DESIN/CygnusX_log_architecture.md:69）
     agentteams_evidence_retention_days: int = 30
     # ===== Session 目录引用 =====
     # 目录仅生成轻量清单，避免一次递归扫描或将大型输入直接注入模型上下文。
@@ -159,7 +160,8 @@ class Settings(BaseSettings):
     workspace_directory_scan_timeout_seconds: float = 5.0
     # ===== 历史 MAS 编排（deprecated；不再作为用户入口）=====
     mas_enabled: bool = False
-    mas_workspace_root: str = "/data/cygnusx"
+    # MAS 工作区根：由 storage_path 派生（勿写死绝对路径；live 覆盖见 .env STORAGE_PATH）
+    mas_workspace_root: str = ""
     mas_tool_policies_yaml: str = "data/ai/mas/tool_policies.yaml"
     mas_agent_capabilities_yaml: str = "data/ai/mas/agent_capabilities.yaml"
     mas_artifact_schemas_yaml: str = "data/ai/mas/artifact_schemas.yaml"
@@ -197,7 +199,7 @@ class Settings(BaseSettings):
     # 统一协作意图路由：关闭时保持既有 Router 行为，用于灰度与一键回退。
     unified_intent_router_enabled: bool = False
     # ===== 对话内子 Agent 并行 fan-out（默认关闭，按 Agent 白名单灰度）=====
-    # 设计见 ARCHITECTURE_DESIN/multi_agent_fanout_2026-07.md §4
+    # 设计见 ARCHITECTURE_DESIN/CygnusX_multi_agent_fanout.md §4
     subagent_fanout_enabled: bool = False
     agentteams_chat_entry_enabled: bool = False
     agentteams_chat_flow_whitelist: str = "rna_seq,atac_seq,scrna_seq"
@@ -228,15 +230,17 @@ class Settings(BaseSettings):
     file_archive_mode: str = "archive"  # archive（压缩归档）/ delete（彻底删除）
 
     # ===== 数据下载 (EBIDownload Rust 二进制 + 云存储 CLI) =====
+    # 二进制/CLI 的默认路径由 storage_path 派生（见 model_validator），
+    # 显式配置仍可用 env 覆盖。
     enable_ebi_download: bool = False  # 装好二进制 + sra-tools 后再开
     enable_direct_download: bool = False  # 装好 aria2c 后再开
     download_config_yaml: str = "tool_configs/download/download_config.yaml"
-    ebi_download_binary: str = "/data/cygnusx/bin/EBIDownload"
-    ebi_download_yaml: str = "/data/cygnusx/bin/EBIDownload.yaml"
+    ebi_download_binary: str = ""
+    ebi_download_yaml: str = ""
     enable_cloud_storage_download: bool = False  # 装好 ossutil/tosutil/obsutil 并配置凭据后再开
-    cloud_ossutil_binary: str = "/data/cygnusx/bin/ossutil"
-    cloud_tosutil_binary: str = "/data/cygnusx/bin/tosutil"
-    cloud_obsutil_binary: str = "/data/cygnusx/bin/obsutil"
+    cloud_ossutil_binary: str = ""
+    cloud_tosutil_binary: str = ""
+    cloud_obsutil_binary: str = ""
     direct_download_binary: str = "/usr/bin/aria2c"
 
     # ===== 流程 YAML 配置 =====
@@ -248,8 +252,8 @@ class Settings(BaseSettings):
     # ===== Snakemake 配置 =====
     snakemake_cores: int = 4
     snakemake_use_conda: bool = True
-    # --use-conda 时环境创建目录（须可写，避免只读挂载冲突）
-    snakemake_conda_prefix: str = "/data/cygnusx/.conda_envs"
+    # --use-conda 时环境创建目录（须可写，避免只读挂载冲突）；空值时派生 storage_path
+    snakemake_conda_prefix: str = ""
 
     # ===== 任务日志保护 =====
     task_log_message_max_chars: int = 8192  # DB 中单条任务日志 message 最大字符数
@@ -290,7 +294,8 @@ class Settings(BaseSettings):
     aliyun_skills_repo: str = "aliyun/alibabacloud-aiops-skills"  # owner/repo
     aliyun_skills_branch: str = "master"  # 该仓库默认分支为 master；配置分支拉取失败时自动回落默认分支
     # 缓存是运行时同步产物，不能放在容器内只读挂载的 data/ 资源目录。
-    aliyun_skills_cache_dir: str = "/data/cygnusx/skill_marketplace_aliyun"
+    # 空值时派生 storage_path/skill_marketplace_aliyun（见 model_validator）。
+    aliyun_skills_cache_dir: str = ""
     aliyun_skills_cache_ttl: int = 86400  # 缓存有效期（秒），超过视为过期，前端可触发重新同步
     runtime_images_yaml: str = "data/ai/runtime_images.yaml"
     # JBrowse 2 基因组浏览器外置配置：参考基因组 / 预设轨道 / 扫描与上传策略。
@@ -326,7 +331,8 @@ class Settings(BaseSettings):
 
     # ===== BLAST 序列比对工具配置 =====
     blast_config_yaml: str = "tool_configs/blast/blast_config.yaml"
-    blast_db_root: str = "/data/cygnusx/blast/db"
+    # 空值时派生 storage_path/blast/db（见 model_validator）
+    blast_db_root: str = ""
     blast_uploads_dir: str = "blast/uploads"
     blast_results_dir: str = "blast/results"
     blast_default_evalue: float = 1e-5
@@ -406,8 +412,9 @@ class Settings(BaseSettings):
     enrichment_docker_network: str = ""
     # 可选出站代理地址；为空时 KEGG REST 通过 Docker bridge 直接出网。
     enrichment_proxy_url: str = ""
-    # 宿主→容器挂载源（容器内固定为 /data/cygnusx，基因列表与结果 CSV 经此交换）
-    enrichment_data_mount: str = "/data/cygnusx"
+    # 宿主→容器挂载源；空值时派生 storage_path（见 model_validator）。
+    # 容器内目标固定为 /data/cygnusx（挂载声明见各 runner），与宿主源不必同名。
+    enrichment_data_mount: str = ""
     enrichment_exec_timeout: int = 120  # 单次富集分析超时（秒）
     enrichment_memory: str = "2g"  # 容器内存上限
     enrichment_cpus: float = 2.0  # 容器 CPU 核数
@@ -427,20 +434,19 @@ class Settings(BaseSettings):
     deg_docker_image: str = "cygnusx-r-deg:v1"
     # 容器加入的 Docker 网络（与主栈 app 网络一致）
     deg_docker_network: str = "cygnusx_app_net"
-    # 宿主→容器挂载源（容器内固定为 /data/cygnusx，输入与结果经此交换）
-    deg_data_mount: str = "/data/cygnusx"
+    # 宿主→容器挂载源；空值时派生 storage_path（见 model_validator）。
+    # 容器内目标固定为 /data/cygnusx（挂载声明见 deg/runner.py），与宿主源不必同名。
+    deg_data_mount: str = ""
     deg_exec_timeout: int = 7200  # 单次 DEG 分析超时（秒）；0 回退 YAML execution.timeout
 
     # ===== 管理员欢迎彩蛋（预生成 + 顺序轮询）=====
     # 启动时若 welcome.yaml 条数 < threshold，调用默认 AI provider 补齐到 threshold 条；
     # 运行时登录仅读盘 + 游标前进，零延迟、不调 AI。两文件均缺失时回退内置兜底文案。
     # 注意：必须放在可写目录。data/ 目录在容器中为只读挂载（docker-compose :ro），
-    # 故改用 storage_path（/data/cygnusx，容器与宿主共享且可写）下的
-    # cygnusx_data/welcome/ 子目录，避免与任务数据混放。
-    welcome_yaml: str = (
-        "/data/cygnusx/cygnusx_data/welcome/welcome.yaml"  # 预生成欢迎词（纯字符串数组）
-    )
-    welcome_state_yaml: str = "/data/cygnusx/cygnusx_data/welcome/welcome_state.yaml"  # 轮询游标
+    # 故改用 storage_path（容器与宿主共享且可写）下的 cygnusx_data/welcome/
+    # 子目录，避免与任务数据混放。空值时派生（见 model_validator）。
+    welcome_yaml: str = ""  # 预生成欢迎词（纯字符串数组）
+    welcome_state_yaml: str = ""  # 轮询游标
     welcome_seed_threshold: int = 20  # 启动补齐目标条数
 
     # ===== 代码执行沙盒 =====
@@ -453,7 +459,8 @@ class Settings(BaseSettings):
     sandbox_max_pool_size: int = 10
     sandbox_session_timeout: int = 300  # 5 分钟无活动回收
     sandbox_exec_timeout: int = 300  # 单次代码执行超时（秒）
-    sandbox_data_dir: str = "/data/cygnusx"
+    # 沙盒数据根；空值时派生 storage_path（见 model_validator）
+    sandbox_data_dir: str = ""
     sandbox_default_cpu: float = 2.0
     sandbox_default_memory: str = "4g"
     # ===== 沙盒安全基线（默认值对齐 Studio StudioSandboxConfig）=====
@@ -471,7 +478,8 @@ class Settings(BaseSettings):
     # 交付/输入目录 bind mount 的宿主机基目录。必须是 Web 容器与 Docker
     # daemon 共同可见的路径；不要使用 Web 容器私有的 /tmp，否则 daemon 会把
     # 不存在的 source 自动创建成 root:root 0755，导致 uid 10001 无法写入。
-    sandbox_pool_host_dir: str = "/data/cygnusx/.sandbox-pool"
+    # 空值时由 storage_path 派生（见下方 field_validator），勿写死绝对路径。
+    sandbox_pool_host_dir: str = ""
 
     # ===== 云端沙盒终端 =====
     # 功能配置 YAML（仓库内源码管控）；改文件后由加载器 mtime 热重载。
@@ -565,6 +573,24 @@ class Settings(BaseSettings):
     # 逗号分隔的敏感词列表，AI 对话送 LLM 前 / 落库前替换为 [REDACTED]（不可逆）
     sensitive_keywords: list[str] = []
 
+    @field_validator("mas_workspace_root", mode="before")
+    @classmethod
+    def derive_mas_workspace_root(cls, v: str, info: Any) -> str:
+        # 空值时由 storage_path 派生，禁止写死绝对路径（换根部署会指向旧根）
+        if str(v or "").strip():
+            return str(v).strip()
+        storage = str(info.data.get("storage_path") or "").strip() or "/data/cygnusx"
+        return str(Path(storage))
+
+    @field_validator("sandbox_pool_host_dir", mode="before")
+    @classmethod
+    def derive_sandbox_pool_host_dir(cls, v: str, info: Any) -> str:
+        # 空值时派生 {storage_path}/.sandbox-pool；该目录必须与 Docker daemon 共见
+        if str(v or "").strip():
+            return str(v).strip()
+        storage = str(info.data.get("storage_path") or "").strip() or "/data/cygnusx"
+        return str(Path(storage) / ".sandbox-pool")
+
     @field_validator("agentteams_manager_agent_id", mode="before")
     @classmethod
     def validate_manager_agent_id(cls, v: Any) -> str:
@@ -612,6 +638,45 @@ class Settings(BaseSettings):
             return v
         password_part = f":{redis_password}@" if redis_password else ""
         return f"redis://{password_part}{values['redis_host']}:{values['redis_port']}/2"
+
+    @model_validator(mode="after")
+    def derive_storage_relative_defaults(self) -> "Settings":
+        """数据根相关默认值统一派生：空值字段以 storage_path 为根补齐。
+
+        历史教训：这些字段曾各自写死 /data/cygnusx，换根部署（STORAGE_PATH 变更）
+        后一部分被 env 覆盖、一部分仍指向旧根，产生"同进程两套数据根"的静默故障。
+        现约定：宿主侧路径默认值一律派生 storage_path；容器内挂载点（各 R 工具
+        runner 的 /data/cygnusx 目标）是容器内规范路径，不受此影响。
+        显式 env/YAML 配置优先生效，派生只在空值时兜底。
+        """
+        storage = self.storage_path
+        if not self.ebi_download_binary:
+            self.ebi_download_binary = f"{storage}/bin/EBIDownload"
+        if not self.ebi_download_yaml:
+            self.ebi_download_yaml = f"{storage}/bin/EBIDownload.yaml"
+        if not self.cloud_ossutil_binary:
+            self.cloud_ossutil_binary = f"{storage}/bin/ossutil"
+        if not self.cloud_tosutil_binary:
+            self.cloud_tosutil_binary = f"{storage}/bin/tosutil"
+        if not self.cloud_obsutil_binary:
+            self.cloud_obsutil_binary = f"{storage}/bin/obsutil"
+        if not self.snakemake_conda_prefix:
+            self.snakemake_conda_prefix = f"{storage}/.conda_envs"
+        if not self.aliyun_skills_cache_dir:
+            self.aliyun_skills_cache_dir = f"{storage}/skill_marketplace_aliyun"
+        if not self.blast_db_root:
+            self.blast_db_root = f"{storage}/blast/db"
+        if not self.enrichment_data_mount:
+            self.enrichment_data_mount = storage
+        if not self.deg_data_mount:
+            self.deg_data_mount = storage
+        if not self.welcome_yaml:
+            self.welcome_yaml = f"{storage}/cygnusx_data/welcome/welcome.yaml"
+        if not self.welcome_state_yaml:
+            self.welcome_state_yaml = f"{storage}/cygnusx_data/welcome/welcome_state.yaml"
+        if not self.sandbox_data_dir:
+            self.sandbox_data_dir = storage
+        return self
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

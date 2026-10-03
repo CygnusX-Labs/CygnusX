@@ -6,7 +6,7 @@
 - GET  /enrichment/tasks/{id} 查询状态；完成时返回标准结果表
 - GET  /enrichment/tasks/{id}/download 下载原始 clusterProfiler CSV
 
-鉴权：所有接口要求登录（CurrentUserId）。结果落到 /data/cygnusx/users/{user_id}/
+鉴权：所有接口要求登录（CurrentUserId）。结果落到存储根 users/{user_id}/ 下
 enrichments/{project}/{task_id}/，user_id 取自 JWT，不信任查询参数。
 
 物种三字码 / OrgDb / ID 类型由后端按 species_id 从 YAML 权威解析，前端回传的同名

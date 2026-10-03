@@ -22,12 +22,14 @@ class DownloadFeaturesConfig(BaseModel):
 class DownloadBinariesConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    ebi: str = "/data/cygnusx/bin/EBIDownload"
-    ebi_config: str = "/data/cygnusx/bin/EBIDownload.yaml"
+    # 二进制路径须与容器内实际挂载一致；默认值对齐 live 存储根，
+    # 显式配置（download_config.yaml）优先。
+    ebi: str = "/data/omichub/bin/EBIDownload"
+    ebi_config: str = "/data/omichub/bin/EBIDownload.yaml"
     aria2c: str = "/usr/bin/aria2c"
-    ossutil: str = "/data/cygnusx/bin/ossutil"
-    tosutil: str = "/data/cygnusx/bin/tosutil"
-    obsutil: str = "/data/cygnusx/bin/obsutil"
+    ossutil: str = "/data/omichub/bin/ossutil"
+    tosutil: str = "/data/omichub/bin/tosutil"
+    obsutil: str = "/data/omichub/bin/obsutil"
 
 
 class Aria2Config(BaseModel):

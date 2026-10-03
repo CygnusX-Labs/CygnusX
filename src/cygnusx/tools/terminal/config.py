@@ -141,7 +141,8 @@ class NetworkConfig(BaseModel):
 class StorageConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    workspace_base: str = "/data/cygnusx/users"
+    # 用户目录宿主机基路径；默认值须与 STORAGE_PATH 一致（YAML 显式配置优先）
+    workspace_base: str = "/data/omichub/users"
 
 
 class PortRangeConfig(BaseModel):

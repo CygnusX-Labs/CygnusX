@@ -16,7 +16,7 @@ from cygnusx.infrastructure.execution.base import (
     ExecutionResult,
 )
 
-# 容器内通过 docker-compose.worker.yml 挂载到宿主机 /data/cygnusx/logs/snakemake
+# 容器内经 docker-compose.worker.yml 挂载到宿主机存储根（STORAGE_PATH）下 logs/snakemake
 SNAKEMAKE_LOG_ROOT = Path(os.getenv("CYGNUSX_SNAKEMAKE_LOG_DIR", "/logs/snakemake"))
 
 

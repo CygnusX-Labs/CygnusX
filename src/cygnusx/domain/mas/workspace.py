@@ -25,7 +25,12 @@ class WorkspaceLayout:
         {"staging", "workflow", "results", "plots", "logs", "manifests", "scratch"}
     )
 
-    def __init__(self, root: str | Path = "/data/cygnusx") -> None:
+    def __init__(self, root: str | Path) -> None:
+        """root 为 MAS 工作区数据根（由调用方显式传入，通常为 settings.mas_workspace_root）。
+
+        不提供默认值：历史默认 /data/cygnusx 在换根部署下指向旧根，静默落到
+        不存在的目录比显式报错更危险。
+        """
         self.root = Path(root).resolve()
         self.runs_root = self.root / "runs"
         self.cache_root = self.root / "artifact-cache" / "raw" / "sha256"

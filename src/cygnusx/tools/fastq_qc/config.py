@@ -110,7 +110,8 @@ class MultiqcConfig(BaseModel):
 class StorageConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    root: str = "/data/cygnusx/qc/tasks"
+    # 任务产物根；须与 .env STORAGE_PATH 一致（YAML 显式配置优先）
+    root: str = "/data/omichub/qc/tasks"
     subdirs: list[str] = Field(
         default_factory=lambda: ["input", "output", "reports", "multiqc", "logs"]
     )

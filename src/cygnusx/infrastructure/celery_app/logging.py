@@ -4,7 +4,7 @@
 文本备份，便于在宿主机上按任务 ID 直接 tail/grep 排查。
 
 默认日志路径：/app/logs/celery/tasks/{task_id}.log
-Docker Worker 通过 CYGNUSX_CELERY_LOG_DIR 覆盖到 /data/cygnusx/logs/celery/tasks。
+Docker Worker 通过 CYGNUSX_CELERY_LOG_DIR 覆盖到存储根下 logs/celery/tasks。
 """
 
 import os

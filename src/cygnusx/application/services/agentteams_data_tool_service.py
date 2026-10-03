@@ -255,8 +255,20 @@ class AgentTeamsDataToolService:
     ) -> dict[str, Any]:
         self._require_context_user(user_id, context)
         await self._case_service.get_case(case_id, user_id)
+        # workdir 优先取调用方注入（会诊 fan-out 场景）；缺失时落到存储配置
+        # 解析出的数据根（YAML storage.data_root → STORAGE_PATH），而非历史
+        # 硬编码旧根——旧根在换根部署下不存在，mkdir 会直接失败。
+        from cygnusx.infrastructure.config.storage_config import get_storage_config
+
         destination_root = Path(
-            str(context.extra.get("workdir") or f"/data/cygnusx/output/agentteams/{case_id}/downloads")
+            str(
+                context.extra.get("workdir")
+                or get_storage_config().data_root
+                / "output"
+                / "agentteams"
+                / case_id
+                / "downloads"
+            )
         ).resolve()
         requested_name = dest_name or PurePosixPath(artifact_ref.replace("\\", "/")).name
         if not requested_name or Path(requested_name).name != requested_name:

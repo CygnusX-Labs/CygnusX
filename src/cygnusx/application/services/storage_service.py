@@ -175,7 +175,7 @@ class StorageService:
 
         result: dict[str, int] = {}
         for line in proc.stdout.splitlines():
-            # 形如 "12345\t/data/cygnusx/users/<uuid>"
+            # 形如 "12345\t<storage_root>/users/<uuid>"
             parts = line.split("\t", 1)
             if len(parts) != 2:
                 continue

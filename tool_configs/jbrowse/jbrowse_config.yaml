@@ -121,7 +121,7 @@ auto_scan:
   # 覆盖 raw/ 上传、results/{task}/ 分析产物、用户自定义子目录，找到所有可加载轨道文件。
   # 旧的 bam/、bigwig/、vcf/ 子目录写法是非递归的，会漏掉 raw/ 里的上传文件。
   scan_paths:
-    - "/data/cygnusx/users/{user_id}"
+    - "/data/omichub/users/{user_id}"
   extensions:
     - ".bam"
     - ".cram"
@@ -138,7 +138,7 @@ auto_scan:
 # 上传配置
 # --------------------------------------------
 upload:
-  upload_dir: "/data/cygnusx/users/{user_id}/uploads/"
+  upload_dir: "/data/omichub/users/{user_id}/uploads/"
   max_file_size: 10  # GB
   allowed_types:
     - ".bam"

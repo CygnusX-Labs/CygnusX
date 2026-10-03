@@ -18,7 +18,7 @@ REFERENCE_GENOMES_YAML 覆盖）。
         ...
         versions:
           - id: tair10
-            data_dir: /data/cygnusx/cygnusx_data/reference/TAIR10
+            data_dir: /data/omichub/cygnusx_data/reference/TAIR10
             files:
               gff3: { path: TAIR10_GFF3_genes.gff }
             gene_index: gene_index.db   # 相对 data_dir 的构建产物

@@ -258,7 +258,11 @@ async def _test_workspace_consultation_uses_scoped_workdir() -> None:
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is False
     assert call["tasks"][0]["workspace_access"] is True
-    assert str(call["workdir_root"]) == "/data/cygnusx/output/agentteams/case-1/code-write-01"
+    from cygnusx.core.config import get_settings
+    assert (
+        str(call["workdir_root"])
+        == f"{get_settings().storage_path}/output/agentteams/case-1/code-write-01"
+    )
     task = call["tasks"][0]
     assert "## AgentTeams 工作区执行协议" in task["task"]
     assert "plan_hash 已确认" in task["task"]
@@ -296,7 +300,11 @@ async def _test_workspace_consultation_allowed_for_declared_expert() -> None:
 
     call = parallel_service.run.await_args.kwargs
     assert call["safe_only"] is False
-    assert str(call["workdir_root"]) == "/data/cygnusx/output/agentteams/case-1/rna-exec-01"
+    from cygnusx.core.config import get_settings
+    assert (
+        str(call["workdir_root"])
+        == f"{get_settings().storage_path}/output/agentteams/case-1/rna-exec-01"
+    )
 
 
 def test_workspace_artifacts_are_copied_and_registered(tmp_path, monkeypatch) -> None:
