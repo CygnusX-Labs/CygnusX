@@ -177,7 +177,10 @@ function handleOpenToolPage() {
       <n-icon size="15" class="tool-icon"><BuildOutline /></n-icon>
       <span class="tool-name">{{ tool.name }}</span>
       <span v-if="tool.purpose" class="tool-purpose">{{ tool.purpose }}</span>
-      <n-tag v-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
+      <n-tag v-if="tool.name === 'skill_route'" size="tiny" type="warning" class="server-tag">
+        Skill 路由 · 子代理
+      </n-tag>
+      <n-tag v-else-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
         MCP: {{ tool.mcpServer }}
       </n-tag>
       <n-tag

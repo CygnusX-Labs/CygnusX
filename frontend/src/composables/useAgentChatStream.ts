@@ -276,6 +276,8 @@ export interface SubagentFanoutEvent {
   tasks: Array<{ index: number; agentId: string; task: string; status: string }>
   success?: boolean
   summary?: string
+  /** 卡片标题（如 "Skill 路由审查"）；缺省回落到"并行专家协作" */
+  label?: string
 }
 
 /** Skill 调用生命周期事件（skill.invoked / skill.completed / skill.failed 三时机） */
@@ -893,6 +895,7 @@ export function useAgentChatStream() {
           tasks,
           success: phase === 'aggregated' ? Boolean(data.success) : undefined,
           summary: phase === 'aggregated' ? String(data.summary || '') : undefined,
+          label: typeof data.label === 'string' && data.label ? data.label : undefined,
         })
         break
       }

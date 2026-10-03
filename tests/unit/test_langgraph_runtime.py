@@ -72,10 +72,7 @@ def _make_runtime(
 
 
 async def _collect(runtime: LangGraphRuntimeService) -> list[ChatChunk]:
-    return [
-        chunk
-        async for chunk in runtime.stream([{"role": "user", "content": "你好"}])
-    ]
+    return [chunk async for chunk in runtime.stream([{"role": "user", "content": "你好"}])]
 
 
 async def test_no_tool_call_single_round() -> None:
@@ -105,9 +102,7 @@ async def test_one_tool_round_then_finish() -> None:
     """一轮工具调用回灌后第二轮结束：消息序列 assistant(tool_calls) → tool"""
     executed: list[tuple[str, dict[str, Any], str]] = []
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         executed.append((tool_name, args, tool_call_id))
         return {"success": True, "result": {"value": 42}}
 
@@ -170,9 +165,7 @@ async def test_one_tool_round_then_finish() -> None:
 
 
 async def test_execution_event_sequence_proves_tool_reinjection() -> None:
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"value": 42}}
 
     emitted: list[ChatChunk] = []
@@ -220,9 +213,7 @@ async def test_execution_event_sequence_proves_tool_reinjection() -> None:
 
 
 async def test_execution_event_sequence_accepts_multiple_tool_batch() -> None:
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"tool": tool_name, "id": tool_call_id, **args}}
 
     emitted: list[ChatChunk] = []
@@ -282,9 +273,7 @@ async def test_execution_event_sequence_accepts_multiple_tool_batch() -> None:
 
 
 async def test_runtime_events_validate_across_tool_reinjection_round() -> None:
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"tool": tool_name, **args}}
 
     runtime, _ = _make_runtime(
@@ -313,9 +302,7 @@ async def test_handoff_tool_ends_current_graph_without_another_llm_round() -> No
         "packet": "## 会话交接",
     }
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         assert tool_name == "transfer_to_agent"
         return {"success": True, "llm_payload": {"handoff": directive}}
 
@@ -334,9 +321,7 @@ async def test_handoff_tool_ends_current_graph_without_another_llm_round() -> No
 async def test_tool_executor_exception_is_reinjected_for_agent_retry() -> None:
     """工具抛异常时保留错误上下文，让 agent 获得修复并重试的机会。"""
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         raise RuntimeError("MCP 连接断开")
 
     runtime, _ = _make_runtime(
@@ -345,7 +330,10 @@ async def test_tool_executor_exception_is_reinjected_for_agent_retry() -> None:
                 _tool_calls_chunk("get_gene", {"gene": "TP53"}),
                 ChatChunk(type="done", metadata={"usage": USAGE}),
             ],
-            [ChatChunk(type="text", content="已根据工具错误整理说明"), ChatChunk(type="done", metadata={"usage": USAGE})],
+            [
+                ChatChunk(type="text", content="已根据工具错误整理说明"),
+                ChatChunk(type="done", metadata={"usage": USAGE}),
+            ],
         ],
         tool_executor=_executor,
     )
@@ -369,9 +357,7 @@ async def test_ask_user_tool_ends_current_graph_without_another_llm_round() -> N
     携带 tool_call_id 与原始 args，由 ChatService 产出 ask_request 事件。
     """
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         assert tool_name == "ask_user"
         payload = {
             "questions": args["questions"],
@@ -382,9 +368,7 @@ async def test_ask_user_tool_ends_current_graph_without_another_llm_round() -> N
         return {"success": True, "result": {"llm_payload": payload, "ui_payload": payload}}
 
     ask_args = {
-        "questions": [
-            {"question": "要分析哪个文件？", "options": ["工作区已有文件", "上传新文件"]}
-        ]
+        "questions": [{"question": "要分析哪个文件？", "options": ["工作区已有文件", "上传新文件"]}]
     }
     runtime, calls = _make_runtime(
         [[_tool_calls_chunk("ask_user", ask_args)]],
@@ -405,9 +389,7 @@ async def test_rounds_exhausted_forces_final_answer_and_sets_flag() -> None:
     ChatService 依据该标志产出 round_limit 事件，由前端弹窗选择是否续轮。
     """
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"value": 1}}
 
     runtime, calls = _make_runtime(
@@ -433,9 +415,7 @@ async def test_rounds_exhausted_forces_final_answer_and_sets_flag() -> None:
 async def test_normal_finish_does_not_set_rounds_exhausted() -> None:
     """模型主动停止（无 tool_calls）时不判定为触顶。"""
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"value": 1}}
 
     runtime, _ = _make_runtime(
@@ -455,9 +435,7 @@ async def test_normal_finish_does_not_set_rounds_exhausted() -> None:
 async def test_ask_user_failure_does_not_interrupt_graph() -> None:
     """ask_user 执行失败时按普通工具失败处理：回灌报错信封，循环继续。"""
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": False, "error": "工具 ask_user 未挂载到该 Agent"}
 
     runtime, calls = _make_runtime(
@@ -512,9 +490,7 @@ def _chat_service(sandbox_meta: dict | None = None) -> Any:
     service = SimpleNamespace()
     service.update_message_content = AsyncMock()
     service._apply_usage_to_session = AsyncMock()
-    service.get_session = AsyncMock(
-        return_value=SimpleNamespace(sandbox_meta=sandbox_meta)
-    )
+    service.get_session = AsyncMock(return_value=SimpleNamespace(sandbox_meta=sandbox_meta))
     return service
 
 
@@ -628,9 +604,7 @@ async def test_tool_executor_parallel_subagents_per_round_guard(
                 "ui_payload": {"progress": []},
             }
 
-    monkeypatch.setattr(
-        parallel_subagent_tool_service, "ParallelSubAgentToolService", _FakeService
-    )
+    monkeypatch.setattr(parallel_subagent_tool_service, "ParallelSubAgentToolService", _FakeService)
     executor, _ = await _capture_tool_executor(monkeypatch)
 
     first = await executor(
@@ -648,9 +622,7 @@ async def test_tool_executor_parallel_subagents_per_round_guard(
     )
     assert second["success"] is False
     assert "本轮已执行过子 Agent 并行分派" in second["result"]["llm_payload"]["error"]
-    assert second["result"]["ui_payload"]["error"] == second["result"]["llm_payload"][
-        "error"
-    ]
+    assert second["result"]["ui_payload"]["error"] == second["result"]["llm_payload"]["error"]
     # 护栏拒绝不消耗执行次数，也不触发实际 fanout
     assert len(run_calls) == 1
 
@@ -672,9 +644,7 @@ async def test_tool_executor_parallel_subagents_emits_started_and_aggregated(
                 "ui_payload": {"progress": [{"agent_id": "agent-a", "status": "done"}]},
             }
 
-    monkeypatch.setattr(
-        parallel_subagent_tool_service, "ParallelSubAgentToolService", _FakeService
-    )
+    monkeypatch.setattr(parallel_subagent_tool_service, "ParallelSubAgentToolService", _FakeService)
     executor, emitted = await _capture_tool_executor(monkeypatch)
 
     envelope = await executor(
@@ -713,6 +683,48 @@ async def test_tool_executor_parallel_subagents_emits_started_and_aggregated(
     }
 
 
+async def test_tool_executor_skill_route_emits_started_and_aggregated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """skill_route：对齐 legacy chat_service.py skill_route 分支，started/aggregated
+    事件经 emit 发出（前端据此渲染"任务已交给子 Agent"卡片），信封原样返回。"""
+    from cygnusx.application.services import tool_bridge_service
+
+    class _FakeBridge:
+        async def execute(self, *, user_id, tool_name, arguments, context):
+            return {
+                "success": True,
+                "is_error": False,
+                "llm_payload": {
+                    "matched": True,
+                    "skill_id": "bio-chip-seq-peak-calling",
+                    "confidence": 0.9,
+                    "summary": "命中 Skill：bio-chip-seq-peak-calling（置信度 0.90）",
+                },
+                "ui_payload": {},
+            }
+
+    monkeypatch.setattr(tool_bridge_service, "get_tool_bridge_service", lambda: _FakeBridge())
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+
+    envelope = await executor("skill_route", {"query": "ChIP-seq peak calling"}, "call_sr1")
+
+    sub_chunks = [chunk for chunk in emitted if chunk.type == "subagents"]
+    assert [chunk.metadata["phase"] for chunk in sub_chunks] == ["started", "aggregated"]
+    started = sub_chunks[0].metadata
+    assert started["tool_call_id"] == "call_sr1"
+    assert started["label"] == "Skill 路由审查"
+    assert started["tasks"][0]["agent_id"] == "skill-route-scout"
+    assert "ChIP-seq peak calling" in started["tasks"][0]["task"]
+    aggregated = sub_chunks[1].metadata
+    assert aggregated["tool_call_id"] == "call_sr1"
+    assert aggregated["success"] is True
+    assert aggregated["summary"].startswith("命中 Skill：bio-chip-seq-peak-calling")
+    assert aggregated["progress"] == [{"index": 1, "agent_id": "skill-route-scout", "status": "ok"}]
+    assert envelope["success"] is True
+    assert envelope["result"]["llm_payload"]["matched"] is True
+
+
 async def test_tool_executor_create_agentteams_case_confirmed_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -731,9 +743,7 @@ async def test_tool_executor_create_agentteams_case_confirmed_run(
                 "ui_payload": {"case_card": {"case_id": "case-1", "title": "目标"}},
             }
 
-    monkeypatch.setattr(
-        agentteams_case_tool_service, "AgentTeamsCaseToolService", _FakeCaseService
-    )
+    monkeypatch.setattr(agentteams_case_tool_service, "AgentTeamsCaseToolService", _FakeCaseService)
     executor, emitted = await _capture_tool_executor(monkeypatch)
 
     envelope = await executor(
@@ -796,9 +806,7 @@ async def test_tool_executor_create_agentteams_case_records_confirmation(
         "get_tool_bridge_service",
         lambda: _FakeBridgeService(),
     )
-    monkeypatch.setattr(
-        agentteams_case_tool_service, "AgentTeamsCaseToolService", _FakeCaseService
-    )
+    monkeypatch.setattr(agentteams_case_tool_service, "AgentTeamsCaseToolService", _FakeCaseService)
     executor, emitted = await _capture_tool_executor(monkeypatch)
 
     envelope = await executor(
@@ -829,9 +837,7 @@ async def test_tool_executor_goal_terminal_tools_delegate_to_service(
     execute_calls: list[tuple[str, dict]] = []
 
     class _FakeGoalService:
-        async def execute(
-            self, tool_name: str, arguments: dict, context: Any
-        ) -> dict:
+        async def execute(self, tool_name: str, arguments: dict, context: Any) -> dict:
             execute_calls.append((tool_name, arguments))
             return {
                 "success": True,
@@ -865,15 +871,19 @@ async def test_submit_output_finalize_ends_graph_with_output() -> None:
     """显式 Finalize 动作：submit_output 成功后图直接结束，finalize 携带 output。"""
     executed: list[tuple[str, dict[str, Any], str]] = []
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         executed.append((tool_name, args, tool_call_id))
         return {
             "success": True,
             "result": {
-                "llm_payload": {"output": args.get("output"), "message": "最终答复已提交，本轮结束。"},
-                "ui_payload": {"output": args.get("output"), "message": "最终答复已提交，本轮结束。"},
+                "llm_payload": {
+                    "output": args.get("output"),
+                    "message": "最终答复已提交，本轮结束。",
+                },
+                "ui_payload": {
+                    "output": args.get("output"),
+                    "message": "最终答复已提交，本轮结束。",
+                },
             },
         }
 
@@ -883,9 +893,7 @@ async def test_submit_output_finalize_ends_graph_with_output() -> None:
     )
     chunks = await _collect(runtime)
 
-    assert executed == [
-        ("submit_output", {"output": "最终结论：TP53 是抑癌基因。"}, "call_1")
-    ]
+    assert executed == [("submit_output", {"output": "最终结论：TP53 是抑癌基因。"}, "call_1")]
     # finalize 命中后路由到 end：不再有第二轮模型调用
     assert len(calls) == 1
     assert runtime.last_finalize == {
@@ -911,9 +919,7 @@ async def test_code_cell_only_round_does_not_consume_budget() -> None:
     """Code Cell 不占 tool 轮次预算（§3.3.2）：上一轮全为代码执行工具时
     本轮 llm_call 不递增 rounds；普通工具轮照常递增。"""
 
-    async def _executor(
-        tool_name: str, args: dict[str, Any], tool_call_id: str
-    ) -> dict[str, Any]:
+    async def _executor(tool_name: str, args: dict[str, Any], tool_call_id: str) -> dict[str, Any]:
         return {"success": True, "result": {"ok": True}}
 
     def _deps_with(stream: Any) -> NodeDeps:
@@ -940,30 +946,22 @@ async def test_code_cell_only_round_does_not_consume_budget() -> None:
     delta_1 = await llm_call_node({"messages": messages, "rounds": 0}, deps)
     assert delta_1["rounds"] == 1
     messages.extend(delta_1["messages"])
-    tool_delta = await tool_exec_node(
-        {"messages": messages, "rounds": delta_1["rounds"]}, deps
-    )
+    tool_delta = await tool_exec_node({"messages": messages, "rounds": delta_1["rounds"]}, deps)
     assert tool_delta["code_cell_only_round"] is False
     messages.extend(tool_delta["messages"])
 
     # 第二轮：代码执行工具轮 → rounds 1 → 2，标记 code_cell_only_round=True
     stream_2, _ = _make_stream([[_tool_calls_chunk("chat_sandbox_execute", {"code": "1+1"})]])
     deps_2 = _deps_with(stream_2)
-    delta_2 = await llm_call_node(
-        {"messages": messages, "rounds": delta_1["rounds"]}, deps_2
-    )
+    delta_2 = await llm_call_node({"messages": messages, "rounds": delta_1["rounds"]}, deps_2)
     assert delta_2["rounds"] == 2
     messages.extend(delta_2["messages"])
-    tool_delta_2 = await tool_exec_node(
-        {"messages": messages, "rounds": delta_2["rounds"]}, deps_2
-    )
+    tool_delta_2 = await tool_exec_node({"messages": messages, "rounds": delta_2["rounds"]}, deps_2)
     assert tool_delta_2["code_cell_only_round"] is True
     messages.extend(tool_delta_2["messages"])
 
     # 第三轮（上一轮全为 Code Cell）：rounds 保持 2，不消耗预算
-    stream_3, _ = _make_stream(
-        [[ChatChunk(type="text", content="done"), ChatChunk(type="done")]]
-    )
+    stream_3, _ = _make_stream([[ChatChunk(type="text", content="done"), ChatChunk(type="done")]])
     deps_3 = _deps_with(stream_3)
     delta_3 = await llm_call_node(
         {

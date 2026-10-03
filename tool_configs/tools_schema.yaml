@@ -113,6 +113,28 @@ tools:
     llm_result_fields: [summary, results, success, error]
     ui_result_fields: [progress, fanout_run_id]
 
+  - key: skill-route
+    name: skill_route
+    description: >
+      只读检索并审查 Skill。先按标签、分析步骤、文件类型和关键词筛选候选，
+      再读取候选 Skill 的完整 SKILL.md，返回最适合用户任务的 skill_id、理由、
+      置信度和缺失条件。不得执行沙箱或修改工作区。
+    category: skill
+    invocation_mode: backend_sync
+    service: cygnusx.application.services.skill_route_tool_service.SkillRouteToolService
+    method: route
+    requires_confirm: false
+    annotations: {readOnlyHint: true, destructiveHint: false, openWorld: false, idempotent: true}
+    extra: {user_scoped: true, tool_role: skill_route}
+    input_schema:
+      type: object
+      properties:
+        query: {type: string, description: 用户的完整分析任务、数据类型和交付要求}
+        limit: {type: integer, minimum: 1, maximum: 5, default: 5, description: 返回候选数量}
+      required: [query]
+    llm_result_fields: [matched, skill_id, confidence, reason, summary, fit_checks, missing_requirements, candidates]
+    ui_result_fields: [matched, skill_id, confidence, summary, candidates]
+
   - key: agentteams-create-case
     name: create_agentteams_case
     description: >

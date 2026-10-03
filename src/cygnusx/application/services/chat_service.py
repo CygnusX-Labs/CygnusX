@@ -4649,6 +4649,33 @@ class ChatService(
                                 yield item
                             else:
                                 result = item.result
+                    elif is_skill_route_tool:
+                        from cygnusx.application.services.skill_route_tool_service import (
+                            skill_route_aggregated_chunk,
+                            skill_route_started_chunk,
+                        )
+                        from cygnusx.application.services.tool_bridge_service import (
+                            get_tool_bridge_service,
+                        )
+
+                        # 内层子 Agent（Skill scout）的进度透出：started 表示任务已交给
+                        # 子 Agent、主 Agent 等待审查结果；aggregated 汇总最终结论，
+                        # 前端复用并行子 Agent 泳道卡片展示（与 LangGraph 路径共用同一
+                        # 事件构造器，保证双执行路径行为一致）。
+                        yield skill_route_started_chunk(
+                            tc.get("id", ""), str(args.get("query") or "")
+                        )
+                        bridge_result = await get_tool_bridge_service().execute(
+                            user_id=user_id,
+                            tool_name=tool_name,
+                            arguments=args,
+                            context=tool_context,
+                        )
+                        result = {
+                            "success": bool(bridge_result.get("success")),
+                            "result": bridge_result,
+                        }
+                        yield skill_route_aggregated_chunk(tc.get("id", ""), bridge_result)
                     elif is_capability_tool and tool_name == CAPABILITY_LIST_TOOL:
                         event = audit_event("list", None, None, True)
                         studio_capability_state = await _persist_capability_state(

@@ -2328,6 +2328,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
         },
         onSubagentFanout: (event) => {
           // 对话内并行子 Agent：复用超频泳道结构展示，按 tool_call_id 归属独立卡片。
+          // event.label 存在时（如 Skill 路由审查）优先于默认的"并行专家协作"标题。
           const cardId = `fanout-${event.toolCallId || 'anon'}`
           let card = session.messages.find((item) => item.id === cardId)
           const tasks = event.tasks.map((task) => ({
@@ -2337,14 +2338,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
           }))
           if (event.phase === 'started') {
             if (!card) {
+              const title = event.label
+                ? `${event.label} · 已交给子 Agent，主 Agent 等待审查结果`
+                : `并行专家协作中（${tasks.length} 位专家）`
               const created: ChatMessage = {
                 id: cardId,
                 role: 'system',
-                content: `并行专家协作中（${tasks.length} 位专家）`,
+                content: title,
                 createdAt: new Date().toISOString(),
                 overdriveProgress: {
                   phase: 'worker_running',
-                  label: `并行专家协作中（${tasks.length} 位专家）`,
+                  label: title,
                   completed: 0,
                   total: tasks.length,
                   waveMode: 'parallel',
@@ -2356,15 +2360,17 @@ export const useAgentHubStore = defineStore('agentHub', () => {
             }
           } else if (card?.overdriveProgress) {
             const completed = tasks.filter((task) => task.status === 'succeeded' || task.status === 'success').length
+            const doneLabel = event.summary
+              || (event.label ? `${event.label}完成` : '并行专家协作完成')
             card.overdriveProgress = {
               ...card.overdriveProgress,
               phase: 'completed',
-              label: event.summary || '并行专家协作完成',
+              label: doneLabel,
               completed,
               total: tasks.length || card.overdriveProgress.total,
               tasks: tasks.length ? tasks : card.overdriveProgress.tasks,
             }
-            card.content = event.summary || card.content
+            card.content = doneLabel
           }
           session.updated_at = new Date().toISOString()
         },

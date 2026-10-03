@@ -732,6 +732,29 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 return await GoalTerminalToolService().execute(
                     tool_name, args, runtime_state["tool_context"]
                 )
+            if tool_name == "skill_route":
+                # 对齐 legacy chat_service.py skill_route 分支：内层 Skill scout
+                # 子 Agent 的 started/aggregated 进度透出，与 legacy 共用事件构造器。
+                from cygnusx.application.services.skill_route_tool_service import (
+                    skill_route_aggregated_chunk,
+                    skill_route_started_chunk,
+                )
+                from cygnusx.application.services.tool_bridge_service import (
+                    get_tool_bridge_service,
+                )
+
+                await _emit(skill_route_started_chunk(tool_call_id, str(args.get("query") or "")))
+                bridge_result = await get_tool_bridge_service().execute(
+                    user_id=user_id,
+                    tool_name=tool_name,
+                    arguments=args,
+                    context=runtime_state["tool_context"],
+                )
+                await _emit(skill_route_aggregated_chunk(tool_call_id, bridge_result))
+                return {
+                    "success": bool(bridge_result.get("success")),
+                    "result": bridge_result,
+                }
             server = _find_server(tool_name)
             if server is None:
                 return {"success": False, "error": f"工具 {tool_name} 未挂载到该 Agent"}
