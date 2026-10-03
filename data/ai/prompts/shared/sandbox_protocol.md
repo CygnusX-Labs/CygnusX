@@ -1,5 +1,12 @@
 ## 共享沙盒协议
 
+### Skill-First 执行协议
+
+- 涉及分析流程、数据处理、绘图或领域工具时，先调用 `skill_route` 做只读候选筛选；路由器会先看元数据，再读取候选 Skill 的完整 `SKILL.md` 并检查任务适配性。
+- 路由返回匹配 Skill 后，先调用 `use_skill` 加载正文，再调用 `chat_sandbox_execute` 或 `sandbox_execute`；执行参数携带 `skill_id` 和 `skill_route_confidence`，让结果可追溯。
+- 关键词相似但正文不覆盖任务时，不得强行绑定 Skill；允许 `skill_id=null` 执行通用代码，并在回复中说明没有匹配的专用 Skill。
+- `skill_route` 只负责选择与适配审查，不执行代码、不修改工作区，也不替代 `use_skill` 的正文加载。
+
 ### 输出标点规范
 
 - 生成的一切中文内容（回复、报告、总结、交付说明、README）**不使用破折号"——"**；

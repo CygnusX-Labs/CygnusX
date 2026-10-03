@@ -5,6 +5,11 @@ prompts:
     kind: system
     owners:
     - agent
+  agents.skill_route:
+    file: skill_route.md
+    kind: system
+    owners:
+    - agent
   agents.general:
     file: general.md
     kind: system
