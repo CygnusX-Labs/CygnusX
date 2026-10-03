@@ -4,7 +4,7 @@
 >
 > **最后更新**：2026-09-18
 >
-> **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效；当前实现以代码为准。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。
+> **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
 
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
 
@@ -56,15 +56,19 @@ platform_submit_download, platform_list_downloads, platform_get_download_progres
 ability_catalog_query, room_state_query
 ```
 
-（完整定义见 `infrastructure/mcp/presets.py:1389-1790`。）
+（完整定义见 `infrastructure/mcp/presets.py` `PLATFORM_PRESET_TOOLS`。）
 
-**cygnusx-pipelines**（10 个工具）：
+**cygnusx-pipelines**（10 个工具，定义在 `infrastructure/mcp/pipeline_preset.py` `PIPELINE_TOOLS`）：
 
 ```
 rna_seq_prepare, rna_seq_submit, rna_seq_status, rna_seq_results,
 atac_seq_prepare, atac_seq_submit, atac_seq_status, atac_seq_results,
 list_available_pipelines, check_workspace_data
 ```
+
+**seqout**（26 个工具，公共数据库检索 MCP——SEQOUT_SERVER_NAME="seqout"，完整覆盖
+GEO/SRA/ENA/GSA 项目搜索、样本清单、accession 解析等；定义在 `presets.py`
+`SEQOUT_PRESET_TOOLS`，preset 分发见 `get_preset_by_name()`）。
 
 **cygnusx-tools**（动态构建）：从 `tools_schema.yaml` + 启用了 `ai.enabled=True` 的 Flow 配置动态生成。
 

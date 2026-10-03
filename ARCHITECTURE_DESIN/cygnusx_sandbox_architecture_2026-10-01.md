@@ -57,7 +57,8 @@ StudioSandboxManager
 - 浏览器或文档请求仅在 Agent 的 `features.studio.sandbox_capabilities` 明确授权时可创建。
 - 未授权请求返回业务错误；客户端参数不能提升会话权限。
 
-> 注意：当前代码在 Agent 未配置 `sandbox_capabilities` 时默认放行 `code`/`browser`/`document` 三种能力（`api/v1/studio.py:379-381`），与本节"明确授权才可创建"的设计契约不一致，属待确认的实现偏差。
+> 注意：当前代码在 Agent 未配置 `sandbox_capabilities` 时默认放行 `code`/`browser`/`document` 三种能力（`api/v1/studio.py` 创建会话处 `studio_cfg.get("sandbox_capabilities") or ["code", "browser", "document"]`），与本节"明确授权才可创建"的设计契约不一致，属待确认的实现偏差。
+> **数据层面现状（2026-10-03 实勘）**：`data/ai/` 全部 Agent YAML 中 `sandbox_capabilities` 声明数为 **0**——所有 Agent 均未显式声明，实际全部走默认放行 `[code, browser, document]`。授权源机制存在但数据层未使用。
 - `sandbox_meta.sandbox_capabilities` 专门保存运行时沙盒能力，不能和已有的 `sandbox_meta.capabilities` 混用；后者用于 MCP/Skill 的渐进加载状态。
 
 ### 3.2 配置

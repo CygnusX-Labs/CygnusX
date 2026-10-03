@@ -15,6 +15,11 @@
 > **2026-09-20 新增说明**：新增 `agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
 > **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `agent_architecture.md`、`agent_execution_framework.md` 与 `cygnusx_sandbox_architecture_2026-10-01.md` 的新增 as-built 小节为准。
 > **2026-09-22 更新说明**：新增 `token_billing_architecture.md`，记录 Provider usage 归一化、缓存 token 计费、工具循环累计、会话落库、饼干扣费、元估算和对账排查流程。涉及 token、费用、余额或模型价格的修改，必须以该文档为当前实现基线。
+> **2026-10-03 更新说明**：
+> 1. `network_architecture_2026-09.md` 补登记（§1.1，快照类）；
+> 2. `skill_first_sandbox_execution_proposal_2026-09.md` 补登记并按命名规范补 `_YYYY-MM` 后缀（提案 v2，非 as-built）；
+> 3. 外部独立文档统一进架构库：`mcp-server/ARCHITECTURE.md`（独立权威文档，保留原位，登记于"相关文档"）、`tool_configs/tools_design.md`（工具页面专项规范，保留原位，登记于"相关文档"）；`pipelines/Flow_framework.md`（v1，已被 `Protocol/FlowFrame/flow-framework` v2.0 取代）与 `tool_configs/tools_update.md`（提案已全部落地，现状见 `mcp_architecture.md`）移入 `deprecated/`（见"废弃归档"与"合并记录"）；
+> 4. `memory_architecture.md` 补 mem0 遗留现状更正（引擎代码 2026-08-19 已删除，`mem0_memories` 遗留表 + `MEM0_*` 配置段为受保护迁移残留，见其 §1）。
 
 
 **文档类型口径**：
@@ -61,6 +66,9 @@ Agent 执行面的唯一现状快照：多入口、共享工具契约、分路�
 ### `chat_execution_layers_2026-08.md` — Chat Runtime 分层与事件契约（施工快照，2026-08-23）
 Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway → ChatRouterService → ChatRuntime → 编排层 → ChatEventService SSE 出口的分层边界；`request_preparation.prepare_agent_request()`、`AgentContextBuilder`、`DelegatingAgentRuntime`、`DirectChatRuntime`；事件契约与 `ChatEventService` 唯一状态机校验点、`StudioLoopGuard` 熔断降级 supervised；`chat_runtime_refactor_enabled` 灰度回退、`agent.runtime.legacy_entry` 退役依据、golden record + `DualRunComparator` 双跑门禁；当前边界（ChatService 未瘦身至 <1000 行）与 99 项回归验证。
 
+### `skill_first_sandbox_execution_proposal_2026-09.md` — Skill-First 沙箱执行架构提案（提案 v2，2026-09-30/v2 2026-10-01，未实施）
+"将平台全部 Skill 暴露给全部 Agent、以 Skill 引导沙箱代码生成"的目标架构与实施路径。§1 记录三个已核实的问题（Skill 库与 Agent"两个平行宇宙"、`.agents/skills/` 561 个 bio-* 与平台业务 Skill 互不可见、沙箱执行缺乏 Skill 引导）；§2+ 目标态设计与开放问题的 2026-10-01 评审决策。**落地完成前不得作为现状依据**；关联现状文档为 `agent_execution_framework.md` 与沙箱基线文档。
+
 ---
 
 ## 3. 多智能体编排与记忆
@@ -75,7 +83,7 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 注意：主题是"提示词/领域资产沉淀"而非 agent 并行。四环闭环：感知层 `DomainMissEvent`（`domain_miss_events` 表、脱敏）→ 候选聚合（指纹聚类、`domain_candidates`、浮现阈值）→ 沉淀层（轻=知识库条目/中=skill/重=Domain Pack，LLM 起草+人审+回放测试）→ 生效层（`data/ai/domains/<domain>.yaml` 热重载、灰度、回滚）。依赖 Domain Pack 设计，V0–V3 分阶段，附四条反模式红线。
 
 ### `memory_architecture.md` — AI 记忆系统（as-built，2026-08-22）
-自研 PostgreSQL + pgvector 薄层记忆（不依赖 mem0），v2 灰度：三层数据模型——归档 `agent_memories`、常驻 `memory_blocks`（profile/preferences/current_focus 块、乐观锁）、召回 `memory_facts`（HNSW cosine、`content_hash` 幂等、`superseded_by` 修正）；`AgentMemoryService`/`FactStore`、四个记忆工具、异步 `settle_session_memory`（游标增量+区间幂等）；Studio 文件型记忆（MEMORY.md 索引 + `.memory/*.md` + Git 检查点）；L4 AgentTeams 会诊接入与注入纪律；`memory_v2_enabled` 开关、OTel 观测指标、已落地/未收口清单与修改指南。
+自研 PostgreSQL + pgvector 薄层记忆（不依赖 mem0），v2 灰度：三层数据模型——归档 `agent_memories`、常驻 `memory_blocks`（profile/preferences/current_focus 块、乐观锁）、召回 `memory_facts`（HNSW cosine、`content_hash` 幂等、`superseded_by` 修正）；`AgentMemoryService`/`FactStore`、四个记忆工具、异步 `settle_session_memory`（游标增量+区间幂等）；Studio 文件型记忆（MEMORY.md 索引 + `.memory/*.md` + Git 检查点）；L4 AgentTeams 会诊接入与注入纪律；`memory_v2_enabled` 开关、OTel 观测指标、已落地/未收口清单与修改指南。§1 含 mem0 遗留现状更正（2026-10-03）：引擎代码已删除，遗留 `mem0_memories` 表 + `MEM0_*` 配置段为受保护迁移残留。
 
 ---
 
@@ -94,8 +102,7 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 
 ## 5. 专项子系统
 
-### `mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）
-MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线。
+### `mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"）。
 
 ### `database_architecture.md` — 数据库基础设施基线（as-built + 规范，2026-09-11）
 `session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 87 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
@@ -112,12 +119,15 @@ MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py
 ### `knowledge_architecture.md` — 知识库架构（as-built 快照，2026-07-31）
 "一份数据两个消费方"（人类页面 + AI 检索）：`knowledge_bases`（show_in_lab/ai_searchable/is_enabled 三开关）、`kb_documents` 双指针版本、`doc_revisions`、`doc_editors`/`doc_audit_logs`/`kb_issues` 六表与迁移；`import_scseq_knowledge.py` 幂等导入 209 篇单细胞笔记；页面 `api/v1/docs.py` 过滤与编辑审核流；§6 `knowledge_search` 子串匹配现状（**已被 pgvector 向量检索取代**，见 memory/database 文档）；管理端 CRUD。
 
+### `network_architecture_2026-09.md` — 平台网络配置架构（as-built 快照，2026-09-21）
+梳理平台所有出站/入站网络路径、白名单与 SSRF 校验标准：五条独立网络路径（chat 工具出站、Studio 沙盒每会话内网 + CONNECT 代理、终端沙盒 `cygnusx-sandbox-net`、web_search 后端 SearchProvider、宿主机翻墙客户端 fake-ip DNS）；各沙盒 network 白名单与 Egress Proxy 域名清单；fake-ip（198.18.0.0/15）误判问题的根因与修复记录。涉及沙盒网络、出站白名单或代理配置的修改前必读。
+
 ---
 
 ## 6. 前端
 
-### `frontend.md` — 前端设计系统与实现规范（规范，36 章）
-CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界；设计令牌（色彩/字体/间距/圆角/阴影）；页面结构与材质层级、设计质感基线（§33"被设计过"而非"被生成出来"）；组件实现契约与状态规范；动效与交互、响应式与可访问性、跨平台迁移；Hero 背景动画系统（§32 OmicBackgroundAnimation）；数据可视化规范（§13 图表配色/导出）；实时通信与 WebSocket、API 层与数据请求、状态管理（Pinia 边界）、文件操作；**AI 对话与流式界面（§18）**、终端与代码沙箱（§19）、AI 助手主入口设计与优化（§35–36）；知识库阅读页三要素冻结规范（§34）；代码组织与命名、性能预算、测试策略、安全规范、国际化、错误边界、路由与权限、通知、打印导出、长任务监控、叠层与定位选择器；实施流程与变更验收清单、可复用 Skill 入口、工具详情页对齐规范。
+### `frontend.md` — 前端设计系统与实现规范（规范，37 章）
+CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界；设计令牌（色彩/字体/间距/圆角/阴影）；页面结构与材质层级、设计质感基线（§33"被设计过"而非"被生成出来"）；组件实现契约与状态规范；动效与交互、响应式与可访问性、跨平台迁移；Hero 背景动画系统（§32 OmicBackgroundAnimation）；数据可视化规范（§13 图表配色/导出）；实时通信与 WebSocket、API 层与数据请求、状态管理（Pinia 边界）、文件操作；**AI 对话与流式界面（§18）**、终端与代码沙箱（§19）、AI 助手主入口设计与优化（§35–36）；知识库阅读页三要素冻结规范（§34）；分析产物与代码输出统一协议（§37）；代码组织与命名、性能预算、测试策略、安全规范、国际化、错误边界、路由与权限、通知、打印导出、长任务监控、叠层与定位选择器；实施流程与变更验收清单、可复用 Skill 入口、工具详情页对齐规范。
 
 ---
 
@@ -137,6 +147,8 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 | `deprecated/agentteams_room_architecture.md` | 协作室历史基线(as-built,已归档,基线 2026-08-21,已吸收 room_plan、framework_research、manager_role):Web→Bridge/Matrix/MinIO→Gateway→Worker 四层拓扑;房间/Case 意图路由四态;多人模型 A1+ 平台代持与 `agentteams_room_members` 邀请状态机;全量过程记录(`AgentTeamsTurnRecorder`、MinIO turns + PG + OTel 三层);流程 HTML 报告;§15 模块清单、§16 演进史与遗留问题、§17 架构决策档案、附录 A Manager 双身份与红线 |
 | `deprecated/agentteams_department_collaboration.md` | 部门协作架构当前稿(Phase 1/2/3 落地回写):用户—Manager—领域 Agent—并行 Worker 组织模型与五原则;`@` 点名群聊协议、任务冻结/变更决策状态机、dispatch_mode 与 `room.agent_handoff` 交接事件、产物声明与写冲突串行化 |
 | `deprecated/agentteams_overdrive.md` | 超频模式(Overdrive)设计与实施全记录:`overdrive` 请求字段与 `mode_changed`/`room_speech` SSE 契约、第一期 B1–B5/F1–F5 详案、第二期 Matrix Gateway、第三期提前实现、风险清单与第 10 章审查修复记录 |
+| `deprecated/Flow_framework_v1.md` | Flow 家族框架规范 v1(原 `pipelines/Flow_framework.md`,2026-10-03 移入):基于 RNAFlow v0.1.9 / ATACFlow v0.0.6 梳理的骨架规范;已被 `Protocol/FlowFrame/flow-framework` v2.0 取代 |
+| `deprecated/tools_update_2026-07.md` | AI 助手与工具联动架构设计(原 `tool_configs/tools_update.md`,2026-10-03 移入):2026-07-12 可行性评审 + 分阶段落地计划;方案已全部落地,现状见 `mcp_architecture.md` |
 
 ---
 
@@ -153,6 +165,13 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 | `agentteams_room_plan.md` | `agentteams_room_architecture.md` §17 | 决策档案并入，施工流水账归档 git |
 | `manager_role_bioinfo_department_manager_2026-08.md` | `agentteams_room_architecture.md` 附录 A | 双身份辨析与红线并入 |
 | `mcp_builder_agent.md` | `mcp_architecture.md` §5 | 两代文档合一，被取代的提案段压缩为历史注记 |
+
+## 合并记录（2026-10-03）
+
+| 原位置 | 去向 | 处理方式 |
+| --- | --- | --- |
+| `pipelines/Flow_framework.md` | `deprecated/Flow_framework_v1.md` | v1 框架规范已被 `Protocol/FlowFrame/flow-framework` v2.0（"由旧 Flow_framework.md 合并而成"）完全取代；全仓无代码/文档引用 |
+| `tool_configs/tools_update.md` | `deprecated/tools_update_2026-07.md` | 2026-07-12 提案已全部落地（cygnusx-tools builtin preset + ToolBridge + 摘要回灌），现状以 `mcp_architecture.md` 为准；`flows_design*.md`、`tools_design.md` 引用已同步更新 |
 
 另：`log_architecture.md` §9.2–9.6（与日志无关的 terminal/参考基因组记录）迁至 `database_architecture.md` 附录。
 
@@ -184,4 +203,6 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 ## 相关文档（目录外）
 
 - `docs/26.7.22/ai_assistant_single_entry_architecture.md`：AI 助手模块详细架构（统一入口「智能助手」、双引擎分流 LangGraph/手写循环、智能路由、MCP preset、Studio HITL、SSE 事件协议、前后端组件链）及优化待办清单与落地记录。
+- `mcp-server/ARCHITECTURE.md`：mcp-server 外部通道的"整改后终态"权威文档（2026-09 一致性整改后）：双端全景与核心不变式（模型永不能自证确认、凭证一次性 + 绑 SHA-256 参数哈希、内外同名同能力）、人类确认门状态机（PENDING→APPROVED→CONSUMED/EXPIRED/INVALID/REJECTED）、builtin 通道加固与运行时可靠性设计、目录结构与扩展指南。与 `mcp_architecture.md` §6（历史快照）互补，终态以本文档为准。
+- `tool_configs/tools_design.md`：生信工具箱前端工具页面设计规范（2026-08-07）：所有 `/tools` 工具页面的架构、布局、样式、交互强制约定；火山图为完整样板、JBrowse 为全屏画布特例；新工具接入 5 步 checklist 与命名约定。是 `cygnusx_design.md` §2.2 生信工具基线的唯一详细来源。
 - 开发环境热刷新约定见根目录 `README.md`「Docker 部署」一节：日常改代码/YAML/前端用 `make docker-dev-refresh`（秒级，bind mount 免重建镜像），仅依赖（`uv.lock`/Dockerfile）变更才用 `make docker-reload`。

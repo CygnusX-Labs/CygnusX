@@ -1209,7 +1209,7 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
 ---
 
-*本章节与 `tools_update.md` 互为补充：后者记录落地计划与排期，本文档记录架构规范与实现约定。*
+*本章节的落地计划原见 `tools_update.md`（已归档至 `ARCHITECTURE_DESIN/deprecated/tools_update_2026-07.md`，方案已全部落地，现状以 `ARCHITECTURE_DESIN/mcp_architecture.md` 为准）；本文档记录架构规范与实现约定。*
 
 ## 十七、工具详情页页头统一规范
 

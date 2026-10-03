@@ -225,7 +225,7 @@ class AgentState(TypedDict, total=False):
 
 ### 2.4 长期记忆：自研 Postgres FactStore
 
-**⚠️ 文档/配置漂移提醒**：`.env.example:346` 仍写 `MEM0_ENGINE_ENABLED=true`，但代码库中**已不存在 mem0 引擎实现**（`infrastructure/memory/` 仅 `fact_store.py`）。当前实际链路是自研的：
+**⚠️ 文档/配置漂移提醒**：`.env.example` 仍保留完整 `MEM0_*` 配置段（`MEM0_ENGINE_ENABLED=true` 等），但代码库中**已不存在 mem0 引擎实现**（`infrastructure/memory/` 仅 `fact_store.py`；引擎代码 2026-08-19 commit `46801554` 删除，容器内 `import mem0` 亦失败）。`MEM0_*` 配置段是零消费的配置漂移残留（代码中无 Settings 字段或业务模块读取）；真实库中的 `mem0_memories` 表是旧引擎遗留的受保护迁移残留，`scripts/check_schema_drift.py` 豁免其对账，禁止顺手清理（详见 `memory_architecture.md` §1）。当前实际链路是自研的：
 
 - `PostgresFactStore` + `FactStore` Protocol（`infrastructure/memory/fact_store.py`）—— 应用层依赖抽象，可换持久化后端
 - `AgentMemoryService`（`application/services/agent_memory_service.py:40`）提供 `save / search / update / forget`
@@ -453,9 +453,9 @@ ReAct 循环、Provider 抽象、工具分发、SSE 协议、统一事件框架�
 | `docker` | 7.2.0 | 沙箱容器池 |
 | `httpx` | 0.28.1 | **LLM 主通道** |
 | `fastembed` | 0.8.0 | 记忆 embedding |
-| `ollama` | — | 可选本地 embedding（`MEM0_OLLAMA_BASE_URL` 附近配置） |
+| `ollama` | — | 可选本地 embedding（`.env.example` 的 `MEM0_OLLAMA_BASE_URL` 附近配置；该 `MEM0_*` 段是零消费配置残留，见 §2.4） |
 
-**明确不存在**：`anthropic` SDK、`llama-index`、`mem0ai`、LangChain 链式抽象（LCEL / `AgentExecutor`）。
+**明确不存在**：`anthropic` SDK、`llama-index`、`mem0ai`（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表与 `MEM0_*` 配置段为迁移残留，见 §2.4）、LangChain 链式抽象（LCEL / `AgentExecutor`）。
 
 ### 5.3 Provider 抽象设计
 

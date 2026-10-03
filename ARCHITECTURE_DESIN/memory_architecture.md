@@ -10,6 +10,19 @@
 CygnusX 的记忆系统目前采用**自研 PostgreSQL + pgvector 薄层**，不依赖
 mem0。系统处于 v2 灰度阶段：
 
+**mem0 遗留现状（2026-10-03 实勘更正）**：mem0 引擎代码已于 2026-08-19（commit `46801554`）
+从代码路径整体移除（`infrastructure/memory/` 仅存 `fact_store.py`），容器内 `import mem0`
+亦失败。但两处遗留仍在，属于**受保护的迁移残留而非引擎**：
+
+- 真实库中存在 `mem0_memories` 表（约 120 行旧引擎写入的加密会话摘要，payload 为
+  Fernet 密文 `{"data": "gAAAA...", "hash", "scope", "run_id", ...}`），已无人读写；
+  `scripts/check_schema_drift.py` 的 `_IGNORED_EXTRA_TABLES` 豁免它，防止对账 fail-fast 误报。
+- `.env.example` 仍保留完整 `MEM0_*` 配置段（`MEM0_ENGINE_ENABLED=true` 等），
+  代码中无任何 `Settings` 字段或业务模块消费，属于配置漂移残留。
+
+**禁止**为"清理漂移"而删表或删配置段：`mem0_memories` 是唯一的历史记忆载体，删除即不可逆
+丢失；若需清理，须先导出/确认后人工决策。当前代码对两者均只读豁免、零消费。
+
 - `memory_v2_enabled=False`：保留 `agent_memories` 旧链路，作为兼容和回滚路径。
 - `memory_v2_enabled=True`：使用 `memory_blocks` 常驻记忆块、`memory_facts` 事实召回和
   增量 settle 任务。
@@ -424,7 +437,9 @@ settle 幂等命中和块冲突率；出现异常时关闭开关即可回到旧�
 - `cygnusx_update_memory_block` 乐观锁；
 - Studio `MEMORY.md` / `.memory/` 和工作区记忆工具；
 - 检查点密钥排除、10 MB 文件限制和恢复保护点；
-- mem0 引擎文件及依赖已从当前代码路径移除；
+- mem0 引擎文件及依赖已从当前代码路径移除（2026-08-19 commit `46801554`）；遗留
+  `mem0_memories` 表与 `.env.example` 的 `MEM0_*` 配置段保留为零消费的迁移残留，
+  `check_schema_drift.py` 豁免前者（详见 §1 mem0 遗留现状）；
 - （2026-08-22 M0）AgentTeams 合成会话 settle 排除：入口双点 + 任务体双保险 +
   operational 级口径（`memory.settle_skipped` OTel 指标计数 + 结构化日志）；
 - （2026-08-22 M1）v2 共享分区召回两路合并：`search_memory` 与 `build_prompt_context_v2`

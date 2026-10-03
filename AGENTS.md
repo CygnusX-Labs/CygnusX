@@ -16,7 +16,7 @@ CygnusX（仓库名 OmicHub，华中农业大学园艺林学学院）是 AI 驱�
 
 - 后端：Python 3.11（`.python-version` 为 `omichub_3.11`）+ FastAPI + SQLAlchemy(asyncpg) + Alembic + Celery/Redis + LangGraph + litellm + pydantic v2；包管理 **uv**（`uv.lock` 冻结，CI 用 `uv sync --frozen`）。
 - 前端：`frontend/`，Vue 3 + TS(strict) + Vite 5 + Pinia + naive-ui；REST 边界 `src/api/*` → axios 统一实例 `baseURL '/api/v1'`（手写，无 OpenAPI 生成）。
-- 存储/中间件：PostgreSQL+pgvector（87 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0**（`.env.example` 的 MEM0 残留是配置漂移，勿信）。
+- 存储/中间件：PostgreSQL+pgvector（87 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0 引擎**（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表为受保护的迁移残留、`check_schema_drift.py` 豁免对账，`.env.example` 的 `MEM0_*` 段是零消费配置残留——禁止顺手清理，详见 `ARCHITECTURE_DESIN/memory_architecture.md` §1）。
 - 周边子工程：`mcp-server/`（独立 FastMCP 外部通道）、`integrations/agentteams/{bridge,gateway}/`（各自 pyproject + 独立 CI job）、`scripts/`（cygnusxtools CLI）、`docs/app/`（独立 React 档案站，非主前端）。
 
 ## 2. 常用命令与门禁流水线
@@ -78,7 +78,7 @@ uv run ruff check src/ tests/ && uv run mypy src/cygnusx/ \
 | 异步执行 | Celery reconcile-only + RocketMQ | `infrastructure/celery_app/`、`task_queue/` |
 | 计费/记忆/知识 | token 计费、pgvector 记忆与检索 | `application/services/` 同名服务、`infrastructure/database/vector` |
 
-**关键资产目录**：`data/ai/`（20 个 Agent YAML + prompts 注册表 + skills 磁盘真相源 + runtime_images/studio 沙箱配置）· `data/MODULE_LOCKED.yaml`（17 模块注册表）· `tool_configs/`（`tools_schema.yaml` LLM 工具 schema + 各工具契约）· `flows/`（声明式流程 catalog）· `deploy/`（compose×7 + runtime-images/studio/sandbox/agentteams Dockerfile + image-mapping）· `mcp-server/` · `pipelines/`（RNAFlow/ATACFlow/scrna/EBIDownload/tools 子模块 + jbrowse2 产物）· `Protocol/`（生效协议）· `evidence/`、`logs/`（运行证据，不入提交）。
+**关键资产目录**：`data/ai/`（19 个已启用 Agent + Agent YAML/prompts 注册表 + skills 磁盘真相源 + runtime_images/studio 沙箱配置，见 `CygnusX.yaml` 的 `agents.enabled`）· `data/MODULE_LOCKED.yaml`（18 模块注册表）· `tool_configs/`（`tools_schema.yaml` LLM 工具 schema + 各工具契约 + `tools_design.md` 工具页面规范）· `flows/`（声明式流程 catalog）· `deploy/`（compose×8 + runtime-images/studio/sandbox/agentteams Dockerfile + image-mapping）· `mcp-server/` · `pipelines/`（RNAFlow/ATACFlow/scrna/EBIDownload/tools 子模块 + jbrowse2 产物）· `Protocol/`（生效协议，FlowFrame 子模块为 Flow 强制规范 v2.0）· `evidence/`、`logs/`（运行证据，不入提交）。
 
 **权威文档索引**（改对应域前必读）：总览 `cygnusx_architecture.md` + `platform_architecture_maps.md`（看图入口）；Agent/Chat `agent_execution_framework.md`/`agent_framework_baseline.md`/`agent_architecture.md`；Token 计费 `token_billing_architecture.md`；DB `database_architecture.md`；沙箱 `cygnusx_sandbox_architecture_2026-10-01.md`（唯一规范）；MCP `mcp_architecture.md`；记忆/知识/技能各同名文档；前端 36 章 `frontend.md`；模块设计六原则 `cygnusx_design.md`。
 

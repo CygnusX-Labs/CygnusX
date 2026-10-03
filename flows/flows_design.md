@@ -30,7 +30,7 @@
 
 | 范围 | 关键文件 | 当前职责 |
 |---|---|---|
-| 工具箱 AI 设计 | `tool_configs/tools_update.md` | 工具 Schema、ToolBridge、builtin MCP、双通道结果和异步策略的总体设计 |
+| 工具箱 AI 设计 | `ARCHITECTURE_DESIN/mcp_architecture.md`（现状）｜`ARCHITECTURE_DESIN/deprecated/tools_update_2026-07.md`（原设计提案，已归档） | 工具 Schema、ToolBridge、builtin MCP、双通道结果和异步策略 |
 | 工具箱页面规范 | `tool_configs/tools_design.md` | 工具注册、路由、参数表单、数据处理与结果展示规范 |
 | 工具 Schema | `tool_configs/tools_schema.yaml` | 已登记 KEGG、火山图、系统发育树、曼哈顿图等 AI 工具契约 |
 | Schema 加载器 | `src/cygnusx/tools/schema_loader.py` | YAML 热加载、工具名索引、OpenAI function schema 转换 |
