@@ -319,7 +319,9 @@ services:
   # MINIO_AGENTTEAMS_BUCKET 供主后端证据区；MINIO_AGENTTEAMS_BRIDGE_BUCKET 供
   # Bridge 持久层（cases/{case_id}/events + snapshot，Part 1 MinIO 化改造）。
   minio-init:
-    image: minio/mc:latest
+    # minio/mc 已迁离 Docker Hub（官方仓库在 quay.io）；禁 latest，固定 RELEASE tag。
+    # 国内拉不动 quay.io 时：docker pull quay.m.daocloud.io/minio/mc:<tag> 后 tag 回此引用。
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: cygnusx-minio-init
     logging: *default-logging
     entrypoint: ["/bin/sh", "-c"]

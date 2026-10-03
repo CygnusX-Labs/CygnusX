@@ -9,11 +9,11 @@
 # 管理员仍可在"系统设置 → AI 模型配置"中查看/修改/测试。
 
 providers:
-- name: deepseek-v4-flash
+- name: deepseek-v4-flash-0731
   provider_type: openai_compatible
   model: deepseek-v4-flash
-  base_url: https://api.deepseek.com
-  api_key: ${DP_API_KEY}
+  base_url: https://moma.cmecloud.cn/v1
+  api_key: ${YD_API_KEY}
   temperature: 0.7
   max_tokens: 8192
   context_window: 262144
@@ -35,11 +35,11 @@ providers:
   is_default: false
   is_active: true
   extra_params: {}
-- name: doubao-seed-evolving
+- name: qwen
   provider_type: openai_compatible
-  model: doubao-seed-evolving
-  base_url: https://ark.cn-beijing.volces.com/api/v3
-  api_key: ${ARK_API_KEY}
+  model: qwen/qwen3.7-max
+  base_url: https://moma.cmecloud.cn/v1
+  api_key: ${YD_API_KEY}
   temperature: 0.7
   max_tokens: 8192
   context_window: 262144
@@ -48,4 +48,29 @@ providers:
   is_default: true
   is_active: true
   extra_params: {}
-
+- name: kimi-k3
+  provider_type: openai_compatible
+  model: kimi/kimi-k3
+  base_url: https://moma.cmecloud.cn/v1
+  api_key: ${YD_API_KEY}
+  temperature: 0.7
+  max_tokens: 8192
+  context_window: 262144
+  top_p: 1.0
+  timeout: 120
+  is_default: true
+  is_active: true
+  extra_params: {}
+- name: glm-5.3
+  provider_type: openai_compatible
+  model: zhipu/glm-5.3
+  base_url: https://moma.cmecloud.cn/v1
+  api_key: ${YD_API_KEY}
+  temperature: 0.7
+  max_tokens: 8192
+  context_window: 262144
+  top_p: 1.0
+  timeout: 120
+  is_default: true
+  is_active: true
+  extra_params: {}
