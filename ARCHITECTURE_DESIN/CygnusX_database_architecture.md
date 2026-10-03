@@ -5,9 +5,63 @@
 > **最后更新**：2026-09-18
 > **适用范围**：`src/cygnusx/infrastructure/database/`、`src/cygnusx/domain/*/repositories.py`、`alembic/`、`scripts/check_migrations.py`、`scripts/check_schema_drift.py`、管理端「数据库健康」页。
 
-> **合并说明（2026-09-18）**：本文档新增文末附录《Terminal 与参考基因组模块更新记录》，内容自 `log_architecture.md` 原 §9.2–§9.6（terminal 资源配置、参考基因组前端/路由、JBrowse 配置模型、cygnusxtools 参考库离线构建）整段迁入（该几节与日志主题无关），并与 §11 参考基因组章节互为交叉引用；日志本体架构仍以 `log_architecture.md` 为准。
+> **合并说明（2026-09-18）**：本文档新增文末附录《Terminal 与参考基因组模块更新记录》，内容自 `CygnusX_log_architecture.md` 原 §9.2–§9.6（terminal 资源配置、参考基因组前端/路由、JBrowse 配置模型、cygnusxtools 参考库离线构建）整段迁入（该几节与日志主题无关），并与 §11 参考基因组章节互为交叉引用；日志本体架构仍以 `CygnusX_log_architecture.md` 为准。
 
 ---
+
+## 0. 这个数据库模块如何发挥作用
+
+数据库模块是所有需要持久化状态的应用服务与进程共享的边界。FastAPI 路由通过依赖注入取得 `AsyncSession`，应用服务再按领域选择仓储接口或直接构造 SQLAlchemy 查询；Celery、Beat 和后台线程使用同一套连接配置，但按事件循环生命周期切换到 `NullPool` 或一次性引擎。这样，事务提交、回滚、连接回收和只读分流都集中在 `infrastructure/database/session.py`，业务代码不需要自己管理连接。
+
+ORM 模型是 schema 的代码侧描述，`models/__init__.py` 的全量导入把 87 张业务表注册到同一个 `Base.metadata`。核心域（用户、文件、任务、Cookie、MCP、沙箱、技能、终端等）经 domain Protocol/ABC 隔离后由 SQLAlchemy 仓储实现；chat、goal、knowledge 等查询形态简单的域保留服务层直连模型。向量列由本地 `Vector` 类型映射到 PostgreSQL pgvector，知识和记忆服务在事务数据之外复用同一数据库完成相似度召回。
+
+schema 变更由 Alembic 迁移推进，应用启动不会调用 `create_all`。CI 检查迁移链是否单 root、单 head，容器升级后再执行 metadata 与真实数据库的漂移检查；因此“模型、迁移、线上 schema”形成闭环。池事件还会导出连接签出、连接建立和失效指标，管理端健康页与告警可以据此定位数据库容量或生命周期问题。
+
+### 0.1 运行架构图：请求如何落到数据库
+
+```mermaid
+flowchart TD
+    A[FastAPI 路由 / Celery 任务] --> B[应用服务]
+    B --> C{数据访问方式}
+    C -->|核心域| D[Domain Repository Protocol]
+    C -->|轻量查询域| E[直接 select Model]
+    D --> F[SQLAlchemy Repository 实现]
+    E --> G[AsyncSession]
+    F --> G
+    G --> H{进程角色}
+    H -->|Web| I[QueuePool 异步连接池]
+    H -->|Worker / Beat| J[NullPool 独立事件循环]
+    H -->|报表读取| K[只读副本或主库回退]
+    I --> L[(PostgreSQL)]
+    J --> L
+    K --> L
+    L --> M[pgvector 向量列与索引]
+    N[Alembic upgrade head] --> L
+    O[check_schema_drift.py] --> L
+```
+
+### 0.2 实现图：模型、仓储与迁移如何协作
+
+```mermaid
+sequenceDiagram
+    participant R as Route/Task
+    participant S as Application Service
+    participant F as session.py
+    participant Repo as Repository or Model Query
+    participant M as models/__init__.py
+    participant DB as PostgreSQL
+    participant A as Alembic/Drift Checks
+    R->>S: 调用用例并注入 AsyncSession
+    S->>F: get_session_factory()
+    F-->>S: Web 池或 NullPool Session
+    S->>Repo: 查询、写入、提交或回滚
+    Repo->>DB: SQLAlchemy SQL / pgvector 运算
+    DB-->>Repo: 行、事务结果或向量距离
+    Repo-->>S: 领域对象/查询结果
+    A->>M: 导入模型并读取 Base.metadata
+    A->>DB: 对账迁移链与真实 schema
+    A-->>A: 差异失败或记录告警
+```
 
 ## 1. 概述
 
@@ -192,7 +246,7 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
   - `GET /health`：alembic 库版本戳 vs 代码 head（ScriptDirectory，不连库）、同步状态、public 表计数、连接池占用快照、只读副本配置状态；
   - `GET /drift`：与 `check_schema_drift.py` 同逻辑的实时对账（缺失表/列、多余表）。
 - **前端**：`frontend/src/views/AdminDatabaseHealthView.vue` + `frontend/src/api/admin/database.ts`，路由懒加载、管理员守卫、管理菜单入口。
-- **样式**：遵循 `ARCHITECTURE_DESIN/frontend.md`——只消费语义令牌（`--neutral-card` / `--neutral-border` / `--arco-*`，明暗主题自适应）；PageHeader + `#actions` 刷新（`:loading`，禁止整页 reload）；表格全部固定列宽 + `scroll-x` + `row-key`；状态同时以文字 + `NTag` 颜色表达；加载 `NSkeleton`/`NSpin`、空态 `NEmpty`、失败保留上下文 + 重试。
+- **样式**：遵循 `ARCHITECTURE_DESIN/CygnusX_frontend.md`——只消费语义令牌（`--neutral-card` / `--neutral-border` / `--arco-*`，明暗主题自适应）；PageHeader + `#actions` 刷新（`:loading`，禁止整页 reload）；表格全部固定列宽 + `scroll-x` + `row-key`；状态同时以文字 + `NTag` 颜色表达；加载 `NSkeleton`/`NSpin`、空态 `NEmpty`、失败保留上下文 + 重试。
 
 ---
 
@@ -204,7 +258,7 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
 - [ ] 出迁移并人工审查；PostgreSQL 专有索引参数补全；
 - [ ] autogenerate 复跑确认为空 diff；`check_migrations.py` / `check_schema_drift.py` 全绿；
 - [ ] 核心域补 domain 接口 + 实现并加入 `repositories/__init__.py`；轻量域直连模型需在服务层注释说明；
-- [ ] 涉及展示的，前端按 `frontend.md` 验收清单走一遍。
+- [ ] 涉及展示的，前端按 `CygnusX_frontend.md` 验收清单走一遍。
 
 ---
 
@@ -229,7 +283,7 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
 | 孤儿清理 | `domain/file/`、`domain/festival/` | 删除 `FileDomainService`、`IResultArchiveRepository`、`ResultArchive`、`FestivalConfigRepository` |
 | 漂移脚本 | `scripts/check_schema_drift.py` | 忽略 `mem0_memories`，消除常驻告警 |
 | 契约测试 | `tests/unit/test_database_module_contracts.py` | models/repositories/env 排除集/只读回退 6 条 |
-| 管理端健康页 | `api/v1/admin/database.py`、前端 `AdminDatabaseHealthView.vue` | /health + /drift，样式遵循 frontend.md |
+| 管理端健康页 | `api/v1/admin/database.py`、前端 `AdminDatabaseHealthView.vue` | /health + /drift，样式遵循 CygnusX_frontend.md |
 | 参考基因组详情增强 | `reference_genomes/{indexer,service,schema,api}.py`、前端 `ReferenceGenomeDetailView.vue` | 见 §11：CDS/UTR 基因模型图、GO Slim、启动子序列、外部链接、JBrowse/BLAST 联动 |
 
 ---
@@ -239,7 +293,7 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
 > 本模块不走 Alembic/ORM：每版本一个离线构建的 SQLite（`gene_index.db`，FTS5），
 > 构建器 `src/cygnusx/reference_genomes/indexer.py`，运行期只读。
 > schema 演进靠"解析器幂等 + 全量重建"，增量模式用 `_ensure_column` / `CREATE TABLE IF NOT EXISTS` 兜底旧库。
-> 关联：本模块的前端升级/路由、JBrowse 配置模型扩展与 `cygnusxtools refdb` 离线构建等更新记录见文末附录《Terminal 与参考基因组模块更新记录》（2026-09-18 自 log_architecture.md §9.2–9.6 迁入）。
+> 关联：本模块的前端升级/路由、JBrowse 配置模型扩展与 `cygnusxtools refdb` 离线构建等更新记录见文末附录《Terminal 与参考基因组模块更新记录》（2026-09-18 自 CygnusX_log_architecture.md §9.2–9.6 迁入）。
 
 ### 11.1 2026-09-11 已实现（第一、二梯队）
 
@@ -268,9 +322,9 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
 
 ---
 
-## 附录：Terminal 与参考基因组模块更新记录（2026-09-18 自 log_architecture.md §9.2–9.6 迁入）
+## 附录：Terminal 与参考基因组模块更新记录（2026-09-18 自 CygnusX_log_architecture.md §9.2–9.6 迁入）
 
-> 迁移说明：以下 A.1–A.5 为 `log_architecture.md` 原 §9.2–§9.6 整段迁入（原文与日志主题无关），内容未作改写，编号映射为 A.x（原 §9.x）以便溯源。交叉引用：参考基因组模块（`reference_genomes`）的架构定位、索引器演进记录与 TODO 见本文 §11。
+> 迁移说明：以下 A.1–A.5 为 `CygnusX_log_architecture.md` 原 §9.2–§9.6 整段迁入（原文与日志主题无关），内容未作改写，编号映射为 A.x（原 §9.x）以便溯源。交叉引用：参考基因组模块（`reference_genomes`）的架构定位、索引器演进记录与 TODO 见本文 §11。
 
 ### A.1（原 §9.2）云端沙盒终端资源配置链路
 

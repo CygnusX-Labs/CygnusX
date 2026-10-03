@@ -3,6 +3,65 @@
 > 更新日期：2026-09-21。梳理平台所有出站/入站网络路径、白名单与 SSRF 校验标准，
 > 并记录 fake-ip（198.18.0.0/15）误判问题的根因与修复。
 
+## 0. 这个网络模块如何发挥作用
+
+网络模块把入站请求、模型/工具出站和沙盒网络隔离拆成独立路径。浏览器流量先到 Nginx，由它完成静态资源、HTTP API、SSE、WebSocket、上传和 Range 请求的反向代理，再转发到 Web 服务；FastAPI 中间件继续负责认证、限流和审计。服务间通信依赖 Docker 网络和服务名，跨栈网络通过预先创建的 external network 连接，避免把所有容器放进同一个无边界网络。
+
+出站请求按调用者选择不同的安全边界。Chat 的 `network_request` 在执行前进行 URL、IP 和 DNS 解析校验，只允许 GET/HEAD 并限制响应大小；Studio 沙盒加入每会话 `internal=True` 网络，只能通过 egress proxy 访问配置白名单；终端沙盒使用专用 Docker 网络，web_search 只调用已配置的搜索源，enrichment 工具则通过可选 HTTP 代理访问外部服务。白名单校验统一识别本机、内网、云 metadata 和 DNS rebinding 风险，并显式兼容宿主机代理产生的 fake-ip 段。
+
+因此，网络策略既不是单一防火墙规则，也不是由模型决定的权限。路由、工具执行器、Studio 管理器和代理进程各自执行一层约束，容器网络再提供隔离；配置文件只提供允许的目标和代理参数，审计记录保留需要人工追踪的审批与出站结果。
+
+### 0.1 运行架构图：入站与五条出站路径
+
+```mermaid
+flowchart TD
+    U[Browser] --> N[Nginx]
+    N --> W[FastAPI Web]
+    W --> MW[Auth / RateLimit / Audit Middleware]
+    MW --> API[API / SSE / WebSocket]
+    API --> C[Chat network_request]
+    API --> S[Studio Session Sandbox]
+    API --> T[Terminal Sandbox]
+    API --> Q[web_search Service]
+    API --> E[Enrichment Worker]
+    C --> C1[SSRF URL + DNS 校验]
+    C1 --> Internet[(External Network)]
+    S --> S1[Internal per-session Network]
+    S1 --> P[Whitelist Egress Proxy]
+    P --> Internet
+    T --> T1[cygnusx-sandbox-net]
+    T1 --> Internet
+    Q --> Q1[Configured Search Provider / SearXNG]
+    Q1 --> Internet
+    E --> E1[Optional HTTP Proxy]
+    E1 --> Internet
+```
+
+### 0.2 实现图：Studio 出站请求如何被放行
+
+```mermaid
+sequenceDiagram
+    participant A as Agent/Studio Runtime
+    participant M as StudioSandboxManager
+    participant D as Docker Network
+    participant P as Egress Proxy
+    participant L as AllowlistLoader
+    participant X as External Host
+    participant AU as Audit Log
+    A->>M: 请求会话内网络访问
+    M->>L: 读取 studio.yaml 白名单
+    M->>D: 创建/确认 internal=True 会话网络
+    M->>D: 校验沙盒、代理和 OnlyOffice 成员
+    A->>P: 通过 CONNECT 代理请求域名
+    P->>P: 拒绝 IP 字面量、通配符和非白名单域名
+    P->>P: DNS 解析并校验每个地址（含 fake-ip 例外）
+    P->>X: 建立允许的出站连接
+    X-->>P: 返回响应
+    P-->>A: 返回受代理限制的响应
+    M->>AU: 记录网络审批、失败或生命周期事件
+    M->>D: 会话结束后回收网络
+```
+
 ## 1. 总览：五条独立网络路径
 
 ```

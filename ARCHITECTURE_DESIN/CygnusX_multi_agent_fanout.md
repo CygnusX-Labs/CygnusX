@@ -8,6 +8,70 @@
 
 ---
 
+## 这个多 Agent 协作模块如何发挥作用
+
+当前平台的多 Agent 协作由三种执行形态组成。MAS DAG 面向经过确认的分析计划：编排器生成有向无环计划，用户批准后，outbox 事件经 Redis Streams 投递给调度器，所有就绪节点分别进入 Celery 队列，由固定 executor 执行并用状态机、版本号和 dedupe key 保证幂等。它能并行跑流程节点，但节点的执行体是注册的流水线 worker，不会启动第二个 LLM 对话循环。
+
+多专家会诊是对话内的只读并行路径。`MultiExpertConsultationService` 使用 `asyncio.gather` 同时调用有限数量的专家模型，专家调用不挂工具，只返回短意见，由主 Agent 继续综合。`transfer_to_agent` 则把控制权串行交给一个白名单 Agent，不负责并行或汇总。三者都经过主 Chat Runtime 的事件流，因此前端看到的是 consultation、handoff 或 MAS progress 投影，而不是直接消费内部 A2A/Redis 事件。
+
+MAS 的 A2A 命名实际是内部事务 outbox + Redis Streams 信封，服务于 plan/node 生命周期；它不是标准 A2A 联邦协议，也不承担普通 Chat 的 Agent 互操作。文档后面的 `parallel_subagents` 是待实现设计：如果未来启用，应作为父循环中的一个受控工具，在请求内启动深度为一的子 Agent，限制并发、超时、工具白名单和审计，并将部分结果回灌父 Agent；分钟级管道仍归 MAS。
+
+### 运行架构图：现有协作路径与设计分支
+
+```mermaid
+flowchart TD
+    U[User / Parent Agent] --> R[Chat Runtime]
+    R --> C{协作形态}
+    C -->|已批准分析计划| M[MAS Orchestrator]
+    M --> O[Transactional Outbox]
+    O --> S[Redis Streams]
+    S --> D[MAS Scheduler / Event Consumer]
+    D --> Q[Celery Pipeline Executors]
+    C -->|只读咨询| E[MultiExpertConsultationService]
+    E --> G[asyncio.gather 专家 LLM]
+    C -->|串行交接| H[transfer_to_agent]
+    H --> I[白名单目标 Agent]
+    C -.未来设计.-> F[parallel_subagents]
+    F -.受控深度/并发/超时.-> J[带工具子 Agent 集合]
+    Q --> K[MAS progress / artifacts]
+    G --> L[consultation SSE]
+    I --> N[handoff 事件]
+    J --> P[结构化 partial results]
+    K --> R
+    L --> R
+    N --> R
+    P --> R
+```
+
+### 实现图：MAS 计划批准到并行节点完成
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Orchestrator/Chat Runtime
+    participant DB as MAS DB + Outbox
+    participant B as Celery Beat Publisher
+    participant RS as Redis Stream
+    participant EC as Event Consumer
+    participant SC as MAS Scheduler
+    participant W as Pipeline Worker
+    U->>A: 预览并批准 ExecutionPlan
+    A->>DB: 写 PLAN_APPROVED 事件与运行状态
+    B->>DB: publish_pending()
+    B->>RS: XADD cygnusx:mas:events
+    EC->>RS: 消费事件并做持久幂等
+    EC->>SC: unlock_ready_nodes()
+    SC->>DB: 写多个 NODE_READY
+    EC->>W: dispatch_ready_node().delay()
+    par 就绪节点 1
+        W->>DB: 执行并写 NODE_SUCCEEDED/FAILED
+    and 就绪节点 2
+        W->>DB: 执行并写 NODE_SUCCEEDED/FAILED
+    end
+    DB-->>A: 状态与进度投影
+    A-->>U: SSE/REST 进度和产物
+```
+
 ## 0. 背景与目标
 
 用户诉求：一个 Agent 跑到一半遇到可并行的子任务时，能**同时开启多个 Agent 协助干活**，

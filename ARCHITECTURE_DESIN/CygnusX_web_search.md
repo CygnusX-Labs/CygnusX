@@ -5,6 +5,63 @@
 
 ---
 
+## 0. 当前平台 Web Search 模块如何发挥作用
+
+当前平台的 Web Search 是 Agent/Chat 的受控只读工具，不是一个独立的搜索页面。Chat 运行时根据 Agent 的 `web_search` 策略、用户显式开关和“需要最新外部事实”的判断动态注入工具；工具调用进入 `ResearchSearchOptimizer`，先做查询规范化、领域 provider 路由和必要的查询改写，再交给 `SearchProviderService.search_default` 选择启用且为默认的 Provider。当前注册表支持 Tavily、Bocha、智谱、Exa 和自建 SearXNG，Provider 密钥和默认项由管理端配置。
+
+搜索结果作为带来源的结构化数据回到 Chat Runtime，运行时发出 `web_search` / `web_search_results` 事件，前端显示来源列表，模型再据此生成回答。科研和专业 Agent 通常优先调用知识库；知识库结果不足时才补充 Web Search。学术工具（Europe PMC、arXiv 等）由对应内置 MCP preset 提供，和通用 `search_default` 共享研究工具语境但不是同一个 Provider 选择路径。模型不能把未配置、被禁用或被 Agent 策略排除的搜索源当作可用工具。
+
+网络出口遵循平台统一的容器和 SSRF 边界：搜索 Provider 只访问配置的 API 或 SearXNG 服务，凭据不进入模型上下文；管理员可以测试 Provider、切换默认源和查看可用性。查询失败、无默认 Provider 或 Provider 返回错误时，运行时将错误作为工具结果处理，不伪造引用；最终回答是否使用来源由模型和提示词契约决定。
+
+### 运行架构图：Agent 搜索请求到来源结果
+
+```mermaid
+flowchart TD
+    A[User / Agent Request] --> B[Chat Runtime 策略判定]
+    B --> C{web_search 是否启用}
+    C -->|否| D[继续离线/知识库路径]
+    C -->|是| E[注入 web_search Tool]
+    E --> F[ResearchSearchOptimizer]
+    F --> G[SearchProviderService.search_default]
+    G --> H{启用的默认 Provider}
+    H -->|Tavily / Bocha / Zhipu / Exa| I[外部 Search API]
+    H -->|SearXNG| J[自建 SearXNG 服务]
+    I --> K[结构化结果 + URL/标题/摘要]
+    J --> K
+    K --> L[ChatChunk web_search_results]
+    L --> M[Frontend 来源展示]
+    K --> N[模型生成带证据回答]
+    O[Admin Search Provider Config] --> G
+    P[Network / SSRF Boundary] --> I
+    P --> J
+```
+
+### 实现图：一次 `web_search` 工具调用
+
+```mermaid
+sequenceDiagram
+    participant R as Chat Runtime
+    participant O as ResearchSearchOptimizer
+    participant S as SearchProviderService
+    participant DB as Provider Config DB
+    participant P as External API/SearXNG
+    participant E as Chat Event Stream
+    participant UI as Frontend
+    R->>R: 根据 Agent policy 与时效性判断是否注入工具
+    R->>O: _optimized_web_search(query)
+    O->>O: 查询改写、去重、学术/通用路由和缓存判断
+    O->>S: search_default(normalized_query, top_n)
+    S->>DB: 读取 active/default provider 与密钥
+    DB-->>S: Provider 配置
+    S->>P: 受控 HTTP 请求
+    P-->>S: 搜索结果或错误
+    S-->>O: 统一结果列表
+    O-->>R: 结果、来源和查询元数据
+    R->>E: 发 searching / web_search_results / completed 事件
+    E-->>UI: 展示来源与状态
+    R-->>R: 将结果作为工具上下文交给模型
+```
+
 ## 执行摘要
 
 AgentSearch（brcrusoe72/agent-search）是一个 2026 年 2 月创建的年轻项目：自托管搜索 API + MCP server，打包 SearXNG，零 API key、一条命令部署，定位为 Tavily/Exa/Serper 的开源替代。**81 stars / 13 forks、单维护者（64/65 次贡献）、无正式 release tag、7 月 7 日后主分支零 commit**——健康度属于"个人项目活跃期已过峰值"状态。技术上其 17 端点 + 分层提取 + Tor 匿名栈的设计在同类中独特，但其底层 SearXNG 引擎健康度是硬约束：**searx.space 官方监控数据显示 Brave（25/36 实例错误率≥50%）和 DuckDuckGo（21/40）当前大面积被上游封禁，Brave 恰是该项目 issue #45 专门 pin 版本保活的引擎**。结论：**作为自用/小团队的低成本搜索层 = 有条件 Go（须接受引擎可用性波动）；作为生产级 Tavily 替代 = No-Go（单维护者 + 引擎被封风险 + 无 SLA）**。对本平台（OmicHub/CygnusX）而言，现有 `search_provider_service` 的 provider 注册表已覆盖 Tavily/Exa/Bocha/Zhipu/SearXNG，引入 AgentSearch 的增量价值主要在分层内容提取（`/read` 9 级降级链）和 prompt injection 清洗，搜索主链路价值有限。

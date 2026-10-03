@@ -7,6 +7,61 @@
 
 > 本文将目录内多个时期的“当前实现”“评审方案”和“未来规划”归并为一张架构地图。凡标记为“规划/候选/待验收”的内容，不应当作已经上线的能力；具体实现以代码、配置和对应领域文档为准。
 
+## 0. 这个平台模块如何发挥作用
+
+CygnusX 的总体架构负责把用户的科研意图分派给合适的执行形态，并把执行过程收敛为可审计、可恢复的结果。浏览器提交 Chat、Studio、协作室或生信任务后，入口层完成身份、项目范围、模块权限、限流和 DTO 校验；应用层根据请求模式装配 Agent、Provider、提示词、工具、Skill、MCP、知识与记忆，形成一次有明确能力边界的执行上下文。
+
+上下文随后进入对应的执行闭环。短交互由 Chat Runtime 运行 Legacy ReAct 或 LangGraph；需要代码、文件或浏览器能力的请求进入受 capability 授权的沙箱；多步骤分析交给 Celery/Snakemake/FlowFrame Worker；协作请求由 AgentTeams 的 Room、Case、Manager 和 Worker 协同。应用层保存这些路径之间共同的事件、状态和权限语义，但不把异步 Worker 或沙箱伪装成 Web 进程内的普通函数。
+
+执行期间，工具调用经过注册表、授权、超时、重复调用和熔断保护，模型得到受控的 `llm_payload`，前端得到可渲染的 `ui_payload` 与 SSE/WebSocket 事件。消息、工具调用、任务状态、usage、审计、日志和产物分别写入 PostgreSQL/pgvector、Redis、MinIO 或工作区目录；长任务由队列推进，Web 只负责提交、查询和 reconcile。最终用户看到的是消息、过程、报告和产物，运维人员则可以沿事件、日志和哈希追溯一次执行。
+
+### 0.1 运行架构图：总体模块如何协作
+
+```mermaid
+flowchart TB
+    User[用户 / 管理员] --> Frontend[Vue 3 前端\nChat · Studio · AgentTeams · Bio Tools]
+    Frontend --> Gateway[FastAPI API Gateway\nJWT · RBAC · DTO · SSE/WebSocket]
+    Gateway --> App[Application 编排层\n会话 · Agent 装配 · 路由 · 状态]
+    App --> Context[Execution Context\nProvider · Prompt · Tool/MCP/Skill\nKnowledge · Memory · Billing]
+    Context --> Decision{执行形态}
+    Decision --> Chat[Chat Runtime\nLegacy ReAct / LangGraph]
+    Decision --> Studio[Studio Sandbox\n一会话一容器 / capability]
+    Decision --> Worker[Async Worker\nCelery · Snakemake · FlowFrame]
+    Decision --> Team[AgentTeams\nRoom · Case · Manager · Worker]
+    Chat --> Policy[共同治理\n权限 · 轮次 · 超时 · 审批 · 熔断]
+    Studio --> Policy
+    Worker --> Policy
+    Team --> Policy
+    Policy --> Persist[(PostgreSQL/pgvector\nRedis · MinIO · workspace)]
+    Policy --> Events[事件出口\nSSE · WebSocket · audit · logs]
+    Events --> Frontend
+```
+
+### 0.2 实现图：从 HTTP 入口到代码模块
+
+```mermaid
+sequenceDiagram
+    participant UI as frontend/src
+    participant Route as src/cygnusx/api/v1
+    participant Service as application/services
+    participant Domain as domain + execution
+    participant Adapter as infrastructure
+    participant Run as sandbox / Celery / Worker
+    participant Store as database / Redis / MinIO
+
+    UI->>Route: REST、SSE 或 WebSocket
+    Route->>Service: 鉴权后的 request DTO
+    Service->>Adapter: 读取配置、会话和能力注册
+    Adapter->>Store: Agent/Session/Knowledge/Memory/Billing
+    Service->>Domain: 选择 execution_path 并建立状态
+    Domain->>Run: 调用 Runtime、沙箱或异步任务
+    Run->>Adapter: Provider、Tool/MCP/Skill、文件适配器
+    Run->>Store: 状态、事件、usage、审计、产物索引
+    Run-->>Service: ChatChunk / job state / artifact
+    Service-->>Route: 统一事件与终态
+    Route-->>UI: 增量内容、工具过程和结果
+```
+
 ---
 
 ## 1. 一页结论
@@ -157,6 +212,8 @@ Studio 会话创建
 | AgentTeams | `/api/v1/agent-teams` | 协作室、Case、成员、通知、审计和过程报告 |
 | Reports | 相关报告路由 | 结果、产物、版本树和下载 |
 | Terminal | `/api/v1/terminal` | 云端终端会话和资源配置 |
+| BioTools 注册表 | `/api/v1/tools` | 工具箱卡片注册表（`tools_setting.yaml` 透传）与热重载 |
+| 生信工具 | `/api/v1/{blast,deg,enrichment,gsea,synteny,jbrowse,phylogenetic-tree}` | 各分析工具的提交/任务状态/结果下载；由 `register_tool_routers` 自动发现挂载（见 `CygnusX_toolbox_architecture.md`） |
 
 所有路由应遵循：
 
@@ -433,7 +490,8 @@ pending → queued → running → success
 ### 13.2 配置来源
 
 - `.env`：数据库、Redis、JWT、模型 Provider、存储和部署环境；
-- `data/ai/*.yaml`：Agent、工具、Studio、MCP、提示词和流程配置；
+- 仓库根 `flows/*.yaml`：L1 分析中心流程注册表（`Settings.flow_yaml_dir`，磁盘扫描 + mtime 热重载、无 DB 注册、免重启；详情见 `CygnusX_flow_architecture.md`）。注意与 `data/ai/flows/` 是**两套体系**：后者是 AgentTeams/MAS 治理流程注册表（FlowRegistry，flow/artifacts/stages/executors schema），服务于意图路由、能力对账与协作室，不驱动 L1 表单与任务执行；
+- `data/ai/*.yaml`：Agent、工具、Studio、MCP、提示词等站点配置；
 - 数据库：用户可编辑 Agent、模型、MCP、权限和运行状态；
 - `ARCHITECTURE_DESIN/`：设计约束、实施计划、验收和交接文档。
 
@@ -511,21 +569,21 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 
 | 主题 | 首选详细文档 |
 |---|---|
-| 项目模块和接入规范 | `cygnusx_design.md` |
-| Agent 现状与扩展 | `agent_execution_framework.md`、`agent_framework_baseline.md`（原 `agent_architecture_and_extension_guide.md` 已并入其中） |
-| Agent 可观测性 | `agent_execution_framework.md` §6/§7.3（原 `agent_execution_loop_observability_2026-08.md` 已并入其中） |
-| Chat Runtime 分层与事件契约 | `chat_execution_layers_2026-08.md` |
-| AgentTeams | `deprecated/agentteams_room_architecture.md`、`deprecated/agentteams_department_collaboration.md` |
-| Studio | `cygnusx_studio_handover_2026-07.md` |
-| 沙箱安全与能力路由 | `cygnusx_sandbox_architecture_2026-10-01.md` |
-| MCP | `mcp_architecture.md`（含 §5 MCP 构建师 agent-mcp-builder as-built 章节，原 `mcp_builder_agent.md` 已于 2026-09-18 并入） |
-| 记忆 | `memory_architecture.md` |
-| 知识库 | `knowledge_architecture.md` |
-| 多智能体/A2A/共享工作区 | `mas_a2a_plan_2026-07.md` |
-| Worker 镜像与动态环境 | `worker_images_plan.md` |
-| 日志 | `log_architecture.md` |
-| 前端规范 | `frontend.md` |
-| 愿景 | `cygnusx_platform_vision_2026-08.md` |
+| 项目模块和接入规范 | `CygnusX_platform_design.md` |
+| Agent 现状与扩展 | `CygnusX_agent_execution_framework.md`、`CygnusX_agent_framework_baseline.md`（原 `agent_architecture_and_extension_guide.md` 已并入其中） |
+| Agent 可观测性 | `CygnusX_agent_execution_framework.md` §6/§7.3（原 `agent_execution_loop_observability_2026-08.md` 已并入其中） |
+| Chat Runtime 分层与事件契约 | `CygnusX_chat_execution_layers.md` |
+| AgentTeams | `deprecated/CygnusX_agentteams_room_architecture.md`、`deprecated/CygnusX_agentteams_department_collaboration.md` |
+| Studio | `CygnusX_studio_handover.md` |
+| 沙箱安全与能力路由 | `CygnusX_sandbox_architecture.md` |
+| MCP | `CygnusX_mcp_architecture.md`（含 §5 MCP 构建师 agent-mcp-builder as-built 章节，原 `mcp_builder_agent.md` 已于 2026-09-18 并入） |
+| 记忆 | `CygnusX_memory_architecture.md` |
+| 知识库 | `CygnusX_knowledge_architecture.md` |
+| 多智能体/A2A/共享工作区 | `CygnusX_mas_a2a_plan.md` |
+| Worker 镜像与动态环境 | `CygnusX_worker_images_plan.md` |
+| 日志 | `CygnusX_log_architecture.md` |
+| 前端规范 | `CygnusX_frontend.md` |
+| 愿景 | `CygnusX_platform_vision.md` |
 
 目录内另有评审稿、提示词、修复记录和历史版本文档。它们用于追踪决策，不应直接覆盖本文列出的当前实现状态。
 
@@ -536,25 +594,25 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 本总览提取自 `ARCHITECTURE_DESIN/` 当前文件，包括：
 
 - `README.md`
-- `log_architecture.md`
-- `cygnusx_design.md`
-- `cygnusx_studio_handover_2026-07.md`
-- `cygnusx_sandbox_architecture_2026-10-01.md`
-- `frontend.md`
-- `mas_a2a_plan_2026-07.md`
-- `agent_framework_baseline.md`
-- `agent_architecture_review_2026-07.md`
-- `agent_execution_framework.md`
-- `deprecated/agentteams_overdrive.md`
-- `deprecated/agentteams_department_collaboration.md`
-- `deprecated/agentteams_room_architecture.md`（2026-09-18 起已并入并替代原 `agentteams_room_framework_research_2026-08.md`、`agentteams_room_plan.md`、`manager_role_bioinfo_department_manager_2026-08.md` 三份文档）
-- `mcp_architecture.md`
-- `memory_architecture.md`
-- `knowledge_architecture.md`
-- `worker_images_plan.md`
-- `multi_agent_fanout_2026-07.md`
-- `domain_prompt_sedimentation_2026-08.md`
-- `mas_a2a_plan_2026-07.md`
-- `cygnusx_platform_vision_2026-08.md`
+- `CygnusX_log_architecture.md`
+- `CygnusX_platform_design.md`
+- `CygnusX_studio_handover.md`
+- `CygnusX_sandbox_architecture.md`
+- `CygnusX_frontend.md`
+- `CygnusX_mas_a2a_plan.md`
+- `CygnusX_agent_framework_baseline.md`
+- `CygnusX_agent_architecture_review.md`
+- `CygnusX_agent_execution_framework.md`
+- `deprecated/CygnusX_agentteams_overdrive.md`
+- `deprecated/CygnusX_agentteams_department_collaboration.md`
+- `deprecated/CygnusX_agentteams_room_architecture.md`（2026-09-18 起已并入并替代原 `agentteams_room_framework_research_2026-08.md`、`agentteams_room_plan.md`、`manager_role_bioinfo_department_manager_2026-08.md` 三份文档）
+- `CygnusX_mcp_architecture.md`
+- `CygnusX_memory_architecture.md`
+- `CygnusX_knowledge_architecture.md`
+- `CygnusX_worker_images_plan.md`
+- `CygnusX_multi_agent_fanout.md`
+- `CygnusX_domain_prompt_sedimentation.md`
+- `CygnusX_mas_a2a_plan.md`
+- `CygnusX_platform_vision.md`
 
 本文刻意不复制每个领域文档的全部接口和任务清单；新增模块或修改执行链路时，应回到对应详细文档和代码进行核对。

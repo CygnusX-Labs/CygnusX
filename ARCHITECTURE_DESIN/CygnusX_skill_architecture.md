@@ -3,6 +3,64 @@
 > 基线日期：2026-09-18。本文由代码实勘得出，修正了旧文档中过时的描述；
 > 与 `agent_framework_baseline.md` §5.2（Skill 契约）、`agent_framework_baseline.md` §12 与 §2.2（挂载与绑定，原 `agent_architecture_and_extension_guide.md` 已并入其中）互为补充，冲突时以本文为准。
 
+## 这个平台 Skill 模块如何发挥作用
+
+平台 Skill 是 Agent 的按需知识与操作规程层。管理员或内置市场把 `SKILL.md` 和 `references/`、`assets/` 等资源安装到 `data/ai/skills/<skill_id>/`，数据库只保存索引、版本快照和调用审计；Agent YAML 的 `skill_ids` 再把已安装技能绑定到具体 Agent。安装、更新、回滚和删除都由管理端服务完成，磁盘目录是真实内容，数据库记录保证可查询、可审计和可恢复。
+
+会话创建时，`AgentService.assemble_context` 只把每个已绑定技能的 name 与 description 注入系统提示词，并按需生成 `use_skill`、`skill_resource` 工具。模型命中技能后，runtime 先检查 skill_id 是否在本会话挂载集合，再按“会话 pin 快照 → 磁盘实时正文 → 数据库 prompt 兜底”的优先级加载正文；正文需要参考资料时，`skill_resource` 只允许读取 `references/` 和 `assets/`，脚本不会进入模型上下文。这样既控制首轮 token 成本，也把模型可见范围限定在 Agent 明确授权的技能集合。
+
+每次加载都会产生 skill SSE 事件和 `skill_invocations` 审计记录，版本、来源、耗时、用户、会话和消息可以被管理端追踪。会话首轮固定 `skill_pins`，所以技能在运行中升级或回滚不会改变正在执行的上下文；新的会话才读取新快照。Studio 的 capability catalog 是单独的沙箱能力路径，不应与平台 Skill 的数据库挂载混用。
+
+### 运行架构图：Skill 从市场到 Agent 上下文
+
+```mermaid
+flowchart TD
+    A[Marketplace / GitHub / ZIP / Markdown / JSON] --> B[Skill Import Service]
+    B --> C[预览 + 人工确认]
+    C --> D[data/ai/skills/<skill_id> 磁盘目录]
+    C --> E[(skills / skill_versions / skill_invocations)]
+    F[data/ai/*.yaml skill_ids] --> G[AgentService 同步/绑定]
+    G --> E
+    D --> G
+    G --> H[assemble_context]
+    H --> I[L1 name + description 索引]
+    H --> J[use_skill / skill_resource 工具]
+    J --> K{会话授权与版本 pin}
+    K --> L[L2 SKILL.md 正文]
+    K --> M[L3 references/assets 资源]
+    L --> N[Chat / Studio / AgentTeams Runtime]
+    M --> N
+    N --> O[skill SSE 事件 + 调用审计]
+```
+
+### 实现图：一次 `use_skill` 调用如何完成
+
+```mermaid
+sequenceDiagram
+    participant Y as Agent YAML
+    participant AS as AgentService
+    participant DB as Skill Index/Versions
+    participant R as Runtime
+    participant SS as Skill Store
+    participant EV as Chat Event Service
+    participant AU as Invocation Audit
+    Y->>AS: 声明 skill_ids
+    AS->>DB: 校验已安装技能并绑定
+    AS->>R: 注入 L1 索引、工具 enum 和 skill_pins
+    R->>R: 模型选择 use_skill(skill_id)
+    R->>DB: 查会话 pin 的 revision
+    alt 有会话快照
+        DB-->>R: 返回固定版本正文
+    else 无快照
+        R->>SS: read_skill_body(skill_id)
+        SS-->>R: 磁盘正文或 DB prompt 兜底
+    end
+    R->>EV: 发 skill invoked/completed/failed SSE
+    R->>AU: 写入版本、来源、耗时和会话审计
+    R-->>R: 将正文限制长度后回灌模型
+    R->>SS: 按需读取 references/assets
+```
+
 ## 0. 两套 Skill 体系（勿混淆）
 
 本仓库存在**两套相互独立**的 Skill 体系（另见 `skills/SKILL_INSTALL_GUIDE.md`）：

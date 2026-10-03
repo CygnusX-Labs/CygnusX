@@ -4,6 +4,59 @@
 >
 > **使用方式**：先阅读“技术边界”和“页面配方”，再按“实施流程”和“验收清单”完成实现。业务组件只消费语义令牌与共享模式；新增全局规则时，必须同步更新本文件及相应源文件。
 
+## 0. 这个前端模块如何发挥作用
+
+前端是一个由应用壳层、数据状态和页面组件组成的 Vue 单页应用。`main.ts` 创建 Vue 应用、Pinia 和 Naive UI 运行环境，`App.vue` 提供主题与消息/对话框/通知 Provider，`DefaultLayout.vue` 负责认证后的导航、侧栏和内容滚动。路由决定页面入口，认证 store 恢复用户身份，`modules` store 从后端注册表加载模块状态并参与受保护页面的访问判断，因此权限不会只存在于某个按钮的显示逻辑里。
+
+业务数据通过 `src/api/*` 和统一的 `api/client.ts` 访问 `/api/v1`。Axios 实例负责凭证、刷新、错误归一化和 `MODULE_LOCKED` 提示；需要增量结果的聊天、MAS、任务和 AgentTeams 页面使用 `fetch` 读取 SSE 流，需要低延迟余额或终端交互的功能使用 WebSocket composable。Pinia store 将这些响应转换为会话、消息、任务、上传和主题状态，并在断流、重连、临时会话 ID 回填和终态事件到达时维护状态一致性。
+
+页面组件和 composable 只消费 store 的响应式状态，使用 Naive UI、共享 CSS 变量和设计令牌完成渲染。流式事件先更新本地临时状态，再根据服务端的持久化事件或刷新接口对齐；路由切换、401 刷新失败、403 模块锁定和窄屏布局都由应用级边界处理。这样，视觉规范、网络协议和业务状态各有明确归属，单个页面不需要重新实现鉴权、主题或流式解析。
+
+### 0.1 运行架构图：请求、状态与页面的关系
+
+```mermaid
+flowchart TD
+    A[用户操作 / 路由进入] --> B[Vue App + DefaultLayout]
+    B --> C[View / Component]
+    C --> D[Pinia Store / Composable]
+    D --> E{数据通道}
+    E -->|REST| F[api/client.ts Axios]
+    E -->|SSE| G[fetch stream 事件解析]
+    E -->|WebSocket| H[专用 composable]
+    F --> I[/api/v1 后端]
+    G --> I
+    H --> I
+    I --> D
+    D --> J[响应式状态]
+    J --> C
+    K[auth + modules store] --> B
+    L[App.vue themeOverrides / Providers] --> B
+    L --> C
+```
+
+### 0.2 实现图：一次 Agent SSE 请求如何落到界面
+
+```mermaid
+sequenceDiagram
+    participant U as View/Component
+    participant S as agentHub Pinia Store
+    participant A as api/client or fetch
+    participant B as Backend /chat/stream
+    participant P as SSE Parser
+    participant V as Reactive State
+    U->>S: sendMessage(content, agent_id)
+    S->>A: 携带凭证发起请求
+    A->>B: POST /api/v1/chat/stream
+    B-->>P: data: 事件流
+    P->>S: token / progress / tool / terminal event
+    S->>V: 更新消息、运行卡片和 session_id
+    V-->>U: Vue 响应式重新渲染
+    B-->>A: 终态事件或断开
+    S->>A: 必要时重连或读取持久化事件
+    A-->>S: 服务端最终状态
+    S->>V: 合并并清理临时状态
+```
+
 ## 1. 设计目标与非协商原则
 
 CygnusX 是面向生物信息学任务、数据资产与 AI 工作流的科学工作台。界面应传达**平静、清晰、可靠、可控**，而非追求装饰性。

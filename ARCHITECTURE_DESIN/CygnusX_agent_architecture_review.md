@@ -8,6 +8,71 @@
 
 ---
 
+## 0. 这个 Agent 审核模块如何发挥作用
+
+本文对应的是 Agent 运行链路的审核视图：`data/ai/*.yaml` 与 Prompt Registry 提供声明式配置，`AgentService` 和 `AgentContextBuilder` 将模型、提示词、MCP、Skill、Studio 能力和权限拼成一次请求的运行时上下文；`ChatService.stream_agent_chat()` 负责路由、可选的 web/knowledge 检索、上下文继承、工具循环、事件流和终态落库。模型只能通过已挂载的工具和 capability 进入平台能力，工具结果分成给模型的 `llm_payload` 与给前端的 `ui_payload`，从而限制上下文体积并保持界面状态可渲染。
+
+在普通 Chat 中，Router 先选择一个 Agent，随后由 ReAct 或 LangGraph 运行时执行多轮工具调用；Studio 会追加会话沙箱与工作区工具；当 Agent 生成 `mas_plan_preview` 时，服务端先校验节点能力、输入/输出契约和权限，再把计划卡片交给用户确认，确认后才创建 MAS Run 并交由 Celery/outbox 调度。会话历史、附件引用、压缩摘要、搜索来源、工具审计和 token 用量分别进入既有存储与事件通道，下一轮只组装模型所需的受控视图。
+
+本文 Part 2 的检索增强属于待实施设计：它应复用现有知识库、`web_search` 和 `ResearchSearchOptimizer`，在计划生成前形成可追溯的证据包，再由能力校验器决定哪些检索结果能影响计划。检索失败时仍应回退到当前可用的计划预览链路，不能绕过用户确认、Agent 能力白名单或 MAS 状态机。
+
+### 0.1 运行架构图：Agent 审核视图
+
+```mermaid
+flowchart TD
+    U[Vue Chat / Studio] --> API[api/v1/chat.py]
+    API --> CS[ChatService.stream_agent_chat]
+    CS --> AS[AgentService + AgentContextBuilder]
+    CFG[data/ai YAML + Prompt Registry] --> AS
+    AS --> CTX[模型/提示词/MCP/Skill/Studio 上下文]
+    CTX --> R{Router / Agent 选择}
+    R --> PRE[knowledge/web 预检索]
+    PRE --> RT[ReAct 或 LangGraph Runtime]
+    RT --> TOOLS[MCP / Skill / Studio / web_search 工具]
+    TOOLS --> RT
+    RT -->|mas_plan_preview| V[能力与产物契约校验]
+    V --> CARD[ui_payload 计划卡片]
+    CARD --> H{用户确认}
+    H -->|确认| RUN[MAS Run / Celery 调度]
+    H -->|未确认| STOP[保持预览，不执行]
+    RT -->|普通回答| EVT[SSE 事件 + 消息/用量落库]
+```
+
+### 0.2 实现图：一次请求的审核关键路径
+
+```mermaid
+sequenceDiagram
+    participant UI as Chat/Studio
+    participant CS as ChatService
+    participant AS as AgentService
+    participant Q as Search/Knowledge
+    participant L as LLM Provider
+    participant T as Tool Dispatcher
+    participant MV as MASPlanValidator
+    participant MAS as MAS API/Run
+    UI->>CS: stream_agent_chat(messages, agent, flags)
+    CS->>AS: 组装提示词、工具、Skill 与权限
+    opt 检索开关或时效触发
+        CS->>Q: search(query)
+        Q-->>CS: sources / empty / error
+    end
+    CS->>L: 受控上下文 + tools
+    alt 工具调用
+        L-->>CS: tool_call
+        CS->>T: capability / MCP / Studio / Skill dispatch
+        T-->>CS: llm_payload + ui_payload
+        CS-->>UI: SSE tool/event
+    else MAS 计划预览
+        L-->>CS: mas_plan_preview
+        CS->>MV: 校验 Agent 能力与 Artifact 契约
+        MV-->>UI: 计划卡片（待确认）
+        UI->>MAS: 用户确认后创建 Run
+    else 最终回答
+        L-->>CS: text / usage
+        CS-->>UI: SSE done + 持久化消息
+    end
+```
+
 # Part 1 现阶段 Agent 架构详细梳理
 
 ## 1.1 整体分层

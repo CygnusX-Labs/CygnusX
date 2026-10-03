@@ -2,7 +2,7 @@
 
 > **状态**：实施稿（已评审，修订后可直接施工）
 > **日期**：2026-08-23
-> **范围**：针对 `ARCHITECTURE_DESIN/cygnusx_architecture.md` 架构审核中 P0/P1 级问题的优化方案，不含 MAS/Overdrive 路线选择（已确认：MAS 由 AgentTeams 协作室替代）。
+> **范围**：针对 `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md` 架构审核中 P0/P1 级问题的优化方案，不含 MAS/Overdrive 路线选择（已确认：MAS 由 AgentTeams 协作室替代）。
 > **目标读者**：后端架构、Agent 执行、Studio、AgentTeams 相关开发。
 > **修订说明**：本版相对 2026-08-23 原稿有 11 处修订，逐条记录见文末「修订记录」。修订原则：问题就地改进正文与验收清单，不在附录里只记录不改。
 
@@ -36,7 +36,7 @@
 
 #### 2.1.1 现状
 
-- `ARCHITECTURE_DESIN/cygnusx_architecture.md:146` 写：`| AgentTeams | `/api/v1/agentteams` | ... |`
+- `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md:146` 写：`| AgentTeams | `/api/v1/agentteams` | ... |`
 - 实际挂载：`src/cygnusx/api/v1/router.py:119` 为 `api_router.include_router(agentteams.router, prefix="/agent-teams", ...)`
 - 部分前端/文档已使用 `/agent-teams`，部分旧文档使用 `/agentteams`。
 - 前端 AgentTeams 的 API 调用分散在多个文件中（`frontend/src/api/` 下既有 Agent 管理的 `agent.ts`，AgentTeams 调用位置尚未完全盘点）——施工第一步必须先完成全量盘点，再动手替换。
@@ -53,8 +53,8 @@
 | 顺序 | 文件 | 修改内容 |
 |---|---|---|
 | 1 | 全仓库盘点（`rg "agentteams\|agent-teams" frontend/src tests/`） | 先输出前端与测试中所有 AgentTeams 调用点清单，再逐项处理 |
-| 2 | `ARCHITECTURE_DESIN/cygnusx_architecture.md:146` | `/api/v1/agentteams` → `/api/v1/agent-teams` |
-| 3 | `ARCHITECTURE_DESIN/agentteams.md`（如存在旧前缀） | 全部替换 |
+| 2 | `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md:146` | `/api/v1/agentteams` → `/api/v1/agent-teams` |
+| 3 | `ARCHITECTURE_DESIN/deprecated/CygnusX_agentteams_overdrive.md`（如存在旧前缀） | 全部替换 |
 | 4 | `docs/modules/*.md` 中涉及 AgentTeams 的接口 | 全部替换 |
 | 5 | `frontend/src/api/` 下所有 AgentTeams 调用点 | 统一为 `/agent-teams`（以盘点清单为准逐项改） |
 | 6 | `tests/e2e/` 下 AgentTeams 用例 | 统一为 `/agent-teams` |
@@ -95,7 +95,7 @@ e2e 验收（不接受只跑搜索）：启动前后端，对 AgentTeams 房间�
 - 文献检索触发
 - 工具执行与结果回灌
 
-直接违反了 `cygnusx_architecture.md:65` 的设计原则：
+直接违反了 `CygnusX_platform_architecture.md:65` 的设计原则：
 
 > API 层只负责协议、鉴权、参数校验和调用应用服务，不承载复杂编排。
 
@@ -486,7 +486,7 @@ agent_turn_started
 |---|---|---|
 | 标记 deprecated | `mas_enabled` 等 `config.py:123-132` | 保留字段但加注释说明由 AgentTeams 替代 |
 | API 收口（已定，不再二选一） | `src/cygnusx/api/v1/router.py:123` | 第一步：MAS API 加 admin-only 依赖 + access log 审计（记录调用者/时间/端点）；第二步：审计连续 30 天无真实用户调用后，提 PR 完全移除挂载。审计期发现仍有调用的，先找调用方迁移，不移除 |
-| 文档归档 | `ARCHITECTURE_DESIN/plan_ai.md` | 移动到 `ARCHITECTURE_DESIN/archive/` 或顶部加醒目状态"已归档，由 AgentTeams 替代" |
+| 文档归档 | `ARCHITECTURE_DESIN/CygnusX_mas_a2a_plan.md` | 移动到 `ARCHITECTURE_DESIN/archive/` 或顶部加醒目状态"已归档，由 AgentTeams 替代" |
 | 代码保留策略 | `src/cygnusx/application/services/mas_service.py` | 若 Overdrive 已覆盖其能力，进入 deprecation 倒计时；若仍有独立 API 被调用，先加 `@deprecated` |
 | 数据库表 | `mas_runs`, `mas_nodes`, `mas_artifacts` 等 | 评估是否有生产数据；无数据则准备 drop 迁移，有数据则冻结只读 |
 
@@ -513,14 +513,14 @@ agent_turn_started
 - `plan_ai.md` 已归档或加状态说明。
 - `config.py` 中 `mas_enabled` 注释明确说明"由 AgentTeams 替代，保留仅作回滚"。
 - MAS API 已加 admin-only 与 access log 审计，审计任务与 30 天移除判据进入迭代 backlog（有 owner 与截止日期）。
-- 新增文档 `ARCHITECTURE_DESIN/execution_layers.md` 明确 L1/L2/L3 边界。
+- 新增文档 `ARCHITECTURE_DESIN/CygnusX_chat_execution_layers.md` 明确 L1/L2/L3 边界。
 - 单测/集成测试验证：Overdrive 派生的 Worker 不会创建 Case；AgentTeams Case 不会调用 Overdrive manifest。
 
 ---
 
 ## 4. P2：文档与实现同频
 
-### 4.1 更新 `cygnusx_architecture.md`
+### 4.1 更新 `CygnusX_platform_architecture.md`
 
 在文档顶部增加"实现状态对照表"，例如：
 
@@ -571,8 +571,8 @@ agent_turn_started
 
 ### Phase 4：边界文档化（0.5 周）
 
-1. 编写 `ARCHITECTURE_DESIN/execution_layers.md`。
-2. 更新 `cygnusx_architecture.md` 实现状态表。
+1. 编写 `ARCHITECTURE_DESIN/CygnusX_chat_execution_layers.md`。
+2. 更新 `CygnusX_platform_architecture.md` 实现状态表。
 3. 全仓库搜索旧 `agentteams` 前缀，确保无遗漏。
 4. 检查 MAS 审计日志，决定是否发起 API 移除 PR（见 §3.3.3 判据）。
 
@@ -600,7 +600,7 @@ agent_turn_started
 - [ ] 所有 Runtime 通过 `AgentContextBuilder` 获取上下文；装配耗时新路径 ≤ 旧路径，有打点数据。
 - [ ] 所有 Runtime 继承 `ChatRuntime`，事件顺序通过校验；注入乱序事件在测试环境出口处抛错。
 - [ ] `plan_ai.md` 已归档或加状态说明；`config.py` MAS 配置已标记 deprecated；MAS API 已 admin-only + 审计。
-- [ ] `cygnusx_architecture.md` 已更新实现状态表和模块分层。
+- [ ] `CygnusX_platform_architecture.md` 已更新实现状态表和模块分层。
 - [ ] 新增/修改单元测试通过：`pytest tests/unit/chat tests/unit/agent_context tests/unit/execution_events -q`；e2e golden record 回归通过。
 
 ---

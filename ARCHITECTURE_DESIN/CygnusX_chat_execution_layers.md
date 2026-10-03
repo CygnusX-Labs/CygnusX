@@ -2,6 +2,70 @@
 
 > **时点说明**：本文件为 2026-08-23 时点的施工快照，所述修订计划已执行或已演进，部分引用（路径、行号）已失效；请勿按本文档再次执行，当前实现以代码为准。
 
+## 这个 Chat Runtime 模块如何发挥作用
+
+Chat Runtime 分层把 HTTP 协议、请求预检、运行时选择、具体执行循环和 SSE 事件收尾拆成可替换的边界。浏览器请求先进入 `/api/v1/chat/stream`，`ChatService` 负责兼容入口与依赖，`AgentRuntimeGateway` 把用户参数冻结成 `ChatRuntimeRequest` 并附加 trace、日志和灰度信息；`request_preparation` 与 `AgentContextBuilder` 在此阶段完成 Agent、模型、提示词、工具和会话上下文的统一装配。
+
+`ChatRouterService` 只选择 Runtime，不执行工具和持久化。普通 Agent、Studio、Overdrive 和直连模型分别进入对应 `ChatRuntime` 实现；Runtime 通过异步生成器输出 `ChatChunk`，把模型增量、工具调用、审批、错误和终态保持在同一条流里。具体编排可以是 LangGraph 图、兼容委托路径或直接 Provider 调用，但都必须遵守相同的请求对象和事件出口。
+
+流式事件经过 `ChatEventService` 做唯一的生命周期状态机校验，再交给 API 序列化为 SSE。会话、消息、工具调用、usage、审计和工作区产物由公共持久化能力落库；Studio 的 `StudioLoopGuard` 只负责单条用户消息内的工具轮次和连续失败治理。这样 Runtime 可以逐步迁移和双跑比较，同时保留旧入口回退、完整终态和可追溯的事件序列。
+
+### 运行架构图：Chat 请求如何穿过分层
+
+```mermaid
+flowchart LR
+    UI[Vue Chat / Studio UI] --> API[/api/v1/chat/stream]
+    API --> Service[ChatService\n兼容入口 · 依赖装配]
+    Service --> Gateway[AgentRuntimeGateway\nChatRuntimeRequest · trace · gates]
+    Gateway --> Prep[request_preparation\nAgentContextBuilder · model/prompt/tools]
+    Prep --> Router[ChatRouterService\n只选择 Runtime]
+    Router --> Runtime{ChatRuntime}
+    Runtime --> LG[LangGraphChatRuntime]
+    Runtime --> Legacy[Legacy / Delegating Runtime]
+    Runtime --> Studio[StudioChatRuntime]
+    Runtime --> Direct[DirectChatRuntime]
+    LG --> Support[Runtime Support\nSession · Provider · Tool · Persistence]
+    Legacy --> Support
+    Studio --> Guard[StudioLoopGuard]
+    Studio --> Support
+    Direct --> Support
+    Support --> Events[ChatEventService\n事件序列状态机]
+    Events --> API
+    Events --> Store[(DB · Redis · MinIO · Audit)]
+```
+
+### 实现图：入口、路由、Runtime 与 SSE 收尾
+
+```mermaid
+sequenceDiagram
+    participant UI as frontend
+    participant API as api/v1/chat.py
+    participant Chat as ChatService
+    participant Gateway as AgentRuntimeGateway
+    participant Prep as prepare_agent_request
+    participant Router as ChatRouterService
+    participant Runtime as ChatRuntime
+    participant Events as ChatEventService
+    participant Store as Persistence
+
+    UI->>API: POST /chat/stream
+    API->>Chat: stream_agent_chat()
+    Chat->>Gateway: build request metadata
+    Gateway->>Prep: prepare AgentContext and model policy
+    Prep-->>Gateway: ChatRuntimeRequest
+    Gateway->>Router: select_runtime(request)
+    Router->>Runtime: run(request)
+    loop async stream
+        Runtime->>Runtime: provider / tool / sandbox orchestration
+        Runtime-->>Events: ChatChunk lifecycle event
+        Events->>Events: validate_event_sequence()
+        Events->>Store: message / invocation / usage / audit
+        Events-->>API: validated SSE chunk
+    end
+    Runtime-->>Events: terminal event + done
+    Events-->>UI: text, tool, error, terminal events
+```
+
 ## 范围
 
 本文定义普通 Chat、Studio、Overdrive、LangGraph 与直连模型路径的运行时边界。协作室和已弃用协调路径不在本文施工范围内。

@@ -8,6 +8,57 @@
 > **定位**：本文描述“当前可运行的最终基线”，用于提示词发布、工具授权、Agent 扩展和部署验收。  
 > **合并说明（2026-09-18）**：本文档已吸收 `agent_architecture_and_extension_guide.md`（2026-07-26 快照）的独有内容，原文件已删除。对应关系：P1–P4 能力状态表与优化方案指向并入 §12「能力状态历史（P1–P4）」；完整 `data/ai/` 目录树并入 §2.2；「不要采用的方式」反模式清单并入 §8.4；优化方案实施边界表附于文末 §13。该指南与本文重叠的 §1–5、§6–8 内容以本文（其继任版本）为准，未重复收录。
 
+## 这个 Agent 基线模块如何发挥作用
+
+这份基线把“一个 Agent 可以做什么”从提示词约定落实为可发布、可校验、可审计的配置链。`data/CygnusX.yaml` 决定哪些 Agent 被启用；每个 `data/ai/*.yaml` 声明模型、提示词、Tool Pack、MCP、Skill、Studio 能力和功能开关；工具包与提示词文件提供具体实现边界。启动同步和管理端发布把这些版本化资产写入数据库，运行时只读取已发布的 Agent 记录，避免仅修改磁盘文件就误以为线上已经生效。
+
+用户发起请求后，运行时按 Agent、用户能力覆盖、会话模式和请求开关重新裁剪工具集合。`tool_packs`、`mcp_tools`、`builtin_tools`、`skill_ids` 和 Studio capability 共同构成最小权限面；Router 只负责选择一个目标 Agent，Handoff、记忆、知识检索和 `ask_user` 则作为受控控制流接入。模型在 ReAct/LangGraph 循环中只能调用这次请求暴露的工具，结果通过 `llm_payload` 回灌模型、`ui_payload` 投影前端，并由统一事件和审计记录执行证据。
+
+修改 Agent 时，代码、YAML、提示词、工具契约和数据库发布必须形成闭环：先更新声明源，再执行加载/发布和工具白名单校验，最后用聊天、Studio、Handoff、数据缺失澄清及终态事件验证。这样这份基线同时约束“能力如何声明”“能力如何被授予”“能力如何被调用”和“能力如何证明已生效”，而不是只提供一组提示词示例。
+
+### 运行架构图：声明、发布与执行的闭环
+
+```mermaid
+flowchart TB
+    Registry[data/CygnusX.yaml\nagents.enabled] --> AgentYAML[data/ai/*.yaml\nAgent · features · tool_packs · skill_ids]
+    AgentYAML --> Assets[Prompt Registry · tools/*.yaml\nruntime_images · MAS policy]
+    Assets --> Sync[AgentService.ensure_builtin_agents\n幂等同步 / 发布校验]
+    Sync --> Published[(AgentTemplate 数据库\n已发布运行时来源)]
+    Request[用户请求] --> Assemble[AgentService.get_agent_context\n用户覆盖 · 会话模式 · 请求开关]
+    Published --> Assemble
+    Assemble --> Scope[请求级最小权限\nTool/MCP/Skill/Studio 裁剪]
+    Scope --> Runtime[Chat / Studio / MAS Runtime]
+    Runtime --> Loop[ReAct / LangGraph\n模型 ↔ 工具结果]
+    Loop --> Controls[ask_user · Handoff · Memory\nGuard · 审计 · 事件]
+    Controls --> Output[SSE/UI 事件 + 消息/usage/产物]
+```
+
+### 实现图：从配置文件到模型工具调用
+
+```mermaid
+sequenceDiagram
+    participant Config as data/CygnusX.yaml + data/ai
+    participant Loader as agent_loader.py
+    participant Admin as Admin Agent API
+    participant DB as agent_templates
+    participant Chat as ChatService
+    participant Context as AgentService.get_agent_context
+    participant Runtime as LangGraph / ReAct
+    participant Tools as ToolBridge / MCP / Skill
+
+    Config->>Loader: load enabled Agent YAML + assets
+    Loader->>DB: ensure_builtin_agents() upsert
+    Admin->>DB: 发布提示词、模型和绑定关系
+    Chat->>Context: agent_id + user/session + mode
+    Context->>DB: 读取已发布配置和用户能力覆盖
+    Context-->>Runtime: prompt + request-scoped tools + policy
+    Runtime->>Runtime: llm_call
+    Runtime->>Tools: 校验并执行 tool_call
+    Tools-->>Runtime: llm_payload / ui_payload
+    Runtime-->>Chat: text / tool / ask_user / done events
+    Chat-->>DB: message、invocation、audit、usage
+```
+
 ---
 
 ## 1. 架构结论
@@ -382,4 +433,3 @@ P2 的审计数据写入 `chat_handoff_events`；前端通过 SSE `handoff` 事�
 | YAML 发布 | 已落库 Agent 不自动覆盖提示词/模型/绑定 | 需通过后台 API 发布，或新增带 diff/确认的 YAML 发布命令；禁止启动时无条件覆盖数据库。 |
 
 这四项也是优化方案实施前的架构检查点。
-

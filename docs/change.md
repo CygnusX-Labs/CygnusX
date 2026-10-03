@@ -184,7 +184,7 @@
 
 ## 今日完成
 
-### 前端设计规范文档补全（ARCHITECTURE_DESIN/fontend.md）
+### 前端设计规范文档补全（ARCHITECTURE_DESIN/CygnusX_frontend.md）
 
 - 在原有 §1–§12 基础上，新增 §13–§30 共 18 个章节，覆盖此前缺失的前端工程维度：
   - §13 数据可视化规范（ECharts/Plotly 引擎选择、图表配色令牌、Processor 纯函数模式）
@@ -310,7 +310,7 @@
 - 新增全局 `.cygnusx-segmented-toggle` 样式，统一 Token K/M、柱状/面积等同层级二选一偏好控件。
 - 统一使用语义边框、浅色轨道、品牌主色选中态和 `--text-on-primary` 前景色，避免页面局部样式重复和漂移。
 - 将仪表板 OmicStudio 用量卡片和饼干账户 Token K/M 控件迁移到共享样式，并补充 `aria-pressed` 状态。
-- 在 `ARCHITECTURE_DESIN/fontend.md` 中记录适用边界、视觉参数、无障碍要求、响应式规则及趋势图实现约定，作为 CygnusX 平台统一规范。
+- 在 `ARCHITECTURE_DESIN/CygnusX_frontend.md` 中记录适用边界、视觉参数、无障碍要求、响应式规则及趋势图实现约定，作为 CygnusX 平台统一规范。
 
 ## 已验证
 

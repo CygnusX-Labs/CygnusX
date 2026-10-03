@@ -6,6 +6,60 @@
 **日期**：2026-10-01
 **状态**：阶段 0–2 代码已落地；生产 Docker/egress 真机验收待执行；浏览器/文档工具待后续阶段实现；镜像 ↔ Agent 声明对账已完成一轮修复（见 8.7）
 
+## 这个沙箱模块如何发挥作用
+
+沙箱模块把 Agent 的代码、文件、浏览器和文档操作限制在按会话创建的运行环境中。用户请求先经过 Agent 的 `features.studio.sandbox_capabilities` 和会话模式校验，平台据此选择能力集合最小匹配的镜像，并把实际镜像、能力、权限模式和工作区信息写入 `ChatSession.sandbox_meta`。客户端不能通过请求参数直接扩大能力，也不能访问宿主机 Docker 控制面。
+
+`StudioSandboxManager` 负责容器的创建、预热、复用、重建、租约和休眠；容器内 `sandbox-agent` 只通过 `/workspace/.agent.sock` 接受执行和文件操作请求。创建时统一应用 UID/GID 10001、只读根、`cap_drop=ALL`、no-new-privileges、CPU/内存/PID/磁盘配额、受控挂载和网络策略；旧容器若不符合当前基线会被销毁重建。`/workspace` 是会话唯一写入面，用户数据按策略只读挂载，出站请求只能经过允许的代理路径。
+
+执行结果、stdout/stderr、产物、环境探针、配额事件和生命周期审计回到 Chat/Studio 事件流及数据库/对象存储。普通 Chat 轻量沙箱池和 Studio 一会话一容器是两条隔离路径，二者共享安全原则但不共享容器、挂载或会话状态。该模块因此同时提供“能执行”的工作区和“可证明受限”的安全边界。
+
+### 运行架构图：能力授权到受限容器
+
+```mermaid
+flowchart TB
+    Request[Chat / Studio 请求] --> Policy[Agent features.studio\nsandbox_capabilities 授权]
+    Policy --> Meta[ChatSession.sandbox_meta\nimage · capabilities · permissions]
+    Meta --> Manager[StudioSandboxManager\n选择镜像 · 生命周期 · 租约]
+    Manager --> Container[Studio Container\nUID 10001 · read-only rootfs\ncap_drop · CPU/Memory/PID quota]
+    Container --> Agent[sandbox-agent\n/workspace/.agent.sock]
+    Agent --> Workspace[/workspace\ninput · work · output]
+    Container --> Mount[/data/platform\n当前用户只读挂载]
+    Container --> Network[none / egress proxy\n域名白名单]
+    Agent --> Events[stdout · artifacts · quota\nlifecycle audit events]
+    Events --> Store[(PostgreSQL · Redis · MinIO)]
+    Events --> UI[Studio / Chat SSE UI]
+```
+
+### 实现图：会话创建、容器执行与回收
+
+```mermaid
+sequenceDiagram
+    participant UI as Studio UI / Chat
+    participant API as api/v1/studio.py
+    participant Policy as Agent policy + image registry
+    participant Session as ChatSession.sandbox_meta
+    participant Manager as StudioSandboxManager
+    participant Docker as Docker Engine
+    participant Agent as sandbox-agent UDS
+    participant Store as Redis / DB / MinIO
+
+    UI->>API: create session / execute tool
+    API->>Policy: validate requested capabilities
+    Policy-->>API: allowed image + capability set
+    API->>Session: persist image, capabilities, permissions
+    API->>Manager: ensure_running(session_id)
+    Manager->>Docker: create/reuse hardened container
+    Docker-->>Manager: container + mounts + network
+    Manager->>Agent: /exec NDJSON over Unix socket
+    Agent-->>Manager: stdout/stderr/result/artifact
+    Manager->>Store: lease, metrics, audit, artifact index
+    Manager-->>API: execution result + events
+    API-->>UI: SSE tool output / terminal state
+    Store->>Manager: hibernate/reconcile request
+    Manager->>Docker: stop/remove or restore container
+```
+
 ## 1. 目标与边界
 
 本设计在不替换现有 OmicStudio 编排体系的前提下，强化容器隔离，并引入由平台控制的运行能力（capability）到镜像的映射。它覆盖 Studio 会话沙箱；旧版 `/api/v1/sandbox` 继续保持兼容，不接入新的浏览器/文档能力。

@@ -5,6 +5,66 @@
 > **最后更新**：2026-07-29  
 > **适用范围**：平台功能、管理功能、生信工具、分析流程、数据资源、AI/Agent、异步任务与外部服务集成。
 
+## 0. 这个平台接入模块如何发挥作用
+
+本模块是新增功能进入 CygnusX 的共同装配规则，而不是一个单独的业务页面。用户从 Vue 页面发起 REST、SSE 或 WebSocket 请求后，请求先经过认证、RBAC、模块门禁、限流、Cookie 和审计中间件，再进入 `api/v1` 路由。路由只负责参数和依赖注入，应用服务编排事务、权限协作和外部调用；需要复杂状态机或不变量的部分下沉到 domain，数据库、Redis、对象存储、Celery、Snakemake 和第三方 API 则由 infrastructure 适配。
+
+模块的注册和权限是配置驱动的。`data/MODULE_LOCKED.yaml` 是后端模块清单，`module_registry.py` 加载它并由 `/modules/registry` 下发给前端；后端 `ModuleGateMiddleware` 按 `api_prefix` 拦截未开通模块，前端 `modules` store 和路由守卫负责导航与访问表现。生信工具还要经过 `tool_configs/tools_setting.yaml`、后端工具注册表和工具箱页面三段透传。这样一个模块从配置、API、服务、数据到 UI 都有可追踪的登记点。
+
+写入数据、文件、任务和外部系统时，应用服务建立事务边界并进行所有权检查；长耗时工作返回任务或运行标识，由 Celery/执行器异步处理，进度通过 SSE/WebSocket 和日志回写。API DTO、错误码、审计事件和测试命令构成模块对外契约，模块可以复用现有认证、布局、上传和通知能力，而不再创建平行的基础设施。
+
+### 0.1 运行架构图：一个新模块如何穿过平台
+
+```mermaid
+flowchart TD
+    A[Vue View / Component] --> B[api/client 或 SSE/WebSocket]
+    B --> C[FastAPI /api/v1]
+    C --> D[Trace + Auth + RBAC]
+    D --> E[ModuleGate + RateLimit + Cookie + Audit]
+    E --> F[路由参数/DTO/依赖注入]
+    F --> G[Application Service]
+    G --> H{业务复杂度}
+    H -->|状态机/规则| I[Domain Entity / Service]
+    H -->|简单 CRUD| J[Repository / Model Query]
+    I --> K[Infrastructure Adapter]
+    J --> K
+    K --> L[(PostgreSQL / Redis / Storage)]
+    K --> M[Celery / Snakemake / External API]
+    M --> N[SSE/WebSocket/Task Status]
+    N --> B
+    O[data/MODULE_LOCKED.yaml] --> P[Backend Registry + Frontend modules store]
+    P --> E
+    P --> A
+```
+
+### 0.2 实现图：模块从登记到一次 API 调用
+
+```mermaid
+sequenceDiagram
+    participant C as Config Registry
+    participant F as Frontend View/Store
+    participant MW as Middleware Stack
+    participant R as API Router
+    participant S as Application Service
+    participant D as Domain/Repository
+    participant I as Infrastructure
+    participant DB as DB/Cache/Executor
+    C->>F: 下发模块状态、路由和工具元数据
+    C->>MW: 加载 api_prefix 与 locked 状态
+    F->>MW: 带凭证请求 /api/v1/module
+    MW->>MW: trace、认证、RBAC、模块门禁、限流
+    MW->>R: 通过校验并注入用户/数据库会话
+    R->>S: DTO -> 用例调用
+    S->>D: 领域规则或仓储操作
+    D->>I: 请求数据库、缓存、文件或外部服务
+    I->>DB: 同步事务或异步任务投递
+    DB-->>I: 结果/运行标识/事件
+    I-->>S: 领域结果与审计信息
+    S-->>R: 稳定响应 DTO
+    R-->>F: JSON 或流式事件
+    F-->>F: 更新 Pinia 状态并渲染页面
+```
+
 ---
 
 ## 1. 设计原则

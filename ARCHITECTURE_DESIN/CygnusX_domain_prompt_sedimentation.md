@@ -8,6 +8,65 @@
 
 ---
 
+## 0. 这个提示词沉淀模块如何发挥作用
+
+本模块围绕“未知领域任务如何安全变成可复用 Agent 资产”组织。当前请求仍由 `ChatService`、Agent Router、Prompt Registry、知识库、Skill 和工具运行时完成：无法命中专属领域时，系统保留通用 Agent 的降级路径，不因为一次新问题自动改写提示词。本文设计的扩展在这条链路旁增加可审计的感知、聚合、人工审核和发布环节，将重复出现且确有价值的任务沉淀为知识条目、Skill 或 Domain Pack。
+
+运行时只负责记录经过脱敏的 miss 事件和必要的上下文指针，Beat/Celery 负责按指纹和用户数聚合候选；管理端再让管理员查看样本、选择资产粒度、请求 LLM 起草、编辑并执行 schema 校验和回放测试。发布动作必须由管理员触发，写入受版本控制的领域资产并通过 Registry 的 mtime 热重载生效；`enabled: false` 或恢复上一版本即可回滚。这样模型可以辅助起草，但不能自行学习、发布或把未经审核的内容注入公共提示词。
+
+### 0.1 运行架构图：从未命中到领域资产
+
+```mermaid
+flowchart TD
+    U[用户请求] --> C[ChatService / Agent Router]
+    C --> Q{命中现有 Domain Pack?}
+    Q -->|是| A[专属 Agent / Skill / 知识库运行]
+    Q -->|否| G[通用 Agent 安全降级]
+    G --> E[脱敏 DomainMissEvent]
+    E --> F[指纹聚合与用户数统计]
+    F --> K{达到候选阈值?}
+    K -->|否| F
+    K -->|是| ADMIN[管理端候选审核]
+    ADMIN --> D{资产粒度}
+    D --> KB[知识库条目]
+    D --> SK[Skill]
+    D --> DP[Domain Pack 草稿]
+    KB --> REVIEW[人工编辑 / Schema / 回放]
+    SK --> REVIEW
+    DP --> REVIEW
+    REVIEW --> PUB[管理员发布 + 审计]
+    PUB --> REG[Registry 热重载 / enabled 灰度]
+    REG --> A
+```
+
+### 0.2 实现图：候选生成与人工发布时序
+
+```mermaid
+sequenceDiagram
+    participant CS as ChatService
+    participant M as Domain Matcher
+    participant BUF as Metrics/Event Buffer
+    participant DB as Domain Miss/Candidate Store
+    participant BEAT as Celery Beat
+    participant UI as Admin Console
+    participant LLM as Drafting LLM
+    participant V as Schema/Replay Validator
+    participant REG as Domain Registry
+    CS->>M: match_domains(message)
+    M-->>CS: miss / fallback to general
+    CS->>BUF: record(deidentified excerpt, fingerprint, session ref)
+    BEAT->>BUF: flush()
+    BUF->>DB: persist DomainMissEvent
+    BEAT->>DB: aggregate recent fingerprints
+    DB-->>UI: candidate + sample session references
+    UI->>LLM: generate draft from samples + schema
+    LLM-->>UI: draft YAML / asset content
+    UI->>V: edit, schema check, replay and conflict check
+    V-->>UI: pass or actionable errors
+    UI->>REG: administrator publishes version
+    REG-->>CS: mtime reload enabled asset
+```
+
 ## 1. 问题与愿景
 
 **问题**:当用户提出一个系统没见过的分析任务类型(如 WGS 变异检测、蛋白组学)时,multi-agent 目前只有两种结局——靠 Python 关键词表误命中,或退化为普通对话。理想行为是三态生命周期:

@@ -8,6 +8,61 @@
 
 > **适用范围**：实验室知识库页面、单细胞知识库、AI 助手 `knowledge_search` 工具、AI 配置中心「知识库」管理卡片。
 
+## 这个知识库模块如何发挥作用
+
+知识库模块把 Markdown、SOP、实验经验和专题教程变成可审核、可版本化、可检索的知识资产，并让页面用户和 AI 助手共享同一份事实来源。导入脚本或页面编辑先写入 `kb_documents` 与 `doc_revisions`，当前版本和待审核版本由双指针区分；管理员审核通过后，`KnowledgeIndexService` 对已发布正文切块、生成 embedding 并写入 pgvector 索引。
+
+两个消费方按不同开关读取同一数据：实验室页面只展示 `show_in_lab=true` 且启用的知识库，AI `knowledge_search` 只检索 `ai_searchable=true` 且启用的库，并附带项目范围过滤。检索由 `VectorRetrievalService` 做权限感知的向量/关键词混合召回，返回带 `citation_id`、文档链接和摘录的结果；模型只得到检索证据，用户仍可打开完整文档页面。
+
+编辑、审核、问题反馈、导入和索引更新都留下版本与审计记录。静态图片、PDF 和数据附件保留在 `/docs-static`，正文只保存可版本化的 Markdown 和引用。这样知识库既能作为人类维护的文档系统，也能作为 Agent 的证据检索层，并通过 `knowledge_bases` 的三个开关控制展示、AI 检索和整体启停。
+
+### 运行架构图：知识资产到页面与 AI 的双消费链路
+
+```mermaid
+flowchart TB
+    Source[docs/knowledge Markdown\n页面编辑 · 批量导入] --> Doc[knowledge_bases + kb_documents\n库归属 · 可见开关]
+    Doc --> Rev[doc_revisions\ncurrent_rev / pending_rev]
+    Rev --> Review{审核状态}
+    Review -->|发布| Index[KnowledgeIndexService\n切块 · embedding · 索引]
+    Index --> Vector[(pgvector knowledge chunks)]
+    Review --> Audit[doc_audit_logs · editors · issues]
+    Doc --> Lab[实验室知识库页面\nshow_in_lab + is_enabled]
+    Vector --> Search[VectorRetrievalService\nai_searchable + project scope]
+    Search --> Tool[knowledge_search function tool]
+    Tool --> Agent[Chat / Studio / Worker Agent]
+    Lab --> Reader[DocTree · Reader · Editor]
+    Assets[图片/PDF/数据] --> Static[/docs-static 静态挂载]
+    Reader --> Static
+```
+
+### 实现图：导入、审核、索引和检索调用关系
+
+```mermaid
+sequenceDiagram
+    participant Import as import_scseq_knowledge.py / DocEditor
+    participant API as api/v1/docs.py
+    participant Docs as DocsService
+    participant DB as knowledge DB tables
+    participant Index as KnowledgeIndexService
+    participant Search as VectorRetrievalService
+    participant Tool as knowledge_search
+    participant Agent as Chat Runtime
+
+    Import->>Docs: upsert document + revision (idempotent)
+    API->>Docs: edit document
+    Docs->>DB: write pending_rev + audit/editor record
+    API->>Docs: admin approve
+    Docs->>DB: promote pending_rev to current_rev
+    Docs->>Index: index published revision
+    Index->>DB: chunks + embeddings + citation metadata
+    Agent->>Tool: knowledge_search(query, limit)
+    Tool->>Search: permission-aware hybrid retrieval
+    Search->>DB: vector/keyword query + KB switches
+    DB-->>Search: ranked citations and excerpts
+    Search-->>Tool: citation_id + URL + excerpt
+    Tool-->>Agent: evidence payload for answer
+```
+
 ---
 
 ## 1. 概述

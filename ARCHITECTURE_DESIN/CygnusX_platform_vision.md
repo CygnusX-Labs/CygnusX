@@ -7,6 +7,69 @@
 > 完整职责、甲方回路、质量与交付职能、失败显式化与证据链。此版取代 Part 3.1
 > 的愿景表述（3.1 的可行性判断仍有效）。
 
+## 0. 这个 L4 协作室模块如何发挥作用
+
+L4 协作室是平台在复杂、长时和需要正式交付的任务上的目标态编排层。当前代码已经提供 Chat/Studio 入口、Agent 配置与能力声明、MCP/Skill 工具、共享工作区、MAS 计划预览、用户确认、Celery/Worker 执行、Artifact 登记和 SSE 进度投影；愿景文档在这些能力之上定义更完整的“部门”工作方式，而不是把所有请求都强制升级到多 Agent。普通咨询继续由 L2 Agent 处理，确定性工具走 L1，只有多步骤、跨领域或需要审计交付的请求才进入 L4。
+
+进入协作室后，Manager 负责把用户需求整理成可确认的计划，依据单一能力目录选择专家，并把输入引用、审批、状态、产物和失败原因写入统一事件链。专家或 Worker 只在各自能力边界内执行，数据、QC 和交付角色分别承担输入契约检查、质量门和报告汇总；大文件与完整日志留在工作区或对象存储，事件和模型上下文只携带小型元数据与可追溯指针。缺少输入、路由不可用、执行失败或质量门不通过时，流程必须停在明确状态并回问用户，不能用模型臆测或静默成功替代。
+
+本文描述的是目标态设计，因此其中的 L4 升级规则、统一能力目录和完整甲方验收回路需要与当前已落地的 MAS/AgentTeams 路径逐步对齐。实现时应沿用现有的用户确认闸、Agent capability 白名单、沙箱隔离、Celery reconcile-only、Artifact/事件审计和前端 REST/SSE 投影；任何目标态能力在未完成验证前，都不能被当作当前平台已有保证。
+
+### 0.1 目标运行架构图：L1-L4 分层与协作室
+
+```mermaid
+flowchart TD
+    U[用户需求] --> G{复杂度 / 交付要求}
+    G -->|确定性计算| L1[L1 工具箱]
+    G -->|咨询或轻量任务| L2[L2 AI 助手]
+    G -->|需要人工介入| L3[L3 OmicStudio]
+    G -->|多专家 / 长任务 / 正式交付| L4[L4 协作室]
+    L4 --> M[Manager 需求确认与计划]
+    M --> C[能力目录与路由]
+    C --> H{用户审批}
+    H -->|未批准 / 需澄清| ASK[澄清或暂停]
+    H -->|批准| W[Worker / 专家 Agent 执行]
+    W --> DATA[共享工作区与 Artifact Registry]
+    W --> QC[agent-qc 质量门]
+    QC --> DEL[agent-delivery 交付汇总]
+    DEL --> OUT[报告、证据、环境记录]
+    OUT --> U
+    M -.统一事件与审计.-> E[Audit / Event Bus]
+    W -.状态与证据.-> E
+    QC -.验收结论.-> E
+```
+
+### 0.2 实现图：一次 L4 任务的控制与执行时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant API as Chat/Studio API
+    participant M as Manager / Orchestrator
+    participant CAT as 能力目录
+    participant G as HITL Gate
+    participant SCH as MAS Scheduler
+    participant W as Domain Worker
+    participant QC as QC Agent
+    participant D as Delivery Agent
+    participant EVT as Event/Audit Store
+    U->>API: 提交复杂分析需求与 context_refs
+    API->>M: 解析意图、检查输入引用
+    M->>CAT: 选择专家与能力边界
+    CAT-->>M: route + capabilities + handoff 条件
+    M->>EVT: 写入需求、计划和路由事件
+    M-->>U: 计划预览 / 澄清卡
+    U->>G: 显式确认或补充信息
+    G->>SCH: 批准后创建/解锁 Run
+    SCH->>W: 以受控镜像、工作区和资源执行
+    W->>EVT: 回报状态、Artifact 指针和证据摘要
+    W->>QC: 提交结构、证据和质量指标
+    QC-->>EVT: 通过 / 返工 / 失败原因
+    QC->>D: 通过后交付汇总
+    D-->>U: 报告、manifest、环境与 provenance
+    D->>EVT: 写入交付与验收状态
+```
+
 ## 8.1 优化后的愿景定义
 
 **定位**：协作室是 CygnusX 四层架构的 L4（顶层）——平台的"生物信息部门"。

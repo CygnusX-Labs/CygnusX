@@ -5,6 +5,65 @@
 > 相关实施计划：`docs/info/26.8.18/CygnusX记忆系统优化实施计划.md`  
 > 最新变更（2026-08-22）：`docs/info/26.8.22/CygnusX记忆模块优化实施手册.md`（M0 settle 泄漏面封堵 / M1 v2 共享分区召回修复 / M2 L4 读取面接入 / M3 L4 写入纪律）；终验收口：`docs/info/26.8.22/记忆系统终验与收口待办-2026-08-22.md`（`memory.settle_skipped` 升级 OTel 计数器、新增 `memory.l4_inject_degraded` 降级计数、M0–M3 单测证据清单补齐，见 §11）
 
+## 这个记忆模块如何发挥作用
+
+记忆模块把对话中适合跨轮次、跨会话复用的信息拆成“可检索事实”和“人工策展块”，在每次 Agent 请求前以受控上下文注入，在会话结束或达到阈值后异步沉淀。`AgentMemoryService` 根据 `memory_v2_enabled` 选择旧 `agent_memories` 兼容链路或 `memory_blocks`/`memory_facts` v2 链路；v2 通过共享分区与当前 Agent 分区合并召回，避免用户偏好在不同 Agent 间丢失，同时保持项目/摘要记忆隔离。
+
+写入不是模型直接改表。记忆工具和 `settle_session_memory` 都经过内容校验、敏感信息过滤、来源会话记录、`content_hash` 幂等和事实修正关系；常驻块用 version 乐观锁避免并发覆盖。向量事实由 `PostgresFactStore` 写入 pgvector，Celery 任务按游标增量处理，AgentTeams 合成会话明确排除 settle，避免把协作过程错误沉淀为个人记忆。
+
+Studio 记忆采用文件正统：`MEMORY.md` 只作为索引，`.memory/*.md` 保存正文，正文由 `workspace_read` 按需读取并以不可信用户上下文包装。无论数据库记忆还是工作区记忆，都不能覆盖系统提示词、安全策略或工具权限；召回失败时按开关和入口降级，不阻塞主要对话链路。记忆因此同时承担个性化、项目连续性、可追溯来源和安全隔离四个职责。
+
+### 运行架构图：记忆读取、写入与安全边界
+
+```mermaid
+flowchart TB
+    Message[Chat / Studio / AgentTeams 请求] --> Read[AgentMemoryService\nbuild_prompt_context]
+    Read --> Switch{memory_v2_enabled}
+    Switch -->|否| Legacy[(agent_memories\n兼容召回)]
+    Switch -->|是| Blocks[(memory_blocks\n共享块 + Agent 块)]
+    Switch -->|是| Facts[(memory_facts\npgvector 事实召回)]
+    Legacy --> Prompt[不可信记忆上下文包装]
+    Blocks --> Merge[共享分区 + 当前 Agent 分区\n去重与排序]
+    Facts --> Merge
+    Merge --> Prompt
+    Prompt --> Runtime[Agent Prompt / L4 Manager 注入]
+    Session[会话消息] --> Settle[Celery settle_session_memory\n游标 · hash · 来源 · 修正]
+    Settle --> Facts
+    Tools[记忆工具\nsave · update_block · search · forget] --> Validate[校验 · 敏感过滤\n乐观锁 · 审计]
+    Validate --> Blocks
+    Validate --> Facts
+    Studio[Studio MEMORY.md / .memory] --> Workspace[workspace_read 按需读取]
+    Workspace --> Prompt
+```
+
+### 实现图：从请求注入到异步沉淀
+
+```mermaid
+sequenceDiagram
+    participant Chat as ChatService / RoomService
+    participant Memory as AgentMemoryService
+    participant Store as PostgresFactStore
+    participant DB as memory_blocks / memory_facts
+    participant Celery as settle_session_memory
+    participant Tools as AgentMemoryToolService
+    participant Studio as Studio tools / workspace
+
+    Chat->>Memory: build_prompt_context(user, agent, query)
+    Memory->>Store: recall shared + agent partitions
+    Store->>DB: vector/keyword query + status filter
+    DB-->>Store: facts and blocks
+    Store-->>Memory: deduped memory context
+    Memory-->>Chat: untrusted prompt section
+    Tools->>Memory: save/search/update/forget
+    Memory->>Store: validate, hash, optimistic update
+    Store->>DB: persist fact/block + provenance
+    Chat->>Celery: enqueue after threshold/close
+    Celery->>DB: read cursor-scoped messages
+    Celery->>Memory: extract and normalize facts
+    Memory->>Store: idempotent insert/supersede
+    Studio->>Studio: write .memory/*.md + MEMORY.md index
+```
+
 ## 1. 一页结论
 
 CygnusX 的记忆系统目前采用**自研 PostgreSQL + pgvector 薄层**，不依赖
@@ -499,4 +558,3 @@ settle 幂等命中和块冲突率；出现异常时关闭开关即可回到旧�
 5. 不要在请求路径逐条更新召回统计；
 6. 保留 `memory_v2_enabled=False` 时的回滚行为，直到阶段 4 明确关闭旧链路；
 7. 同步更新本文件、`docs/adr/0001-memory-storage.md` 和相关测试。
-

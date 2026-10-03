@@ -7,6 +7,59 @@
 
 > 这份文档是“看图入口”。详细契约仍以 `ARCHITECTURE_DESIN/` 下对应的 as-built 文档和代码为准；愿景、提案和历史快照不作为当前实现证据。
 
+## 0. 这个平台模块如何发挥作用
+
+这份总览描述的不是一个单独的服务，而是 CygnusX 把一次科研请求变成可追踪交付物的协作边界。请求从前端进入后，先由网关和 FastAPI 完成身份、模块权限、限流与参数校验；应用服务再根据 `agent_id`、会话模式和任务类型装配 Agent 配置、提示词、模型 Provider、工具包、Skill、MCP、知识和记忆。装配结果形成一次请求上下文，后续执行器只消费这个上下文，不自行发现未授权能力。
+
+执行器按照任务形态选择路径：短问答进入 Legacy ReAct 或 LangGraph 流式循环，代码/文件操作进入 Chat 或 Studio 沙箱，多步骤生信分析转交 Celery/Worker 与 FlowFrame，协作任务进入 AgentTeams 的 Manager/Worker 链。每一条路径都使用统一的工具调用、事件、审计和终态约束；模型只接收压缩后的 `llm_payload`，前端则通过 `ui_payload` 和 SSE 事件获得可展示的过程信息。超过单次请求时限的工作由队列异步执行，Web 进程只负责提交与 reconcile，不直接持有长任务。
+
+执行过程中产生的消息、工具调用、usage、审计事件、日志、工作区文件和分析产物分别写入 PostgreSQL/pgvector、Redis、MinIO 或任务目录，并以事件和终态回传前端。这样，平台同时满足交互反馈、断点排查、结果复现、计费对账和权限审计；具体子系统的字段与状态机以对应领域架构文档为准。
+
+### 0.1 运行架构图：请求如何穿过平台
+
+```mermaid
+flowchart LR
+    Input[用户请求\n问题 · 文件 · 模式 · Agent] --> Edge[入口治理\nNginx / Auth / RBAC / RateLimit]
+    Edge --> Prepare[请求准备\n会话范围 · 参数校验 · 模式预检]
+    Prepare --> Assemble[上下文装配\nAgent YAML/DB · Prompt · Provider\nTool/MCP/Skill · Knowledge/Memory]
+    Assemble --> Route{按任务形态路由}
+    Route --> Chat[Chat Runtime\nLegacy ReAct / LangGraph]
+    Route --> Studio[Studio / Chat 沙箱\n代码 · 文件 · 浏览器]
+    Route --> Queue[Celery / RocketMQ Worker\nFlowFrame · Snakemake · 长任务]
+    Route --> Teams[AgentTeams\nManager · Case · Worker]
+    Chat --> Guard[统一保护\n轮次 · 重复调用 · 审批 · 熔断]
+    Studio --> Guard
+    Queue --> Guard
+    Teams --> Guard
+    Guard --> Events[事件与终态\nSSE · audit · usage · artifact]
+    Events --> Store[(PostgreSQL / Redis / MinIO)]
+    Events --> Output[前端工作台\n消息 · 过程 · 产物 · 报告]
+```
+
+### 0.2 实现图：代码边界如何落地
+
+```mermaid
+sequenceDiagram
+    participant UI as Vue/Pinia
+    participant API as api/v1
+    participant App as application/services
+    participant Domain as domain + execution
+    participant Infra as infrastructure
+    participant Runtime as Runtime/Worker/Sandbox
+    participant DB as DB/Redis/MinIO
+
+    UI->>API: REST / SSE 请求
+    API->>App: 鉴权后的 DTO
+    App->>Infra: AgentContextBuilder + 配置/仓储
+    Infra->>DB: 会话、Agent、知识、记忆、计费读取
+    App->>Domain: 选择 execution_path
+    Domain->>Runtime: 流式循环、沙箱或异步任务
+    Runtime->>Infra: Provider、Tool/MCP/Skill、文件适配器
+    Runtime->>DB: 事件、消息、usage、审计、产物索引
+    Runtime-->>API: ChatChunk / SSE 事件
+    API-->>UI: 增量内容与终态
+```
+
 ## 1. 简练版：平台一页图
 
 ```mermaid
@@ -199,7 +252,7 @@ flowchart LR
     LongJob --> Artifact
 ```
 
-当前沙箱能力由 `code`、`browser`、`document` 等 capability 控制；普通 Chat 轻量沙箱与 Studio 一会话一容器是两条不同路径。隔离、挂载和出站边界以 `cygnusx_sandbox_architecture_2026-10-01.md` 与 `network_architecture_2026-09.md` 为准。
+当前沙箱能力由 `code`、`browser`、`document` 等 capability 控制；普通 Chat 轻量沙箱与 Studio 一会话一容器是两条不同路径。隔离、挂载和出站边界以 `CygnusX_sandbox_architecture.md` 与 `CygnusX_network_architecture.md` 为准。
 
 ## 6. 详细版：AgentTeams 协作与异步 Worker
 
@@ -309,9 +362,9 @@ flowchart TB
 
 ## 10. 相关文档索引
 
-- 总体与执行：`cygnusx_architecture.md`、`agent_architecture.md`、`agent_execution_framework.md`
-- Chat 与 OpenAI4S：`chat_openai4s_integration_architecture.md`、`chat_execution_layers_2026-08.md`
-- Studio 与网络：`cygnusx_sandbox_architecture_2026-10-01.md`、`network_architecture_2026-09.md`、`research_loop_architecture_2026-09.md`
-- MCP、Skill、记忆、知识：`mcp_architecture.md`、`skill_architecture.md`、`memory_architecture.md`、`knowledge_architecture.md`
-- 数据、日志、计费：`database_architecture.md`、`log_architecture.md`、`token_billing_architecture.md`
-- 多 Agent 与流程：`mas_a2a_plan_2026-07.md`、`multi_agent_fanout_2026-07.md`、`Protocol/FlowFrame/README.md`
+- 总体与执行：`CygnusX_platform_architecture.md`、`CygnusX_agent_architecture.md`、`CygnusX_agent_execution_framework.md`
+- Chat 与 OpenAI4S：`CygnusX_chat_openai4s_integration_architecture.md`、`CygnusX_chat_execution_layers.md`
+- Studio 与网络：`CygnusX_sandbox_architecture.md`、`CygnusX_network_architecture.md`、`CygnusX_research_loop_architecture.md`
+- MCP、Skill、记忆、知识：`CygnusX_mcp_architecture.md`、`CygnusX_skill_architecture.md`、`CygnusX_memory_architecture.md`、`CygnusX_knowledge_architecture.md`
+- 数据、日志、计费：`CygnusX_database_architecture.md`、`CygnusX_log_architecture.md`、`CygnusX_token_billing_architecture.md`
+- 多 Agent 与流程：`CygnusX_mas_a2a_plan.md`、`CygnusX_multi_agent_fanout.md`、`Protocol/FlowFrame/README.md`

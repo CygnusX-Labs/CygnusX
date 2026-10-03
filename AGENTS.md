@@ -16,7 +16,7 @@ CygnusX（仓库名 OmicHub，华中农业大学园艺林学学院）是 AI 驱�
 
 - 后端：Python 3.11（`.python-version` 为 `omichub_3.11`）+ FastAPI + SQLAlchemy(asyncpg) + Alembic + Celery/Redis + LangGraph + litellm + pydantic v2；包管理 **uv**（`uv.lock` 冻结，CI 用 `uv sync --frozen`）。
 - 前端：`frontend/`，Vue 3 + TS(strict) + Vite 5 + Pinia + naive-ui；REST 边界 `src/api/*` → axios 统一实例 `baseURL '/api/v1'`（手写，无 OpenAPI 生成）。
-- 存储/中间件：PostgreSQL+pgvector（87 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0 引擎**（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表为受保护的迁移残留、`check_schema_drift.py` 豁免对账，`.env.example` 的 `MEM0_*` 段是零消费配置残留——禁止顺手清理，详见 `ARCHITECTURE_DESIN/memory_architecture.md` §1）。
+- 存储/中间件：PostgreSQL+pgvector（87 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0 引擎**（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表为受保护的迁移残留、`check_schema_drift.py` 豁免对账，`.env.example` 的 `MEM0_*` 段是零消费配置残留——禁止顺手清理，详见 `ARCHITECTURE_DESIN/CygnusX_memory_architecture.md` §1）。
 - 周边子工程：`mcp-server/`（独立 FastMCP 外部通道）、`integrations/agentteams/{bridge,gateway}/`（各自 pyproject + 独立 CI job）、`scripts/`（cygnusxtools CLI）、`docs/app/`（独立 React 档案站，非主前端）。
 
 ## 2. 常用命令与门禁流水线
@@ -80,7 +80,7 @@ uv run ruff check src/ tests/ && uv run mypy src/cygnusx/ \
 
 **关键资产目录**：`data/ai/`（19 个已启用 Agent + Agent YAML/prompts 注册表 + skills 磁盘真相源 + runtime_images/studio 沙箱配置，见 `CygnusX.yaml` 的 `agents.enabled`）· `data/MODULE_LOCKED.yaml`（18 模块注册表）· `tool_configs/`（`tools_schema.yaml` LLM 工具 schema + 各工具契约 + `tools_design.md` 工具页面规范）· `flows/`（声明式流程 catalog）· `deploy/`（compose×8 + runtime-images/studio/sandbox/agentteams Dockerfile + image-mapping）· `mcp-server/` · `pipelines/`（RNAFlow/ATACFlow/scrna/EBIDownload/tools 子模块 + jbrowse2 产物）· `Protocol/`（生效协议，FlowFrame 子模块为 Flow 强制规范 v2.0）· `evidence/`、`logs/`（运行证据，不入提交）。
 
-**权威文档索引**（改对应域前必读）：总览 `cygnusx_architecture.md` + `platform_architecture_maps.md`（看图入口）；Agent/Chat `agent_execution_framework.md`/`agent_framework_baseline.md`/`agent_architecture.md`；Token 计费 `token_billing_architecture.md`；DB `database_architecture.md`；沙箱 `cygnusx_sandbox_architecture_2026-10-01.md`（唯一规范）；MCP `mcp_architecture.md`；记忆/知识/技能各同名文档；前端 36 章 `frontend.md`；模块设计六原则 `cygnusx_design.md`。
+**权威文档索引**（改对应域前必读）：总览 `CygnusX_platform_architecture.md` + `CygnusX_platform_architecture_maps.md`（看图入口）；Agent/Chat `CygnusX_agent_execution_framework.md`/`CygnusX_agent_framework_baseline.md`/`CygnusX_agent_architecture.md`；分析中心 Flow 接入 `CygnusX_flow_architecture.md`（`flows/*.yaml` schema/热重载/AI 工具编译/`TaskService.submit` 九步链/`GenericFlowBuilder`）；Token 计费 `CygnusX_token_billing_architecture.md`；DB `CygnusX_database_architecture.md`；沙箱 `CygnusX_sandbox_architecture.md`（唯一规范）；MCP `CygnusX_mcp_architecture.md`；记忆/知识/技能各同名文档；前端 36 章 `CygnusX_frontend.md`；模块设计六原则 `CygnusX_platform_design.md`。
 
 **保护/冻结模块（只许小步渐进修改，禁止盲目重构）：**
 - `data/MODULE_LOCKED.yaml` — 模块注册唯一数据源，后端启动硬校验（语法错/key 重复直接拒启），前端路由守卫 + 后端 API 拦截共同消费。
@@ -95,11 +95,11 @@ uv run ruff check src/ tests/ && uv run mypy src/cygnusx/ \
 
 **强约束**：Ruff `line-length=100`、target py311（select E/W/F/I/N/UP/B/SIM/ASYNC，`E501` 被 ignore 但自觉 ≤100；festival 域 per-file 放行 `N815`）；mypy `strict=true` + `pydantic.mypy` 插件 + `disallow_untyped_defs`，新代码全类型注解；pytest 必须打 marker（unit/integration/e2e/quarantine），fixture 挂 `tests/conftest.py` 或域内 conftest；配置一律走 `core/config.py Settings` / `data/*.yaml`，禁散落的魔法常量；错误处理走 `core/exceptions.py` + 统一事件/审计落库，禁裸 `print`；前端 TS strict、`@/*` alias、API 调用集中在 `src/api/`、DOM 测试用 `// @vitest-environment jsdom` 头注释。
 
-**严禁事项（Red Lines）**：禁引入 mem0 / Anthropic SDK / LlamaIndex；禁动 `jieba==0.42.1` 精确锁；禁手改 `uv.lock`/`package-lock.json`；镜像禁 `latest`、容器禁切 root、`/workspace/input` 只读、沙箱 uid 10001 + cap_drop=ALL；Agent 不得获得 shell / 流程 YAML / DB 写权限；禁把 `ARCHITECTURE_DESIN/deprecated/`、`cygnusx_studio_handover_2026-07.md`、任何 `*_plan`/`vision_2026-*` 提案当作现状依据（`agentteams_*` 设计文档已废弃但执行路径仍是现状，以代码 + `agent_execution_framework.md` 为准）。
+**严禁事项（Red Lines）**：禁引入 mem0 / Anthropic SDK / LlamaIndex；禁动 `jieba==0.42.1` 精确锁；禁手改 `uv.lock`/`package-lock.json`；镜像禁 `latest`、容器禁切 root、`/workspace/input` 只读、沙箱 uid 10001 + cap_drop=ALL；Agent 不得获得 shell / 流程 YAML / DB 写权限；禁把 `ARCHITECTURE_DESIN/deprecated/`、`CygnusX_studio_handover.md`、任何 `*_plan`/`vision_2026-*` 提案当作现状依据（`agentteams_*` 设计文档已废弃但执行路径仍是现状，以代码 + `CygnusX_agent_execution_framework.md` 为准）。
 
 **排坑指引（Gotchas）**：
 1. `data/CygnusX.yaml` 的 `agents.enabled`（19 个）决定加载哪些 Agent YAML——新增 Agent 必须在两处同时登记，否则静默不加载；`tests/unit/test_agent_loader_studio.py` 强制每个 Agent 声明 studio 运行时镜像。
-2. Agent 有 4 种执行闭环（Legacy ReAct / LangGraph ReAct / Studio Loop / Worker ReAct），改 Chat 链路先查 `agent_execution_framework.md` 的 execution_path 登记表，改错路径不生效。
+2. Agent 有 4 种执行闭环（Legacy ReAct / LangGraph ReAct / Studio Loop / Worker ReAct），改 Chat 链路先查 `CygnusX_agent_execution_framework.md` 的 execution_path 登记表，改错路径不生效。
 3. 长任务 >600s 一律 Celery job reconcile-only，web 进程内不得直接跑；RocketMQ worker（`task_queue/rocketmq_worker.py`）是另一条消费路径。
 4. `frontend/` dev proxy 指向 `:8888`（nginx），裸起 uvicorn 是 `:8000`，联调端口错位会 404 [待人工确认：本地 compose 端口映射以 `deploy/docker/` compose 为准]。
 5. 改 `data/MODULE_LOCKED.yaml` 后前后端**双双**消费：后端启动硬校验 + 前端路由守卫，任何一边漏同步都会表现为模块 403/消失。

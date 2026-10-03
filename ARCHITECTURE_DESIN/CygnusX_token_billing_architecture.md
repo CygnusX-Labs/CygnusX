@@ -4,6 +4,60 @@
 > 基线：2026-09-22  
 > 适用范围：普通 Chat、Studio/Agent 工具循环、AgentTeams 会诊、个人用量统计和工作台费用展示。
 
+## 0. 这个计费模块如何发挥作用
+
+计费模块把一次模型调用拆成“采集事实、累计用量、平台扣费、查询展示”四步。Provider 的 SSE 最终 usage 是唯一的真实 token 来源，`openai_compatible.py` 将不同供应商的输入、输出、缓存和总量字段归一化为平台契约；Chat、Studio 或 AgentTeams 的工具循环可能触发多次模型请求，runtime 先用 `merge_token_usage()` 合并，再把一条最终 usage 写入 assistant 消息和会话累计值。
+
+消息落库后，`ChatRuntimeSupport._apply_usage_to_session()` 调用 `CookieService.spend_ai_tokens()`，按平台费率把 `total_tokens` 转成饼干交易。扣费以 message ID 作为幂等键，在余额不足、账户冻结或重复重试时仍不会产生负余额或重复流水。AgentTeams 使用独立的 usage service，但最终写入合成消息并复用同一扣费规则；统计服务从已落库的 assistant usage 和交易明细聚合个人数据。
+
+前端展示将平台事实与用户可见估算分开：消息和会话展示 Provider usage，`tokenCost.ts` 根据模型输入/输出/缓存单价估算元金额，余额组件展示饼干余额。元估算不参与扣费，也不能在 Provider 缺少 usage 时被倒推成真实账单；因此每个接口和 UI 都能指出数据来自哪一个口径。
+
+### 0.1 运行架构图：usage 到扣费和展示的闭环
+
+```mermaid
+flowchart TD
+    A[Provider SSE 最终 usage] --> B[normalize_token_usage]
+    B --> C[ChatChunk.done metadata.usage]
+    C --> D{执行形态}
+    D -->|Chat / Studio| E[Runtime merge_token_usage]
+    D -->|AgentTeams| F[agentteams_usage_service]
+    E --> G[assistant message usage]
+    F --> G
+    G --> H[chat_sessions.total_tokens]
+    G --> I[CookieService.spend_ai_tokens]
+    I --> J[(Cookie account / transaction ledger)]
+    G --> K[StatsService usage aggregation]
+    G --> L[DTO / 前端消息展示]
+    M[模型输入/输出/缓存单价] --> N[tokenCost.ts 元估算]
+    L --> N
+```
+
+### 0.2 实现图：一条 assistant 消息如何完成计费
+
+```mermaid
+sequenceDiagram
+    participant P as AI Provider SSE
+    participant N as normalize_token_usage
+    participant R as Chat/Studio Runtime
+    participant M as Message + Session Store
+    participant C as CookieService
+    participant T as Cookie Transaction Ledger
+    participant S as StatsService
+    participant UI as Frontend
+    P-->>N: 最终 usage（可能含缓存字段）
+    N-->>R: 规范化 token 快照
+    R->>R: 合并工具循环的多次请求
+    R->>M: 写 assistant metadata_json.usage
+    R->>M: 累加 chat_sessions.total_tokens
+    R->>C: spend_ai_tokens(message_id, total_tokens)
+    C->>T: 幂等校验、按费率四舍五入、扣余额
+    T-->>C: 交易结果/余额封顶状态
+    M-->>S: 聚合消息 usage 与逐条 cookie_cost
+    S-->>UI: 统计 DTO
+    M-->>UI: 消息 usage
+    UI->>UI: tokenCost.ts 按模型价格估算元金额
+```
+
 ## 1. 目的与边界
 
 本系统同时存在两种费用口径：

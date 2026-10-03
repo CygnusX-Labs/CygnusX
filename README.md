@@ -263,7 +263,7 @@ tests/                后端测试（unit / integration / e2e / performance，26
 
 ### Agent 执行框架：双引擎、多路径、统一事件
 
-Agent 的身份 / 提示词 / 工具白名单 / 模型全部由 `data/ai/*.yaml` 声明，DB 发布 + mtime 热重载。执行层有**双引擎同语义**（手写 ReAct 与 LangGraph 状态图共享 ask_user 中断、handoff、工具回灌语义）与 **6 条登记执行路径**（`chat_legacy` / `chat_langgraph` / `studio_chat_loop` / `agentteams_manager_consultation` / `agentteams_worker_react` / `agentteams_tool_execution`），全部共享统一生命周期事件契约（`agent_turn_started` / `agent_final_result` / `agent_loop_guard_triggered` 等，按 `run_id / round / execution_path / tool_call_id` 关联，SSE 投影到前端调试时间线）。运行保护内建：轮次上限与可确认扩轮、StudioLoopGuard（工具总数 / 连续失败 / auto→supervised 降级）、Worker duplicate_tool_call 与无进展 Guard、`asyncio.timeout`、Worker 失败隔离。详见 `ARCHITECTURE_DESIN/agent_execution_framework.md`。
+Agent 的身份 / 提示词 / 工具白名单 / 模型全部由 `data/ai/*.yaml` 声明，DB 发布 + mtime 热重载。执行层有**双引擎同语义**（手写 ReAct 与 LangGraph 状态图共享 ask_user 中断、handoff、工具回灌语义）与 **6 条登记执行路径**（`chat_legacy` / `chat_langgraph` / `studio_chat_loop` / `agentteams_manager_consultation` / `agentteams_worker_react` / `agentteams_tool_execution`），全部共享统一生命周期事件契约（`agent_turn_started` / `agent_final_result` / `agent_loop_guard_triggered` 等，按 `run_id / round / execution_path / tool_call_id` 关联，SSE 投影到前端调试时间线）。运行保护内建：轮次上限与可确认扩轮、StudioLoopGuard（工具总数 / 连续失败 / auto→supervised 降级）、Worker duplicate_tool_call 与无进展 Guard、`asyncio.timeout`、Worker 失败隔离。详见 `ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`。
 
 ### Flow（流程）扩展：YAML 声明式接入
 
@@ -279,7 +279,7 @@ LLM 规划治理分两层：`data/ai/domains/*.yaml` 领域包（现有 general 
 
 ### MCP 子系统与 MCP Builder
 
-MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipelines` 10 工具、`cygnusx-tools` 动态工具桥）、外部 MCP（STDIO / SSE / HTTP，30s 超时 + 三层安全校验）、管线专属 MCP。**MCP Builder**（`agent-mcp-builder`）是 LLM 生成工具的安全生产线：六阶段流水线（规划 / 搜索 / 编码 / 测试 / 文档 / 注册）+ 约 12 类 AST 静态检查 + 沙箱 STDIO 执行测试 + 人工审核转正，配额 5 个/用户、TTL 24h 过期自动下线——生成代码永不直进生产工具池。详见 `ARCHITECTURE_DESIN/mcp_architecture.md`（§5 为 MCP 构建师 as-built 章节，原 `mcp_builder_agent.md` 已并入其中）。
+MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipelines` 10 工具、`cygnusx-tools` 动态工具桥）、外部 MCP（STDIO / SSE / HTTP，30s 超时 + 三层安全校验）、管线专属 MCP。**MCP Builder**（`agent-mcp-builder`）是 LLM 生成工具的安全生产线：六阶段流水线（规划 / 搜索 / 编码 / 测试 / 文档 / 注册）+ 约 12 类 AST 静态检查 + 沙箱 STDIO 执行测试 + 人工审核转正，配额 5 个/用户、TTL 24h 过期自动下线——生成代码永不直进生产工具池。详见 `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`（§5 为 MCP 构建师 as-built 章节，原 `mcp_builder_agent.md` 已并入其中）。
 
 ### Skill 工程体系
 
@@ -287,7 +287,7 @@ MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipeline
 
 ### 记忆系统
 
-自研 PostgreSQL + pgvector 薄层（不依赖 mem0）：`memory_blocks` 命名块（profile / preferences / current_focus，version 乐观锁）+ `memory_facts`（vector(1024) + HNSW，时间衰减排序 `similarity × exp(-λ·age)`，`content_hash` 幂等，superseded 修正链，来源溯源）。分区语义：profile/preference 进共享分区（跨 Agent），project/summary 进 Agent 隔离分区，召回两路合并、共享优先去重；异步 settle 采用游标增量 + 区间幂等 + LLM 事实抽取。Studio 另有 `MEMORY.md` 文件记忆（200 条 / 8000 字符上限）+ Git checkpoint 保护。L4 接入纪律：Manager 注入共享 + Manager 分区，专家零注入防污染。详见 `ARCHITECTURE_DESIN/memory_architecture.md`。
+自研 PostgreSQL + pgvector 薄层（不依赖 mem0）：`memory_blocks` 命名块（profile / preferences / current_focus，version 乐观锁）+ `memory_facts`（vector(1024) + HNSW，时间衰减排序 `similarity × exp(-λ·age)`，`content_hash` 幂等，superseded 修正链，来源溯源）。分区语义：profile/preference 进共享分区（跨 Agent），project/summary 进 Agent 隔离分区，召回两路合并、共享优先去重；异步 settle 采用游标增量 + 区间幂等 + LLM 事实抽取。Studio 另有 `MEMORY.md` 文件记忆（200 条 / 8000 字符上限）+ Git checkpoint 保护。L4 接入纪律：Manager 注入共享 + Manager 分区，专家零注入防污染。详见 `ARCHITECTURE_DESIN/CygnusX_memory_architecture.md`。
 
 ### 数据下载与聚合
 
@@ -295,7 +295,7 @@ MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipeline
 
 ### 知识库
 
-`docs/knowledge/`（`meta.yaml` 导航 + Markdown 正文）与 `wiki/` 为源，直接读盘热更新，管理员可在线编辑（路径遍历防护 + 原子写）；运行时经 `make sync-knowledge` 同步数据库并向量化供 AI 检索。架构见 `ARCHITECTURE_DESIN/knowledge_architecture.md`。
+`docs/knowledge/`（`meta.yaml` 导航 + Markdown 正文）与 `wiki/` 为源，直接读盘热更新，管理员可在线编辑（路径遍历防护 + 原子写）；运行时经 `make sync-knowledge` 同步数据库并向量化供 AI 检索。架构见 `ARCHITECTURE_DESIN/CygnusX_knowledge_architecture.md`。
 
 ### 云端沙盒终端
 
@@ -303,7 +303,7 @@ MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipeline
 
 ### Studio 沙箱安全基线
 
-OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-10-01.md`。
+OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md`。
 
 ## 数据、日志与安全
 

@@ -4,6 +4,66 @@
 > **文档定位**：回答「一个 Agent 在 CygnusX 里到底是怎么定义、怎么被调用、怎么维持状态、怎么调工具、怎么跑起来、依赖什么、以及怎么和别的 Agent 协作」这七个问题。本文是**实现细节层**的事实快照；执行拓扑、执行路径登记与事件框架以 `agent_execution_framework.md` 为准，工具契约与发布验收以 `agent_framework_baseline.md` 为准。
 > **与其他文档的边界**：`agent_execution_framework.md` 描述「一次执行怎么流转、怎么观测」；本文描述「Agent 这个对象本身由什么构成、接口长什么样、依赖什么」。两者互补，不合并。
 
+## 这个单 Agent 模块如何发挥作用
+
+CygnusX 把 Agent 当作一份可运营的能力配置，而不是需要实例化的业务基类。平台启动或管理端发布时，从 `data/ai/*.yaml` 读取 Agent 的身份、提示词、模型、MCP、Skill、工具包和功能开关，并由 `AgentService.ensure_builtin_agents()` 幂等同步到 `agent_templates`；用户个性化能力另存于 `user_agent_capabilities`。因此，Agent 的“是什么”由配置和数据库记录共同决定，执行代码只负责消费已经装配好的定义。
+
+一次请求进入 `/api/v1/chat/stream` 后，`AgentService` 先按 Agent、用户覆盖、显式模型和请求参数组装应用层 `AgentContext`，`AgentContextBuilder` 再把它转换成带会话、模式、`execution_path`、trace/run 标识的单轮执行上下文。工具集合在此阶段按权限、Tool Pack、MCP、Skill 和 Studio capability 裁剪，模型收到的是 OpenAI 消息 dict 与请求级 tools；后端不会因为模型提出未知工具而动态扩大权限。
+
+运行时由 Chat/Studio/Worker 路由选择 LangGraph 或兼容的逃生路径。LangGraph 用 `AgentState` 保存本轮消息、工具调用和终止标记，普通聊天的 checkpoint 只服务图恢复，业务权威状态仍在消息、事件和任务表。工具调用经 Builtin/MCP/Skill 适配器执行，可落到轻量沙箱、Studio 容器或 Celery；结果分成模型用的 `llm_payload` 和前端用的 `ui_payload`。执行结束后，`ChatChunk` 通过 SSE 返回，消息、usage、审计和产物索引写回存储，跨 Agent 协作则以受限 child session 或显式 handoff 连接，不共享隐式可变会话。
+
+### 运行架构图：一个 Agent 从配置到结果
+
+```mermaid
+flowchart LR
+    YAML[data/ai/*.yaml\n身份 · Prompt · Model · Tool Packs\nMCP · Skill · Features] --> Loader[agent_loader.py]
+    Loader --> DB[(agent_templates\nuser_agent_capabilities)]
+    DB --> Assemble[AgentService.assemble_context\n用户覆盖 · 模型 · 工具裁剪]
+    Assemble --> Build[AgentContextBuilder\nSession · Mode · Path · Trace]
+    Build --> Runtime{Runtime 路由}
+    Runtime --> LG[LangGraph AgentState\nllm_call_node ↔ tool_exec_node]
+    Runtime --> Studio[Studio / 沙箱工具循环]
+    Runtime --> Worker[受限 Worker / child session]
+    LG --> Tools[Builtin · MCP · Skill · Sandbox · Celery]
+    Studio --> Tools
+    Worker --> Tools
+    Tools --> Guard[权限 · deadline · round limit\n审批 · circuit breaker]
+    Guard --> Result[ChatChunk\nllm_payload + ui_payload]
+    Result --> Persist[(Messages · Events · Usage\nAudit · Artifacts)]
+    Result --> SSE[SSE / 前端投影]
+```
+
+### 实现图：配置、上下文和运行时的调用关系
+
+```mermaid
+sequenceDiagram
+    participant Config as data/ai/*.yaml
+    participant Loader as agent_loader / AgentService
+    participant API as api/v1/chat.py
+    participant Builder as AgentContextBuilder
+    participant Runtime as Chat Runtime
+    participant Provider as OpenAI-compatible Provider
+    participant Tool as Builtin / MCP / Skill / Sandbox
+    participant Store as PostgreSQL / Redis / MinIO
+
+    Config->>Loader: load_agent_configs()
+    Loader->>Store: ensure_builtin_agents() 幂等同步
+    API->>Loader: agent_id + user/session + request options
+    Loader->>Builder: assemble_context()
+    Builder->>Store: session / memory / knowledge / billing
+    Builder-->>Runtime: AgentContext + execution policy
+    loop tool rounds
+        Runtime->>Provider: messages + request-scoped tools
+        Provider-->>Runtime: text delta / tool_call
+        Runtime->>Tool: validate and execute(tool_call)
+        Tool->>Store: audit / artifact / invocation
+        Tool-->>Runtime: llm_payload + ui_payload
+    end
+    Runtime->>Store: message / usage / terminal event
+    Runtime-->>API: AsyncIterator[ChatChunk]
+    API-->>Store: SSE response lifecycle
+```
+
 ## 0. 一页结论
 
 CygnusX 的 Agent 是**数据驱动 + 薄自研运行时**的形态，不是基类继承体系，也不是外部 Agent 框架的封装：

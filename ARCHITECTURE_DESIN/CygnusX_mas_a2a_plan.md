@@ -20,6 +20,64 @@
 >
 > 本方案坚持增量演进：保留现有 Studio、MCP、Celery、Redis、任务中心和工作流监控；不在本阶段替换现有聊天链路，也不把大文件、完整日志或完整矩阵放进模型上下文。
 
+## 0. 这个 MAS/A2A 模块如何发挥作用
+
+当前 MAS 模块是一个受用户确认控制的长任务编排层。Chat 或 Studio 先生成结构化计划预览，服务端校验 DAG、Agent/工具能力、路径和资源策略；用户批准后才创建 Run 和 Node。调度器只放行依赖已经满足的节点，同层节点可以同时进入 Celery 队列；每个节点由固定的受控 executor 或领域 Worker 执行，产物通过 Artifact Registry 以 ID、路径投影、格式和校验摘要交接。
+
+A2A 在本仓库中是 MAS 内部事件信封，不是标准 Agent Card、JSON-RPC 或跨组织联邦协议。节点状态变化先由 `A2AEventService.record()` 写入 PostgreSQL outbox，并使用 `dedupe_key` 保证幂等；Beat 周期性发布 pending 事件到 Redis Stream，消费者用持久化事件记录防止重复处理，再调用 `MASSchedulerService` 解锁、派发、成功收敛或安排有限重试。Redis 只承担快速传输，数据库保留可恢复的状态和审计事实。
+
+前端不直接消费 A2A 流，而是通过 REST/SSE 读取 Run、Node、Artifact 的投影和进度事件；审批、失败转人工、重试和断点恢复都由服务端状态机控制。大文件、完整日志和原始矩阵留在共享工作区或对象存储，事件只携带小型元数据和文件指针，保证 Agent 上下文和事件总线不会被数据面撑大。
+
+### 0.1 运行架构图：MAS 控制面与数据面
+
+```mermaid
+flowchart TD
+    U[Chat / Studio 用户] --> P[Plan Preview]
+    P --> G[服务端 DAG / 能力 / 路径 Guard]
+    G --> H{用户确认}
+    H -->|否| X[不创建 Run]
+    H -->|是| R[MAS Run + Node Registry]
+    R --> O[PostgreSQL A2A Outbox]
+    O --> B[Celery Beat Publisher]
+    B --> S[Redis Stream]
+    S --> C[Event Consumer]
+    C --> D[MAS Scheduler]
+    D --> W[受控 Celery/Apptainer Worker]
+    W --> A[Artifact Registry / Shared Workspace]
+    W --> O
+    D --> O
+    O --> Z[审计与状态持久化]
+    Z --> V[REST/SSE Run/Node 投影]
+    V --> U
+```
+
+### 0.2 实现图：一个节点事件从记录到消费
+
+```mermaid
+sequenceDiagram
+    participant S as MAS Service/Worker
+    participant E as A2AEventService
+    participant DB as PostgreSQL Outbox
+    participant B as Celery Beat
+    participant RS as Redis Stream
+    participant C as MASEventConsumerService
+    participant M as MASSchedulerService
+    participant W as Node Executor
+    participant API as Run Progress API/SSE
+    S->>E: record(A2AEvent, dedupe_key)
+    E->>DB: 插入 pending 事件（唯一键幂等）
+    B->>E: publish_pending()
+    E->>RS: XADD cygnusx:mas:events
+    C->>RS: 读取消费组消息
+    C->>DB: 持久化消费/重复检查
+    C->>M: 按 event_type 处理 PLAN/NODE 事件
+    M->>DB: 乐观锁更新 Run/Node 状态
+    M->>W: dispatch_ready_node().delay()
+    W->>E: 写 started / artifact.validated / succeeded 或 failed
+    DB-->>API: 查询最新状态和 Artifact 指针
+    API-->>API: REST/SSE 投影给前端
+```
+
 ---
 
 ## 1. 目标、边界与非目标

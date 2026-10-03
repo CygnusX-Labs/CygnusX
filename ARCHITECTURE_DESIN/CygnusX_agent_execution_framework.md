@@ -14,6 +14,72 @@
 >
 > **修订注记（2026-09-19,as-built）**：单 Runtime 收敛与 openai4s 外循环第一阶段已落地——普通聊天默认全量走 `chat_langgraph`（分流不再以 `features.engine=="langgraph"` 为门,保留 `engine:"legacy"` 与全局开关 `chat_force_legacy_runtime` 两个逃生舱）;LangGraph 补齐 legacy 工具分发全链(goal 终态 / parallel_subagents 含每轮护栏 / create_agentteams_case / mas_plan_preview)与事件对齐(awaiting_input 终止态、轮级 agent_context_reinjected、去重 agent_turn_started、web_search UI 事件);显式 Finalize 动作(`submit_output`)与 Code Cell 轮次预算豁免(全代码执行工具轮不递增 max_rounds)已进图实现;落库信封对齐 legacy(payload_hash / cell_index+language / reliability / 截断元信息,chat/runtimes/langgraph_runtime.py)。handoff image/capabilities 经核对无差距(LangGraph 分流排除 studio_mode,镜像替换本就只在 Studio 分支发生);Router `runtime_context["runtime"]` 为显式覆写入口(测试/灰度),普通聊天无论 Router 开关都经 LegacyChatRuntime 壳进入内部 LangGraph 分流。Code Cell 完全围栏原生动作、Studio 分支收敛进图、legacy 循环体删除仍为计划态。
 
+## 0. 这个 Agent 执行模块如何发挥作用
+
+Agent 执行框架把一次“模型要回答什么、是否需要调用工具、何时结束”变成受保护的状态循环。请求先由 `ChatService` 和上下文装配层确定会话、Agent、Provider、提示词、工具集合、MCP/Skill、Studio 能力和 `execution_path`；模型只能看到这次请求被授权的工具 schema，不能自行获得 shell、流程文件或数据库写权限。
+
+路径判定后，普通聊天默认交给 `LangGraphChatRuntime`，由 `llm_call_node` 生成文本或工具调用，再由 `tool_exec_node` 执行并把紧凑结果回灌下一轮；`submit_output`、`ask_user`、handoff 等终止动作会直接结束或暂停图。`chat_legacy` 仅作为显式逃生舱保留，Studio 使用带计划和审批的工具循环，AgentTeams Worker 使用隔离的 child session 和受限工具集。不同 Runtime 不共享可变状态，但共享事件字段、工具结果双通道和终态语义。
+
+每轮循环都经过轮次上限、重复调用、无进展、整体 deadline、审批闸和 MCP circuit breaker 等保护。工具执行产生 `tool_started`/`tool_result` 等生命周期事件，文本、计划、产物、错误和终态由 `ChatEventService` 统一投影为 SSE/UI 事件，同时落库消息、usage、审计和执行信封。这样前端能实时展示过程，后台能按 `session_id`、`message_id`、`tool_call_id` 和 `execution_path` 重建一次执行，失败时也能明确区分可重试、需用户输入和最终失败。
+
+### 0.1 运行架构图：Agent 如何从请求进入受保护闭环
+
+```mermaid
+flowchart TB
+    Request[Chat / Studio / AgentTeams 请求] --> Assemble[请求装配\nAgent · Provider · Prompt · Tools\nMCP · Skill · Knowledge · Memory]
+    Assemble --> Path{execution_path}
+    Path --> LG[chat_langgraph\nLangGraphChatRuntime]
+    Path --> Legacy[chat_legacy\n显式逃生舱]
+    Path --> Studio[studio_chat_loop\n计划 · 审批 · 沙箱]
+    Path --> Worker[agentteams_worker_react\n隔离 child session]
+    Path --> Room[agentteams_tool_execution\n受控只读工具]
+    LG --> LLM[llm_call_node]
+    Legacy --> LLM
+    Studio --> LLM
+    Worker --> LLM
+    Room --> LLM
+    LLM --> Action{文本 / tool_call / 终止动作}
+    Action -->|tool_call| Tool[tool_exec_node / 工具执行器]
+    Tool --> Guard[Loop Guard · deadline · approval\nduplicate / no-progress / circuit breaker]
+    Guard -->|继续| LLM
+    Action -->|submit_output / ask_user / handoff| Event[统一事件与终态]
+    Guard --> Event
+    Event --> Store[(消息 · usage · 审计 · 执行信封)]
+    Event --> SSE[SSE / UI 事件]
+```
+
+### 0.2 实现图：代码模块之间的调用关系
+
+```mermaid
+sequenceDiagram
+    participant API as api/v1/chat.py
+    participant Chat as ChatService
+    participant Ctx as AgentContextBuilder
+    participant Router as ChatRouterService
+    participant Runtime as LangGraphChatRuntime
+    participant Graph as LangGraphRuntimeService
+    participant Tool as tool_exec_node / ToolBridge
+    participant Events as ChatEventService
+    participant Store as DB / Redis / MinIO
+
+    API->>Chat: stream_agent_chat(request)
+    Chat->>Ctx: prepare AgentContext + execution_path
+    Ctx-->>Chat: messages / tools / policy / callbacks
+    Chat->>Router: select runtime
+    Router->>Runtime: run(context)
+    Runtime->>Graph: stream AgentState
+    loop protected rounds
+        Graph->>Graph: llm_call_node
+        Graph->>Tool: tool_exec_node(tool_calls)
+        Tool->>Store: tool audit / artifact / payload
+        Tool-->>Graph: llm_payload + ui_payload
+    end
+    Graph-->>Runtime: ChatChunk + terminal state
+    Runtime->>Events: lifecycle / tool / final events
+    Events->>Store: messages / usage / envelope / audit
+    Events-->>API: SSE data events
+```
+
 ## 1. 一页结论
 
 CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、分路径执行**的 Agent 平台：

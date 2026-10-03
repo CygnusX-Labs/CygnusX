@@ -7,6 +7,70 @@
 >
 > 适用范围：Studio / legacy 链路。LangGraph 路径除本文 §8.2 审批闸外不做科研形态扩展。
 
+## 0. 这个科研闭环模块如何发挥作用
+
+科研闭环把一次探索任务从可恢复的工作区、可重放的执行证据、声明式环境到最终交付连接起来。会话创建时，项目级 `settings.research_mode` 可继承到 `sandbox_meta.research_mode`，三个子开关决定渲染为消息流还是 cell 时间线、使用 standard 还是 research 工作区协议，以及是否允许 PTC `llm_query`。默认关闭时沿用普通 Chat/Studio 行为，只有显式开启才进入科研路径。
+
+在运行阶段，Studio 沙盒或 Chat 沙盒执行工具，工具输出事件以不可变 `chat_message_events` 批量写入数据库，同时在终态信封中记录 payload hash、产物清单和 sha256。前端可以从事件表重建过程态，旧会话则回退终态快照；Notebook 导出和 cell 投影从同一份持久化记录派生，因此结果可复核、可重放。需要长时间执行的命令先创建幂等 job 行再投递 Celery，Beat 的 reconcile-only 任务只修正状态漂移，不会无条件重复提交。
+
+会话长期不活跃或项目完成时，Beat/项目服务触发工作区打包，manifest 记录文件大小和 sha256，归档包按配额与保留期管理；恢复时只解压 `workspace/` 并复核校验，不重新创建容器。研究模式下若存在 `conda-explicit.txt` 或 `environment.yml`，启动钩子尝试还原环境，失败则审计并降级到基础环境。最终，事件、产物、审计和归档共同构成交付证据，用户可以继续会话、导出 notebook 或在管理端追踪生命周期。
+
+### 0.1 运行架构图：科研会话的执行与归档闭环
+
+```mermaid
+flowchart TD
+    A[Project settings.research_mode] --> B[Session sandbox_meta.research_mode]
+    B --> C[Studio / Chat Sandbox]
+    C --> D[Tool execution]
+    D --> E[chat_message_events 不可变事件]
+    D --> F[终态快照 + payload_hash]
+    D --> G[artifact_manifest / file_records sha256]
+    B --> H{workspace_protocol}
+    H -->|research| I[声明式环境还原]
+    I --> C
+    D --> J{任务耗时 > 600s}
+    J -->|是| K[幂等 job + Celery]
+    K --> L[reconcile-only Beat]
+    J -->|否| M[同步终态]
+    E --> N[cell 投影 / Notebook 导出]
+    F --> N
+    O[Beat / 项目完成 / 管理员操作] --> P[pack_session]
+    P --> Q[归档 manifest + archive storage]
+    Q --> R[restore / retention cleanup]
+    E --> S[审计与可观测查询]
+    G --> S
+```
+
+### 0.2 实现图：一次科研工具执行如何变成可恢复证据
+
+```mermaid
+sequenceDiagram
+    participant U as User/Frontend
+    participant API as Chat/Studio API
+    participant SM as Session Manager
+    participant X as Sandbox Tool Executor
+    participant EV as Message Event Service
+    participant DB as PostgreSQL
+    participant Q as Celery/Beat
+    participant AR as Archive Service
+    U->>API: 提交代码或工具调用
+    API->>SM: 校验 research_mode 与 workspace 协议
+    SM->>X: 确认沙盒/环境并执行
+    X->>EV: 发送 stdout、tool_output、状态事件
+    EV->>DB: 批量写 chat_message_events（短事务）
+    X->>DB: 写终态快照、payload_hash、产物 checksum
+    alt 预计超过 600 秒
+        API->>DB: 先创建幂等 job 行
+        API->>Q: 投递 Celery task
+        Q-->>DB: 更新状态与进度
+        Q->>Q: Beat reconcile-only 对账
+    end
+    DB-->>U: SSE/刷新返回过程态与终态
+    AR->>DB: 读取 busy、配额和审计状态
+    AR->>AR: 打包 workspace + manifest
+    AR->>DB: 写 archive 元数据与审计
+```
+
 ## 1. 会话工作区生命周期（四层模型）
 
 ```

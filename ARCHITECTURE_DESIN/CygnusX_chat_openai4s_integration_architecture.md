@@ -4,6 +4,66 @@
 >
 > 本文不表示 OmicHub 直接依赖或复制 OpenAI4S。OpenAI4S 是长对话、动作路由、宿主回调、任务状态和产物校验语义的参照实现；当前能力以 OmicHub 代码和各专项 as-built 文档为准。
 
+## 这个 Chat/OpenAI4S 融合模块如何发挥作用
+
+本模块的作用是把长对话和深度分析场景需要的几个运行时契约接入 OmicHub 现有 Chat 链路：数据库保存完整会话原文，运行时根据模型上下文预算生成压缩视图；handoff、工具循环和大输出通过显式事件、外置产物和摘要继续传递；Provider usage、工具调用和沙箱执行分别进入可对账的持久化记录。OpenAI4S 在这里提供语义参照，OmicHub 仍由自己的 FastAPI、Agent、LangGraph、MCP、Skill 和沙箱代码实现。
+
+一次请求从前端 SSE 进入后，服务端先读取完整历史、附件、记忆和知识，再估算 token 与模型窗口。如果窗口或单轮输出接近阈值，`context_compaction` 生成 rolling summary、保留最近消息和可恢复引用；压缩只改变发送给模型的视图，不覆盖数据库原文。工具或代码产生的大结果写入工作区/对象存储，模型只收到摘要、路径、哈希和必要元数据，前端通过 `ui_payload` 展示完整内容。
+
+运行时继续沿用 `ChatRuntime` 和 `execution_path`，通过 `llm_call → tool_exec → 回灌` 推进；handoff、审批、长任务、断线恢复和双熔断都以事件和状态契约衔接。Provider 将不同供应商的 usage 归一化，最终与消息、会话、token 计费、归档和审计记录关联。这样可以在不改变 OmicHub 权限与存储边界的前提下，支持长上下文、可恢复工具执行和科研分析归档。
+
+### 运行架构图：长对话与分析请求的融合链路
+
+```mermaid
+flowchart TB
+    UI[Vue / Pinia / Studio] --> API[/api/v1/chat/stream]
+    API --> Prep[请求预检\nAuth · AgentContext · 会话原文]
+    Prep --> Estimate[上下文估算\n模型窗口 · 输入/输出预算]
+    Estimate --> Compact{需要压缩或外置?}
+    Compact -->|否| Runtime[Chat Runtime\nLangGraph / Studio / Worker]
+    Compact -->|是| View[压缩视图\nrolling summary · recent messages\n引用 · hash · payload]
+    View --> Runtime
+    Runtime --> Provider[OpenAI-compatible Provider\nusage 归一化 · tool-call 聚合]
+    Runtime --> Tool[MCP · Skill · Sandbox · Sub-Agent]
+    Tool --> Large[大输出 / 代码 / 产物\nworkspace · MinIO · archive]
+    Large --> Runtime
+    Runtime --> Events[事件与状态\nhandoff · approval · context_compressed\ndone / failed / resume]
+    Events --> Store[(PostgreSQL/pgvector\nRedis · MinIO · chat events)]
+    Events --> UI
+```
+
+### 实现图：从 SSE 请求到上下文压缩和归档
+
+```mermaid
+sequenceDiagram
+    participant UI as agentHub / useAgentChatStream
+    participant API as api/v1/chat.py
+    participant Chat as ChatService
+    participant Ctx as AgentContextBuilder
+    participant Comp as context_estimate / context_compaction
+    participant Runtime as Chat Runtime
+    participant Provider as OpenAICompatibleProvider
+    participant Tool as Tool/MCP/Sandbox
+    participant Store as DB / Redis / MinIO
+
+    UI->>API: POST /chat/stream + recent history
+    API->>Chat: stream_agent_chat()
+    Chat->>Ctx: assemble Agent + tools + memory + knowledge
+    Ctx->>Comp: estimate input/output tokens
+    Comp-->>Chat: full or compressed model view
+    loop protected turns
+        Chat->>Runtime: run(request)
+        Runtime->>Provider: messages + tools
+        Provider-->>Runtime: text / tool_call + normalized usage
+        Runtime->>Tool: execute and audit
+        Tool->>Store: output, artifact, invocation
+        Tool-->>Runtime: llm_payload + ui_payload
+    end
+    Runtime->>Store: messages, events, usage, archive metadata
+    Runtime-->>API: SSE chunks and terminal event
+    API-->>UI: incremental text, tool cards, summary, result
+```
+
 ## 1. 一页结论
 
 OmicHub 当前由以下层次组成：
@@ -40,12 +100,12 @@ OpenAI4S 的主要融合点是上下文压缩和运行时契约，而不是模�
 
 ### 2.1 架构文档
 
-- `ARCHITECTURE_DESIN/cygnusx_architecture.md`：平台总体架构。
-- `ARCHITECTURE_DESIN/agent_architecture.md`：单 Agent 的数据模型、接口和装配。
-- `ARCHITECTURE_DESIN/agent_execution_framework.md`：Agent 执行路径、事件和运行保护。
-- `ARCHITECTURE_DESIN/mcp_architecture.md`：MCP 注册、发现、安全和 Builder。
-- `ARCHITECTURE_DESIN/skill_architecture.md`：平台 Skill 生命周期和调用契约。
-- `ARCHITECTURE_DESIN/cygnusx_sandbox_architecture_2026-10-01.md`：Studio 沙箱和 capability 安全基线。
+- `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md`：平台总体架构。
+- `ARCHITECTURE_DESIN/CygnusX_agent_architecture.md`：单 Agent 的数据模型、接口和装配。
+- `ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`：Agent 执行路径、事件和运行保护。
+- `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`：MCP 注册、发现、安全和 Builder。
+- `ARCHITECTURE_DESIN/CygnusX_skill_architecture.md`：平台 Skill 生命周期和调用契约。
+- `ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md`：Studio 沙箱和 capability 安全基线。
 - `docs/info/26.9.25/openai4s-long-conversation-architecture.md`：OpenAI4S 长对话参照。
 - `docs/info/26.9.23/migration-spec-openai4s-to-omichub.md`：上下文压缩迁移规格和验收状态。
 

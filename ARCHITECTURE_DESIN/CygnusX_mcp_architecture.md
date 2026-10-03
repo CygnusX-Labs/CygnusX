@@ -10,6 +10,67 @@
 
 > **合并说明（2026-09-18）**：本文档与 `mcp_builder_agent.md`（as-built 实现文档）合一——后者全部内容并入为 §5"MCP 构建师 agent-mcp-builder（as-built）"，原文件已删除；本文档原 §4–§5"Agent 自生成 MCP 可行性分析与三阶段提案"压缩为历史注记（新 §4），保留能力复用度结论要点，删除被最终实现取代的重复设计稿（双份 AST 规则表、schema 扩展 SQL、`/mcp/*` 端点提案、五阶段部署流水线图）。最终实现见 §5。
 
+## 这个 MCP 模块如何发挥作用
+
+MCP 子系统把平台工具、外部服务和管线能力统一成模型可以发现并调用的工具表面，同时把注册、授权、传输、隔离、超时和审计放在同一条控制链上。启动时 `MCPService.ensure_presets()` 将代码中的内置 Preset 和管线工具幂等同步到 `mcp_servers`/工具快照；管理员通过 API 注册或更新外部 Server，Agent YAML 的 `mcp_ids` 和请求级 `extra_mcp_servers` 决定哪些 Server 可以进入本次上下文。
+
+会话装配阶段只向模型暴露经过 Agent、用户权限、Tool Pack、Studio capability 和 MCP 模式裁剪后的 schema。模型返回 `tool_call` 后，Chat/Worker 根据 Server 和工具名交给 `MCPClient`：内置工具直接调用受控 handler，STDIO/SSE/Streamable HTTP 工具通过对应传输建立短生命周期会话。命令、URL、参数、超时和 circuit breaker 在调用前后校验，结果携带紧凑 `llm_payload` 与完整 `ui_payload`，调用日志和错误写入审计表。
+
+MCP Builder 是另一条受控入口：Agent 在 Studio 中生成候选代码，`StaticSafetyChecker` 做 AST 静态检查，sandbox-agent 在隔离容器中启动/调用测试，通过审核和 TTL 后才注册为实验或正式 MCP。这样 MCP 既是 Agent 的扩展能力目录，也是一个有生命周期、有权限边界、有可回滚证据的运行时适配层。
+
+### 运行架构图：MCP 从注册到调用的链路
+
+```mermaid
+flowchart TB
+    Preset[代码 Preset\nplatform · pipelines · seqout · tools_schema] --> Sync[MCPService.ensure_presets]
+    Admin[Admin API 注册外部 Server] --> Registry[(mcp_servers\n工具快照 · 状态 · 配置)]
+    Sync --> Registry
+    Agent[Agent YAML mcp_ids / 请求 extra_mcp_servers] --> Assemble[AgentContext 装配\n权限 · Tool Pack · capability 裁剪]
+    Registry --> Assemble
+    Assemble --> Schema[请求级 MCP tool schema]
+    Schema --> LLM[Provider / Agent Runtime]
+    LLM --> Call[MCPClient.call_tool]
+    Call --> Builtin[BUILTIN handler]
+    Call --> External[STDIO / SSE / Streamable HTTP]
+    Call --> Pipeline[管线 MCP]
+    Builtin --> Guard[命令/URL/参数校验\n超时 · circuit breaker · 审计]
+    External --> Guard
+    Pipeline --> Guard
+    Guard --> Result[llm_payload + ui_payload]
+    Result --> Runtime[继续模型循环 / SSE UI]
+    Guard --> Logs[(mcp_logs · tool events)]
+    Builder[MCP Builder\n生成 → AST 检查 → 沙箱测试 → 审核] --> Registry
+```
+
+### 实现图：Preset、Agent 装配和工具调用
+
+```mermaid
+sequenceDiagram
+    participant Main as main.py
+    participant Service as MCPService
+    participant DB as mcp_servers / mcp_logs
+    participant Agent as AgentService
+    participant Chat as ChatService / Worker
+    participant Client as MCPClient
+    participant Server as builtin / external MCP
+
+    Main->>Service: ensure_presets()
+    Service->>DB: upsert preset server + tool snapshot
+    Chat->>Agent: assemble_context(agent_id, mcp_mode)
+    Agent->>DB: resolve mcp_ids + extra servers
+    Agent-->>Chat: active servers + tool schemas
+    Chat->>Client: call_tool(server, name, args)
+    Client->>Client: validate command/url/args + timeout
+    alt builtin preset
+        Client->>Server: invoke handler(args)
+    else external transport
+        Client->>Server: open session + call_tool(args)
+    end
+    Server-->>Client: result / error
+    Client->>DB: mcp log + invocation audit
+    Client-->>Chat: llm_payload + ui_payload
+```
+
 ---
 
 ## 1. MCP 子系统架构现状

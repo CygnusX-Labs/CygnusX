@@ -5,6 +5,67 @@
 
 ---
 
+## 0. 这个 Skill-First 沙箱模块如何发挥作用
+
+该模块把“先找到合适的专家流程，再生成并执行代码”定义为 Chat 沙箱路径的目标工作方式。当前平台已经有两套相互独立的 Skill 来源、平台 Skill Store、`use_skill` 渐进披露、`chat_sandbox_execute`、沙箱镜像/能力授权和 `skill_invocations` 审计基础；本提案在这些边界上增加统一的只读索引与 `skill_route` 子代理，不改变 L0 声明式 Flow，也不把完整 Skill 正文预加载到主 Agent 上下文。
+
+一次计算请求先由确定性 Flow 入口判断是否属于标准分析；进入 Chat 沙箱后，路由子代理只接收候选元数据并逐步读取少量 `SKILL.md` 正文，返回 `skill_id`、版本指纹、适配理由和缺失条件。主 Agent 按会话 pin 加载选中的 Skill，再生成脚本交给受控沙箱执行；执行时把 `skill_id`（没有命中则为 `null`）、依赖安装记录、输入输出和结果摘要写入调用审计。无 Skill 命中仍允许自由生成，但必须向用户明确告知结果缺少专家 Skill 覆盖并建议复核。
+
+提案中的多目录索引、Skill 路由评测、uv/镜像白名单和强制审计绑定属于目标改造面，落地时必须继续遵守沙箱的只读根文件系统、UID、能力白名单、网络策略和资源配额约束。任何 Skill 只能提供流程知识和受控资源读取，不能借此获得宿主机 shell、Docker socket、流程 YAML 写权限或绕过用户确认。
+
+### 0.1 目标架构图：Skill 检索到沙箱审计
+
+```mermaid
+flowchart TD
+    U[用户计算请求] --> F{标准 L0 Flow?}
+    F -->|是| FLOW[声明式 Flow 提交]
+    F -->|否| R[skill_route 子代理]
+    IDX[多目录 Skill Store 索引] --> R
+    R --> PRE[L1 元数据预筛]
+    PRE --> READ[L2 读取候选 SKILL.md]
+    READ --> DEC{适配审查}
+    DEC -->|命中| PIN[会话 pin: skill_id + 版本指纹]
+    DEC -->|未命中| FREE[自由生成 + 明确告知用户]
+    PIN --> AG[主 Agent 按 Skill 生成脚本]
+    AG --> SB[受控 Chat Sandbox]
+    FREE --> SB
+    SB --> ART[工作区 / Artifact]
+    SB --> AUD[skill_invocations + 运行清单]
+    PIN --> AUD
+    AUD --> EVT[SSE / 审计查询]
+```
+
+### 0.2 实现图：一次 Skill-First 沙箱执行
+
+```mermaid
+sequenceDiagram
+    participant UI as Chat UI
+    participant CS as ChatService
+    participant SR as skill_route
+    participant STORE as Skill Store
+    participant LLM as 主 Agent / LLM
+    participant SB as Sandbox Manager
+    participant DB as Skill Invocation Audit
+    UI->>CS: 提交计算需求
+    CS->>SR: 提供任务摘要与只读路由上下文
+    SR->>STORE: list_skill_metadata(tags, file types)
+    STORE-->>SR: 少量候选 skill_id / version
+    SR->>STORE: read_skill_body(candidate)
+    STORE-->>SR: SKILL.md 正文
+    SR-->>CS: matched, skill_id, fit_checks, missing_requirements
+    alt 命中 Skill
+        CS->>LLM: 按会话 pin 注入 Skill 摘要/正文
+        LLM-->>CS: chat_sandbox_execute(skill_id, code, inputs)
+    else 无命中
+        LLM-->>CS: chat_sandbox_execute(skill_id=null, code, inputs)
+        CS-->>UI: 明确提示无专家 Skill 覆盖
+    end
+    CS->>SB: capability / image / quota 校验后执行
+    SB-->>CS: stdout、产物指针、依赖与状态
+    CS->>DB: 写入 skill_id/null、版本、session、结果摘要
+    CS-->>UI: SSE tool/result 与审计可见状态
+```
+
 ## 1. 背景：三个已核实的问题
 
 ### 1.1 Skill 库与 Agent 是"两个平行宇宙"

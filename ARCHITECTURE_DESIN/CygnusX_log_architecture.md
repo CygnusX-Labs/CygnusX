@@ -10,6 +10,65 @@
 
 ---
 
+## 0. 这个日志模块如何发挥作用
+
+日志模块把“运行排障”“任务进度”“安全审计”分成不同的保留面，同时用统一的宿主机目录和关联字段把它们串起来。Web、Beat、Worker 启动时调用 `setup_logging()`，`core/logging.py` 将标准库日志拦截到 loguru，并把服务名、请求/会话标识和 OpenTelemetry 的 trace/span 标识注入每条记录；同一事件随后写入 stdout、可读文本、结构化 JSON 和 ERROR 专用 sink。容器只负责产生日志，bind mount 让宿主机保留文件，logrotate 或 loguru 负责容量边界。
+
+长任务的日志需要同时满足实时查看和事后追溯。任务执行器将 stdout/stderr 写入 Snakemake 项目目录，Celery 的 `LoggedTask` 为每个 task 建立独立文件；任务进度通过 Redis Pub/Sub 推送到 WebSocket，并把受 `TASK_LOG_*` 限制的摘要写入 `tasks.logs`，前端因此能快速展示而不会把数据库变成长文本仓库。文件日志保存完整输出，数据库保存最近、可查询的状态片段。
+
+审计是另一条持久化边界。HTTP 审计中间件以及 Studio、Chat、AgentTeams 等显式审计调用写入 `audit_logs`，成功后再以 `service="audit"` 写入结构化应用日志作为文本备份。Nginx 访问日志和流程执行日志不经过 loguru，而是按自己的容器挂载和宿主机轮转策略落盘。所有路径最终由统一目录、Docker stdout 限额和保留期共同控制，Promtail 可直接采集 JSON 文件接入 Loki。
+
+### 0.1 运行架构图：不同事件选择不同日志面
+
+```mermaid
+flowchart TD
+    A[Web / Beat / Worker 启动] --> B[setup_logging]
+    B --> C[标准库 InterceptHandler]
+    C --> D[loguru telemetry patch]
+    D --> E[stdout]
+    D --> F[文本 cygnusx.log]
+    D --> G[JSON cygnusx.json.log]
+    D --> H[ERROR error.log]
+    I[Celery LoggedTask] --> J[按 task_id 文件 sink]
+    K[Snakemake subprocess] --> L[stdout.log / stderr.log]
+    M[HTTP / Studio / Chat 审计] --> N[(audit_logs)]
+    N --> O[审计 JSON 备份]
+    P[任务进度] --> Q[Redis Pub/Sub]
+    Q --> R[WebSocket 实时推送]
+    P --> S[tasks.logs 摘要]
+    E --> T[宿主机 bind mount / Docker stdout 限额]
+    F --> T
+    G --> T
+    H --> T
+    J --> T
+    L --> T
+    T --> U[logrotate / Promtail / Loki]
+```
+
+### 0.2 实现图：一次任务日志如何被记录和展示
+
+```mermaid
+sequenceDiagram
+    participant W as Worker/Celery Task
+    participant L as core.logging / LoggedTask
+    participant X as LocalSnakemakeExecutor
+    participant P as Redis Pub/Sub
+    participant R as TaskRepository
+    participant DB as PostgreSQL
+    participant WS as WebSocket
+    participant F as Host Log Files
+    W->>L: setup_logging() + task_id 上下文
+    W->>X: 执行流程并捕获 stdout/stderr
+    X->>F: 写 snakemake/{project}/{timestamp}/*.log
+    W->>L: logger.info/error(task event)
+    L->>F: 写文本、JSON、ERROR sinks
+    W->>P: publish_task_log(task_id, event)
+    P-->>WS: 推送实时任务日志
+    W->>R: 追加并截断任务摘要
+    R->>DB: 更新 tasks.logs
+    W->>DB: 写入审计或任务最终状态
+```
+
 ## 1. 设计目标
 
 - **统一落盘**：应用、Nginx、Celery 任务、Snakemake、审计日志统一归集到宿主机 `/data/cygnusx/logs/`。

@@ -2292,7 +2292,7 @@ export interface AIQuickAction {
 
 ## 36. AI 助手主入口优化执行提示词
 
-下面建议继续追加到 `frontend.md`。第一份用于完整改造，后面几份用于拆分执行，避免一次修改范围过大。
+下面建议继续追加到 `CygnusX_frontend.md`。第一份用于完整改造，后面几份用于拆分执行，避免一次修改范围过大。
 
 ```md
 ### 36.1 完整优化提示词
@@ -2302,7 +2302,7 @@ export interface AIQuickAction {
 开始前必须先阅读并遵守：
 
 - 仓库中的 `AGENTS.md`；
-- `frontend.md`，重点检查 §1、§2、§3、§5、§6、§7、§10、§14、§18、§21、§22、§23、§31、§33、§35；
+- `CygnusX_frontend.md`，重点检查 §1、§2、§3、§5、§6、§7、§10、§14、§18、§21、§22、§23、§31、§33、§35；
 - `frontend/src/styles/tokens.css`；
 - `frontend/src/styles/global.css`；
 - `frontend/src/App.vue`；
@@ -2392,7 +2392,7 @@ export interface AIQuickAction {
 7. 布局切换不得丢失输入草稿或附件。
 8. 处理 375px、768px、1024px、1280×720 和 1440px。
 9. 适配深色模式、减少动态和减少透明度。
-10. 严格遵守 frontend.md §31，不用子元素通配选择器修改 position/z-index。
+10. 严格遵守 CygnusX_frontend.md §31，不用子元素通配选择器修改 position/z-index。
 
 先阅读当前实现和设计令牌，再直接修改代码。完成后运行 type-check、相关测试、build 和 git diff --check，并用 Playwright 截取空会话与活跃会话的桌面/移动端截图。
 ```
@@ -2491,4 +2491,4 @@ export interface AIQuickAction {
 6. 不输出泛化视觉建议，不臆测不存在的接口或组件。
 ```
 
-另外：文件名规范化已完成——原拼写错误文件名 `fontend.md` 已更名为 `frontend.md`，`$cygnusx-frontend-design`、`ARCHITECTURE_DESIN/README.md` 和其它文档、代码注释中的引用已同步更新（2026-09-18）。如仍有自动化脚本依赖旧文件名，请更新脚本路径。
+另外：文件名规范化已完成——原拼写错误文件名 `fontend.md` 已更名为 `CygnusX_frontend.md`，`$cygnusx-frontend-design`、`ARCHITECTURE_DESIN/README.md` 和其它文档、代码注释中的引用已同步更新（2026-09-18）。如仍有自动化脚本依赖旧文件名，请更新脚本路径。
