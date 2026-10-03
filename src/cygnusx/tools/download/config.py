@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cygnusx.core.config import get_settings
 
@@ -22,14 +22,28 @@ class DownloadFeaturesConfig(BaseModel):
 class DownloadBinariesConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    # 二进制路径须与容器内实际挂载一致；默认值对齐 live 存储根，
-    # 显式配置（download_config.yaml）优先。
-    ebi: str = "/data/omichub/bin/EBIDownload"
-    ebi_config: str = "/data/omichub/bin/EBIDownload.yaml"
+    # 二进制路径；空值时由 storage_path 派生，显式配置（download_config.yaml）
+    # 优先——换根部署只改 .env 的 STORAGE_PATH 即可。
+    ebi: str = ""
+    ebi_config: str = ""
     aria2c: str = "/usr/bin/aria2c"
-    ossutil: str = "/data/omichub/bin/ossutil"
-    tosutil: str = "/data/omichub/bin/tosutil"
-    obsutil: str = "/data/omichub/bin/obsutil"
+    ossutil: str = ""
+    tosutil: str = ""
+    obsutil: str = ""
+
+    @model_validator(mode="after")
+    def _derive_binaries(self) -> DownloadBinariesConfig:
+        if not self.ebi:
+            self.ebi = f"{get_settings().storage_path}/bin/EBIDownload"
+        if not self.ebi_config:
+            self.ebi_config = f"{get_settings().storage_path}/bin/EBIDownload.yaml"
+        if not self.ossutil:
+            self.ossutil = f"{get_settings().storage_path}/bin/ossutil"
+        if not self.tosutil:
+            self.tosutil = f"{get_settings().storage_path}/bin/tosutil"
+        if not self.obsutil:
+            self.obsutil = f"{get_settings().storage_path}/bin/obsutil"
+        return self
 
 
 class Aria2Config(BaseModel):

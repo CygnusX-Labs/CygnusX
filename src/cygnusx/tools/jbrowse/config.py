@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cygnusx.core.config import get_settings
 from cygnusx.infrastructure.config.storage_config import get_storage_config
@@ -88,8 +88,15 @@ class AutoScanConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    # 用户轨道扫描路径；须与 .env STORAGE_PATH 一致（YAML 显式配置优先）
-    scan_paths: list[str] = Field(default_factory=lambda: ["/data/omichub/users/{user_id}/bam/"])
+    # 用户轨道扫描路径；空值时由 storage_path 派生（YAML 显式配置优先）
+    scan_paths: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _derive_scan_paths(self) -> AutoScanConfig:
+        if not self.scan_paths:
+            base = f"{get_settings().storage_path}/users"
+            self.scan_paths = [f"{base}/{{user_id}}/bam/"]
+        return self
     extensions: list[str] = Field(
         default_factory=lambda: [".bam", ".bw", ".bigwig", ".vcf.gz", ".bed.gz"]
     )
@@ -102,7 +109,15 @@ class UploadConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    upload_dir: str = "/data/omichub/users/{user_id}/uploads/"
+    # 上传目录；空值时由 storage_path 派生（YAML 显式配置优先）
+    upload_dir: str = ""
+
+    @model_validator(mode="after")
+    def _derive_upload_dir(self) -> UploadConfig:
+        if not self.upload_dir:
+            base = f"{get_settings().storage_path}/users"
+            self.upload_dir = f"{base}/{{user_id}}/uploads/"
+        return self
     max_file_size: int = 10  # GB
     allowed_types: list[str] = Field(default_factory=lambda: [".bam", ".bw", ".vcf.gz", ".fasta"])
     auto_index_after_upload: bool = True

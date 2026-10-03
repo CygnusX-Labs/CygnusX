@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cygnusx.core.config import get_settings
 
@@ -141,8 +141,14 @@ class NetworkConfig(BaseModel):
 class StorageConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    # 用户目录宿主机基路径；默认值须与 STORAGE_PATH 一致（YAML 显式配置优先）
-    workspace_base: str = "/data/omichub/users"
+    # 用户目录宿主机基路径；空值时由 storage_path 派生（YAML 显式配置优先）
+    workspace_base: str = ""
+
+    @model_validator(mode="after")
+    def _derive_workspace_base(self) -> StorageConfig:
+        if not self.workspace_base:
+            self.workspace_base = f"{get_settings().storage_path}/users"
+        return self
 
 
 class PortRangeConfig(BaseModel):

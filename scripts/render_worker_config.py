@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Render Worker path settings from YAML into a shell-compatible env file."""
+"""Render Worker path settings from YAML into a shell-compatible env file.
+
+一致性门禁（存储层优化 Phase 3）：paths.shared_data_dir 必须与根目录 .env 的
+STORAGE_PATH 完全一致，否则 exit 1——历史上二者不一致时 .env 兜住了 YAML 的
+错值，经 worker-compose.sh 单独启动会把 worker 挂到错误数据根（Gap 2）。
+"""
 
 from __future__ import annotations
 
@@ -10,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 REQUIRED_PATHS = {
     "shared_data_dir": "WORKER_SHARED_DATA_DIR",
@@ -64,7 +68,38 @@ def load_paths(config_path: Path) -> dict[str, str]:
             raise ValueError(f"paths.{yaml_key} must be absolute: {value}")
         rendered[environment_key] = str(path)
 
+    _assert_shared_data_dir_matches_storage_path(
+        rendered["WORKER_SHARED_DATA_DIR"], config_path
+    )
+
     return rendered
+
+
+def _assert_shared_data_dir_matches_storage_path(
+    shared_data_dir: str, config_path: Path
+) -> None:
+    """fail-fast：paths.shared_data_dir 必须与仓库根 .env 的 STORAGE_PATH 一致。
+
+    仓库根 .env 缺失（如 CI 只渲染不部署）时跳过校验；二者均存在但不一致即
+    报错，防止 worker 经本脚本挂到与 web 栈不同的数据根。
+    """
+    env_path = config_path.resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    storage_path = ""
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("STORAGE_PATH=") and not stripped.startswith("#"):
+            storage_path = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+            break
+    if not storage_path:
+        return
+    if shared_data_dir != storage_path:
+        raise ValueError(
+            f"paths.shared_data_dir ({shared_data_dir}) 与 .env STORAGE_PATH "
+            f"({storage_path}) 不一致；请将 worker_config.yaml 的 shared_data_dir "
+            "与 .env 同步后重试（勿手改，见 yaml 注释）。"
+        )
 
 
 def render_environment(values: dict[str, str], config_path: Path) -> str:

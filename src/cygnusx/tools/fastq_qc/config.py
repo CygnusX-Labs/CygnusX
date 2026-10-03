@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cygnusx.core.config import get_settings
 
@@ -110,8 +110,14 @@ class MultiqcConfig(BaseModel):
 class StorageConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    # 任务产物根；须与 .env STORAGE_PATH 一致（YAML 显式配置优先）
-    root: str = "/data/omichub/qc/tasks"
+    # 任务产物根；空值时由 storage_path 派生（YAML 显式配置优先）
+    root: str = ""
+
+    @model_validator(mode="after")
+    def _derive_root(self) -> StorageConfig:
+        if not self.root:
+            self.root = f"{get_settings().storage_path}/qc/tasks"
+        return self
     subdirs: list[str] = Field(
         default_factory=lambda: ["input", "output", "reports", "multiqc", "logs"]
     )

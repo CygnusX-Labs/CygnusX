@@ -4,6 +4,30 @@
 BlastService._result_dir、EnrichmentService._work_dir 等），确保全平台路径约定一致。
 
 所有需要构建数据路径的代码都应通过 get_path_factory() 获取实例，而非自行拼接。
+
+== 调用点清单（截至 存储层优化 Phase 3；新增调用方请同步维护）==
+
+用户区（storage_root/users/{uid}/）：
+- application/services/task_service.py          Flow 任务 → projects/{project}/runs/
+- application/services/download_service.py      数据下载 → {directory}/{label}/（默认 downloads/）
+- application/services/file_service.py          上传 → inbox/、chunk 暂存 → system/.tmp/
+- application/services/directory_service.py     目录 CRUD（物理建在 inbox/ 下）
+- application/services/studio_context_service.py Studio 产物登记 → projects/runs/
+- application/services/agentteams_service.py    协作室 Case → projects/runs/agentteams-case-*
+- application/services/agent_consultation_service.py 会诊 workdir → output/agentteams/（Gap 3 待裁决）
+- tools/{enrichments,deg,gsea,blast,synteny,phylogenetic_tree}/service.py  各工具 → projects/runs/
+- infrastructure/celery_app/tasks/download.py   下载产物登记（复用 ensure_directory_chain）
+- tools/blast/service.py                        历史任务读取兼容（task_output_dir，只读）
+
+沙盒/终端：
+- infrastructure/sandbox/pool.py                chat 沙盒交付目录（sandbox_pool_host_dir）
+- infrastructure/studio/manager.py             Studio 会话工作区 + 会诊 workdir 挂载注册
+- infrastructure/terminal/docker_manager.py     终端用户工作区（storage.users）
+
+== 宿主根解析 ==
+宿主数据根唯一锚点：Settings.storage_path（.env STORAGE_PATH，默认 /data/cygnusx）。
+业务代码禁止写死 /data/... 字面量——CI 守卫见 scripts/check_storage_paths.py。
+容器内路径约定（/data/cygnusx / /data/platform 等挂载端点）不受此约束。
 """
 
 from __future__ import annotations
