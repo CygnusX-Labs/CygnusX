@@ -2,6 +2,50 @@
 
 本目录集中存放 CygnusX 的项目级架构、设计规范和实施方案。修改相关功能前，请先阅读对应文档，确保实现与既有约束保持一致。
 
+## 0. 这个架构文档目录如何发挥作用
+
+`ARCHITECTURE_DESIN` 是代码现状、修改规范和历史方案的文档索引层。开发者先依据本 README 按领域定位文档，再阅读对应的 as-built 基线或规范；修改代码时以代码、配置和迁移为事实来源，用架构文档解释模块边界、数据流、权限和验证门禁。`as-built` 文档描述当前实现，规范文档约束应该如何修改，提案/快照记录目标态或某一时点，`deprecated/` 只保留历史参考，不能覆盖活动基线。
+
+目录中的文档不是运行时注册表，也不会被 Agent 自动加载执行。它们通过索引、交叉引用和每份文档开头的模块作用说明帮助开发者从请求入口追到应用服务、领域逻辑、基础设施、数据库、队列和前端投影；每份文档的架构图展示组件关系，实现图展示一次请求或任务的时序。修改涉及多个边界时，先读总览和对应专项文档，再按文档内验证矩阵执行测试、迁移、镜像或前端门禁，并把新的事实回写到活动文档。
+
+### 0.1 目录架构图：文档索引到代码边界
+
+```mermaid
+flowchart TD
+    DEV[开发者 / 代码变更] --> IDX[README 文档索引]
+    IDX --> TYPE{文档类型}
+    TYPE --> AS[as-built 基线]
+    TYPE --> SPEC[规范 / 设计原则]
+    TYPE --> PROP[提案 / 快照]
+    TYPE --> DEP[deprecated 历史参考]
+    AS --> CODE[当前代码、配置、迁移、部署]
+    SPEC --> GATE[修改边界与验证门禁]
+    PROP --> TARGET[目标态 / 未实施方案]
+    DEP --> HISTORY[演进背景与决策记录]
+    CODE --> VERIFY[测试、检查脚本、运行证据]
+    VERIFY --> DOC[回写活动架构文档]
+```
+
+### 0.2 实现图：一次架构变更的文档使用流程
+
+```mermaid
+sequenceDiagram
+    participant D as 开发者
+    participant R as README 索引
+    participant A as 活动架构文档
+    participant C as Code/Config/DB
+    participant G as 验证门禁
+    participant H as Git/评审
+    D->>R: 按领域和文档类型定位入口
+    R-->>D: 总览 + 专项文档 + 相关边界
+    D->>A: 阅读模块作用、架构图、实现图和约束
+    D->>C: 修改代码/配置/迁移
+    C->>G: 执行 lint、type-check、测试或专项验证
+    G-->>D: 运行证据与遗留风险
+    D->>A: 更新当前事实、图和验证状态
+    D->>H: 提交代码与文档的同一逻辑变更
+```
+
 > **2026-09-18 文档整合说明**：本目录对内容重复的文档做了一次合并，共移除 10 个文件（合并去向见文末"合并记录"，历史内容可查 git）。各目标文档头部均有"合并说明"标注吸收来源。
 >
 > **2026-10-03 命名规范说明（现行，取代 2026-09-18 版）**：目录内文件统一按 `CygnusX_<领域>_<xxx>.md` 命名（更名对照见文末"命名规范记录"）：
@@ -12,6 +56,7 @@
 > 5. 新增文档请沿用本规则，并同步登记到本 README。
 >
 > **2026-09-20 新增说明**：新增 `CygnusX_agent_architecture.md`（单 Agent 技术架构备忘录，as-built）。与 `CygnusX_agent_execution_framework.md` 的分工：本文回答"Agent 这个对象由什么构成、接口长什么样、状态存在哪、依赖什么"，后者回答"一次执行怎么流转、怎么观测、怎么保护"。两者互补，不合并。
+> **2026-10-04 新增说明**：新增 `CygnusX_storage_architecture.md`（存储层架构，as-built）。落地 `docs/info/26.10.3/存储层优化实施方案.md` Phase 0–3（GC 路径修复、会诊 workdir 容器挂载接通、宿主侧硬编码全部派生化 + CI 守卫、幽灵目录 DB 清理 + sync 反向对账、目录树 D1–D3 展示元数据）。Gap 审计（`CygnusX_storage_workspace_gap_audit.md`）中 Gap 1/2/4（部分）已修复，Gap 3 前缀统一待裁决；存储相关改动以新文档为基线。
 > **2026-09-22 更新说明**：普通 AI 助手已补齐会话级分析归档。`chat_sandbox_execute` 的 input/work/output、`README.md`、`environment.json`、`manifest.json`、实际包版本探针和 `sandbox_meta.analysis_archive` 契约，以 `CygnusX_agent_architecture.md`、`CygnusX_agent_execution_framework.md` 与 `CygnusX_sandbox_architecture.md` 的新增 as-built 小节为准。
 > **2026-09-22 更新说明**：新增 `CygnusX_token_billing_architecture.md`，记录 Provider usage 归一化、缓存 token 计费、工具循环累计、会话落库、饼干扣费、元估算和对账排查流程。涉及 token、费用、余额或模型价格的修改，必须以该文档为当前实现基线。
 > **2026-10-03 更新说明**：
@@ -91,8 +136,8 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `CygnusX_studio_handover.md` — OmicStudio 实施进度与交接文档（历史快照，2026-07-17）
 P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文件 API、路径防护）、StudioSandboxManager 与三个已修复 bug、`studio.yaml`、10 个 Studio 内置工具（`sandbox_execute`/`workspace_*`/`datahub_import`/`artifact_register`/`update_plan` 等）、SSE 事件协议、Studio REST API 全表与前端清单；P1 per-user 只读挂载安全决策、Context Packager、报告版本树；P2/P3 diff 回滚、Celery 长任务、MCP/Skills 渐进披露、egress 代理、分享导出、Skill 提炼。已声明"勿按本文档再次执行"，现行沙箱基线见下一份。
 
-### `CygnusX_sandbox_architecture.md` — 沙箱强化架构（规范+进度，v1.2）
-不替换 OmicStudio 编排前提下的容器隔离强化与 capability 路由：`code`/`browser`/`document` 三运行能力、Agent `features.studio.sandbox_capabilities` 授权源、`sandbox_meta` 持久化与 `studio.images` 镜像选择（含"未配置默认放行"实现偏差记录）；容器安全基线表（nano_cpus、pids_limit、cap_drop=ALL、no-new-privileges、uid 10001、只读根、tmpfs、network 白名单、10GiB 配额）；独立 browser-office 镜像；阶段 0–2 施工记录（`audit.py` 六类生命周期事件、配额兜底方案）与 gVisor/Kata 升级触发条件、验收状态；§8.7 镜像 ↔ Agent 声明对账修复（scrna 补装 Scanpy/Seurat、只读 rootfs 装包指引纠偏、studio.yaml 失效条目清理、copilot miniforge3 重建）。沙箱安全与 capability 的唯一规范来源。
+### `CygnusX_sandbox_architecture.md` — 沙箱强化架构（规范+进度，v1.3）
+不替换 OmicStudio 编排前提下的容器隔离强化与 capability 路由：`code`/`browser`/`document` 三运行能力、Agent `features.studio.sandbox_capabilities` 授权源、`sandbox_meta` 持久化与 `studio.images` 镜像选择（含"未配置默认放行"实现偏差记录）；容器安全基线表（nano_cpus、pids_limit、cap_drop=ALL、no-new-privileges、uid 10001、只读根、tmpfs、network 白名单、10GiB 配额）；独立 browser-office 镜像；阶段 0–2 施工记录（`audit.py` 六类生命周期事件、配额兜底方案）与 gVisor/Kata 升级触发条件、验收状态；§8.7 镜像 ↔ Agent 声明对账修复与 §8.8 Agent 专用 NGS 镜像、构建期工具清单、运行期 `/tools/list` 复核和 manifest 漂移审计。沙箱安全与 capability 的唯一规范来源。
 
 ### `CygnusX_research_loop_architecture.md` — 科研闭环 as-built（WP0–WP4，2026-09-18）
 会话工作区生命周期（休眠打包/平台侧归档/解包恢复/到期清理/管理页）、不可变执行历史（`chat_message_events` 事件表 + 双读重建 + 信封 payload_hash + 产物 sha256 对账）、声明式环境还原（micromamba 一次性还原 + 科研模式门控）、长任务 job 三契约（先落盘/终态不可重开/reconcile-only）、科研形态（cell 投影 / .ipynb 确定性导出 / research_mode 三开关）、PTC llm_query（system 锚定 + 同窗审计）、chat warm pool 硬化对齐 Studio 基线、LangGraph 审批闸（ADR-0002）。含新增配置/迁移/beat/API 速查表与已知限制（生产只读 rootfs 下 env restore 降级等）。施工依据 `docs/info/26.9.18/OmicHub科研闭环-实施手册.md`。
@@ -100,6 +145,12 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 ---
 
 ## 5. 专项子系统
+
+### `CygnusX_storage_architecture.md` — 存储层架构（as-built，2026-10-04）
+存储根单根原则与解析链（`get_storage_config()` 三级回退 + 配置默认值 storage_path 派生化）；用户区/平台区目录体系（系统目录清单、inbox 逻辑-物理分离、tasks legacy 只读）；sync 双向对账（正向登记 + 反向幽灵目录根治 `_reconcile_ghost_directories`）与 skip 名单（含沙盒 shell 残留模式）；目录树展示元数据（`visible_in_tree`/`aggregated`，后端驱动 D1–D3）；防复发三门禁（`/data/` 字面量 CI 守卫、worker 配置 fail-fast、path_factory 唯一构造入口清单）；会诊 workdir 容器挂载链路（Gap 3 挂载断裂修复，`/workspace/workdir`）；验证矩阵与遗留决策点（Gap 3 前缀统一待裁决、Phase 4 注册表延后）。改存储路径、目录协议、sync 或新增自动建目录前必读。
+
+### `CygnusX_storage_workspace_gap_audit.md` — 存储与四级入口工作目录 Gap 审计（时点快照，2026-10-03）
+存储层 Gap 调查的原始证据存档：Gap 1 换根硬编码五处、Gap 2 worker_config 与 .env 数据根不一致、Gap 3 会诊工作目录三种矛盾前缀 + 挂载断裂、Gap 4 chat 产物目录游离协议外、Gap 5 /data/platform 提示词未告知、Gap 6 协作室 Worker 零挂载、Gap 7 文档口径漂移；每条附 文件:行号 与 live 实勘。Gap 1/2/挂载断裂已修复（见上份文档），其余以本审计为决策输入。
 
 ### `CygnusX_mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"）。
 
