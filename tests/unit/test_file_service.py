@@ -426,3 +426,205 @@ async def test_preview_by_path_returns_lines_and_rejects_traversal(tmp_path: Pat
 
     with pytest.raises(PermissionError, match="路径越权"):
         await service.preview_by_path(user_id, "../other-user/secret.txt")
+
+
+# ===== sync 反向对账（幽灵目录根治，存储层优化 Phase 2.2） =====
+
+
+def _ghost_dirs(user_id, tmp_path: Path) -> list[Directory]:
+    """构造一组目录实体：1 系统目录 + 1 物理存在 + 2 幽灵（物理已删）。"""
+    return [
+        Directory(
+            id=uuid4(), user_id=user_id, path="downloads", name="downloads",
+            parent_path=None, is_system=True,
+        ),
+        Directory(
+            id=uuid4(), user_id=user_id, path="ghost-empty", name="ghost-empty",
+            parent_path=None, is_system=False,
+        ),
+        Directory(
+            id=uuid4(), user_id=user_id, path="ghost-parent/child", name="child",
+            parent_path="ghost-parent", is_system=False,
+        ),
+        Directory(
+            id=uuid4(), user_id=user_id, path="real-dir", name="real-dir",
+            parent_path=None, is_system=False,
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_ghost_directories_removes_orphans_and_keeps_system(
+    tmp_path: Path,
+) -> None:
+    """物理不存在的幽灵目录记录被删；系统目录与物理存在目录保留。"""
+    user_id = uuid4()
+    service = object.__new__(FileService)
+    _attach_test_factory(service, tmp_path)
+
+    user_root = tmp_path / "users" / str(user_id)
+    user_root.mkdir(parents=True)
+    (user_root / "downloads").mkdir()
+    (user_root / "real-dir").mkdir()
+    # ghost-empty 与 ghost-parent/child 的物理目录不存在（模拟手工删除）
+
+    deleted: list[str] = []
+
+    class FakeRepo:
+        async def list_by_user(self, uid):
+            return _ghost_dirs(user_id, tmp_path)
+
+        async def delete(self, uid, path: str):
+            deleted.append(path)
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class FakeSession:
+        def __init__(self):
+            self.execute_calls = 0
+
+        async def execute(self, stmt):
+            self.execute_calls += 1
+            return FakeResult([])  # 无 active file_records
+
+    service._session = FakeSession()
+
+    import cygnusx.application.services.file_service as fs_mod
+
+    original_impl = fs_mod.DirectoryRepositoryImpl
+    fs_mod.DirectoryRepositoryImpl = lambda session: FakeRepo()
+    try:
+        removed = await service._reconcile_ghost_directories(user_id, user_root)
+    finally:
+        fs_mod.DirectoryRepositoryImpl = original_impl
+
+    assert removed == 2
+    # 叶子先删：ghost-parent/child 可删，ghost-empty 可删；ghost-parent 无记录
+    assert set(deleted) == {"ghost-empty", "ghost-parent/child"}
+    # 系统目录 downloads 与物理存在的 real-dir 不在删除名单
+    assert "downloads" not in deleted
+    assert "real-dir" not in deleted
+
+
+@pytest.mark.asyncio
+async def test_reconcile_ghost_directories_keeps_dirs_with_active_files(
+    tmp_path: Path,
+) -> None:
+    """有 active file_records 直接挂载的目录不删（即便物理目录缺失）。"""
+    user_id = uuid4()
+    service = object.__new__(FileService)
+    _attach_test_factory(service, tmp_path)
+
+    user_root = tmp_path / "users" / str(user_id)
+    user_root.mkdir(parents=True)
+
+    class FakeRepo:
+        async def list_by_user(self, uid):
+            return [
+                Directory(
+                    id=uuid4(), user_id=user_id, path="gone-dir", name="gone-dir",
+                    parent_path=None, is_system=False,
+                ),
+            ]
+
+        async def delete(self, uid, path: str):
+            raise AssertionError(f"不应删除有文件记录的目录: {path}")
+
+    class FakeResult:
+        @staticmethod
+        def all():
+            return [("gone-dir",)]  # 一条 active file_record 挂在 gone-dir
+
+    class FakeSession:
+        @staticmethod
+        async def execute(stmt):
+            return FakeResult()
+
+    service._session = FakeSession()
+
+    import cygnusx.application.services.file_service as fs_mod
+
+    original_impl = fs_mod.DirectoryRepositoryImpl
+    fs_mod.DirectoryRepositoryImpl = lambda session: FakeRepo()
+    try:
+        removed = await service._reconcile_ghost_directories(user_id, user_root)
+    finally:
+        fs_mod.DirectoryRepositoryImpl = original_impl
+
+    assert removed == 0
+
+
+def test_sync_skip_patterns_block_sandbox_shell_residue() -> None:
+    """workspace 根的 zsh/omp 缓存文件名命中跳过模式。"""
+    from cygnusx.application.services.file_service import _SYNC_SKIP_WORKSPACE_FILE_PATTERNS
+
+    for name in (
+        "omp.cache",
+        "init.8920918874217841234.zsh",
+        "zsh.98f071b2-64af-4c73-8755-c4a1a560df9d.omp.cache",
+    ):
+        assert any(p.match(name) for p in _SYNC_SKIP_WORKSPACE_FILE_PATTERNS), name
+    # 正常用户文件不误伤
+    for name in ("report.md", "counts.csv", "init_notes.txt"):
+        assert not any(p.match(name) for p in _SYNC_SKIP_WORKSPACE_FILE_PATTERNS), name
+
+
+# ===== 目录树展示元数据（D1 chat-output 折叠 / D2 inbox / D3 tasks 隐藏） =====
+
+
+@pytest.mark.asyncio
+async def test_list_directories_applies_visibility_metadata() -> None:
+    """后端驱动目录树可见性：inbox/tasks 标记 hidden；chat-output 升格聚合节点。"""
+    from datetime import UTC, datetime as _dt
+    from types import SimpleNamespace as NS
+    from unittest.mock import AsyncMock
+
+    from cygnusx.application.services.directory_service import DirectoryService
+
+    now = _dt.now(UTC)
+
+    def d(path: str, is_system: bool = False) -> Directory:
+        parent = path.rsplit("/", 1)[0] if "/" in path else None
+        name = path.rsplit("/", 1)[-1]
+        return Directory(
+            id=uuid4(), user_id=UUID(int=0), path=path, name=name,
+            parent_path=parent, is_system=is_system,
+        )
+
+    dirs = [
+        d("downloads", True), d("inbox", True), d("tasks", False),
+        d("workspace", True),
+        d("workspace/chat-output"),
+        d("workspace/chat-output/6a00c730-0000-0000-0000-000000000000"),
+        d("workspace/chat-output/9a1c861a-0000-0000-0000-000000000000"),
+        d("projects/demo/runs"),
+    ]
+
+    svc = object.__new__(DirectoryService)
+    svc._dirs = NS(list_by_user=AsyncMock(return_value=dirs))
+    svc._ensure_user_system_subdir = AsyncMock()
+    svc._session = NS(commit=AsyncMock())
+
+    # 绕过 ensure_default_directories（不依赖 DB）
+    async def _noop(uid):
+        return None
+
+    svc.ensure_default_directories = _noop
+
+    result = await svc.list_directories(UUID(int=0))
+
+    by_path = {x.path: x for x in result}
+    # D2/D3：inbox 与 tasks 标记不可见，但仍返回（前端按元数据过滤）
+    assert by_path["inbox"].visible_in_tree is False
+    assert by_path["tasks"].visible_in_tree is False
+    assert by_path["downloads"].visible_in_tree is True
+    # D1：chat-output 根升格聚合节点，会话子目录不返回
+    assert by_path["workspace/chat-output"].aggregated is True
+    assert by_path["workspace/chat-output"].name == "AI 会话产物"
+    session_paths = [p for p in by_path if p.startswith("workspace/chat-output/")]
+    assert session_paths == []

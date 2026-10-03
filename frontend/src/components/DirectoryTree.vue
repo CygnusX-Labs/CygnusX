@@ -19,8 +19,10 @@ const dialog = useDialog()
 const directories = ref<Directory[]>([])
 const loading = ref(false)
 
-/** 不再按硬编码白名单隐藏文件夹，所有目录树节点均可见 */
-const visibleDirectories = computed(() => directories.value)
+/** 目录树可见性由后端元数据驱动（不在此写死名单）：
+ * - visible_in_tree=false 的目录不渲染（inbox 上传暂存层、tasks 历史任务产物）
+ * - aggregated=true 的节点渲染为只读折叠节点（AI 会话产物），不可展开/新建子目录 */
+const visibleDirectories = computed(() => directories.value.filter((d) => d.visible_in_tree !== false))
 
 /** 选中目录："" = 根 */
 const selected = computed({
@@ -28,7 +30,7 @@ const selected = computed({
   set: (v: string) => emit('update:modelValue', v),
 })
 
-/** 把扁平目录列表组装成树 */
+/** 把扁平目录列表组装成树（聚合节点为叶子，不再挂会话子目录） */
 const treeData = computed<TreeOption[]>(() => {
   const root: TreeOption = {
     key: '',
@@ -38,12 +40,16 @@ const treeData = computed<TreeOption[]>(() => {
   const nodeMap = new Map<string, TreeOption>()
   nodeMap.set('', root)
   for (const d of visibleDirectories.value) {
-    const node: TreeOption = { key: d.path, label: d.name, children: [] }
+    const node: TreeOption = {
+      key: d.path,
+      label: d.name,
+      children: d.aggregated ? undefined : [],
+    }
     nodeMap.set(d.path, node)
   }
   for (const d of visibleDirectories.value) {
     const parent = nodeMap.get(d.parent_path ?? '') ?? root
-    parent.children!.push(nodeMap.get(d.path)!)
+    parent.children?.push(nodeMap.get(d.path)!)
   }
   return [root]
 })
@@ -140,8 +146,11 @@ function renameDirectory(dir: Directory) {
   message.info('重命名功能即将上线')
 }
 
-/** 悬浮内联操作的下拉选项 —— 系统目录仅保留新建子目录 */
+/** 悬浮内联操作的下拉选项 —— 系统目录仅保留新建子目录；聚合节点只读无操作 */
 function inlineMenuOptions(dir: Directory) {
+  if (dir.aggregated) {
+    return []
+  }
   if (dir.is_system) {
     return [{ label: '新建子目录', key: 'create', icon: () => h(NIcon, null, { default: () => h(AddOutline) }) }]
   }
@@ -166,10 +175,13 @@ function renderPrefix({ option }: { option: TreeOption }) {
   return h(NIcon, { size: 15, color, style: 'margin-right:4px' }, { default: () => h(FolderOutline) })
 }
 
-/** 节点悬浮时右侧内联显示 + / ⋯ */
+/** 节点悬浮时右侧内联显示 + / ⋯（聚合节点只读，不显示任何操作） */
 function renderSuffix({ option }: { option: TreeOption }) {
   const path = String(option.key ?? '')
   const dir = path ? directories.value.find((d) => d.path === path) : null
+  if (dir?.aggregated) {
+    return null
+  }
   const buttons: ReturnType<typeof h>[] = []
 
   buttons.push(
@@ -252,6 +264,7 @@ function handleContextMenu(option: TreeOption, e: MouseEvent) {
   const path = String(option.key ?? '')
   if (!path) return // 根目录不弹菜单
   const dir = directories.value.find((d) => d.path === path)
+  if (dir?.aggregated) return // 聚合节点只读，不弹菜单
   contextMenu.path = path
   contextMenu.isSystem = !!dir?.is_system
   contextMenu.x = e.clientX

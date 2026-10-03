@@ -78,6 +78,15 @@ _SYNC_SKIP_WORKSPACE_SUBDIRS: frozenset[str] = frozenset(
     }
 )
 
+# workspace/ 根下跳过登记的文件名模式（沙盒 shell 初始化残留：zsh 补全缓存、
+# oh-my-posh 缓存等，由 chat 沙盒容器把 HOME 环境落到 /workspace 时产生）。
+# 命中即不登记 file_records，避免污染"我的文件"根目录视图。
+_SYNC_SKIP_WORKSPACE_FILE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^zsh\..*\.omp\.cache$", re.IGNORECASE),
+    re.compile(r"^init\.\d+\.zsh$", re.IGNORECASE),
+    re.compile(r"^omp\.cache$", re.IGNORECASE),
+)
+
 # 系统默认目录：用户首次访问时懒初始化，锁定不可删除/重命名
 SYSTEM_DIRECTORIES: tuple[str, ...] = (
     "inbox",
@@ -967,6 +976,11 @@ class FileService:
             # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
             if self._should_skip_sync_path(rel_user_parts):
                 continue
+            # workspace/ 根下的沙盒 shell 残留（zsh/omp 缓存）不登记
+            if len(rel_user_parts) == 1 and rel_user_parts[0] == "workspace" and any(
+                pattern.match(entry["name"]) for pattern in _SYNC_SKIP_WORKSPACE_FILE_PATTERNS
+            ):
+                continue
             rel = entry["path"]
             if rel in existing_paths:
                 continue
@@ -992,6 +1006,13 @@ class FileService:
             added += 1
             added_size += size
 
+        # 反向对账（幽灵目录根治）：user_directories 里对应物理路径已不存在的
+        # 记录予以删除——sync 历史上只增不减，物理目录删掉后 DB 记录永留，
+        # 目录树出现"点开为空"的幽灵节点。候选物理路径两个（user_root/{path}
+        # 与 inbox 布局 inbox/{path}）都不存在才删；系统目录不删；仍有 active
+        # file_records 子级的目录不删。
+        removed_dirs = await self._reconcile_ghost_directories(user_id, user_root)
+
         # 重算配额，修正历史漂移（下载/手动放入/手工删除未计入的部分）
         await self._users.recompute_used_storage(user_id)
         await self._session.commit()
@@ -1001,7 +1022,58 @@ class FileService:
             removed=removed,
             removed_size=removed_size,
             renamed=renamed,
+            removed_directories=removed_dirs,
         )
+
+    async def _reconcile_ghost_directories(self, user_id: UUID, user_root: Path) -> int:
+        """反向对账：删除物理路径已不存在的 user_directories 记录。
+
+        候选物理路径（按目录逻辑 path 逐一探测）：
+        - ``user_root/{path}``（downloads/projects/... 布局）
+        - ``user_root/inbox/{path}``（上传子目录布局，directory 字段剥离 inbox 前缀）
+
+        护栏：
+        - ``is_system=1`` 的系统目录一律不删；
+        - 有 active file_records 直接挂在该 directory 下的目录不删（记录还在，
+          说明物理文件仍被引用或由其他服务负责）；
+        - 只删叶子幽灵，父级目录若还有子目录记录则保留（由后续 sync 迭代收敛）。
+        """
+        from sqlalchemy import select
+
+        from cygnusx.infrastructure.database.models.file import FileRecordModel
+
+        repo = DirectoryRepositoryImpl(self._session)
+        dirs = await repo.list_by_user(user_id)
+        inbox_root = user_root / "inbox"
+        # 有 active 文件挂载的目录集合（含其父级链，保证面包屑不断）
+        res = await self._session.execute(
+            select(FileRecordModel.directory).where(
+                FileRecordModel.user_id == user_id,
+                FileRecordModel.status == "active",
+                FileRecordModel.directory != "",
+            )
+        )
+        referenced: set[str] = set()
+        for (directory,) in res.all():
+            parts = directory.split("/")
+            for i in range(1, len(parts) + 1):
+                referenced.add("/".join(parts[:i]))
+
+        removed = 0
+        for d in dirs:
+            if d.is_system:
+                continue
+            if d.path in referenced:
+                continue
+            # 该目录还有子目录记录（未删的叶子会把父级钉住，等下一轮收敛）
+            if any(other.path.startswith(d.path + "/") for other in dirs):
+                continue
+            candidates = (user_root / d.path, inbox_root / d.path)
+            if any(c.is_dir() for c in candidates):
+                continue
+            await repo.delete(user_id, d.path)
+            removed += 1
+        return removed
 
     @staticmethod
     def _derive_directory(rel_user: Path | None) -> str:

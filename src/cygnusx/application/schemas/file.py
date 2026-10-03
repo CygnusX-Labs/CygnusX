@@ -61,6 +61,8 @@ class SyncResponse(BaseModel):
     removed: int = 0
     removed_size: int = 0
     renamed: int = 0
+    # 反向对账（幽灵目录根治）删除的 user_directories 记录数
+    removed_directories: int = 0
 
 
 # ===== 分块上传 =====
@@ -160,6 +162,11 @@ class DirectoryDTO(BaseModel):
     name: str
     parent_path: str | None = None
     is_system: bool = False
+    # 展示元数据（目录树前端由后端驱动过滤，不在前端写死名单）：
+    # - visible_in_tree=False：树中不渲染（inbox 上传暂存层、tasks 历史任务产物）
+    # - aggregated=True：子树折叠为单个聚合节点（chat-output 会话产物），只读
+    visible_in_tree: bool = True
+    aggregated: bool = False
     created_at: datetime
     modified_at: datetime
 

@@ -121,21 +121,52 @@ class DirectoryService:
     # ------------------------------------------------------------------
     # 列表 / 创建 / 删除
     # ------------------------------------------------------------------
+    # 目录树展示规则（后端驱动，前端按元数据过滤，不写死名单）：
+    # - inbox：上传暂存层，文件按逻辑 directory 归类展示，节点本身不渲染（D2）
+    # - tasks：历史任务产物目录（物理保留只读，blast 读取兼容），节点不渲染（D3）
+    # - workspace/chat-output：L2 会话产物，子树折叠为单个聚合节点（D1）
+    _TREE_HIDDEN_TOP_DIRS: frozenset[str] = frozenset({"inbox", "tasks"})
+    _CHAT_OUTPUT_ROOT = "workspace/chat-output"
+
     async def list_directories(self, user_id: UUID) -> list[DirectoryDTO]:
         await self.ensure_default_directories(user_id)
         dirs = await self._dirs.list_by_user(user_id)
-        return [
-            DirectoryDTO(
-                id=d.id,
-                path=d.path,
-                name=d.name,
-                parent_path=d.parent_path,
-                is_system=d.is_system,
-                created_at=d.created_at,
-                modified_at=d.updated_at,
+        result: list[DirectoryDTO] = []
+        for d in dirs:
+            # D1：chat-output 子树折叠——根节点升格为聚合节点，会话级子目录全部隐藏
+            if d.path == self._CHAT_OUTPUT_ROOT:
+                result.append(
+                    DirectoryDTO(
+                        id=d.id,
+                        path=d.path,
+                        name="AI 会话产物",
+                        parent_path=d.parent_path,
+                        is_system=d.is_system,
+                        visible_in_tree=True,
+                        aggregated=True,
+                        created_at=d.created_at,
+                        modified_at=d.updated_at,
+                    )
+                )
+                continue
+            if d.path.startswith(self._CHAT_OUTPUT_ROOT + "/"):
+                continue  # 会话级子目录不单独渲染
+            # D2/D3：隐藏目录由后端元数据驱动，前端按 visible_in_tree 过滤
+            top = d.path.split("/", 1)[0]
+            hidden = top in self._TREE_HIDDEN_TOP_DIRS
+            result.append(
+                DirectoryDTO(
+                    id=d.id,
+                    path=d.path,
+                    name=d.name,
+                    parent_path=d.parent_path,
+                    is_system=d.is_system,
+                    visible_in_tree=not hidden,
+                    created_at=d.created_at,
+                    modified_at=d.updated_at,
+                )
             )
-            for d in dirs
-        ]
+        return result
 
     async def create_directory(
         self, user_id: UUID, req: DirectoryCreateRequest

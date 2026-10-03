@@ -128,7 +128,6 @@ const sraMethodOptions = [
 
 const targetDirectoryOptions = [
   { label: '根目录（默认）', value: '' },
-  { label: 'raw-data', value: 'raw-data' },
   { label: 'projects/rna-seq', value: 'projects/rna-seq' },
   { label: 'projects/variant', value: 'projects/variant' },
 ]

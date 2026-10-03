@@ -141,6 +141,10 @@ export interface Directory {
   name: string
   parent_path: string | null
   is_system?: boolean
+  /** 树中是否渲染（后端驱动：inbox/tasks 隐藏） */
+  visible_in_tree?: boolean
+  /** 子树折叠为单个聚合节点（AI 会话产物），只读 */
+  aggregated?: boolean
   created_at: string
 }
 
