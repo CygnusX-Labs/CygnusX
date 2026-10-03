@@ -6,12 +6,18 @@
 #
 # 命名约定：
 #   - name 统一以 cygnusx_ 开头，避免与 MCP preset / web_search 撞名。
-#   - input_schema 遵循 JSON Schema Draft 7（转 OpenAI functions 时自动调整）。
+#     豁免：Agent 控制流与协作室专用工具（transfer_to_agent / parallel_subagents /
+#     skill_route / create_agentteams_case / task_* / room_* / artifact_* / rule_* /
+#     case_* 系）不带前缀，它们不属于生信工具箱域，不参与 §15.8 的 toolbox lint。
+#   - input_schema 遵循 JSON Schema Draft 7（转 OpenAI functions 时自动调整。
 #   - invocation_mode 决定执行方式：
 #       backend_sync   进程内同步调 service
 #       backend_shim   进程内调轻量 Python shim
-#       backend_async  仅提交异步任务（Phase 1 占位）
+#       backend_async  仅提交异步任务（默认走 ARQ；声明 extra.celery_service: true
+#                      则经受控 service 提交 Celery task，见 §15.8.3）
 #       open_page      不执行，返回前端路由引导用户
+#       analysis_flow  动态 Flow 编译工具（由 schema_loader 从 flows/*.yaml 生成，
+#                      不在本文件登记）
 #
 # 字段说明：
 #   key              与 tools_setting.yaml 对应的工具 key

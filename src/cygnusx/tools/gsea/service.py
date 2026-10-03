@@ -15,6 +15,7 @@ from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.storage import get_path_factory
 from cygnusx.infrastructure.storage.path_factory import project_slug
 from cygnusx.infrastructure.task_queue.dispatcher import enqueue_task
+from cygnusx.tools.gsea.config import get_gsea_config
 from cygnusx.tools.gsea.schema import GseaTaskDTO, GseaTermDTO
 
 
@@ -27,13 +28,20 @@ class GseaService:
         species_id: str,
         gene_set: str,
         project_name: str = "GSEA",
-        p_value_cutoff: float = 0.05,
-        q_value_cutoff: float = 0.1,
+        p_value_cutoff: float | None = None,
+        q_value_cutoff: float | None = None,
         **_: object,
     ) -> GseaTaskDTO:
+        config = get_gsea_config()
+        if p_value_cutoff is None:
+            p_value_cutoff = config.analysis.default_p_value_cutoff
+        if q_value_cutoff is None:
+            q_value_cutoff = config.analysis.default_q_value_cutoff
         rows = self._parse_ranking(gene_ranking)
-        if len(rows) < 10:
-            raise ValidationError("排序基因列表至少需要 10 个 gene_id + score 条目")
+        if len(rows) < config.input.min_genes:
+            raise ValidationError(
+                f"排序基因列表至少需要 {config.input.min_genes} 个 gene_id + score 条目"
+            )
         task_id = str(uuid.uuid4())
         work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "gsea")
         await asyncio.to_thread(work_dir.mkdir, parents=True, exist_ok=True)

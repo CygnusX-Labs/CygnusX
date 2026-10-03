@@ -14,6 +14,7 @@ from cygnusx.domain.task.value_objects import TaskStatus
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.session import get_session_factory
 from cygnusx.tools.enrichments.config import config_manager
+from cygnusx.tools.gsea.config import get_gsea_config
 from cygnusx.tools.gsea.runner import GseaDockerRunner, GseaRunParams
 
 
@@ -52,8 +53,18 @@ async def _run(task_id: str) -> dict[str, Any]:
                     str(output_path),
                     str((task.parameters or {}).get("gene_set") or "GO_BP"),
                     species.go_annotation,
-                    float((task.parameters or {}).get("p_value_cutoff", 0.05)),
-                    float((task.parameters or {}).get("q_value_cutoff", 0.1)),
+                    float(
+                        (task.parameters or {}).get(
+                            "p_value_cutoff",
+                            get_gsea_config().analysis.default_p_value_cutoff,
+                        )
+                    ),
+                    float(
+                        (task.parameters or {}).get(
+                            "q_value_cutoff",
+                            get_gsea_config().analysis.default_q_value_cutoff,
+                        )
+                    ),
                 ),
                 f"cygnusx-gsea-{task_id[:8]}",
             )

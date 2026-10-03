@@ -412,6 +412,14 @@ class Settings(BaseSettings):
     enrichment_memory: str = "2g"  # 容器内存上限
     enrichment_cpus: float = 2.0  # 容器 CPU 核数
 
+    # ===== GSEA 富集分析（clusterProfiler 运行时复用富集 R 容器）=====
+    # 运行配置 YAML（输入契约、计算默认值、输出列）；改文件后由加载器 mtime 热重载。
+    gsea_config_yaml: str = "tool_configs/gsea/gsea_config.yaml"
+
+    # ===== 基因组共线性分析（MCScanX 容器）=====
+    # 运行配置 YAML（输入扩展名、输出文件、dot plot 渲染边界）；改文件后由加载器 mtime 热重载。
+    synteny_config_yaml: str = "tool_configs/synteny/synteny_config.yaml"
+
     # ===== DEG 差异表达分析（DESeq2 / edgeR 双引擎，R Docker 容器）=====
     # 运行配置 YAML（镜像资源、默认参数、输入限制）；改文件后由加载器 mtime 热重载。
     deg_config_yaml: str = "tool_configs/deg/deg_config.yaml"

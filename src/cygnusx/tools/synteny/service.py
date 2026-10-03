@@ -12,6 +12,7 @@ from cygnusx.domain.task.value_objects import TaskStatus
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.storage import get_path_factory
 from cygnusx.infrastructure.task_queue.dispatcher import enqueue_task
+from cygnusx.tools.synteny.config import get_synteny_config
 from cygnusx.tools.synteny.schema import SyntenyBlockDTO, SyntenyPointDTO, SyntenyTaskDTO
 
 
@@ -25,6 +26,7 @@ class SyntenyService:
         chromosome_filter: list[str] | None = None,
         project_name: str = "Synteny",
     ) -> SyntenyTaskDTO:
+        config = get_synteny_config()
         genes = self._parse_gff3(gff3_text)
         pairs = self._parse_blast(blastp_text)
         if not genes or not pairs:
@@ -33,8 +35,14 @@ class SyntenyService:
             allowed = set(chromosome_filter)
             pairs = [pair for pair in pairs if pair[0] in genes and pair[1] in genes]
             genes = {key: value for key, value in genes.items() if value[0] in allowed}
-        if len(pairs) > 50_000 and not chromosome_filter:
-            raise ValidationError("基因对超过 50000，请先按染色体过滤")
+        if (
+            len(pairs) > config.visualization.scattergl_point_limit
+            and not chromosome_filter
+            and config.visualization.require_chromosome_filter_above_limit
+        ):
+            raise ValidationError(
+                f"基因对超过 {config.visualization.scattergl_point_limit}，请先按染色体过滤"
+            )
         task_id = str(uuid.uuid4())
         work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "synteny")
         await asyncio.to_thread(work_dir.mkdir, parents=True, exist_ok=True)

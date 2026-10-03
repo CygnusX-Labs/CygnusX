@@ -71,13 +71,14 @@ tool_configs/                            # 仓库根,后端配置目录
 
 ## 四、新工具接入流程(强制 checklist)
 
-新增一个工具,按顺序完成以下 5 步:
+新增一个工具,按顺序完成以下 6 步:
 
-1. **后端注册**:在 `tool_configs/tools_setting.yaml` 的 `tools` 列表追加一项，必须指定 `group`（字段与可选值见 §五）。
-2. **前端路由**:在 `frontend/src/router/index.ts` 的 `DefaultLayout` children 内,仿照已有工具追加子路由(见 §五)。
-3. **图标登记**(仅当用了新图标):在 `ToolsHubView.vue` 的 `ICON_MAP` 登记组件。YAML 的 `icon` 字段是字符串,Vue 组件不能由字符串动态 import,必须在此映射。
-4. **后端功能配置**(仅有后端的工具):按 §5.1.1 新建 `tool_configs/<tool-key>/` 目录放 YAML,并在 YAML 的 `config_dir` 指明。纯前端工具(如 plot/volcano)留空；BLAST 和其他高计算量工具必须遵循 §5.1.2。
-5. **创建页面**:新建 `frontend/src/views/BioTools/<Tool>View.vue`,按 §六骨架实现;复杂数据逻辑抽到 `frontend/src/utils/<tool>Processor.ts`。
+1. **后端注册(前端展示)**:在 `tool_configs/tools_setting.yaml` 的 `tools` 列表追加一项，必须指定 `group`（字段与可选值见 §五）。
+2. **后端注册(LLM schema,仅当 AI 助手可调用时)**:在 `tool_configs/tools_schema.yaml` 追加条目(name/description/keywords/input_schema/invocation_mode/llm_result_fields/ui_result_fields),遵守 §15.8 Description 工程规范,改后跑 `pytest tests/unit/tools/test_tool_schema_lint.py`。两个注册表**解耦且不会自动对齐**:漏登记 tools_setting 则前端工具箱不可见,漏登记 tools_schema 则 Agent 无法调用该工具。
+3. **前端路由**:在 `frontend/src/router/index.ts` 的 `DefaultLayout` children 内,仿照已有工具追加子路由(见 §五)。
+4. **图标登记**(仅当用了新图标):在 `ToolsHubView.vue` 的 `ICON_MAP` 登记组件。YAML 的 `icon` 字段是字符串,Vue 组件不能由字符串动态 import,必须在此映射。
+5. **后端功能配置**(仅有后端的工具):按 §5.1.1 新建 `tool_configs/<tool-key>/` 目录放 YAML,并在 YAML 的 `config_dir` 指明。纯前端工具(如 plot/volcano)留空；BLAST 和其他高计算量工具必须遵循 §5.1.2。
+6. **创建页面**:新建 `frontend/src/views/BioTools/<Tool>View.vue`,按 §六骨架实现;复杂数据逻辑抽到 `frontend/src/utils/<tool>Processor.ts`。
 
 > **图形绘制工具补充要求**：散点图、火山图、热图、箱线图、柱状图等以数据导入和交互式绘图为核心的工具，还必须遵守 §5.6 的参数、功能、导出与验证规范。
 
@@ -203,6 +204,8 @@ docker exec cygnusx-worker docker run --rm alpine:3.20 true
 ##### Dockerfile 目录与职责规范（强制）
 
 平台服务、Celery Worker 和高计算量工具运行时的 Dockerfile 必须统一放在 `deploy/` 下，主栈相关镜像优先放在 `deploy/docker/`。`tool_configs/<tool-key>/` 只保存 YAML 配置、运行脚本、示例数据、资源契约和工具说明，禁止继续在工具配置目录中新增 Dockerfile。
+
+> **存量豁免**：`tool_configs/terminal/docker/`（终端基础镜像 + 8 个子镜像 Dockerfile）是 2026 规范统一前的历史存量，已经 `deploy/docker/README.md` 镜像清单与 `make docker-build-sandboxes` 正式登记，属合法例外；zshrc/MOTD 烘焙在该镜像内、改动须重建镜像新开会话才生效。**除该目录外**，新工具 Dockerfile 一律进 `deploy/docker/Dockerfile.<purpose>`。
 
 目录和命名约定：
 
@@ -873,7 +876,8 @@ Plotly.downloadImage(container, {
 
 新增工具提交前,逐项确认:
 
-- [ ] `tools_setting.yaml` 已注册,`key`/`route`/`icon`/`enabled`/`order` 字段完整
+- [ ] `tools_setting.yaml` 已注册,`key`/`route`/`icon`/`group`/`enabled`/`order` 字段完整
+- [ ] 若 AI 助手可调用:`tools_schema.yaml` 已注册并通过 `tests/unit/tools/test_tool_schema_lint.py`(name 唯一、description 四成分、keywords 非空)
 - [ ] `router/index.ts` 已加 `tools/<key>` 子路由,`name` 为 `tools-<key>`,`requiresAuth: true`
 - [ ] 用了新图标已在 `ToolsHubView.vue` 的 `ICON_MAP` 登记
 - [ ] 视图文件命名 `<Tool>View.vue`,根 class `<key>-page`,布局 class `<key>-layout`
@@ -1209,7 +1213,7 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
 ---
 
-*本章节的落地计划原见 `tools_update.md`（已归档至 `ARCHITECTURE_DESIN/deprecated/tools_update_2026-07.md`，方案已全部落地，现状以 `ARCHITECTURE_DESIN/mcp_architecture.md` 为准）；本文档记录架构规范与实现约定。*
+*本章节的落地计划原见 `tools_update.md`（已归档至 `ARCHITECTURE_DESIN/deprecated/CygnusX_tools_update.md`，方案已全部落地，现状以 `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md` 为准）；本文档记录架构规范与实现约定。*
 
 ## 十七、工具详情页页头统一规范
 
