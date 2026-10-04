@@ -8,7 +8,19 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -96,7 +108,7 @@ class SkillInvocationModel(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    skill_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    skill_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     skill_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     skill_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # 技能来源：market / github / zip / json / builtin / aliyun_official

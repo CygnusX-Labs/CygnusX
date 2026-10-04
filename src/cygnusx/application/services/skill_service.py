@@ -14,8 +14,8 @@ from cygnusx.application.schemas.skill import (
     SkillInvocationDTO,
     SkillInvocationStatDTO,
     SkillReferenceDTO,
-    SkillVersionDTO,
     SkillVersionDetailDTO,
+    SkillVersionDTO,
     UpdateSkillDTO,
 )
 from cygnusx.core.exceptions import BusinessError, NotFoundError
@@ -344,7 +344,7 @@ class SkillService:
     async def record_invocation(
         self,
         *,
-        skill_id: str,
+        skill_id: str | None,
         skill_name: str = "",
         skill_version: str | None = None,
         source: str = "",
@@ -362,7 +362,7 @@ class SkillService:
             SkillInvocationModel(
                 id=uuid.uuid4(),
                 skill_id=skill_id,
-                skill_name=skill_name or skill_id,
+                skill_name=skill_name or skill_id or "",
                 skill_version=skill_version or None,
                 source=source or "",
                 tool_name=tool_name,

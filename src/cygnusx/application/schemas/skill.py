@@ -186,7 +186,7 @@ class SkillInvocationDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    skill_id: str
+    skill_id: str | None = None
     skill_name: str = ""
     skill_version: str | None = None
     source: str = ""
@@ -204,7 +204,7 @@ class SkillInvocationDTO(BaseModel):
 class SkillInvocationStatDTO(BaseModel):
     """技能调用聚合统计（技能卡片"最近调用 · 累计 N 次"用）"""
 
-    skill_id: str
+    skill_id: str | None = None
     total: int = 0
     last_invoked_at: datetime | None = None
     last_status: str = ""

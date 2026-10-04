@@ -1247,6 +1247,8 @@ class AgentService:
                 }
                 if names:
                     mcp_tools.setdefault(str(server_id), set()).update(names)
+        # Skill 路由是所有普通 Agent 的只读基础能力，不依赖某个业务工具包。
+        builtin_tools.add("skill_route")
         return {"builtin_tools": builtin_tools, "mcp_tools": mcp_tools}
 
     @staticmethod
