@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+import anyio
 import yaml
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,11 +58,12 @@ class AIProviderYamlLoader:
         settings = get_settings()
         path = settings.ai_provider_config_yaml
 
+        if not await anyio.Path(path).exists():
+            logger.debug(f"AI Provider YAML 不存在，跳过同步: {path}")
+            return 0
+
         data = _load_yaml(path)
         providers = data.get("providers", [])
-        if not providers:
-            logger.debug(f"AI Provider YAML 未配置或为空: {path}")
-            return 0
 
         # uvicorn 多 worker 会并发执行启动同步；本函数是"先查再插"的 check-then-act，
         # 并发下会对不存在的 name 重复 INSERT。用 PG 事务级咨询锁串行化：

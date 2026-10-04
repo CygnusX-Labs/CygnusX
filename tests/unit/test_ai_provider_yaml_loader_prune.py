@@ -116,6 +116,37 @@ async def test_loader_keeps_declared_active(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_empty_yaml_deactivates_unlisted_providers(tmp_path, monkeypatch):
+    from cygnusx.core import config as config_module
+
+    yaml_path = tmp_path / "providers.yaml"
+    yaml_path.write_text("providers: []\n", encoding="utf-8")
+    monkeypatch.setattr(config_module.get_settings(), "ai_provider_config_yaml", str(yaml_path))
+    repo = _FakeRepo()
+    repo._items = [_cfg("legacy", is_active=True, is_default=True)]
+
+    await _loader(tmp_path, repo, "providers: []\n").load_and_sync()
+
+    assert repo._items[0].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_missing_yaml_does_not_change_existing_providers(tmp_path, monkeypatch):
+    from cygnusx.core import config as config_module
+
+    yaml_path = tmp_path / "missing.yaml"
+    monkeypatch.setattr(config_module.get_settings(), "ai_provider_config_yaml", str(yaml_path))
+    repo = _FakeRepo()
+    repo._items = [_cfg("legacy", is_active=True)]
+    db = MagicMock()
+    loader = AIProviderYamlLoader(db)
+    loader._repo = repo
+
+    assert await loader.load_and_sync() == 0
+    assert repo._items[0].is_active is True
+
+
+@pytest.mark.asyncio
 async def test_loader_round_trips_context_window(tmp_path, monkeypatch):
     from cygnusx.core import config as config_module
 

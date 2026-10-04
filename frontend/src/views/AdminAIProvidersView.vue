@@ -30,6 +30,7 @@ const loading = ref(false)
 const showEdit = ref(false)
 const testing = ref(false)
 const reloadingRuntime = ref(false)
+const syncingYaml = ref(false)
 
 const providerOptions = [
   { label: 'OpenAI 兼容', value: 'openai_compatible' },
@@ -221,7 +222,24 @@ async function reloadRuntimeConfig() {
   }
 }
 
-onMounted(fetchConfigs)
+async function syncYaml(showSuccess = true) {
+  syncingYaml.value = true
+  try {
+    const res = await apiClient.post<{ synced: number }>('/admin/ai-providers/sync-yaml')
+    await fetchConfigs()
+    if (showSuccess) message.success(`已同步 YAML 中的 ${res.data.synced} 项 Provider`)
+  } catch (error: any) {
+    if (showSuccess) {
+      message.error(error?.response?.data?.detail || 'YAML 同步失败')
+    } else {
+      await fetchConfigs()
+    }
+  } finally {
+    syncingYaml.value = false
+  }
+}
+
+onMounted(() => syncYaml(false))
 </script>
 
 <template>
@@ -231,6 +249,7 @@ onMounted(fetchConfigs)
       <NCard title="Provider 配置" :bordered="false" class="arco-card">
         <template #header-extra>
           <NSpace>
+            <NButton :loading="syncingYaml" @click="() => syncYaml()">同步 providers.yaml</NButton>
             <NButton :loading="reloadingRuntime" @click="reloadRuntimeConfig">重载运行时配置</NButton>
             <NButton type="primary" @click="openEdit()">新建配置</NButton>
           </NSpace>

@@ -85,7 +85,22 @@ class AIProviderConfigService:
 
     async def list_configs(self) -> list[AIProviderConfigDTO]:
         configs = await self._repo.list_all()
+        # 管理页只展示 YAML 当前声明的配置；历史引用项可保留在 DB，但不应继续出现在配置入口。
+        yaml_path = anyio.Path(get_settings().ai_provider_config_yaml)
+        if await yaml_path.exists():
+            async with await anyio.open_file(yaml_path, encoding="utf-8") as f:
+                declared = (yaml.safe_load(await f.read()) or {}).get("providers", [])
+            declared_names = {item.get("name") for item in declared if item.get("name")}
+            configs = [c for c in configs if c.name in declared_names]
         return [_to_dto(c) for c in configs]
+
+    async def sync_from_yaml(self) -> int:
+        """立即将外置 YAML 同步到数据库，供管理页主动刷新配置。"""
+        from cygnusx.application.services.ai_provider_yaml_loader import AIProviderYamlLoader
+
+        synced = await AIProviderYamlLoader(self._db).load_and_sync()
+        provider_manager.clear_cache()
+        return synced
 
     async def list_templates(self) -> list[AIProviderTemplate]:
         """加载内置 Provider 模板，并标记是否已在数据库中存在。"""

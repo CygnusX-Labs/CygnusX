@@ -45,6 +45,11 @@ async def list_configs(
     return await service.list_configs()
 
 
+@router.post("/sync-yaml", summary="从 providers.yaml 同步配置")
+async def sync_yaml(_admin: AdminRequired, service: ServiceDep) -> dict[str, int]:
+    return {"synced": await service.sync_from_yaml()}
+
+
 @router.post(
     "",
     response_model=AIProviderConfigDTO,
