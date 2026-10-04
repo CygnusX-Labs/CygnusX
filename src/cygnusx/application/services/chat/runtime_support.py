@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import ipaddress
 import hashlib
+import ipaddress
 import re
 import time
 import uuid
@@ -16,10 +16,6 @@ import httpx
 from loguru import logger
 from sqlalchemy import select
 
-from cygnusx.application.services.overdrive_planning_service import build_research_queries
-from cygnusx.application.services.research_search_optimizer import ResearchSearchOptimizer
-from cygnusx.application.services.search_provider_service import SearchProviderService
-from cygnusx.application.services.chat.context_estimate import calibration_ratio, estimate_context
 from cygnusx.application.services.chat.context_compaction import (
     CompactionCancelled,
     CompactionPolicy,
@@ -27,6 +23,10 @@ from cygnusx.application.services.chat.context_compaction import (
     externalize_large_outputs,
     write_compaction_archive,
 )
+from cygnusx.application.services.chat.context_estimate import calibration_ratio, estimate_context
+from cygnusx.application.services.overdrive_planning_service import build_research_queries
+from cygnusx.application.services.research_search_optimizer import ResearchSearchOptimizer
+from cygnusx.application.services.search_provider_service import SearchProviderService
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.domain.skill.services import SKILL_RESOURCE_TOOL_NAME, USE_SKILL_TOOL_NAME
@@ -541,7 +541,9 @@ class ChatRuntimeSupport:
                 message_id = getattr(self, "_active_context_message_id", None)
                 if message_id:
                     try:
-                        from cygnusx.application.services.chat_message_event_service import message_event_service
+                        from cygnusx.application.services.chat_message_event_service import (
+                            message_event_service,
+                        )
 
                         await message_event_service.append_compaction_event(
                             message_id,
@@ -713,7 +715,9 @@ class ChatRuntimeSupport:
         message_id = getattr(self, "_active_context_message_id", None)
         if message_id:
             try:
-                from cygnusx.application.services.chat_message_event_service import message_event_service
+                from cygnusx.application.services.chat_message_event_service import (
+                    message_event_service,
+                )
 
                 await message_event_service.append_compaction_event(
                     message_id,
@@ -1076,6 +1080,7 @@ class ChatRuntimeSupport:
         duration_ms: float,
         summary: str,
         error: str,
+        tool_name: str = USE_SKILL_TOOL_NAME,
         session_id: str,
         message_id: Any,
         user_id: str | None,
@@ -1091,11 +1096,11 @@ class ChatRuntimeSupport:
                     return None
 
             await SkillService(self._db).record_invocation(
-                skill_id=str(skill_meta.get("skill_id") or ""),
+                skill_id=skill_meta.get("skill_id"),
                 skill_name=str(skill_meta.get("name") or ""),
                 skill_version=str(skill_meta.get("version") or "") or None,
                 source=str(skill_meta.get("source") or ""),
-                tool_name=USE_SKILL_TOOL_NAME,
+                tool_name=tool_name,
                 status=status,
                 duration_ms=duration_ms,
                 summary=summary,

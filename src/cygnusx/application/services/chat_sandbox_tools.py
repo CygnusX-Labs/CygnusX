@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -71,6 +71,14 @@ CHAT_SANDBOX_EXECUTE_TOOL_SCHEMA: dict[str, Any] = {
                         "、\"figures/*.png\"）。执行结束后平台逐文件实测 size+sha256 对账；"
                         "声明了但未产出的文件会在结果 missing_artifacts 中告警"
                     ),
+                },
+                "skill_id": {
+                    "type": ["string", "null"],
+                    "description": "已由 skill_route/use_skill 绑定的 Skill ID；没有绑定时为 null",
+                },
+                "skill_route_confidence": {
+                    "type": ["number", "null"],
+                    "description": "skill_route 对当前 Skill 选择的置信度，用于审计",
                 },
             },
             "required": ["language", "code"],
@@ -794,6 +802,7 @@ async def stream_chat_sandbox_tool(
     tool_call_id: str = "",
     session_id: str | None = None,
     message_id: str | None = None,
+    record_skill_invocation: Callable[..., Awaitable[None]] | None = None,
 ) -> AsyncIterator[ChatChunk | dict[str, Any]]:
     """流式执行聊天沙盒工具，产出 tool_output 事件 + 最终结果信封。
 
@@ -808,10 +817,34 @@ async def stream_chat_sandbox_tool(
     task = asyncio.create_task(
         execute_chat_sandbox(args, user_id, on_output=_on_output, session_id=session_id)
     )
+    started = time.monotonic()
     hard_timeout = chat_sandbox_hard_timeout(args)
     requested_timeout = hard_timeout - CHAT_SANDBOX_HARD_TIMEOUT_GRACE_SECONDS
     deadline = time.monotonic() + hard_timeout
     deadline_expired = False
+
+    async def _record(result: dict[str, Any], duration_ms: float) -> None:
+        if record_skill_invocation is None:
+            return
+        skill_id = str(args.get("skill_id") or "").strip() or None
+        confidence = args.get("skill_route_confidence")
+        summary = "chat_sandbox_execute completed without a bound Skill"
+        if skill_id:
+            summary = f"chat_sandbox_execute executed with Skill {skill_id}"
+        if confidence is not None:
+            summary += f"; route_confidence={confidence}"
+        succeeded = bool(result.get("success"))
+        await record_skill_invocation(
+            skill_meta={"skill_id": skill_id, "name": skill_id or "", "version": "", "source": ""},
+            tool_name=CHAT_SANDBOX_TOOL_NAME,
+            status="completed" if succeeded else "failed",
+            duration_ms=duration_ms,
+            summary=summary,
+            error=str(result.get("error") or "") if not succeeded else "",
+            session_id=session_id or "",
+            message_id=message_id,
+            user_id=user_id,
+        )
 
     last_emit = time.monotonic()
     while True:
@@ -859,7 +892,9 @@ async def stream_chat_sandbox_tool(
             requested_timeout,
             hard_timeout,
         )
-        yield chat_sandbox_timeout_result(hard_timeout)
+        timeout_result = chat_sandbox_timeout_result(hard_timeout)
+        await _record(timeout_result, hard_timeout * 1000)
+        yield timeout_result
         return
     try:
         # The code runner emits its own timeout event, but this outer deadline
@@ -867,6 +902,7 @@ async def stream_chat_sandbox_tool(
         # archive/environment bookkeeping.
         result = await asyncio.wait_for(task, timeout=hard_timeout)
         await message_event_service.flush_message_events(message_id or "")
+        await _record(result, (time.monotonic() - started) * 1000)
         yield result
     except TimeoutError:
         task.cancel()
@@ -879,8 +915,12 @@ async def stream_chat_sandbox_tool(
             requested_timeout,
             hard_timeout,
         )
-        yield chat_sandbox_timeout_result(hard_timeout)
+        timeout_result = chat_sandbox_timeout_result(hard_timeout)
+        await _record(timeout_result, hard_timeout * 1000)
+        yield timeout_result
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ChatSandbox] 流式执行异常: {e}")
         await message_event_service.flush_message_events(message_id or "")
-        yield _error_result(f"工具执行失败: {e}")
+        error_result = _error_result(f"工具执行失败: {e}")
+        await _record(error_result, hard_timeout * 1000)
+        yield error_result

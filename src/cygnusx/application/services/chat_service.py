@@ -117,11 +117,6 @@ from cygnusx.application.services.chat_sandbox_tools import (
     CHAT_SANDBOX_TOOL_NAME,
     stream_chat_sandbox_tool,
 )
-from cygnusx.application.services.network_request_tool import (
-    NETWORK_REQUEST_TOOL_NAME,
-    NETWORK_REQUEST_TOOL_SCHEMA,
-    execute_network_request,
-)
 from cygnusx.application.services.collaboration_observability_service import (
     CollaborationObservabilityService,
 )
@@ -132,6 +127,11 @@ from cygnusx.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_TOOL_NAME,
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
+)
+from cygnusx.application.services.network_request_tool import (
+    NETWORK_REQUEST_TOOL_NAME,
+    NETWORK_REQUEST_TOOL_SCHEMA,
+    execute_network_request,
 )
 from cygnusx.application.services.overdrive_plan_constraint_service import (
     apply_authoritative_plan,
@@ -3697,8 +3697,12 @@ class ChatService(
                 else:
                     runtime_profile = None
                 if runtime_profile is not None:
+                    from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
+
                     runtime_prompt += "\n\n" + render_runtime_manifest(
-                        runtime_profile_id, runtime_profile
+                        runtime_profile_id,
+                        runtime_profile,
+                        studio_sandbox_manager.runtime_manifest(current_session_id),
                     )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Studio 运行时软件清单加载失败，已跳过: {}", exc)
@@ -4115,7 +4119,7 @@ class ChatService(
 
         # LangGraph 统一 Runtime：普通聊天（非 Studio、非 MAS 编排）默认全部走状态图，
         # 收敛 chat_legacy/chat_langgraph 双引擎为单 Runtime（见
-        # ARCHITECTURE_DESIN/agent_execution_framework.md §2/§4）。
+        # ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md §2/§4）。
         # 仅两处保留手写循环：① Agent 显式声明 features.engine == "legacy"；
         # ② 全局逃生舱 chat_force_legacy_runtime（LangGraph 故障紧急回滚）。
         if (
@@ -4377,6 +4381,7 @@ class ChatService(
                     # 在下方 directive 消费分支统一切换
                     is_handoff_tool = tool_name == HANDOFF_TOOL_NAME
                     is_subagent_tool = tool_name == PARALLEL_SUBAGENTS_TOOL_NAME
+                    is_skill_route_tool = tool_name == "skill_route"
                     is_agentteams_case_tool = tool_name == "create_agentteams_case"
                     # Skills 三层渐进式披露内部工具（非 Studio；Studio 走 capability_load 机制）
                     is_skill_tool = (not studio_mode) and tool_name in SKILL_TOOL_NAMES
@@ -4392,6 +4397,7 @@ class ChatService(
                         and not is_skill_tool
                         and not is_handoff_tool
                         and not is_subagent_tool
+                        and not is_skill_route_tool
                         and not is_agentteams_case_tool
                         and not is_chat_sandbox_tool
                     ):
@@ -4412,6 +4418,8 @@ class ChatService(
                         if is_handoff_tool
                         else "subagents"
                         if is_subagent_tool
+                        else "skill-route"
+                        if is_skill_route_tool
                         else "agentteams-case"
                         if is_agentteams_case_tool
                         else "skills"
@@ -5190,6 +5198,7 @@ class ChatService(
                                 tool_call_id=tc.get("id", ""),
                                 session_id=str(current_session_id),
                                 message_id=ai_message.message_id,
+                                record_skill_invocation=self._record_skill_invocation,
                             ):
                                 if isinstance(item, ChatChunk):
                                     yield item
