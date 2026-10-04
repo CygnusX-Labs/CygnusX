@@ -12,7 +12,7 @@ import {
   EyeOutline,
 } from '@vicons/ionicons5'
 import {
-  NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NDrawer,
+  NAlert, NButton, NBreadcrumb, NBreadcrumbItem, NDataTable, NDropdown, NDrawer,
   NIcon, NInput, NSelect, NSpin, NTag, NUpload, useDialog, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns, UploadFileInfo } from 'naive-ui'
@@ -59,12 +59,20 @@ function updateViewport() {
   }
 }
 
+// fetchAll 竞态防护：递增请求序号，仅最后一次发起的响应生效（A2）。
+// 并发场景：进页 syncFiles finally + watch(completedSeq) 同时触发 fetchAll 时，
+// 旧响应不再覆盖新响应。
+let fetchSeq = 0
+/** 统计卡首载完成标志：控制 OverviewStats 骨架/数值切换（A5 闪零） */
+const statsLoaded = ref(false)
+
 const {
   loading,
   error,
   execute: fetchAll,
 } = useApi(
   async () => {
+    const seq = ++fetchSeq
     const [filesRes, dirsRes, samplesRes, quotaRes, teamsRes] = await Promise.all([
       apiClient.get<{ items: DataFile[]; total: number }>('/files'),
       apiClient.get<Directory[]>('/files/directories'),
@@ -72,11 +80,13 @@ const {
       apiClient.get<QuotaInfo>('/files/quota'),
       apiClient.get<{ items: TeamInfo[]; total: number }>('/teams'),
     ])
+    if (seq !== fetchSeq) return // 已有更新的请求在途，丢弃本次响应
     allFiles.value = filesRes.data.items
     directories.value = dirsRes.data
     samplesCount.value = samplesRes.data.total ?? samplesRes.data.items.length
     quota.value = quotaRes.data
     teams.value = teamsRes.data.items || []
+    statsLoaded.value = true
     if (activeSpace.value === 'team' && !selectedTeamId.value && teams.value.length) {
       selectedTeamId.value = teams.value[0].id
     }
@@ -287,6 +297,8 @@ const sortOptions = [
 ]
 
 const syncing = ref(false)
+/** 进页静默同步失败的提示态：统计带下方展示一次性可关闭提示条（A3） */
+const syncError = ref(false)
 
 type SyncFilesResponse = {
   added: number
@@ -301,6 +313,7 @@ async function syncFiles(silent = false) {
   syncing.value = true
   try {
     const res = await apiClient.post<SyncFilesResponse>('/files/sync')
+    syncError.value = false
     if (!silent) {
       const changes: string[] = []
       if (res.data.added > 0) changes.push(`新增 ${res.data.added} 个文件`)
@@ -310,6 +323,8 @@ async function syncFiles(silent = false) {
     }
   } catch {
     if (!silent) message.error('同步失败，请稍后重试')
+    // 静默同步失败也必须可感知：当前列表可能是未对账的陈旧数据
+    syncError.value = true
   } finally {
     syncing.value = false
     await fetchAll()
@@ -443,8 +458,18 @@ function importFromURL() {
 
 const supportedFormats = ['FASTQ', 'BAM', 'VCF', 'CRAM', 'ZIP']
 
+// 批量上传去抖：completedSeq 每个文件完成自增一次，N 个文件完成
+// 原会触发 N 次全量 fetchAll 风暴；合并到 300ms 窗口内只刷一次（A2）。
+let completedDebounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(completedSeq, () => {
-  fetchAll()
+  if (completedDebounceTimer) clearTimeout(completedDebounceTimer)
+  completedDebounceTimer = setTimeout(() => {
+    completedDebounceTimer = null
+    fetchAll()
+  }, 300)
+})
+onUnmounted(() => {
+  if (completedDebounceTimer) clearTimeout(completedDebounceTimer)
 })
 watch(currentDirectory, () => {
   selectedFile.value = null
@@ -462,13 +487,28 @@ onUnmounted(() => {
 
 <template>
   <main class="finder-page" aria-label="数据管理">
-    <!-- 顶部统计大盘 -->
+    <!-- 顶部统计大盘（首载完成前显示骨架，防闪零 A5） -->
     <OverviewStats
       :samples="samplesCount"
       :files="allFiles.length"
       :projects="projectsCount"
       :quota="quota"
+      :loaded="statsLoaded"
     />
+
+    <!-- 进页静默对账失败提示（A3）：数据可能不是最新，可关闭/手动重试 -->
+    <NAlert
+      v-if="syncError"
+      type="warning"
+      closable
+      class="sync-error-banner"
+      @close="syncError = false"
+    >
+      数据自动对账失败，当前显示的文件列表可能不是最新。
+      <NButton size="tiny" quaternary type="warning" :loading="syncing" @click="syncFiles(false)">
+        手动重试
+      </NButton>
+    </NAlert>
 
     <!-- Finder 三栏 -->
     <div class="finder-grid" :class="{ 'finder-grid--mobile': isMobile || isTablet }">
@@ -935,6 +975,10 @@ onUnmounted(() => {
   display: flex;
   gap: 16px;
   min-height: 0;
+}
+
+.sync-error-banner {
+  flex-shrink: 0;
 }
 
 .finder-grid--mobile {

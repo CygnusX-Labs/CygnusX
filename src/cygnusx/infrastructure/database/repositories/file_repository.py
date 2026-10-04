@@ -256,16 +256,28 @@ class UploadSessionRepositoryImpl(IUploadSessionRepository):
         return self._to_entity(model) if model else None
 
     async def find_completed(
-        self, user_id: UUID, file_name: str, total_size: int
+        self,
+        user_id: UUID,
+        file_name: str,
+        total_size: int,
+        file_md5: str | None = None,
     ) -> UploadSession | None:
+        """秒传命中：同名同大小且已 completed。
+
+        传 file_md5 时进一步比对内容指纹，避免同名同大小不同内容误判秒传
+        （A1 数据正确性缺陷：误命中会导致新文件静默丢失）。
+        """
+        conditions = [
+            UploadSessionModel.user_id == user_id,
+            UploadSessionModel.file_name == file_name,
+            UploadSessionModel.total_size == total_size,
+            UploadSessionModel.status == "completed",
+        ]
+        if file_md5:
+            conditions.append(UploadSessionModel.file_md5 == file_md5)
         stmt = (
             select(UploadSessionModel)
-            .where(
-                UploadSessionModel.user_id == user_id,
-                UploadSessionModel.file_name == file_name,
-                UploadSessionModel.total_size == total_size,
-                UploadSessionModel.status == "completed",
-            )
+            .where(*conditions)
             .order_by(UploadSessionModel.created_at.desc())
             .limit(1)
         )

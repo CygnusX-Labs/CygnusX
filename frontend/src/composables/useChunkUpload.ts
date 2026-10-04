@@ -134,14 +134,19 @@ export function useChunkUpload(options: UseChunkUploadOptions = {}) {
         item.uploadId = initResp.upload_id
         item.totalChunks = totalChunks
 
-        // 秒传命中
+        // 秒传命中：completed=True 时后端必须返回真实 file_id（旧后端/脏会话
+        // 状态下可能为空）。file_id 缺失说明文件记录不存在，禁止伪造"成功"，
+        // 按上传失败处理，走正常重传流程由用户重新发起。
         if (initResp.completed) {
+          if (!initResp.file_id) {
+            throw new Error('秒传校验失败：未找到已存在的文件记录，请重新上传')
+          }
           item.uploadedChunks = totalChunks
           item.progress = 100
           item.status = 'completed'
           options.onProgress?.(item)
           options.onCompleted?.(item, {
-            file_id: initResp.file_id ?? '',
+            file_id: initResp.file_id,
             original_name: file.name,
             size: file.size,
             checksum: fileMd5,

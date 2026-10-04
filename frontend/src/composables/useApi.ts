@@ -35,6 +35,10 @@ export function useApi<T>(
   const error = ref('')
   let messageApi: ReturnType<typeof useMessage> | null = null
 
+  // 并发计数：并发 execute 时 loading 只在全部结束时才置 false，
+  // 避免先完成的请求提前关掉 spinner 导致 loading 状态失真（A2）。
+  let activeCount = 0
+
   // useMessage 必须在 setup 中调用；这里延迟初始化，若不在 setup 调用则静默失败
   try {
     messageApi = useMessage()
@@ -43,6 +47,7 @@ export function useApi<T>(
   }
 
   async function execute(): Promise<T | undefined> {
+    activeCount += 1
     loading.value = true
     error.value = ''
     try {
@@ -61,7 +66,11 @@ export function useApi<T>(
       }
       return undefined
     } finally {
-      loading.value = false
+      activeCount -= 1
+      if (activeCount <= 0) {
+        activeCount = 0
+        loading.value = false
+      }
     }
   }
 

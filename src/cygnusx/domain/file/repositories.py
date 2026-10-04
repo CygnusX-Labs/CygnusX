@@ -55,9 +55,13 @@ class IUploadSessionRepository(Protocol):
     async def get_by_id(self, user_id: UUID, session_id: UUID) -> UploadSession | None: ...
 
     async def find_completed(
-        self, user_id: UUID, file_name: str, total_size: int
+        self,
+        user_id: UUID,
+        file_name: str,
+        total_size: int,
+        file_md5: str | None = None,
     ) -> UploadSession | None:
-        """秒传命中：同名同大小且已 completed"""
+        """秒传命中：同名同大小（传 file_md5 时加内容指纹）且已 completed"""
         ...
 
     async def save(self, session: UploadSession) -> UploadSession: ...

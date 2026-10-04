@@ -1,8 +1,15 @@
 <script setup lang="ts">
 /**
- * 顶部数据大盘 —— Samples / Files / Projects / Storage 四卡
+ * 顶部数据大盘 —— Samples / Files / Folders / Storage 四卡
+ *
+ * 口径说明（A5 治理，与 FilesView 数据来源一一对应）：
+ * - Samples：当前用户注册样本数（纯个人，不含团队）
+ * - Files：可见文件总数（个人 + 所属团队）
+ * - Folders：用户自建的顶层目录数（非系统目录，与「项目」模块无关）
+ * - Storage：个人存储配额用量
+ * loaded=false 时显示骨架占位，避免首屏闪零。
  */
-import { NIcon, NProgress } from 'naive-ui'
+import { NIcon, NProgress, NSkeleton, NTooltip } from 'naive-ui'
 import type { Component } from 'vue'
 import {
   FlaskOutline, FolderOpenOutline, FolderOutline, CloudUploadOutline,
@@ -14,6 +21,8 @@ defineProps<{
   files: number
   projects: number
   quota: QuotaInfo
+  /** 首次加载是否完成：false 时卡片数值区显示骨架，避免闪零 */
+  loaded?: boolean
 }>()
 
 function formatSize(bytes: number) {
@@ -28,12 +37,14 @@ interface CardDef {
   key: string
   label: string
   icon: Component
+  /** 卡片口径说明（tooltip 副标题用） */
+  hint: string
 }
 const cards: CardDef[] = [
-  { key: 'samples', label: 'Samples 样本', icon: FlaskOutline },
-  { key: 'files', label: 'Files 文件', icon: FolderOpenOutline },
-  { key: 'projects', label: 'Projects 项目', icon: FolderOutline },
-  { key: 'storage', label: 'Storage 存储', icon: CloudUploadOutline },
+  { key: 'samples', label: 'Samples 样本', icon: FlaskOutline, hint: '已注册样本（个人）' },
+  { key: 'files', label: 'Files 文件', icon: FolderOpenOutline, hint: '可见文件（个人 + 团队）' },
+  { key: 'folders', label: 'Folders 目录', icon: FolderOutline, hint: '自建顶层目录（非系统目录）' },
+  { key: 'storage', label: 'Storage 存储', icon: CloudUploadOutline, hint: '个人存储配额用量' },
 ]
 </script>
 
@@ -44,22 +55,31 @@ const cards: CardDef[] = [
         <NIcon :size="20"><component :is="c.icon" /></NIcon>
       </div>
       <div class="stat-body">
-        <span class="stat-label">{{ c.label }}</span>
+        <NTooltip trigger="hover">
+          <template #trigger>
+            <span class="stat-label">{{ c.label }}</span>
+          </template>
+          {{ c.hint }}
+        </NTooltip>
         <template v-if="c.key === 'storage'">
-          <span class="stat-value">{{ formatSize(quota.used) }} <span class="stat-total">/ {{ formatSize(quota.total) }}</span></span>
-          <NProgress
-            :percentage="Math.min(100, quota.percent)"
-            :height="4"
-            :show-indicator="false"
-            :color="quota.percent >= 91 ? '#F53F3F' : quota.percent >= 71 ? '#FF7D00' : '#165DFF'"
-            rail-color="rgba(22,93,255,0.08)"
-            class="stat-bar"
-          />
-          <span class="stat-sub">{{ quota.percent }}% 已用</span>
+          <template v-if="loaded">
+            <span class="stat-value">{{ formatSize(quota.used) }} <span class="stat-total">/ {{ formatSize(quota.total) }}</span></span>
+            <NProgress
+              :percentage="Math.min(100, quota.percent)"
+              :height="4"
+              :show-indicator="false"
+              :color="quota.percent >= 91 ? '#F53F3F' : quota.percent >= 71 ? '#FF7D00' : '#165DFF'"
+              rail-color="rgba(22,93,255,0.08)"
+              class="stat-bar"
+            />
+            <span class="stat-sub">{{ quota.percent }}% 已用</span>
+          </template>
+          <NSkeleton v-else text :width="120" />
         </template>
         <template v-else>
-          <span class="stat-value">{{ c.key === 'samples' ? samples : c.key === 'files' ? files : projects }}</span>
-          <span class="stat-sub">{{ c.key === 'samples' ? '已注册样本' : c.key === 'files' ? '累计文件' : '关联项目' }}</span>
+          <span v-if="loaded" class="stat-value">{{ c.key === 'samples' ? samples : c.key === 'files' ? files : projects }}</span>
+          <NSkeleton v-else text :width="64" />
+          <span v-if="loaded" class="stat-sub">{{ c.hint }}</span>
         </template>
       </div>
     </div>

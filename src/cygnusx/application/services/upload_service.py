@@ -80,6 +80,25 @@ class UploadService:
         await self._backend.ensure_dir(self._factory.relative_to_root(target))
         return target
 
+    async def _resolve_completed_file_id(
+        self, user_id: UUID, completed: UploadSession
+    ) -> UUID | None:
+        """回查秒传命中会话对应的真实文件记录。
+
+        按会话登记的 file_name + directory 匹配 active 的 FileRecord；查不到
+        （文件已删除、记录被清理）则视为未命中，走正常上传流程——
+        避免返回 completed=True 而 file_id 为空导致前端伪造"成功"（A1）。
+        """
+        directory = _normalize_directory(completed.directory) or "inbox"
+        if directory == "inbox":
+            directory = ""
+        for record in await self._files.list_by_user(user_id, status="active"):
+            if record.original_name == completed.file_name and (
+                record.directory or ""
+            ) == directory:
+                return record.id
+        return None
+
     # ------------------------------------------------------------------
     # init / chunk / merge / cancel
     # ------------------------------------------------------------------
@@ -98,18 +117,24 @@ class UploadService:
                 f"本次需 {req.total_size}"
             )
 
-        # 秒传：同名同大小且已 completed 的会话 → 视为已传完
+        # 秒传：同名同大小同内容指纹（file_md5）且已 completed 的会话 → 视为已传完。
+        # file_md5 缺失（旧客户端/空值）时退化为仅同名同大小比对，但必须回查
+        # 真实文件记录回填 file_id——否则前端会伪造"成功"而文件并不存在（A1）。
         completed = await self._sessions.find_completed(
-            user_id, req.file_name, req.total_size
+            user_id, req.file_name, req.total_size, file_md5=req.file_md5
         )
         if completed is not None:
-            return UploadInitResponse(
-                upload_id=completed.id,
-                completed=True,
-                file_id=None,
-                uploaded_chunks=list(range(completed.total_chunks)),
-                chunk_size=completed.chunk_size,
-            )
+            completed_file_id = await self._resolve_completed_file_id(user_id, completed)
+            if completed_file_id is not None:
+                return UploadInitResponse(
+                    upload_id=completed.id,
+                    completed=True,
+                    file_id=completed_file_id,
+                    uploaded_chunks=[
+                        {"index": i} for i in range(completed.total_chunks)
+                    ],
+                    chunk_size=completed.chunk_size,
+                )
 
         await self._inbox_subdir(user_id, directory)
 
