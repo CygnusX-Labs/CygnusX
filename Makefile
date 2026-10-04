@@ -211,13 +211,13 @@ validate-image-mapping: ## 校验镜像清单与 Dockerfile/Studio/Agent/终端�
 		uv run python scripts/test_studio_agent_runtime.py; \
 	fi
 
-docker-build-sandboxes: validate-image-mapping ## 重建全部沙盒/分析运行时镜像（runtime 三件套 + Copilot 代码执行沙盒 + studio base/bio + 终端全家桶，任一失败即中止）
+docker-build-sandboxes: validate-image-mapping ## 重建全部沙盒/分析运行时镜像（runtime 六件套 + Copilot 代码执行沙盒 + studio base/bio + 终端全家桶，任一失败即中止）
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║  🐳 CygnusX 沙盒/分析运行时镜像全量重建（共 14 个镜像）        ║"
+	@echo "║  🐳 CygnusX 沙盒/分析运行时镜像全量重建（共 17 个镜像）        ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "🧪 步骤 1/5：Studio 运行时三件套（cygnusx-analysis core/plot/scrna）..."
+	@echo "🧪 步骤 1/5：Studio 运行时六件套（core/plot/scrna/rnaseq/atacseq/qc）..."
 	deploy/runtime-images/build.sh
 	@echo "   ✅ 步骤 1/5 完成"
 	@echo ""
@@ -245,6 +245,7 @@ docker-build-sandboxes: validate-image-mapping ## 重建全部沙盒/分析运�
 	@echo "📋 镜像清单核对："
 	@ok=0; miss=0; \
 	for img in cygnusx-analysis:core-v0.0.2dev cygnusx-analysis:plot-v0.0.2dev cygnusx-analysis:scrna-v0.0.3dev \
+		cygnusx-analysis:rnaseq-v0.0.1dev cygnusx-analysis:atacseq-v0.0.1dev cygnusx-analysis:qc-v0.0.1dev \
 		cygnusx-sandbox-copilot:v0.0.2dev cygnusx-sandbox-base:v0.0.2dev cygnusx-sandbox-bio:v0.0.2dev cygnusx-sandbox-browser-office:v0.0.2dev cygnusx-sandbox-terminal:v0.0.2dev \
 		cygnusx-sandbox-rnaseq:v0.0.2dev cygnusx-sandbox-scrna:v0.0.2dev cygnusx-sandbox-gatk:v0.0.2dev \
 		cygnusx-sandbox-ggplot2:v0.0.2dev cygnusx-sandbox-assembly:v0.0.2dev cygnusx-sandbox-metagenomics:v0.0.2dev; do \
@@ -255,7 +256,7 @@ docker-build-sandboxes: validate-image-mapping ## 重建全部沙盒/分析运�
 		fi; \
 	done; \
 	echo ""; \
-	echo "=> 共 14 个镜像：就位 $$ok 个，缺失 $$miss 个"; \
+	echo "=> 共 17 个镜像：就位 $$ok 个，缺失 $$miss 个"; \
 	if [ $$miss -gt 0 ]; then echo "=> ⚠️  有镜像缺失，请检查上方构建日志"; exit 1; fi
 	@echo "=> ✅ 全部沙盒/分析运行时镜像构建完成"
 
@@ -367,7 +368,7 @@ frontend-dev: ## 启动前端开发服务器
 frontend-build: ## 构建前端生产版本
 	cd frontend && npm run build
 
-runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna）
+runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna / rnaseq / atacseq / qc）
 	deploy/runtime-images/build.sh
 
 docker-build-studio-sandboxes: ## 构建 Studio base/bio/browser-office 三个沙箱镜像
@@ -392,11 +393,14 @@ docker-reload: validate-image-mapping docker-network ## 重新构建前端并刷
 		echo "   ⏭️  cygnusx-sandbox-terminal:v0.0.2dev 已存在，跳过构建" || \
 		docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（core/plot/scrna 均已存在则跳过）..."
+	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（六个分析 profile 均已存在则跳过）..."
 	@if docker image inspect cygnusx-analysis:core-v0.0.2dev >/dev/null 2>&1 && \
 	    docker image inspect cygnusx-analysis:plot-v0.0.2dev >/dev/null 2>&1 && \
-	    docker image inspect cygnusx-analysis:scrna-v0.0.3dev >/dev/null 2>&1; then \
-		echo "   ⏭️  cygnusx-analysis 三个运行时镜像均已存在，跳过构建"; \
+	    docker image inspect cygnusx-analysis:scrna-v0.0.3dev >/dev/null 2>&1 && \
+	    docker image inspect cygnusx-analysis:rnaseq-v0.0.1dev >/dev/null 2>&1 && \
+	    docker image inspect cygnusx-analysis:atacseq-v0.0.1dev >/dev/null 2>&1 && \
+	    docker image inspect cygnusx-analysis:qc-v0.0.1dev >/dev/null 2>&1; then \
+		echo "   ⏭️  cygnusx-analysis 六个运行时镜像均已存在，跳过构建"; \
 	else \
 		deploy/runtime-images/build.sh; \
 	fi
