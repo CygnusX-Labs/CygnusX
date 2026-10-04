@@ -8,6 +8,59 @@
 
 ---
 
+## 0. 这个 Flow Framework v1 模块如何发挥作用
+
+Flow Framework v1 把一个生信流程拆成稳定的入口骨架、配置契约、通用工具层和数据交付层。运行从入口 `snakefile` 开始：先按优先级加载 config/reference/run_parameter/cluster 四类配置，再解析用户 `analysisyaml`，校验 JSON Schema、参考基因组和样本/对比表，最后导入编号化规则并由 `rule all` 调用 `DataDeliver()` 动态声明最终产物。流程特有分析逻辑只需要替换 06 之后的规则、DataDeliver 映射和索引类型。
+
+执行时 Snakemake 根据规则依赖决定顺序和并行度，每条 rule 从 `envs/` 获取工具环境、从 `reference.yaml` 获取索引、从 `resource_manager` 获取资源档位，并把中间文件、交付文件和报告写入工作目录。`report/` 负责汇总和可视化，`mcp/` 和 `skills/` 为外部工具或 AI 辅助提供描述；这些周边组件不能改变入口配置校验和规则依赖的事实链。
+
+本文是历史 v1 规范，已经由 `Protocol/FlowFrame/flow-framework` v2.0 取代。它仍可帮助理解 RNAFlow/ATACFlow 的早期同构设计，但新流程必须以 v2 规范、当前 `flows/*.yaml` 接入契约和 Worker 镜像约定为准；文中的示例路径、Snakemake 版本和目录差异不能直接当作现状保证。
+
+### 0.1 架构图：Flow 骨架与规则数据面
+
+```mermaid
+flowchart TD
+    CFG[config.yaml / reference.yaml / run_parameter.yaml / cluster_config.yaml] --> SF[入口 Snakefile]
+    CLI[analysisyaml + samples.csv + contrasts.csv] --> SF
+    SF --> VAL[Schema / reference / sample validation]
+    VAL --> WS[workdir + runtime config]
+    WS --> INC[include numbered rules]
+    INC --> UTILS[rules/utils: id_convert / common / resource / deliver]
+    INC --> RULES[分析规则 06+]
+    UTILS --> TARGET[rule all / DataDeliver targets]
+    RULES --> OUT[中间结果与交付产物]
+    OUT --> REP[report / QC / HTML]
+    ENV[envs/*.yaml] --> RULES
+    REF[reference indexes] --> RULES
+    MCP[mcp / skills metadata] --> REP
+```
+
+### 0.2 实现图：一次 Flow 从配置加载到报告交付
+
+```mermaid
+sequenceDiagram
+    participant CLI as Flow/Task Runner
+    participant SF as Snakefile
+    participant V as validate + reference_update
+    participant ID as id_convert
+    participant SMK as Snakemake DAG
+    participant ENV as Conda/Micromamba
+    participant FS as Workspace
+    participant R as Report/MCP/Skill
+    CLI->>SF: start with analysisyaml
+    SF->>SF: load four config files
+    SF->>V: resolve paths, schema, genome and species checks
+    V-->>SF: validated config
+    SF->>ID: load samples and contrasts
+    ID-->>SF: groups / contrast map
+    SF->>SMK: include rules + compute DataDeliver targets
+    SMK->>ENV: create or reuse rule environment
+    SMK->>FS: execute dependencies and write outputs
+    SMK-->>SF: rule all complete
+    SF->>R: generate QC/report artifacts and metadata
+    R-->>CLI: deliver paths, summary and logs
+```
+
 ## 目录
 
 - [一、顶层目录结构对照](#一顶层目录结构对照)

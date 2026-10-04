@@ -7,6 +7,75 @@
 
 ---
 
+## 0. 这个 Flow 模块如何发挥作用
+
+分析中心 Flow 是一个由 YAML 驱动的声明式接入层。`flows/*.yaml` 描述流程元信息、前端分组和参数、样本表约束、容器内 snakefile 路径、资源和参数映射；`FileSystemFlowRepository` 扫描并按 mtime 热重载这些定义，前端据此生成表单，AI 工具编译器据此生成准备任务的 Tool Schema。Flow YAML 只描述契约，不在 Web 进程中执行 Snakemake，也不把流程定义写入数据库。
+
+用户可以从分析中心表单提交，也可以在 Chat 中调用动态生成的 `cygnusx_prepare_<flow>_submission` 工具。表单请求直接进入 `TaskService.submit()`；AI 请求先经过参数、样本表、资源上限和用户确认门，确认凭证消费后再进入同一个 `TaskService.submit()`。统一入口负责生成用户隔离的运行目录、`analysis.yaml`/`samples.csv`/`contrasts.csv`、Task 记录和幂等快照，然后将 `run_snakemake` 投递给 Celery Worker。
+
+Worker 从固定的 `/opt/cygnusx/pipelines` 读取只读流程代码，在共享数据根目录执行 Snakemake，并通过状态、日志和 workflow monitor 事件回传进度；结果路径、失败原因、计费和前端任务中心都围绕同一个 Task 记录流转。新增流程的 YAML-only 承诺只适用于 L1 表单和 Chat 分析通道，REST pipelines、外部 MCP preset 和 `data/ai/flows` 这几套注册面仍有各自的代码契约。
+
+### 0.1 运行架构图：Flow 声明到标准任务链
+
+```mermaid
+flowchart TD
+    YAML[flows/*.yaml] --> REPO[FileSystemFlowRepository
+mtime 热重载]
+    REPO --> FORM[Vue Flow 表单]
+    REPO --> COMP[FlowToolSchemaCompiler]
+    FORM --> API[POST /api/v1/tasks]
+    COMP --> CHAT[Chat 动态 prepare 工具]
+    CHAT --> PREP[AnalysisFlowToolService.prepare]
+    PREP --> VALID[参数/样本/资源校验]
+    VALID --> HITL{用户确认}
+    HITL -->|通过| API
+    API --> TS[TaskService.submit]
+    TS --> BUILD[GenericFlowBuilder
+analysis.yaml + CSV]
+    BUILD --> DB[Task + 运行目录 + 事件]
+    DB --> Q[Celery run_snakemake]
+    Q --> W[Worker / LocalSnakemakeExecutor]
+    W --> PIPE[/opt/cygnusx/pipelines/<Flow>Flow/]
+    W --> OUT[共享数据、日志、结果]
+    OUT --> MON[Workflow Monitor / Task 状态]
+    MON --> UI[任务中心与结果页]
+```
+
+### 0.2 实现图：AI 确认与表单提交汇合
+
+```mermaid
+sequenceDiagram
+    participant UI as Form/Chat UI
+    participant R as Flow Repository
+    participant T as Tool Compiler
+    participant A as AnalysisFlowToolService
+    participant C as Confirmation Service
+    participant S as TaskService
+    participant B as GenericFlowBuilder
+    participant Q as Celery
+    participant W as Snakemake Worker
+    participant E as Task/Event Store
+    UI->>R: list_flows() / get schema
+    R-->>UI: FlowConfig + parameters
+    opt Chat path
+        UI->>T: discover dynamic prepare tool
+        T-->>UI: tool schema(flow_id, allowed params)
+        UI->>A: prepare(args, samples, comparisons)
+        A->>C: create one-time pending confirmation
+        C-->>UI: confirmation card + resource preview
+        UI->>C: human approve
+        C-->>A: consume approved confirmation
+    end
+    UI->>S: submit(flow_id, params, idempotency_key)
+    S->>B: build project files and monitor config
+    B-->>S: analysis.yaml / samples.csv / contrasts.csv
+    S->>E: persist Task and queued state
+    S->>Q: enqueue run_snakemake
+    Q->>W: execute fixed container path
+    W->>E: status, logs, artifacts and terminal state
+    E-->>UI: progress events and result links
+```
+
 ## 0. 一页结论
 
 1. **流程接入是 YAML 声明**：一个新流程按 FlowFrame 规范写好 Snakemake 流程后，在仓库根 `flows/` 新增一个 YAML（六段 schema，见 §2），即可完成 L1 表单通道与 AI 聊天工具通道的接入——无需改后端代码、无需 DB 注册、无需重启 web 容器（mtime 热重载，见 §3）。

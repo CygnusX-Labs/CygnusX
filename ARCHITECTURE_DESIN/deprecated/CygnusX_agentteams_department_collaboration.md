@@ -8,6 +8,65 @@
 
 ---
 
+## 0. 这个 AgentTeams 部门协作模块如何发挥作用
+
+这份归档提案描述的是 AgentTeams 协作室把一次用户需求组织成 Case、领域 Agent 和 Worker 工作项的方式。当前代码入口是 Case/Room 消息 API：用户消息先落 `room.user_message` 审计事件，再由 Celery 响应任务和 `AgentTeamsRoomResponseService` 做 Manager/领域路由、澄清或只读回复；真实计算仍需人工审批，并通过既有 Work Item、Bridge、Worker 和产物事件回传。本文目标态在此基础上增加“一个领域 Agent 可派生多个隔离 Worker”的可视化和控制协议。
+
+运行时的控制面由 Manager 维护需求、优先级、预算、审批和交接，领域 Agent 负责专业分解，Worker 只执行有边界的工作项。每个工作项必须拥有独立 ID、上下文、工具调用追踪、工作目录和声明输入/输出；DAG 依赖和写冲突决定是否可并行。用户通过 `@` 点名、澄清卡、变更决策卡和审批卡参与流程，房间消息用于可追溯沟通，不能直接替代状态机或把自然语言当成无审计命令。
+
+本文已归档，部门化并行、真实暂停/重规划和容量治理等目标能力可能只部分落地。维护当前系统时应以活动的 AgentTeams 执行文档和代码为准，并继续保留用户隔离、事件幂等、人工确认、Worker 取消级联、Artifact 指针和统一审计等边界；归档文档中的提案状态、路径和行号不构成现状保证。
+
+### 0.1 架构图：协作室控制面与 Worker 数据面
+
+```mermaid
+flowchart TD
+    U[用户 / 甲方] --> MSG[Room/Case Message API]
+    MSG --> EVT[room.user_message 审计事件]
+    EVT --> M[Manager / Room Response Service]
+    M --> R[能力目录与路由决策]
+    R --> CLARIFY[澄清 / 计划 / 审批卡]
+    R --> LEAD[领域 Agent 负责人]
+    LEAD --> DAG[Work Item DAG]
+    DAG --> W1[Worker 1]
+    DAG --> W2[Worker 2]
+    DAG --> WN[Worker N]
+    W1 --> ART[Artifact / 证据指针]
+    W2 --> ART
+    WN --> ART
+    ART --> HANDOFF[room.agent_handoff]
+    HANDOFF --> M
+    M --> UI[Bridge / SSE / 房间投影]
+    M -.审批、取消、变更决策.-> G[HITL Gate]
+    G --> DAG
+```
+
+### 0.2 实现图：点名、审批、派发和交接
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant API as AgentTeams API
+    participant ES as Event/Case Store
+    participant M as Manager Response Service
+    participant A as Domain Agent
+    participant G as Approval Gate
+    participant B as Bridge/Scheduler
+    participant W as Worker
+    participant UI as Room SSE
+    U->>API: 发送消息 / @领域 Agent / @Manager
+    API->>ES: 写 room.user_message + mentions + dispatch_mode
+    ES->>M: Celery respond_to_room_message
+    M->>A: 只读澄清或生成受控计划
+    A-->>M: plan / handoff / change assessment
+    M-->>UI: 计划卡、澄清卡或交接摘要
+    U->>G: 显式批准真实计算
+    G->>B: 解锁工作项并创建租约
+    B->>W: 派发独立 Worker 工作项
+    W->>ES: 状态、工具调用、产物和失败原因
+    W-->>M: room.agent_handoff
+    M-->>UI: 汇总、风险、下一步或返工入口
+```
+
 ## 1. 设计愿景
 
 协作室应像一个专业生物信息分析部门的项目群，而不是一组互不透明的模型调用：

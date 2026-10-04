@@ -9,6 +9,75 @@
 
 ---
 
+## 0. 这个 Overdrive 模块如何发挥作用
+
+Overdrive 是一次会话级的多 Agent 编排模式：用户通过开关或自然语言触发后，`ChatService` 将模式状态写入会话元数据并发出模式事件；每轮消息由 Manager 先理解需求和形成分工，再复用并行子 Agent 服务执行受限的领域任务，最后由 Manager 汇总。每个 Manager/Worker 发言都作为独立的 `room_speech` 消息和 SSE 事件落库，前端按 sender 的名称、头像和颜色渲染，刷新后可从消息元数据重建协作过程。
+
+Overdrive 的控制面与真实计算面分开：Manager 的计划、路由、并行咨询和汇总可以在请求内完成，但提交 Flow、写入结果、产生费用或改变 Case 状态仍要经过既有工具权限、确认门和任务队列。子 Agent 使用独立 child session、受限工具集和递归防护，只返回结构化摘要；大文件、完整日志和长期任务通过 Artifact/Task 指针交给平台执行链。Matrix Gateway 是该方案的扩展数据面，负责房间镜像和外部客户端互通，未配置时应降级为平台内置事件语义。
+
+本文位于 `deprecated/`，是施工方案和接口契约快照；字段、行号、前端组件和 Gateway 状态可能已随代码演进。维护当前 Overdrive/AgentTeams 行为时，应以活动执行框架、房间代码和当前 API 契约为准，不依据本文件重新执行历史步骤。
+
+### 0.1 架构图：会话 Overdrive 控制面与并行执行面
+
+```mermaid
+flowchart TD
+    U[Chat / Studio 用户] --> TOGGLE[开关或关键词]
+    TOGGLE --> CS[ChatService]
+    CS --> META[session.sandbox_meta.overdrive]
+    CS --> MAN[Manager 编排提示词]
+    MAN --> CAT[活动 Agent 能力目录]
+    CAT --> PLAN[受限分工计划]
+    PLAN --> FAN[ParallelSubAgentService]
+    FAN --> W1[Worker/子 Agent 1]
+    FAN --> W2[Worker/子 Agent 2]
+    FAN --> WN[Worker/子 Agent N]
+    W1 --> SPEECH[room_speech / sender metadata]
+    W2 --> SPEECH
+    WN --> SPEECH
+    SPEECH --> STORE[ChatMessage + SSE 事件]
+    STORE --> UI[独立 Agent 消息渲染与历史回放]
+    MAN --> SUM[Manager 汇总]
+    SUM --> STORE
+    PLAN -.真实计算需确认.-> HITL[审批 / Flow / Task 队列]
+    HITL --> EXEC[Worker / Artifact 执行链]
+```
+
+### 0.2 实现图：一轮 Overdrive 消息的事件流
+
+```mermaid
+sequenceDiagram
+    participant UI as 前端 Chat
+    participant API as Chat Stream API
+    participant CS as ChatService
+    participant M as Manager LLM
+    participant F as ParallelSubAgentService
+    participant A as Domain Sub-Agent
+    participant DB as Chat/Event Store
+    participant Q as Flow/Task Queue
+    UI->>API: stream(messages, overdrive=true)
+    API->>CS: 更新会话模式并生成 mode_changed
+    CS->>DB: 持久化用户消息与模式状态
+    CS->>M: 分析需求与当前 Agent catalog
+    M-->>CS: 分工计划
+    CS->>DB: 写 manager room_speech
+    CS-->>UI: SSE room_speech(manager)
+    CS->>F: fan-out(tasks, isolated child sessions)
+    par 每个领域子任务
+        F->>A: 受限工具/只读咨询
+        A-->>F: 结构化结果与风险
+    end
+    F-->>CS: worker summaries
+    CS->>DB: 写 worker room_speech × N
+    CS-->>UI: SSE worker speeches
+    CS->>M: 汇总子 Agent 结果
+    M-->>CS: final manager summary
+    CS->>DB: 写最终 room_speech + usage
+    CS-->>UI: SSE manager summary + done
+    opt 需要真实分析
+        UI->>Q: 用户确认后提交 Flow/Task
+    end
+```
+
 ## 1. 需求与愿景
 
 ### 1.1 用户体验目标

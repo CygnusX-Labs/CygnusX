@@ -6,6 +6,75 @@
 
 ---
 
+## 0. 这个 AI 工具联动模块如何发挥作用
+
+本提案定义了 Agent 如何发现并调用生信工具的桥接机制。前端工具目录 `tools_setting.yaml` 负责页面展示，面向模型的 `tools_schema.yaml` 负责函数契约；Chat Runtime 将后者编译成 OpenAI Function Calling 工具并挂载到内置 `cygnusx-tools` MCP preset。模型发起调用后，`ToolBridgeService` 统一校验参数、解析 `upload://file_id`、执行用户归属检查，再按照 `backend_sync`、`backend_shim`、`backend_async`、`open_page` 或分析 Flow 模式选择执行路径。
+
+同步服务和轻量绘图 shim 在进程内执行并立即返回；长任务只创建 Task、返回 `task_id` 和进度/结果引用，不在 SSE 请求里长轮询。所有结果分成两条通道：紧凑的 `llm_payload` 回灌模型继续推理，完整图表、表格、确认卡和下载链接通过 SSE `ui_payload` 给前端渲染或落盘引用。需要消耗算力、写入结果或提交流程的工具先产生确认卡，由用户确认后才进入标准 Task/Celery 链。
+
+该文件位于 `deprecated/`，是 2026-07-12 的提案快照；其中部分建议已由当前工具箱、MCP 和 ToolBridge 实现承接，仍未覆盖或已变化的路径不能按本文重新施工。当前维护应优先参考活动的 `CygnusX_toolbox_architecture.md`、`CygnusX_mcp_architecture.md` 和代码中的 schema/dispatcher 契约。
+
+### 0.1 架构图：从工具注册到 Agent 结果渲染
+
+```mermaid
+flowchart TD
+    SET[tools_setting.yaml] --> PAGE[ToolsHub / 工具页面]
+    SCHEMA[tools_schema.yaml] --> REG[Tool Schema Registry]
+    REG --> MCP[cygnusx-tools MCP Preset]
+    MCP --> LLM[Agent LLM Function Calling]
+    LLM --> TB[ToolBridgeService]
+    TB --> VALID[参数 / 身份 / upload 引用校验]
+    VALID --> MODE{invocation_mode}
+    MODE --> SYNC[backend_sync / backend_shim]
+    MODE --> ASYNC[backend_async: submit only]
+    MODE --> OPEN[open_page route 引导]
+    MODE --> FLOW[analysis_flow confirmation gate]
+    SYNC --> PKG[llm_payload + ui_payload]
+    ASYNC --> TASK[Task/Celery/Worker]
+    FLOW --> TASK
+    TASK --> PKG
+    PKG --> CHAT[SSE / tool_result]
+    CHAT --> UI[图表、表格、进度、确认卡]
+```
+
+### 0.2 实现图：调用校验、确认和异步结果回传
+
+```mermaid
+sequenceDiagram
+    participant UI as Chat UI
+    participant CS as ChatService
+    participant L as LLM Provider
+    participant MCP as Builtin MCP
+    participant TB as ToolBridge
+    participant S as Tool Service/Shim
+    participant Q as Task Queue
+    participant W as Worker
+    participant DB as Task/Artifact Store
+    UI->>CS: 提交需求与附件引用
+    CS->>L: tools_schema + messages
+    L-->>CS: function call(tool_name, arguments)
+    CS->>MCP: call_tool()
+    MCP->>TB: execute(user_id, tool_name, args)
+    TB->>TB: schema/权限/大小/文件归属校验
+    alt 同步或 shim
+        TB->>S: invoke in process
+        S-->>TB: summary + complete ui payload
+    else 需要确认
+        TB-->>CS: confirmation card + safe preview
+        CS-->>UI: SSE approval_request
+        UI->>TB: user confirmation
+        TB->>Q: submit approved task
+    else 异步
+        TB->>Q: submit only
+        Q->>W: run task
+        W->>DB: status/logs/artifacts
+        DB-->>TB: task_id + progress/result refs
+    end
+    TB-->>MCP: llm_payload + ui_payload
+    MCP-->>CS: tool result
+    CS-->>UI: SSE tool_result / progress / chart
+```
+
 ## 〇、可行性结论（摘要）
 
 | 维度 | 评分 | 说明 |

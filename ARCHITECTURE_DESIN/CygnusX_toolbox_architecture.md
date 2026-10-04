@@ -6,6 +6,71 @@
 
 ---
 
+## 0. 这个工具箱模块如何发挥作用
+
+生信工具箱是 L1 用户入口，把可重复的工具能力以目录、表单、任务和 Agent 工具四种表面提供给用户。后端代码以 `src/cygnusx/tools/<tool>/` 子包组织，每个带有 `api` 和 `router` 的子包由 `register_tool_routers` 自动发现并挂载；`tools_setting.yaml` 只决定前端卡片和分组，`tools_schema.yaml` 决定 LLM 能看到的函数契约，两份注册表独立加载、按 mtime 热重载，不能假设自动同步。
+
+前端表单通过工具专属 API 创建任务，异步工具统一经 `enqueue_task` 进入 Celery/RocketMQ 后端，查询和结果围绕共享 `tasks` 表或 BLAST 专属表流转。Agent 侧由 `ToolBridgeService` 接收 OpenAI Function Calling，先解析上传文件和参数，再按 `invocation_mode` 选择进程内同步、轻量 shim、异步队列、页面引导或 Flow 确认门；返回时把紧凑的 `llm_payload` 回灌模型，把图表、表格、确认卡和进度 URL 放入 `ui_payload` 供 SSE 前端渲染。
+
+真正的分析计算在 Worker 或专用分析容器执行，Web 进程不直接持有 Docker Socket；结果目录通过 `StoragePathFactory` 按用户和项目隔离，日志、任务状态、产物和计费沿统一任务协议回写。新增工具必须同时考虑子包自动发现、两份注册表、Celery 登记、镜像和权限边界；页面布局规范以 `tool_configs/tools_design.md` 为准，本文件聚焦后端框架和跨链路契约。
+
+### 0.1 运行架构图：工具箱双注册表与执行面
+
+```mermaid
+flowchart TD
+    SET[tools_setting.yaml] --> REG[Tool Registry API]
+    REG --> HUB[Vue ToolsHub / 工具页]
+    SCHEMA[tools_schema.yaml + 动态 Flow 工具] --> MCP[cygnusx-tools preset]
+    MCP --> LLM[Agent LLM Function Call]
+    LLM --> TB[ToolBridgeService]
+    TB --> MODE{invocation_mode}
+    MODE --> SYNC[backend_sync / shim]
+    MODE --> ASYNC[backend_async]
+    MODE --> PAGE[open_page]
+    MODE --> FLOW[analysis_flow + 确认门]
+    SYNC --> TASK[Task / Service]
+    ASYNC --> Q[Celery / RocketMQ Dispatcher]
+    FLOW --> TASK
+    TASK --> W[Worker / 专用分析容器]
+    W --> FS[用户隔离结果目录与日志]
+    FS --> DB[Tasks / Blast Tasks / Events]
+    DB --> UI[SSE 工具卡片、进度与结果]
+```
+
+### 0.2 实现图：一次 Agent 工具调用到异步结果
+
+```mermaid
+sequenceDiagram
+    participant UI as 前端 Chat/ToolsHub
+    participant L as LLM
+    participant P as MCP Preset
+    participant TB as ToolBridgeService
+    participant S as Tool Service
+    participant D as Task Dispatcher
+    participant W as Worker/Analysis Container
+    participant DB as Task/Event Store
+    L->>P: function call(name, arguments)
+    P->>TB: execute(tool schema + invocation mode)
+    TB->>TB: validate args and resolve upload://file_id
+    alt backend_sync / shim
+        TB->>S: invoke service in process
+        S-->>TB: result
+    else backend_async
+        TB->>D: enqueue_task(task payload)
+        D->>DB: create queued task
+        D->>W: Celery/RocketMQ delivery
+        W->>S: run tool/analysis container
+        S->>DB: logs, state, artifacts, usage
+        DB-->>D: terminal state
+        D-->>TB: task_id + progress URL
+    else analysis_flow
+        TB->>S: prepare + user confirmation
+        S->>D: submit standard task after approval
+    end
+    TB-->>P: llm_payload + ui_payload
+    P-->>UI: SSE tool_result / progress / chart / table
+```
+
 ## 0. 一页结论
 
 工具箱 = **一个自动发现的代码框架 + 两份解耦的注册表 + 一张共享任务表 + 一条 Agent 调用通道**：

@@ -1,5 +1,66 @@
 # Worker 轻量镜像与 Workspace 动态安装计划
 
+## 0. 这个 Worker 镜像模块如何发挥作用
+
+Worker 镜像是 Celery/Snakemake 异步执行链的基础运行时。Web/API 进程只负责创建任务、保存参数和投递队列；Worker 容器从固定的 `/app` 运行 CygnusX 任务代码，从只读的 `/opt/cygnusx/pipelines` 读取 RNAFlow/ATACFlow，从可写的 `/data/cygnusx` 读取输入、写入日志和结果。流程代码、参考基因组和 Conda 环境不打包进镜像，而是由共享 Workspace 挂载和内容哈希缓存提供，使流程迭代、Worker 重建和环境复用彼此解耦。
+
+任务首次触发某个 Snakemake rule 时，Worker 通过 Micromamba 在 `/data/cygnusx/.conda_envs` 创建环境，并把包下载缓存放在 `.mamba`；后续任务按环境定义复用缓存。入口脚本在降权到统一的 `PUID/PGID` 后启动 Celery，执行器显式传入 `--conda-prefix`，避免不同进程或 Snakemake 版本将依赖写到宿主机个人目录。共享目录的权限、并发建环境、流程版本和日志路径属于运行契约，不能依靠镜像内 root 权限绕过。
+
+本文是实施计划，`Dockerfile.worker`、挂载和验证步骤在全部落地前不能当作当前生产状态。实现时应保持镜像 tag 不可变且带 Git SHA，Web/Worker 使用同一发布版本，流程挂载只读，用户数据和结果使用协议规定的共享根目录；未来可将每个 Rule 的依赖迁移到独立 OCI 容器，但 Worker 仍只承担调度、队列和状态回传职责。
+
+### 0.1 运行架构图：轻量 Worker 与共享数据平面
+
+```mermaid
+flowchart LR
+    API[FastAPI / Task Service] --> Q[Redis / Celery Queue]
+    Q --> W[Worker Container]
+    IMG[/app: CygnusX + Celery + Snakemake + Micromamba/]
+    IMG --> W
+    PIPE[/opt/cygnusx/pipelines:ro/]
+    PIPE --> W
+    DATA[/data/cygnusx:rw/]
+    DATA --> W
+    ENV[.conda_envs / .mamba / .cache] --> DATA
+    REF[reference: versioned, preferably ro] --> DATA
+    W --> SM[Snakemake rule]
+    SM --> ENV
+    SM --> OUT[logs / results / task state]
+    OUT --> DATA
+    W --> API
+    API --> UI[任务中心 / 进度 SSE]
+```
+
+### 0.2 实现图：任务投递、动态建环境与结果回传
+
+```mermaid
+sequenceDiagram
+    participant API as API/Task Service
+    participant Q as Celery Broker
+    participant W as Worker Container
+    participant E as Entry Script
+    participant S as Snakemake
+    participant M as Micromamba Cache
+    participant FS as Shared Workspace
+    participant DB as Task/Event Store
+    API->>DB: 创建任务与参数/流程版本
+    API->>Q: enqueue Celery task
+    Q->>W: deliver task
+    W->>E: prepare directories and PUID/PGID
+    E->>W: drop privileges, set SNAKEMAKE_CONDA_PREFIX
+    W->>S: run snakefile with --use-conda --conda-prefix
+    S->>FS: read pipeline and inputs
+    alt 环境缓存未命中
+        S->>M: create env from rule YAML
+        M-->>FS: persist .conda_envs and package cache
+    else 缓存命中
+        S->>M: reuse content-hash environment
+    end
+    S->>FS: write logs, artifacts and outputs
+    W->>DB: update task state and summaries
+    W-->>API: success/failure reconciliation
+    API-->>UI: task progress and final artifacts
+```
+
 ## 目标
 
 构建轻量级 CygnusX Worker 镜像，仅包含运行 Celery 与 Snakemake 所需的基础组件：

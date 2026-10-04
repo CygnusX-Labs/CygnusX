@@ -11,7 +11,7 @@
  *  - 可访问性：尊重 prefers-reduced-motion，命中时只绘制一帧静态画面，不启动 rAF 循环。
  *
  * 注意：此文件按原生 JS 编写，通过 Vite 直接引入即可挂载到 window。
- * 装饰层契约见 ARCHITECTURE_DESIN/frontend.md §31 / §32：canvas 必须保持
+ * 装饰层契约见 ARCHITECTURE_DESIN/CygnusX_frontend.md §31 / §32：canvas 必须保持
  * position:absolute + pointer-events:none + aria-hidden，z-index:0，绝不可被父级通配选择器命中。
  */
 

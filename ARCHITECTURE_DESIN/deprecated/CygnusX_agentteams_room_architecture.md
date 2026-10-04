@@ -35,6 +35,72 @@
 
 ---
 
+## 0. 这个 AgentTeams 协作室模块如何发挥作用
+
+协作室把平台用户、房间、正式 Case 和异步工作项连接成一条可审计的多人协作链。浏览器先通过平台 API 创建或进入房间，服务端依据 owner/accepted member 做授权并记录消息；需要执行的需求经过意图路由和立项确认后，Case 才进入 Bridge 状态机。Bridge 负责派单、认领、心跳、重试和事件卷，Gateway 负责执行仲裁，Worker 负责领域任务，平台服务把这些状态和产物投影回房间时间线。
+
+协作室的控制面与证据面严格分离：PostgreSQL 保存房间、成员、Case 关联、turn 索引、通知和血缘；Bridge 的 MinIO 事件卷/快照是 Bridge 状态事实源；`agentteams-evidence` 保存 LLM turns、过程正文和报告；Redis 只用于热流、锁和近似长度控制，不能作为完整过程记录的唯一存储。每次 LLM 调用通过 ContextVar 传播 `trace_id`、actor、Case、work item 和轮次，失败写结构化告警但不阻断主要执行链。
+
+用户权限由服务端裁剪：owner 与 accepted member 可以按授权读取房间、消息和证据，owner-only 操作包括邀请、成员管理、立项确认和删除；prompt/reasoning 等敏感正文按可见性策略处理。流程 HTML 报告从 turns、审计事件和 Artifact 血缘生成并登记为可追溯产物，Matrix 是协作镜像而不是平台授权事实源。本文属于归档时点基线，当前行为仍需以活动代码和最新 AgentTeams 执行文档核对。
+
+### 0.1 架构图：房间、Case、Bridge 与证据存储
+
+```mermaid
+flowchart TD
+    U[Owner / Accepted Member] --> WEB[Vue Room/Case UI]
+    WEB --> API[Platform AgentTeams API]
+    API --> AUTH[成员/Case 服务端授权]
+    AUTH --> MSG[房间消息与意图路由]
+    MSG --> PG[(PostgreSQL
+房间/成员/索引/血缘)]
+    MSG --> HITL[proposal_confirm / owner 审批]
+    HITL --> BR[Bridge Case 状态机]
+    BR --> GW[Gateway 执行仲裁]
+    GW --> W[Worker Cluster]
+    W --> ART[Artifact / QC / Work Item 事件]
+    ART --> BR
+    BR --> BUS[Redis 热流 / 锁]
+    GW --> AG[Agent Runtime / LLM]
+    AG --> EV[Turns Recorder]
+    EV --> MINIO[(MinIO Evidence
+turns / reports)]
+    BR --> SNAP[(MinIO Case Snapshot/Event卷)]
+    BR --> SSE[Platform SSE / Matrix Mirror]
+    SSE --> WEB
+```
+
+### 0.2 实现图：从房间消息到可审计交付
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant API as AgentTeams API
+    participant ACL as Room/Case ACL
+    participant DB as PostgreSQL
+    participant B as Bridge
+    participant G as Gateway
+    participant W as Worker
+    participant T as Turns Recorder
+    participant O as MinIO
+    participant UI as Room SSE/Matrix
+    U->>API: 发送消息或邀请/立项操作
+    API->>ACL: 校验 owner/member 与 Case 归属
+    ACL-->>API: allow + visibility policy
+    API->>DB: 写 room.user_message / member / proposal 事件
+    API->>B: 发送受控 Case 指令
+    B->>O: persist snapshot/event first
+    B->>G: dispatch/consult with trace_id
+    G->>T: 捕获 prompt、reasoning、tool、usage 引用
+    T->>O: 写 turns 与证据索引
+    G->>W: claim work item
+    W->>B: heartbeat / result / artifact refs / failure
+    B->>O: 更新事件卷与 Case 快照
+    B-->>API: 状态投影与交接事件
+    API-->>UI: SSE 时间线、产物和审批卡
+    UI->>API: owner 验收或导出报告
+    API->>O: 生成 HTML report 并登记血缘
+```
+
 ## 1. 目标、边界与不变量
 
 协作室是面向平台用户的多人协作入口：用户在房间讨论、澄清和立项；Case 进入 Bridge

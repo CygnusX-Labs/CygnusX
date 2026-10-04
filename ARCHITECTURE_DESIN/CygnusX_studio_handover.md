@@ -8,6 +8,61 @@
 
 ---
 
+## 0. 这个 Studio 工作台模块如何发挥作用
+
+OmicStudio 是 Chat 运行时上的会话级分析工作台：用户从 Studio REST API 创建或恢复一个会话，后端为该会话选择 Agent 声明的运行镜像并启动专属 sandbox-agent 容器；容器通过工作区 Unix Socket 提供代码执行和文件 API，`StudioSandboxManager` 负责生命周期、租约、配额、网络策略和空闲回收。平台数据以用户级只读挂载或软链进入 `input/`，模型和用户生成的脚本、日志及产物写入隔离的 `/workspace`，写路径始终受守卫限制。
+
+ChatService 在 Studio 模式追加受控的 `sandbox_execute`、工作区、数据引入、计划、知识和产物登记工具，并通过同一条 `/api/v1/chat/stream` SSE 通道把文本、工具调用、增量 stdout/stderr、计划和终态事件送到前端。工具结果分成紧凑的 `llm_payload` 和完整的 `ui_payload`；会话元数据记录工具调用、计划和沙箱状态，产物登记则把工作区文件复制到用户结果区并形成报告版本树。超过交互时限的工作转为 Celery 长任务，回收流程依靠 Redis 租约与状态投影，容器停止或重建不会改变已登记的结果。
+
+本文是历史交接快照，P0-P3 的完成状态、镜像标签和行号需要以当前代码及 `CygnusX_sandbox_architecture.md` 为准。实现和维护 Studio 时仍须保持 per-user 只读挂载、UID 10001、只读根文件系统、cap_drop、网络白名单、路径读写分离、Artifact 校验和事件审计等安全契约；Studio 不能因此获得宿主机 shell、Docker socket 或跨用户数据访问。
+
+### 0.1 运行架构图：Studio 会话与隔离边界
+
+```mermaid
+flowchart TD
+    U[Studio 前端] --> API[Studio REST / Chat SSE]
+    API --> CS[ChatService + Studio Tool Dispatcher]
+    CS --> CFG[Agent/Studio 配置与 capability]
+    CS --> M[StudioSandboxManager]
+    M --> C[专属 sandbox-agent 容器]
+    C --> WS[/workspace input/output/ref/.logs/]
+    DATA[用户平台数据] -.只读挂载/软链.-> WS
+    CS --> EVT[SSE tool_output / plan / tool_result]
+    EVT --> U
+    WS --> REG[artifact_register]
+    REG --> REPORT[报告版本树 / 结果存储]
+    M --> REDIS[Redis 租约与空闲回收]
+    CS --> CELERY[Celery 长任务 / reconcile]
+    CELERY --> REPORT
+```
+
+### 0.2 实现图：一次 Studio 代码执行与产物登记
+
+```mermaid
+sequenceDiagram
+    participant UI as Studio UI
+    participant API as Studio API
+    participant CS as ChatService
+    participant M as StudioSandboxManager
+    participant AG as sandbox-agent
+    participant R as Redis Lease
+    participant DB as Chat/Report DB
+    UI->>API: POST /studio/sessions
+    API->>M: ensure_running(session_id, image, user_id)
+    M->>AG: healthz over workspace UDS
+    AG-->>M: ready
+    UI->>CS: /chat/stream tool call
+    CS->>M: execute(language, code, timeout)
+    M->>R: renew session/tool lease
+    M->>AG: POST /exec
+    AG-->>CS: NDJSON stdout/stderr/artifacts
+    CS-->>UI: tool_output increments + tool_result
+    CS->>DB: persist tool_invocation and sandbox metadata
+    UI->>CS: artifact_register(path, title)
+    CS->>DB: copy output, create report/version and file record
+    DB-->>UI: artifact card / download pointer
+```
+
 ## 〇、总览
 
 | 阶段 | 状态 | 说明 |
