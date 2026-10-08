@@ -6,9 +6,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
+
+_VERSION_RE = re.compile(r"(?<!\d)\d+(?:\.\d+){1,3}(?!\d)")
+
+
+def _extract_version(output: str, fallback: str = "installed") -> str:
+    """Extract a package version from R output, which may include prompts."""
+    lines = output.splitlines()
+    preferred = [
+        line
+        for line in lines
+        if re.search(r"(?:version|qualimap|featurecounts|macs|bowtie|samtools)", line, re.I)
+    ]
+    matches = _VERSION_RE.findall("\n".join(preferred or lines))
+    return matches[-1][:200] if matches else fallback
 
 
 def probe(name: str, command: str | None = None) -> dict[str, str]:
@@ -16,16 +31,27 @@ def probe(name: str, command: str | None = None) -> dict[str, str]:
     if executable is None:
         return {"name": name, "probe_status": "missing"}
     try:
-        result = subprocess.run(
-            [executable, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        output = (result.stdout or result.stderr).strip().splitlines()
-        version = output[0][:200] if output else "unknown"
-        status = "ok" if result.returncode == 0 else "version_probe_failed"
+        # Bioinformatics CLIs are inconsistent: featureCounts uses ``-v``
+        # and Java launchers such as Qualimap may print the version on help.
+        result = None
+        raw_output = ""
+        for argument in ("--version", "-v", "version", "--help"):
+            candidate = subprocess.run(
+                [executable, argument],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            candidate_output = (candidate.stdout or candidate.stderr).strip()
+            candidate_version = _extract_version(candidate_output, "")
+            is_error = "unrecognized option" in candidate_output.lower()
+            if candidate_output and candidate_version and not is_error:
+                result, raw_output = candidate, candidate_output
+            if candidate.returncode == 0 and candidate_version and not is_error:
+                break
+        version = _extract_version(raw_output, "unknown")
+        status = "ok" if result is not None and _extract_version(raw_output, "") else "version_probe_failed"
     except (OSError, subprocess.SubprocessError) as exc:
         version = str(exc)[:200]
         status = "version_probe_failed"
@@ -77,21 +103,31 @@ def probe_r_library(name: str, package: str) -> dict[str, str]:
         return {"name": name, "probe_status": "missing"}
     try:
         result = subprocess.run(
-            [executable, "-q", "-e", f"if (!requireNamespace('{package}', quietly=TRUE)) quit(status=1); cat(as.character(packageVersion('{package}')))"],
+            [
+                executable,
+                "--vanilla",
+                "--slave",
+                "-e",
+                f"if (!requireNamespace('{package}', quietly=TRUE)) quit(status=1); cat(as.character(packageVersion('{package}')))",
+            ],
             capture_output=True,
             text=True,
             timeout=10,
             check=False,
         )
-        output = (result.stdout or result.stderr).strip().splitlines()
+        raw_output = (result.stdout or result.stderr).strip()
         return {
             "name": name,
             "probe_type": "r_library",
             "probe_target": package,
-            "version": output[-1][:200] if output else "installed",
+            "version": _extract_version(raw_output, "unknown"),
             "path": executable,
             "source": "micromamba",
-            "probe_status": "ok" if result.returncode == 0 else "library_probe_failed",
+            "probe_status": (
+                "ok"
+                if result.returncode == 0 and _extract_version(raw_output, "")
+                else "library_probe_failed"
+            ),
         }
     except (OSError, subprocess.SubprocessError) as exc:
         return {

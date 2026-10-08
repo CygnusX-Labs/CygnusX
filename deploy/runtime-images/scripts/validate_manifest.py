@@ -11,15 +11,21 @@ from typing import Any
 
 import yaml
 
-
-_VERSION_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+){0,3})")
+_VERSION_RE = re.compile(r"(?<![A-Za-z0-9.])v?\d+(?:\.\d+){1,3}(?!\d)")
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
-    match = _VERSION_RE.search(value)
-    if not match:
+    matches = _VERSION_RE.findall(value)
+    if not matches:
         return ()
-    return tuple(int(part) for part in match.group(1).split("."))
+    return tuple(int(part) for part in matches[-1].lstrip("v").split("."))
+
+
+def _compare_versions(
+    actual: tuple[int, ...], required: tuple[int, ...]
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    width = max(len(actual), len(required))
+    return actual + (0,) * (width - len(actual)), required + (0,) * (width - len(required))
 
 
 def _satisfies(actual: str, requirement: str) -> bool:
@@ -30,6 +36,7 @@ def _satisfies(actual: str, requirement: str) -> bool:
     required_version = _version_tuple(requirement)
     if not actual_version or not required_version:
         return False
+    actual_version, required_version = _compare_versions(actual_version, required_version)
     if requirement.startswith(">="):
         return actual_version >= required_version
     if requirement.startswith("<="):

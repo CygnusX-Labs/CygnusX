@@ -1,4 +1,4 @@
-.PHONY: help dev dev-worker dev-rocketmq-worker test test-bridge test-frontend test-all lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions verify-persistent-data docker-up docker-up-pgvector pgvector-acceptance polardb-verify knowledge-reindex docker-up-rocketmq docker-up-rocketmq-worker docker-up-matrix-dev docker-build-enrichment docker-build-deg docker-build-studio-sandboxes docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge validate-image-mapping
+.PHONY: help dev dev-worker dev-rocketmq-worker test test-bridge test-frontend test-all lint format type-check migrate migrate-new migrate-merge migrate-rollback docker-network docker-runtime-dirs docker-fix-permissions verify-persistent-data docker-up docker-up-pgvector pgvector-acceptance polardb-verify knowledge-reindex docker-up-rocketmq docker-up-rocketmq-worker docker-up-matrix-dev docker-build-enrichment docker-build-deg docker-build-studio-sandboxes docker-build-sandboxes docker-build-all-images docker-build-worker docker-up-worker docker-up-all docker-down docker-down-worker docker-down-all docker-logs docker-logs-worker docker-clean docker-purge docker-start docker-reload docker-dev-refresh wait-web clean init-admin init-cookies check-alembic-heads sync-knowledge validate-image-mapping check-agentteams-ports
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -122,8 +122,36 @@ agentteams-worker-env: ## 从受控 Bridge 配置生成最小权限的 AgentTeam
 		mv "$$temporary_file" "$$target_file"; chmod 600 "$$target_file"; \
 		echo "=> 已生成最小权限 Worker 令牌环境：$$target_file"
 
+check-agentteams-ports: ## 检查 AgentTeams Bridge/Gateway 宿主机端口是否被占用
+	@set -eu; \
+		for port in "$${AGENTTEAMS_BRIDGE_PORT:-8088}" "$${AGENTTEAMS_GATEWAY_PORT:-8089}"; do \
+			owners="$$(docker ps --filter "publish=$$port" --format '{{.Names}}' | grep -v '^cygnusx-agentteams-' || true)"; \
+			if [ -n "$$owners" ]; then \
+				echo "=> 端口 $$port 已被其他运行中容器占用："; \
+				echo "$$owners" | sed 's/^/   - /'; \
+				echo "   可通过 AGENTTEAMS_BRIDGE_PORT/AGENTTEAMS_GATEWAY_PORT 调整宿主机端口后重试。"; \
+				exit 1; \
+			fi; \
+		done
+
 docker-up-agentteams: docker-network agentteams-worker-env ## 构建并启动 AgentTeams Bridge、Gateway 与全部生产 Worker
-	$(COMPOSE_AGENTTEAMS) --env-file .env --env-file $(AGENTTEAMS_WORKER_ENV_FILE) --profile agentteams-production up -d --build --force-recreate
+	@set -eu; \
+		bridge_port="$${AGENTTEAMS_BRIDGE_PORT:-8088}"; gateway_port="$${AGENTTEAMS_GATEWAY_PORT:-8089}"; \
+		if [ "$${AGENTTEAMS_AUTO_PORT:-0}" = 1 ]; then \
+			while docker ps --filter "publish=$$bridge_port" --format '{{.Names}}' | grep -q .; do bridge_port=$$((bridge_port + 1)); done; \
+			while [ "$$gateway_port" = "$$bridge_port" ] || docker ps --filter "publish=$$gateway_port" --format '{{.Names}}' | grep -q .; do gateway_port=$$((gateway_port + 1)); done; \
+			if [ "$$bridge_port" != "$${AGENTTEAMS_BRIDGE_PORT:-8088}" ] || [ "$$gateway_port" != "$${AGENTTEAMS_GATEWAY_PORT:-8089}" ]; then \
+				echo "=> AgentTeams 自动选择空闲宿主机端口：Bridge=$$bridge_port Gateway=$$gateway_port"; \
+			fi; \
+		else \
+			owners="$$(docker ps --filter "publish=$$bridge_port" --format '{{.Names}}' | grep -v '^cygnusx-agentteams-' || true)"; \
+			[ -z "$$owners" ] || { echo "=> 端口 $$bridge_port 已被其他运行中容器占用："; echo "$$owners" | sed 's/^/   - /'; echo "   可设置 AGENTTEAMS_AUTO_PORT=1 自动选择空闲端口。"; exit 1; }; \
+			owners="$$(docker ps --filter "publish=$$gateway_port" --format '{{.Names}}' | grep -v '^cygnusx-agentteams-' || true)"; \
+			[ -z "$$owners" ] || { echo "=> 端口 $$gateway_port 已被其他运行中容器占用："; echo "$$owners" | sed 's/^/   - /'; echo "   可设置 AGENTTEAMS_AUTO_PORT=1 自动选择空闲端口。"; exit 1; }; \
+		fi; \
+		runtime_env="$$(mktemp)"; trap 'rm -f "$$runtime_env"' EXIT; \
+		printf 'AGENTTEAMS_BRIDGE_PORT=%s\nAGENTTEAMS_GATEWAY_PORT=%s\n' "$$bridge_port" "$$gateway_port" > "$$runtime_env"; \
+		$(COMPOSE_AGENTTEAMS) --env-file .env --env-file $(AGENTTEAMS_WORKER_ENV_FILE) --env-file "$$runtime_env" --profile agentteams-production up -d --build --force-recreate
 
 docker-up-matrix-dev: ## 启动本机开发用 Matrix(Synapse)+Element 栈（协作室建房链路依赖，独立于主栈/AgentTeams 栈）
 	@echo "=> 启动 matrix-dev（cygnusx-matrix-dev-synapse / element）..."
@@ -374,26 +402,29 @@ runtime-images-build: ## 构建独立分析运行时镜像（core / plot / scrna
 docker-build-studio-sandboxes: ## 构建 Studio base/bio/browser-office 三个沙箱镜像
 	CYGNUSX_IMAGE_TAG=$${CYGNUSX_IMAGE_TAG:-v0.0.2dev} deploy/studio/build.sh
 
-docker-reload: validate-image-mapping docker-network ## 重新构建前端并刷新 pgvector 主栈 + RocketMQ + AgentTeams Bridge + Worker (开发用)
+docker-reload: docker-network ## 重新构建前端并刷新 pgvector 主栈 + RocketMQ + AgentTeams Bridge + Worker (开发用)
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║  🚀 CygnusX 开发环境热重载                                    ║"
 	@echo "║  重新构建前端 + pgvector + RocketMQ + Bridge + Worker       ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "🔎 步骤 1/14：校验镜像清单、Studio 运行时与 Agent 映射..."
+	@$(MAKE) --no-print-directory validate-image-mapping
 	@$(MAKE) --no-print-directory docker-runtime-dirs
 	@echo ""
-	@echo "📦 步骤 1/11：清理残留容器，避免旧容器占用端口或挂载..."
+	@echo "📦 步骤 2/14：清理残留容器，避免旧容器占用端口或挂载..."
 	-@docker ps -a --format '{{.Names}}' | grep -E '^(cygnusx|omichub)-' | grep -v 'matrix-dev' | xargs -r docker rm -f 2>/dev/null
 	-@docker ps -a --filter "name=studio-" -q | xargs -r docker rm -f 2>/dev/null
 	-@$(COMPOSE_AGENTTEAMS) down --remove-orphans 2>/dev/null || true
 	-@docker ps -a --filter "name=agentteams-" -q | xargs -r docker rm -f 2>/dev/null
 	@echo ""
-	@echo "🐳 步骤 2/11：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
+	@echo "🐳 步骤 3/14：构建终端沙盒镜像（已存在则跳过，删除镜像后自动重建）..."
 	@docker image inspect cygnusx-sandbox-terminal:v0.0.2dev >/dev/null 2>&1 && \
 		echo "   ⏭️  cygnusx-sandbox-terminal:v0.0.2dev 已存在，跳过构建" || \
 		docker build -t cygnusx-sandbox-terminal:v0.0.2dev tool_configs/terminal/docker/
 	@echo ""
-	@echo "🧪 步骤 3/11：构建 Studio 运行时镜像（六个分析 profile 均已存在则跳过）..."
+	@echo "🧪 步骤 4/14：构建 Studio 运行时镜像（六个分析 profile 均已存在则跳过）..."
 	@if docker image inspect cygnusx-analysis:core-v0.0.2dev >/dev/null 2>&1 && \
 	    docker image inspect cygnusx-analysis:plot-v0.0.2dev >/dev/null 2>&1 && \
 	    docker image inspect cygnusx-analysis:scrna-v0.0.3dev >/dev/null 2>&1 && \
@@ -405,41 +436,41 @@ docker-reload: validate-image-mapping docker-network ## 重新构建前端并刷
 		deploy/runtime-images/build.sh; \
 	fi
 	@echo ""
-	@echo "🖥️  步骤 4/12：构建 Studio browser-office 沙箱镜像（含 Chromium/Playwright/LibreOffice）..."
+	@echo "🖥️  步骤 5/14：构建 Studio browser-office 沙箱镜像（含 Chromium/Playwright/LibreOffice）..."
 	@$(MAKE) --no-print-directory docker-build-studio-sandboxes
 	@echo ""
-	@echo "🧬 步骤 5/12：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
+	@echo "🧬 步骤 6/14：构建 GO / KEGG 富集 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(ENRICHMENT_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(ENRICHMENT_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-enrichment
 	@echo ""
-	@echo "📊 步骤 6/12：构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
+	@echo "📊 步骤 7/14：构建 DEG 差异表达分析 R 运行时镜像（已存在则跳过）..."
 	@docker image inspect $(DEG_DOCKER_IMAGE) >/dev/null 2>&1 && \
 		echo "   ⏭️  $(DEG_DOCKER_IMAGE) 已存在，跳过构建" || \
 		$(MAKE) --no-print-directory docker-build-deg
 	@echo ""
-	@echo "🚀 步骤 7/12：拉取 RocketMQ NameServer/Broker 官方镜像..."
+	@echo "🚀 步骤 8/14：拉取 RocketMQ NameServer/Broker 官方镜像..."
 	@docker pull $(ROCKETMQ_IMAGE)
 	@echo ""
-	@echo "⚡ 步骤 8/12：重新构建前端生产包（vite build）..."
+	@echo "⚡ 步骤 9/14：重新构建前端生产包（vite build）..."
 	cd frontend && npm run build
 	@echo ""
-	@echo "🌐 步骤 9/13：重新构建并启动 pgvector 主栈服务与 RocketMQ..."
+	@echo "🌐 步骤 10/14：重新构建并启动 pgvector 主栈服务与 RocketMQ..."
 	$(COMPOSE_PGVECTOR_AGENTTEAMS) --profile rocketmq up -d --build
 	@$(MAKE) --no-print-directory wait-web
 	@echo ""
-	@echo "🔎 步骤 10/13：启动 SearXNG 自建联网搜索服务..."
+	@echo "🔎 步骤 11/14：启动 SearXNG 自建联网搜索服务..."
 	$(COMPOSE_SEARXNG) up -d
 	@echo "   已加入共享网络 $(APP_NETWORK)，平台内地址为 http://searxng:8080"
 	@echo ""
-	@echo "🔗 步骤 11/13：构建并启动 AgentTeams Bridge、Gateway 与生产 Worker..."
+	@echo "🔗 步骤 12/14：构建并启动 AgentTeams Bridge、Gateway 与生产 Worker..."
 	@$(MAKE) --no-print-directory docker-up-agentteams
 	@$(MAKE) --no-print-directory docker-up-matrix-dev
 	@echo ""
-	@echo "🔧 步骤 12/13：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
+	@echo "🔧 步骤 13/14：构建并启动 Celery 与 RocketMQ Worker 计算栈..."
 	$(COMPOSE_WORKER) --profile rocketmq up -d --build worker rocketmq-worker
 	@echo ""
-	@echo "🗄️  步骤 13/13：检查数据库迁移状态、同步知识库并清理悬空镜像..."
+	@echo "🗄️  步骤 14/14：检查数据库迁移状态、同步知识库并清理悬空镜像..."
 	@$(MAKE) --no-print-directory check-alembic-heads
 	@$(MAKE) --no-print-directory sync-knowledge
 	@echo ""

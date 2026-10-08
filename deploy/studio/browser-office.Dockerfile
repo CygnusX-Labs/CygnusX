@@ -21,18 +21,27 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
         sed -i 's@//deb.debian.org@//mirrors.ustc.edu.cn@g; s@//security.debian.org@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
     fi
 
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    mkdir -p /opt/playwright-browsers /tmp/chromium /tmp/downloads \
-    && apt-get update \
+RUN mkdir -p /opt/playwright-browsers /tmp/chromium /tmp/downloads \
+    && rm -f /etc/apt/apt.conf.d/docker-clean
+
+# Keep apt archives outside the image layer so canceled builds can reuse downloads.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+# LibreOffice is the slowest install; isolate it so later layers remain reusable.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
-        chromium \
         libreoffice-writer \
         libreoffice-calc \
         libreoffice-impress \
-        fonts-liberation \
-    && python -m pip install --prefer-binary playwright python-docx python-pptx \
-    && chown -R 10001:10001 /opt/playwright-browsers /tmp/chromium /tmp/downloads \
     && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install --prefer-binary playwright python-docx python-pptx \
+    && chown -R 10001:10001 /opt/playwright-browsers /tmp/chromium /tmp/downloads
 
 USER 10001:10001
 WORKDIR /workspace

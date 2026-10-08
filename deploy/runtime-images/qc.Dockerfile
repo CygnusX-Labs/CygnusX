@@ -10,8 +10,7 @@ LABEL org.cygnusx.tools-manifest.digest="${TOOLS_MANIFEST_DIGEST}"
 USER mambauser
 RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
     micromamba install -y -n base -c bioconda -c conda-forge \
-      fastqc fastp multiqc samtools bcftools deeptools qualimap fastq-screen \
-    && micromamba clean -a -y
+      fastqc fastp multiqc samtools bcftools deeptools qualimap fastq-screen
 
 RUN micromamba run -n base sh -c ' \
     for t in fastqc fastp multiqc samtools bcftools bamCoverage qualimap; do \
@@ -21,6 +20,7 @@ RUN micromamba run -n base sh -c ' \
 
 COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
 COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+COPY data/ai/runtime_images.yaml /opt/cygnusx/runtime_images.yaml
 USER root
 RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --profile analysis-qc \
@@ -37,5 +37,6 @@ RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --tool fastq-screen:fastq_screen
 RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
       --profile analysis-qc \
-      --manifest /opt/agent-tools.json
+      --manifest /opt/agent-tools.json \
+      --registry /opt/cygnusx/runtime_images.yaml
 USER mambauser

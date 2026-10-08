@@ -10,8 +10,8 @@ LABEL org.cygnusx.tools-manifest.digest="${TOOLS_MANIFEST_DIGEST}"
 USER mambauser
 RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked \
     micromamba install -y -n base -c bioconda -c conda-forge \
-      bowtie2 chromap macs2 samtools bedtools deeptools fastp multiqc \
-    && micromamba clean -a -y
+      bowtie2 chromap macs3 samtools bedtools deeptools fastp multiqc \
+    && ln -sf /opt/conda/bin/macs3 /opt/conda/bin/macs2
 
 RUN micromamba run -n base sh -c ' \
     for t in bowtie2 chromap macs2 samtools bedtools bamCoverage fastp multiqc; do \
@@ -21,6 +21,7 @@ RUN micromamba run -n base sh -c ' \
 
 COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
 COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+COPY data/ai/runtime_images.yaml /opt/cygnusx/runtime_images.yaml
 USER root
 RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --profile analysis-atacseq \
@@ -37,5 +38,6 @@ RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --tool multiqc:multiqc
 RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
       --profile analysis-atacseq \
-      --manifest /opt/agent-tools.json
+      --manifest /opt/agent-tools.json \
+      --registry /opt/cygnusx/runtime_images.yaml
 USER mambauser

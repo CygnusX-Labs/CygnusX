@@ -77,6 +77,7 @@ RUN micromamba run -n base python -c 'import scanpy, anndata, leidenalg, igraph;
 
 COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
 COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+COPY data/ai/runtime_images.yaml /opt/cygnusx/runtime_images.yaml
 USER root
 RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --profile analysis-scrna \
@@ -92,7 +93,8 @@ RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --r-library bioconductor-singlecellexperiment:SingleCellExperiment
 RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
       --profile analysis-scrna \
-      --manifest /opt/agent-tools.json
+      --manifest /opt/agent-tools.json \
+      --registry /opt/cygnusx/runtime_images.yaml
 USER mambauser
 # 注意：r-qs 因与 RcppParallel/Seurat 存在 ABI 冲突，暂不预装
 # 如需使用 .qs 格式，可在沙盒内手动安装：

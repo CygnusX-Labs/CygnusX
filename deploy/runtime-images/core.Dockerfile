@@ -63,7 +63,6 @@ RUN --mount=type=cache,target=/opt/conda/pkgs,uid=10001,gid=10001,sharing=locked
       r-base=4.4 \
       pip=24.3 \
       uv=0.5 \
-
       pandas=2.2.3 \
       numpy=2.1.3 \
       scipy=1.14.1 \
@@ -100,6 +99,7 @@ COPY --chown=10001:10001 deploy/studio/studio.omp.json /opt/cygnusx/themes/studi
 # 构建期清单必须由当前镜像实际探测生成，不能只复制注册表声明。
 COPY deploy/runtime-images/scripts/render_tools_manifest.py /opt/cygnusx/render_tools_manifest.py
 COPY deploy/runtime-images/scripts/validate_manifest.py /opt/cygnusx/validate_manifest.py
+COPY data/ai/runtime_images.yaml /opt/cygnusx/runtime_images.yaml
 RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --profile analysis-core \
       --image cygnusx-analysis:core-v0.0.2dev \
@@ -124,7 +124,8 @@ RUN micromamba run -n base python /opt/cygnusx/render_tools_manifest.py \
       --r-library r-limma:limma
 RUN micromamba run -n base python /opt/cygnusx/validate_manifest.py \
       --profile analysis-core \
-      --manifest /tmp/agent-tools.json
+      --manifest /tmp/agent-tools.json \
+      --registry /opt/cygnusx/runtime_images.yaml
 
 USER root
 RUN install -o 10001 -g 10001 -m 0644 /tmp/agent-tools.json /opt/agent-tools.json \

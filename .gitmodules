@@ -16,3 +16,6 @@
 [submodule "pipelines/tools"]
 	path = pipelines/tools
 	url = git@github.com:xsx123123/JZ_Tools.git
+[submodule "pipelines/Treasure-Seeking_Mouse"]
+	path = pipelines/Treasure-Seeking_Mouse
+	url = git@github.com:xsx123123/Treasure-Seeking_Mouse.git
