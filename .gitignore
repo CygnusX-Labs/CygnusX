@@ -96,6 +96,9 @@ volumes/
 tool_configs/terminal/docker/vendor/
 pipelines/*/report/docker/RNA/docker_build/vendor/
 
+# Rust 子模块构建产物（如 EBIDownload）
+pipelines/*/target/
+
 update_info/
 atac-seq/
 cloud/
