@@ -208,9 +208,12 @@ onMounted(async () => {
   await fetchNav()
   const docId = route.params.docId as string | undefined
   if (!docId && documentTree.value.length > 0) {
-    const firstLeaf = documentTree.value[0].children?.[0]
-    if (firstLeaf?.docId) {
-      router.replace({ name: 'knowledge-doc', params: { docId: firstLeaf.docId } })
+    // 默认打开「快速入门」（getting-started），未收录时兜底目录第一篇
+    const leaves = documentTree.value.flatMap((group) => group.children ?? [])
+    const targetDocId =
+      leaves.find((leaf) => leaf.docId === 'getting-started')?.docId ?? leaves[0]?.docId
+    if (targetDocId) {
+      router.replace({ name: 'knowledge-doc', params: { docId: targetDocId } })
     }
   }
 })

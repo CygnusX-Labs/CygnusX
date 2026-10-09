@@ -12,7 +12,7 @@ import {
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
   NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
-  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, PeopleOutline, BulbOutline,
+  TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, /* 团队协作室/部门下线后暂无用 PeopleOutline, */ BulbOutline,
   WarningOutline, BriefcaseOutline, ServerOutline, ArchiveOutline,
 } from '@vicons/ionicons5'
 import CookieBalanceBadge from '@/components/CookieBalanceBadge.vue'
@@ -274,6 +274,7 @@ const mainNavItems = computed<NavItem[]>(() => [
       { key: 'atac-seq', label: 'ATAC-seq 分析', to: '/flows?type=atac-seq', icon: FitnessOutline },
     ],
   },
+  { key: 'treasure-mouse', label: '寻宝鼠', to: '/treasure-mouse', icon: SearchOutline },
   { key: 'files', label: '数据管理', to: '/files', icon: CloudUploadOutline },
   { key: 'database', label: '数据库', to: '/database', icon: LayersOutline },
   { key: 'downloads', label: '数据下载', to: '/downloads', icon: DownloadOutline },
@@ -283,7 +284,8 @@ const mainNavItems = computed<NavItem[]>(() => [
   { key: 'projects', label: '项目管理', to: '/projects', icon: BriefcaseOutline },
   { key: 'ai', label: 'AI 助手', to: '/ai', icon: ChatbubblesOutline },
   { key: 'studio', label: 'AI 工作台', to: '/studio', icon: DesktopOutline },
-  { key: 'agent-teams-room', label: '团队协作室', to: '/agent-teams/room', icon: PeopleOutline },
+  // 团队协作室入口暂时下线（后端保留），分支验证无误后再恢复
+  // { key: 'agent-teams-room', label: '团队协作室', to: '/agent-teams/room', icon: PeopleOutline },
   // 生物信息部门入口暂时下线（后端保留），分支验证无误后再恢复
   // { key: 'department', label: '生物信息部门', to: '/department', icon: PeopleOutline },
   { key: 'tools', label: '生信工具箱', to: '/tools', icon: ConstructOutline },
@@ -327,8 +329,8 @@ function isActive(item: NavItem): boolean {
     if (item.key === 'studio') return route.path === '/studio' || route.path.startsWith('/studio/')
     // 项目管理：详情页也保持高亮
     if (item.key === 'projects') return route.path === '/projects' || route.path.startsWith('/projects/')
-    // 团队协作室：Case 详情页也保持高亮
-    if (item.key === 'agent-teams-room') return route.path.startsWith('/agent-teams')
+    // 团队协作室：Case 详情页也保持高亮（入口暂时下线，恢复菜单时一并恢复）
+    // if (item.key === 'agent-teams-room') return route.path.startsWith('/agent-teams')
     // 数据库：新旧入口和详情页都保持高亮
     if (item.key === 'database') {
       return route.path === '/database'

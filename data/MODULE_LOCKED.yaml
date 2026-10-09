@@ -53,6 +53,14 @@ modules:
     default_locked: false
     ai: false
 
+  - key: treasure-mouse
+    name: 寻宝鼠
+    route_prefix: /treasure-mouse
+    api_prefix: []
+    lockable: true
+    default_locked: false
+    ai: false
+
   - key: files
     name: 数据管理
     route_prefix: /files

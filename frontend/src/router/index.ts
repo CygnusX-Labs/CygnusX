@@ -71,6 +71,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '提交任务', requiresAuth: true }
       },
       {
+        path: 'treasure-mouse',
+        name: 'treasure-mouse',
+        component: () => import('@/views/TreasureMouseView.vue'),
+        meta: { title: '寻宝鼠', requiresAuth: true, fullscreen: true }
+      },
+      {
         path: 'tasks',
         name: 'tasks',
         component: () => import('@/views/TasksView.vue'),
@@ -136,12 +142,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AgentCapabilitiesView.vue'),
         meta: { title: '我的 Agent 能力', requiresAuth: true }
       },
-      {
-        path: 'agent-teams/room',
-        name: 'agent-teams-room',
-        component: () => import('@/views/AgentTeamsRoomView.vue'),
-        meta: { title: '团队协作室', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
-      },
+      // 团队协作室页面暂时下线（后端保留），分支验证无误后再恢复
+      // {
+      //   path: 'agent-teams/room',
+      //   name: 'agent-teams-room',
+      //   component: () => import('@/views/AgentTeamsRoomView.vue'),
+      //   meta: { title: '团队协作室', requiresAuth: true, fullscreen: true, autoCollapseSidebar: true }
+      // },
       // 生物信息部门页面暂时下线（后端保留），分支验证无误后再恢复
       // {
       //   path: 'department',
@@ -149,12 +156,13 @@ const routes: RouteRecordRaw[] = [
       //   component: () => import('@/views/DepartmentView.vue'),
       //   meta: { title: '生物信息部门', requiresAuth: true }
       // },
-      {
-        path: 'agent-teams/cases/:caseId',
-        name: 'agent-teams-case',
-        component: () => import('@/views/AgentTeamsCaseView.vue'),
-        meta: { title: '协作案例', requiresAuth: true }
-      },
+      // 协作案例详情页随协作室一并暂时下线（后端保留），分支验证无误后再恢复
+      // {
+      //   path: 'agent-teams/cases/:caseId',
+      //   name: 'agent-teams-case',
+      //   component: () => import('@/views/AgentTeamsCaseView.vue'),
+      //   meta: { title: '协作案例', requiresAuth: true }
+      // },
       {
         path: 'studio/:sessionId?',
         name: 'studio',

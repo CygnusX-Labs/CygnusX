@@ -399,9 +399,70 @@ services:
       timeout: 10s
       retries: 5
 
+  # ===== 寻宝鼠：组学数据与文献智能发现模块 =====
+  # 通过平台 Nginx 暴露为 /treasure-mouse/；chat 仅加入内部网络，不发布宿主端口。
+  treasure-mouse-chat:
+    build:
+      context: ../../pipelines/Treasure-Seeking_Mouse
+      dockerfile: deploy/Dockerfile
+      target: chat
+    image: ${TREASURE_MOUSE_CHAT_IMAGE:-cygnusx-treasure-mouse-chat:1ea2f79}
+    container_name: cygnusx-treasure-mouse-chat
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - path: ../../pipelines/Treasure-Seeking_Mouse/server/.env
+        required: false
+    environment:
+      CHAT_API_PORT: "8787"
+      CHAT_API_HOST: "0.0.0.0"
+      NODE_ENV: production
+      STATS_FILE: /app/data/stats.json
+      DATA_DIR: /app/data
+      # 复用平台现有 DeepSeek 凭证；专用变量可在部署时覆盖默认映射。
+      LLM_API_KEY: ${TREASURE_MOUSE_LLM_API_KEY:-${DP_API_KEY:-}}
+      LLM_BASE_URL: ${TREASURE_MOUSE_LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_MODEL: ${TREASURE_MOUSE_LLM_MODEL:-deepseek-v4-flash}
+    volumes:
+      - treasure_mouse_data:/app/data
+    expose:
+      - "8787"
+    networks:
+      app_net:
+        aliases:
+          - treasure-mouse-chat
+          - chat
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8787/stats >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  treasure-mouse-web:
+    build:
+      context: ../../pipelines/Treasure-Seeking_Mouse
+      dockerfile: deploy/Dockerfile
+      target: web
+      args:
+        VITE_CHAT_API: /treasure-mouse/chat-api
+        VITE_BASE_PATH: /treasure-mouse/
+    image: ${TREASURE_MOUSE_WEB_IMAGE:-cygnusx-treasure-mouse-web:1ea2f79}
+    container_name: cygnusx-treasure-mouse-web
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      treasure-mouse-chat:
+        condition: service_healthy
+    expose:
+      - "80"
+    networks:
+      - app_net
+
 volumes:
   cygnusx_embed:
     external: true
+  treasure_mouse_data:
 
 networks:
   app_net:
