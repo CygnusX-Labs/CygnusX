@@ -6,6 +6,10 @@
 实现、导入、权限过滤、向量/关键词召回以及 PDF/图片混合索引的完整说明见
 [`knowledge-base-implementation.md`](knowledge-base-implementation.md)。
 
+运行时采用“一份数据、两个消费方”：实验室知识库页面读取已发布且可展示的文档，AI
+`knowledge_search` 读取已发布且允许检索的文档。两者共享 `knowledge_bases`、`kb_documents`
+和版本表，但分别受 `show_in_lab`、`ai_searchable` 与 `is_enabled` 控制。
+
 ## 目录约定
 
 - 单篇、无附件的知识文档可以直接保存为 `docs/knowledge/<document>.md`。
@@ -13,7 +17,7 @@
   `docs/knowledge/<knowledge-base-id>/` 独立目录。
 - 领域知识库的入口 Markdown、附件和该知识库专属资源应保存在同一个领域目录内。
 - 需要显示在实验室知识库导航中的入口文档，必须登记到 `docs/knowledge/meta.yaml`。
-- 需要进入数据库向量/全文索引的知识库，应由对应导入脚本从 `docs/knowledge/` 读取，不应引用
+- 需要进入数据库索引的知识库，应由对应导入或同步脚本从 `docs/knowledge/` 读取，不应引用
   日期版本目录。
 
 ## 当前领域知识库
@@ -26,9 +30,10 @@
 | 测序与生信质量控制 | `docs/knowledge/qc/README.md` | `scripts/import_qc_knowledge.py` |
 | 云计算与平台运维 | `docs/knowledge/cloud/README.md` | `scripts/import_cloud_knowledge.py` |
 
-管理后台的知识库列表来自数据库表 `knowledge_bases`，不会直接扫描目录。内置的 `qc` 与 `cloud`
-资源会在管理员打开知识库管理页时由 `KnowledgeBaseService` 幂等补齐，因此即使尚未导入正文也会先
-显示对应知识库；正文篇数在执行各自导入脚本后更新。
+管理后台的知识库资源和文档归属以数据库为准，不应把目录文件数量当作页面展示数量。内置的 `qc`
+与 `cloud` 资源会由 `KnowledgeBaseService` 幂等补齐；正文需执行对应导入脚本后才会进入文档、分块
+和检索索引。页面只展示所属知识库同时满足 `show_in_lab=true` 与 `is_enabled=true` 的已发布文档。
+AI 检索只使用 `ai_searchable=true` 且启用的知识库，并按项目范围过滤。
 
 ## 平台帮助知识
 
@@ -45,8 +50,8 @@
 对应的用户帮助文档，再执行同步。
 
 `wiki/` 是用户、管理员和开发者共用的平台说明，已作为 `meta.yaml` 的 `collections` 集合自动
-同步：脚本会索引其中所有 Markdown 页面，并跳过只提供侧边栏导航的 `wiki/_Sidebar.md`。因此
-更新 Wiki 后无需复制 Markdown；重新运行同步脚本即可将最新正文写入数据库和检索索引。
+同步：脚本会索引其中所有 Markdown 页面，并跳过只提供侧边栏导航的 `wiki/_Sidebar.md`。更新 Wiki
+后无需复制 Markdown；重新运行同步脚本即可将最新正文写入数据库，并在发布后更新检索索引。
 
 本地同步示例：
 
@@ -72,6 +77,10 @@ docs/knowledge/example-kb/
 2. Markdown 内附件路径在领域目录内可解析；
 3. 导入脚本、测试、Agent Prompt 和 README 不再引用旧目录；
 4. `/docs-static/knowledge/...` 静态资源路径和 AI 检索结果可正常访问。
+
+检索由 `VectorRetrievalService` 执行权限感知的 pgvector 向量召回和关键词重排；向量服务不可用时
+回退关键词检索。返回结果包含 `citation_id`、摘录、章节路径和文档链接，使用检索结果回答时应保留
+引用并回到原文核对关键结论。
 
 QC 目录包含多篇 Markdown 和大量附件，应使用专用导入脚本：
 
