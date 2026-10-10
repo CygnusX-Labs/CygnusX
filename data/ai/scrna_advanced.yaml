@@ -4,7 +4,8 @@ description: 负责细胞类型注释验证、pseudobulk 差异表达、通路�
 avatar: "🔎"
 color: "#16a085"
 category: analysis
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/scrna_team/advanced.md
 welcome_message: "你好！我可以协助细胞注释、差异分析、轨迹、细胞通讯和结果可视化。"
 temperature: 0.2

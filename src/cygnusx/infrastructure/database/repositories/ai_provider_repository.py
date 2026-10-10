@@ -37,6 +37,14 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
+    async def get_by_name(self, name: str, *, active_only: bool = False) -> AIProviderConfig | None:
+        query = select(AIProviderConfigModel).where(AIProviderConfigModel.name == name)
+        if active_only:
+            query = query.where(AIProviderConfigModel.is_active.is_(True))
+        result = await self._session.execute(query.limit(1))
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None
+
     async def list_all(self, active_only: bool = False) -> list[AIProviderConfig]:
         query = select(AIProviderConfigModel)
         if active_only:
@@ -100,6 +108,12 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             output_cache_price=model.output_cache_price,
             is_active=model.is_active,
             is_default=model.is_default,
+            tier=model.tier,
+            cost_per_1m_in=model.cost_per_1m_in,
+            cost_per_1m_out=model.cost_per_1m_out,
+            latency_budget_ms=model.latency_budget_ms,
+            vendor=model.vendor,
+            weight=model.weight,
             extra_params=model.extra_params or {},
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -125,6 +139,12 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
             output_cache_price=config.output_cache_price,
             is_active=config.is_active,
             is_default=config.is_default,
+            tier=config.tier,
+            cost_per_1m_in=config.cost_per_1m_in,
+            cost_per_1m_out=config.cost_per_1m_out,
+            latency_budget_ms=config.latency_budget_ms,
+            vendor=config.vendor,
+            weight=config.weight,
             extra_params=config.extra_params,
         )
 
@@ -145,6 +165,12 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
         model.output_cache_price = config.output_cache_price
         model.is_active = config.is_active
         model.is_default = config.is_default
+        model.tier = config.tier
+        model.cost_per_1m_in = config.cost_per_1m_in
+        model.cost_per_1m_out = config.cost_per_1m_out
+        model.latency_budget_ms = config.latency_budget_ms
+        model.vendor = config.vendor
+        model.weight = config.weight
         model.extra_params = config.extra_params
         # api_key 只在非空且不是 mask 占位时更新
         if config.api_key and config.api_key != "********":

@@ -362,6 +362,7 @@ class AgentTeamsCapabilityRegistry:
                         agent_id, features.get("domain")
                     ),
                     "persona": persona_routing_summary(features),
+                    "tool_count": len(config.get("mcp_tools") or []),
                     "avatar": str(config.get("avatar") or "💬"),
                     "color": str(config.get("color") or "#64748b"),
                 }

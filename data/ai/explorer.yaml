@@ -6,6 +6,7 @@ avatar: "\U0001F50D"
 color: "#0ea5e9"
 category: exploration
 model: deepseek-v4-flash
+model_tier: light
 prompt_file: prompts/explorer.md
 welcome_message: "你好！我是代码库侦察员，可以先帮你梳理项目结构、关键文件和依赖关系。"
 temperature: 0.2

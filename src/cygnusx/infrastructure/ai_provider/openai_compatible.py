@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from cygnusx.application.services.model_health_monitor import HealthEventKind, ModelHealthMonitor
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
@@ -789,14 +790,20 @@ class ProviderManager:
         **kwargs: Any,
     ) -> AsyncIterator[ChatChunk]:
         """统一入口：流式聊天（带 Trace/Log/Metrics 埋点）"""
+        is_probe = bool(kwargs.pop("_is_probe", False))
         provider = self.get_or_create(config)
         tracer = get_tracer("cygnusx.ai")
         with tracer.start_as_current_span(
             "ai.chat",
-            attributes={"ai.provider": provider.name, "ai.model": provider.model},
+            attributes={
+                "ai.provider": provider.name,
+                "ai.model": provider.model,
+                "ai.is_probe": is_probe,
+            },
         ) as span:
             start = time.perf_counter()
             status = "success"
+            health_kind = HealthEventKind.SUCCESS
             usage: dict[str, Any] | None = None
             finish_reason: str | None = None
             try:
@@ -806,9 +813,20 @@ class ProviderManager:
                         finish_reason = chunk.metadata.get("finish_reason") or finish_reason
                     elif chunk.type == "error":
                         status = "error"
+                        code = str(chunk.metadata.get("status_code") or "")
+                        health_kind = (
+                            HealthEventKind.THROTTLED
+                            if code == "429"
+                            else HealthEventKind.SERVER_ERROR
+                        )
                     yield chunk
             except Exception as exc:  # noqa: BLE001
                 status = "error"
+                health_kind = (
+                    HealthEventKind.TIMEOUT
+                    if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError))
+                    else HealthEventKind.SERVER_ERROR
+                )
                 span.record_exception(exc)
                 raise
             finally:
@@ -821,7 +839,23 @@ class ProviderManager:
                     span.set_attribute("ai.prompt_tokens", usage.get("prompt_tokens", 0))
                     span.set_attribute("ai.completion_tokens", usage.get("completion_tokens", 0))
                     span.set_attribute("ai.total_tokens", usage.get("total_tokens", 0))
-                record_ai_call_metrics(provider.name, provider.model, status, duration_ms, usage)
+                if not is_probe:
+                    record_ai_call_metrics(provider.name, provider.model, status, duration_ms, usage)
+                    model_health_monitor.record(
+                        provider.name,
+                        health_kind,
+                        duration_ms,
+                        vendor=getattr(config, "vendor", None),
+                        latency_budget_ms=getattr(config, "latency_budget_ms", None),
+                    )
+                else:
+                    model_health_monitor.record_probe(
+                        provider.name,
+                        health_kind,
+                        duration_ms,
+                        vendor=getattr(config, "vendor", None),
+                        latency_budget_ms=getattr(config, "latency_budget_ms", None),
+                    )
                 logger.bind(
                     event="ai.chat",
                     provider=provider.name,
@@ -830,8 +864,16 @@ class ProviderManager:
                     duration_ms=round(duration_ms, 2),
                     finish_reason=finish_reason,
                     usage=usage,
+                    is_probe=is_probe,
                 ).info("ai.chat completed")
 
 
 # 全局 Provider 管理器实例
 provider_manager = ProviderManager()
+_health_settings = get_settings()
+model_health_monitor = ModelHealthMonitor(
+    window_seconds=_health_settings.model_health_window_seconds,
+    half_life_seconds=_health_settings.model_health_half_life_seconds,
+    error_rate_threshold=_health_settings.model_health_error_rate_threshold,
+    throttle_rate_threshold=_health_settings.model_health_throttle_rate_threshold,
+)

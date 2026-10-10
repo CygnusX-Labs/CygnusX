@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
-import anyio
 import yaml
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,7 +57,7 @@ class AIProviderYamlLoader:
         settings = get_settings()
         path = settings.ai_provider_config_yaml
 
-        if not await anyio.Path(path).exists():
+        if not Path(path).exists():  # noqa: ASYNC240 - tiny local config check avoids AnyIO worker leakage
             logger.debug(f"AI Provider YAML 不存在，跳过同步: {path}")
             return 0
 
@@ -78,6 +77,11 @@ class AIProviderYamlLoader:
         existing = {c.name: c for c in await self._repo.list_all()}
         synced = 0
         default_name: str | None = None
+        default_count = sum(bool(item.get("is_default", False)) for item in providers)
+        if default_count == 0:
+            raise ValueError("AI Provider YAML 必须声明恰好一个 is_default: true Provider")
+        if default_count > 1:
+            logger.warning("AI Provider YAML 声明了 {} 个默认 Provider，将使用第一个", default_count)
 
         for item in providers:
             name = item.get("name", "")
@@ -87,7 +91,7 @@ class AIProviderYamlLoader:
 
             is_default = bool(item.get("is_default", False))
             if is_default:
-                default_name = name
+                default_name = default_name or name
 
             provider_type = ProviderType(
                 item.get("provider_type", ProviderType.OPENAI_COMPATIBLE.value)
@@ -96,6 +100,24 @@ class AIProviderYamlLoader:
             base = existing.get(name)
             # 统一构造聚合根（已有则保留 id 以触发 update，否则新建），
             # 再经 repo.save 完成实体→ORM 模型转换并持久化。
+            if "tier" not in item:
+                logger.warning("Provider %s 未声明 tier，按 light 处理并列入待清理清单", name)
+            tier = str(item.get("tier", getattr(base, "tier", "light")) or "light").lower()
+            if tier not in {"light", "heavy"}:
+                logger.warning("Provider %s tier=%s 无效，按 light 处理", name, tier)
+                tier = "light"
+            yaml_input_price = _opt_float(item.get("cost_per_1m_in", getattr(base, "cost_per_1m_in", None)))
+            yaml_output_price = _opt_float(item.get("cost_per_1m_out", getattr(base, "cost_per_1m_out", None)))
+            if base is not None and (
+                base.cost_per_1m_in != yaml_input_price
+                or base.cost_per_1m_out != yaml_output_price
+            ):
+                logger.warning(
+                    "Provider %s YAML/DB 成本字段冲突，运行时以 DB 管理端值为准",
+                    name,
+                )
+                yaml_input_price = base.cost_per_1m_in
+                yaml_output_price = base.cost_per_1m_out
             config = AIProviderConfig(
                 id=base.id if base else uuid4(),
                 name=name,
@@ -113,24 +135,26 @@ class AIProviderYamlLoader:
                 input_cache_price=_opt_float(item.get("input_cache_price", base.input_cache_price if base else None)),
                 output_cache_price=_opt_float(item.get("output_cache_price", base.output_cache_price if base else None)),
                 is_active=bool(item.get("is_active", base.is_active if base else True)),
-                is_default=is_default,
+                # 部分唯一索引要求同步期间不能出现两个 true；循环结束后统一设置。
+                is_default=False,
+                tier=tier,
+                cost_per_1m_in=yaml_input_price,
+                cost_per_1m_out=yaml_output_price,
+                latency_budget_ms=item.get("latency_budget_ms", getattr(base, "latency_budget_ms", None)),
+                vendor=item.get("vendor", getattr(base, "vendor", None)),
+                weight=int(item.get("weight", getattr(base, "weight", 100)) or 100),
                 extra_params=item.get("extra_params", base.extra_params if base else {}),
             )
             await self._repo.save(config)
             synced += 1
             logger.info(f"已同步 AI Provider: {name}")
 
-        # 默认配置管理：YAML 声明优先；否则在无任何默认时取首个 active 兜底。
+        # 默认配置管理：只接受 YAML 的显式 is_default 声明。
         configs = await self._repo.list_all()
         if default_name:
             target = next((c for c in configs if c.name == default_name), None)
             if target:
                 await self._repo.set_default(target.id)
-        elif configs and not any(c.is_default for c in configs):
-            active = [c for c in configs if c.is_active]
-            if active:
-                await self._repo.set_default(active[0].id)
-                logger.info(f"自动将 {active[0].name} 设为默认 AI Provider")
 
         # YAML 为单一事实源：YAML 里未声明的 provider 一律停用（不物理删除，避免
         # 会话/Agent 外键级联问题）。被引用的保留行便于历史回溯，不再出现在可选模型。

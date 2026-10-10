@@ -195,6 +195,43 @@ async def test_route_pure_json(service: ChatService, router_ctx: Any, monkeypatc
 
 
 @pytest.mark.unit
+async def test_router_classifier_uses_fixed_light_provider(
+    service: ChatService, router_ctx: Any, monkeypatch
+):
+    class _ProviderRepo:
+        def __init__(self, _db: Any) -> None:
+            pass
+
+        async def get_by_name(self, name: str, *, active_only: bool = False) -> Any:
+            assert name == "deepseek-v4-flash"
+            assert active_only is True
+            return SimpleNamespace(name=name, is_active=True)
+
+        async def get_default(self) -> Any:
+            return SimpleNamespace(name="fallback", is_active=True)
+
+    seen: list[str] = []
+
+    async def _stream(**kwargs: Any):
+        seen.append(kwargs["config"].name)
+        yield SimpleNamespace(
+            type="text",
+            content=json.dumps({"agent_id": "agent-general", "complexity": "low"}),
+            metadata={},
+        )
+        yield SimpleNamespace(type="done", content="", metadata={})
+
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.database.repositories.ai_provider_repository"
+        ".SqlAlchemyAIProviderConfigRepository",
+        _ProviderRepo,
+    )
+    monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", _stream)
+    _ctx, info = await service._route_to_agent(router_ctx, "你好")
+    assert seen == ["deepseek-v4-flash"]
+
+
+@pytest.mark.unit
 async def test_route_normalizes_legacy_delivery_case_to_case(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
@@ -289,7 +326,7 @@ async def test_route_unknown_agent_falls_back_general(
 
 
 @pytest.mark.unit
-async def test_route_model_error_falls_back_none(
+async def test_route_model_error_degrades_to_general_agent(
     service: ChatService, router_ctx: Any, monkeypatch
 ):
     async def _boom(**kwargs: Any):
@@ -298,4 +335,8 @@ async def test_route_model_error_falls_back_none(
 
     monkeypatch.setattr(chat_service_module.provider_manager, "chat_stream", _boom)
     ctx, info = await service._route_to_agent(router_ctx, "你好")
-    assert ctx is None and info is None
+    assert ctx is not None and ctx.agent_id == "agent-general"
+    assert info is not None
+    assert info["agent_id"] == "agent-general"
+    assert info["degraded"] is True
+    assert info["degrade_reason"] == "router_classification_failed"

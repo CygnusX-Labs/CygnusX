@@ -54,3 +54,8 @@ async def alert_history(
 ) -> list[dict]:
     """近期触发的告警（倒序）。"""
     return await service.alert_history(limit=limit)
+
+
+@router.get("/routing/health", summary="动态路由 Provider 健康快照")
+async def routing_health(_admin: AdminRequired, service: ServiceDep) -> list[dict]:
+    return service.model_health_status()

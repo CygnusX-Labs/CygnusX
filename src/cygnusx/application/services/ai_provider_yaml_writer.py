@@ -44,6 +44,12 @@ def _provider_to_yaml_dict(config: AIProviderConfig) -> dict[str, Any]:
         "output_cache_price": config.output_cache_price,
         "is_default": config.is_default,
         "is_active": config.is_active,
+        "tier": config.tier,
+        "cost_per_1m_in": config.cost_per_1m_in,
+        "cost_per_1m_out": config.cost_per_1m_out,
+        "latency_budget_ms": config.latency_budget_ms,
+        "vendor": config.vendor,
+        "weight": config.weight,
         "extra_params": config.extra_params or {},
     }
 

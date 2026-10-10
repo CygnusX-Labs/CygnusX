@@ -6,6 +6,7 @@ color: "#0ea5e9"
 category: development
 # 技能包生成是结构化输出任务，用低成本模型；复杂领域判断交给通用助手或代码助手。
 model: deepseek-v4-flash
+model_tier: light
 prompt_file: prompts/skill_builder.md
 welcome_message: "你好！请给我一段对话、代码、执行记录或任务描述，我会把它沉淀成一个符合 OSDP 的 Skill 候选包，写入 /workspace/skill-candidates/{skill_id}/。我不会自动挂载它，生成后需要管理员确认才能晋升。"
 temperature: 0.3

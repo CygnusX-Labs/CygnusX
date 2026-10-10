@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     # 单 Runtime 收敛逃生舱：默认所有非 Studio/非 MAS 普通聊天走 LangGraph 状态图；
     # 打开后全部回退手写循环（仅用于 LangGraph 运行时故障时的紧急回滚）。
     chat_force_legacy_runtime: bool = False
+    dynamic_model_routing_enabled: bool = False
+    dynamic_routing_max_cascades: int = 2
+    dynamic_routing_max_upgrades: int = 1
+    dynamic_routing_quality_degrade_enabled: bool = True
+    model_health_window_seconds: int = 300
+    model_health_half_life_seconds: int = 600
+    model_health_error_rate_threshold: float = 0.2
+    model_health_throttle_rate_threshold: float = 0.3
     # 事件顺序异常默认仅告警，避免 SSE 已开始后因观测校验中断用户回复；
     # 需要严格阻断时显式设置 CHAT_EVENT_SEQUENCE_ENFORCEMENT=raise。
     chat_event_sequence_enforcement: Literal["off", "warn", "raise"] = "warn"
@@ -184,7 +192,7 @@ class Settings(BaseSettings):
     memory_v2_enabled: bool = False
     memory_fact_time_decay_lambda: float = 0.02
     memory_settle_min_new_messages: int = 4
-    memory_extraction_model: str = "qdoubao-seed-evolving"
+    memory_extraction_model: str = "deepseek-v4-flash"
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
     overdrive_authoritative_mode: Literal["constraint", "override", "off"] = "constraint"
@@ -499,7 +507,7 @@ class Settings(BaseSettings):
     mcp_builder_requires_review: bool = True  # 发布是否需要管理员审核
     mcp_builder_max_per_user: int = 5  # 每用户最大实验 MCP 数量
     mcp_builder_default_ttl_hours: int = 24  # 实验 MCP 默认 TTL
-    mcp_builder_default_model: str = "qdoubao-seed-evolving"  # 代码生成默认模型（与平台 agent 标准一致）
+    mcp_builder_default_model: str = "qwen3.8-max"  # 代码生成默认模型
 
     # ===== 限流（全局每 IP 滑动窗口，Redis 不可用时降级放行）=====
     rate_limit_enabled: bool = True

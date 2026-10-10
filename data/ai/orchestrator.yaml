@@ -5,7 +5,8 @@ description: 将用户确认的复合分析意图转换为受限、可审计的 
 avatar: "🧭"
 color: "#7c3aed"
 category: orchestration
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/orchestrator.md
 welcome_message: "我会先生成可审查的分析计划；未经你的确认不会启动任务。"
 temperature: 0.1

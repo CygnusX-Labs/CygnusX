@@ -169,7 +169,128 @@ class AiMetricsService:
                 "display": f"今日 {today_cost:.1f}🥫 / 均值 {avg7_cost:.1f}🥫",
             },
         ]
+        # Dynamic routing health rules are evaluated from the in-process monitor.
+        # They remain visible even when no provider has traffic yet, with a false
+        # breaching value rather than inventing a healthy snapshot.
+        from cygnusx.infrastructure.ai_provider.openai_compatible import model_health_monitor
+
+        snapshots = [
+            snapshot
+            for name in model_health_monitor.provider_names()
+            if (snapshot := model_health_monitor.snapshot(name)) is not None
+        ]
+        now = datetime.now().astimezone()
+        unhealthy_long = [
+            item
+            for item in snapshots
+            if not item.healthy
+            and item.last_event_at is not None
+            and (now - item.last_event_at).total_seconds() >= 300
+        ]
+        classifier_fused = any(
+            item.consecutive_failures >= 1 and item.error_rate > 0.5 for item in snapshots
+        )
+        active_probes = [item for item in snapshots if item.source == "active"]
+        probes_all_failed = bool(active_probes) and all(not item.healthy for item in active_probes)
+        probes_all_failed = probes_all_failed and model_health_monitor.probe_backoff_active
+        latency_budget_breach = any(
+            item.latency_budget_breach_windows >= 3 for item in snapshots
+        )
+        rules.extend(
+            [
+                {
+                    "rule": "routing_provider_unhealthy",
+                    "label": "Provider 健康异常持续超过 5 分钟",
+                    "value": float(len(unhealthy_long)),
+                    "threshold": 1.0,
+                    "breaching": bool(unhealthy_long),
+                    "display": f"{len(unhealthy_long)} 个 Provider",
+                },
+                {
+                    "rule": "routing_classifier_circuit",
+                    "label": "路由分类器熔断",
+                    "value": 1.0 if classifier_fused else 0.0,
+                    "threshold": 1.0,
+                    "breaching": classifier_fused,
+                    "display": "已熔断" if classifier_fused else "正常",
+                },
+                {
+                    "rule": "routing_probe_all_failed",
+                    "label": "主动探测全部失败",
+                    "value": float(len(active_probes)),
+                    "threshold": 1.0,
+                    "breaching": probes_all_failed,
+                    "display": f"{len(active_probes)} 个探测结果",
+                },
+                {
+                    "rule": "routing_latency_budget",
+                    "label": "Provider p95 延迟连续超过预算",
+                    "value": 1.0 if latency_budget_breach else 0.0,
+                    "threshold": 1.0,
+                    "breaching": latency_budget_breach,
+                    "display": "超过预算" if latency_budget_breach else "正常",
+                },
+            ]
+        )
         return {"enabled": s.ai_alert_enabled, "rules": rules}
+
+    async def routing_decision_summary(self, days: int = 7) -> list[dict]:
+        """Aggregate routing decisions by day, reason, and selected provider."""
+        from cygnusx.infrastructure.database.models.model_routing import ModelRoutingDecisionModel
+
+        since = datetime.now() - timedelta(days=days)
+        m = ModelRoutingDecisionModel
+        day = func.date(m.created_at).label("day")
+        stmt = (
+            select(
+                day,
+                m.decision_reason,
+                m.chosen_provider,
+                func.count().label("decisions"),
+                func.count().filter(m.degraded.is_(True)).label("degraded"),
+            )
+            .where(m.created_at >= since)
+            .group_by(day, m.decision_reason, m.chosen_provider)
+            .order_by(day, m.decision_reason, m.chosen_provider)
+        )
+        rows = (await self._db.execute(stmt)).all()
+        return [
+            {
+                "date": str(row.day),
+                "decision_reason": row.decision_reason,
+                "chosen_provider": row.chosen_provider,
+                "decisions": int(row.decisions or 0),
+                "degraded": int(row.degraded or 0),
+            }
+            for row in rows
+        ]
+
+    def model_health_status(self, provider_names: list[str] | None = None) -> list[dict]:
+        """Expose the in-process routing health view to the admin metrics surface."""
+        from cygnusx.infrastructure.ai_provider.openai_compatible import model_health_monitor
+
+        names = provider_names or model_health_monitor.provider_names()
+        result: list[dict] = []
+        for name in names:
+            snapshot = model_health_monitor.snapshot(name)
+            if snapshot is None:
+                result.append({"provider": name, "healthy": True, "source": "unknown"})
+                continue
+            result.append(
+                {
+                    "provider": snapshot.provider_name,
+                    "healthy": snapshot.healthy,
+                    "error_rate": snapshot.error_rate,
+                    "p95_ms": snapshot.p95_ms,
+                    "throttle_rate": snapshot.throttle_rate,
+                    "consecutive_failures": snapshot.consecutive_failures,
+                    "last_event_at": snapshot.last_event_at,
+                    "last_probe_at": snapshot.last_probe_at,
+                    "source": snapshot.source,
+                    "vendor": snapshot.vendor,
+                }
+            )
+        return result
 
     async def alert_history(self, limit: int = 50) -> list[dict]:
         """近期告警历史（倒序）。"""

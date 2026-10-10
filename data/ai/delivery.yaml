@@ -8,6 +8,7 @@ color: "#2563eb"
 category: analysis
 # 交付清单整理是结构化汇总任务，用低成本模型。
 model: deepseek-v4-flash
+model_tier: light
 prompt_file: prompts/delivery.md
 welcome_message: "你好！我是交付报告员。请提供已验证的产物、质量结论和运行信息；我会整理可复核的交付清单与风险说明。"
 temperature: 0.2

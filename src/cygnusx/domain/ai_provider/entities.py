@@ -33,6 +33,12 @@ class AIProviderConfig(BaseModel):
     output_cache_price: float | None = None
     is_active: bool = True
     is_default: bool = False
+    tier: str = "light"
+    cost_per_1m_in: float | None = None
+    cost_per_1m_out: float | None = None
+    latency_budget_ms: int | None = None
+    vendor: str | None = None
+    weight: int = 100
     extra_params: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

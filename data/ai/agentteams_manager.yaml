@@ -13,7 +13,8 @@ color: "#4f8ef7"
 category: general
 # Manager 的会诊回复需要稳定的结构化输出（JSON 信封 / ask_user 澄清），
 # 沿用平台标准重推理模型。
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/agentteams_manager.md
 welcome_message: "你好，我是生物信息部门经理。描述你的分析目标，我来组织专家团队推进。"
 temperature: 0.4

@@ -128,6 +128,7 @@ from cygnusx.application.services.mas_plan_adapter import (
     MAS_PLAN_PREVIEW_TOOL_SCHEMA,
     MASPlanPreviewAdapter,
 )
+from cygnusx.application.services.model_health_monitor import HealthEventKind
 from cygnusx.application.services.network_request_tool import (
     NETWORK_REQUEST_TOOL_NAME,
     NETWORK_REQUEST_TOOL_SCHEMA,
@@ -227,6 +228,7 @@ from cygnusx.domain.skill.services import (
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
     merge_token_usage,
+    model_health_monitor,
     provider_manager,
 )
 from cygnusx.infrastructure.config.prompt_loader import get_prompt
@@ -343,6 +345,7 @@ MULTI_AGENT_TOOL_NAMES = frozenset({PARALLEL_SUBAGENTS_TOOL_NAME, "create_agentt
 # DeepSeek V4 可能在关闭深度思考后仍产生 reasoning token；路由 JSON 必须给足输出预算，
 # 否则模型会在 JSON 之前耗尽预算并触发通用助手兜底。
 ROUTER_MAX_TOKENS = 10000
+ROUTER_CLASSIFIER_PROVIDER_NAME = "deepseek-v4-flash"
 ROUTER_SYSTEM_PROMPT = """你是星尘 AI，平台唯一的任务分派入口。根据用户消息、对话上下文和下面的
 运行时候选专家目录，选择一个最合适的专家处理本次请求。
 
@@ -419,6 +422,7 @@ ROUTER_CATALOG_SUMMARY_KEYS = (
     "capability_scope",
     "routing_notes",
     "persona",
+    "tool_count",
 )
 
 
@@ -645,6 +649,7 @@ class ChatService(
         user_text: str,
         user_id: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
     ) -> tuple[AgentContext | None, dict[str, Any] | None]:
         """智能路由：用路由器 Agent 的模型做意图分派，返回目标 Agent 上下文与路由信息。
 
@@ -676,6 +681,8 @@ class ChatService(
             await warn_custom_agents_missing_from_registry(self._db, valid_ids)
             target_id = ""
             reason = ""
+            degraded = False
+            degrade_reason: str | None = None
             expect_handoff = False
             consult_agent_ids: list[str] = []
             flow_catalog = json.dumps(
@@ -716,18 +723,52 @@ class ChatService(
                     "附件是已给定输入；具体内容与字段由目标 Agent 后续核验。]"
                 )
             route_text = ""
-            async for chunk in provider_manager.chat_stream(
-                config=router_ctx.model_config,
-                messages=[{"role": "user", "content": router_input}],
-                system_prompt=system_prompt,
-                temperature=0,
-                max_tokens=ROUTER_MAX_TOKENS,
-                tools=None,
-                deep_thinking=False,
-            ):
-                if chunk.type == "text" and not chunk.metadata.get("is_reasoning"):
-                    route_text += chunk.content
+            # 分类器固定使用 deepseek-v4-flash；仅当它停用/缺失时回退 YAML 默认轻量模型。
+            classifier_config = router_ctx.model_config
+            from cygnusx.infrastructure.database.repositories.ai_provider_repository import (
+                SqlAlchemyAIProviderConfigRepository,
+            )
+            try:
+                provider_repo = SqlAlchemyAIProviderConfigRepository(self._db)
+                classifier_config = await provider_repo.get_by_name(
+                    ROUTER_CLASSIFIER_PROVIDER_NAME, active_only=True
+                )
+                default_config = await provider_repo.get_default()
+            except Exception as exc:  # noqa: BLE001 - test/partial DB stubs retain assembled config
+                default_config = None
+                logger.debug("无法读取默认分类 Provider，沿用 Router 上下文配置: {}", exc)
+            if (
+                classifier_config is None
+                or classifier_config is router_ctx.model_config
+            ) and default_config is not None and default_config.is_active:
+                classifier_config = default_config
+            if model_health_monitor.classifier_healthy(classifier_config.name):
+                try:
+                    async for chunk in provider_manager.chat_stream(
+                        config=classifier_config,
+                        messages=[{"role": "user", "content": router_input}],
+                        system_prompt=system_prompt,
+                        temperature=0,
+                        max_tokens=ROUTER_MAX_TOKENS,
+                        tools=None,
+                        deep_thinking=False,
+                    ):
+                        if chunk.type == "text" and not chunk.metadata.get("is_reasoning"):
+                            route_text += chunk.content
+                except Exception as exc:  # noqa: BLE001 - routing has explicit fallback
+                    degraded = True
+                    degrade_reason = "router_classification_failed"
+                    logger.warning("路由分类调用失败，降级到默认 Provider: {}", exc)
+            else:
+                degraded = True
+                degrade_reason = "classifier_unhealthy"
+                model_health_monitor.record(classifier_config.name, HealthEventKind.CLIENT_ERROR)
+                logger.warning("路由分类器健康熔断，跳过分类调用 provider={}", classifier_config.name)
             decision = _extract_route_json(route_text)
+            if decision is None:
+                degraded = True
+                degrade_reason = degrade_reason or "router_classification_failed"
+                decision = {"complexity": "medium"}
             if decision:
                 target_id = str(decision.get("agent_id") or "")
                 reason = str(decision.get("reason") or "")
@@ -748,6 +789,8 @@ class ChatService(
                     )[:max_experts]
             model_target_id = target_id
             if target_id not in valid_ids:
+                degraded = True
+                degrade_reason = degrade_reason or "router_invalid_target"
                 fallback = _general_fallback()
                 logger.warning(
                     "[Agent路由] 模型未返回可用候选，回退通用助手: model_target_id={!r} valid_ids={}",
@@ -826,6 +869,9 @@ class ChatService(
                 "consult_agent_ids": consult_agent_ids,
                 "intent": normalized.intent,
                 "confidence": normalized.confidence,
+                "complexity": normalized.complexity,
+                "degraded": degraded,
+                "degrade_reason": degrade_reason or normalized.degrade_reason,
                 "overdrive_intent": normalized.overdrive_intent,
                 "fanout_tasks": list(normalized.fanout_tasks),
                 "transition": {
@@ -840,6 +886,27 @@ class ChatService(
                     "auto_start": False,
                 },
             }
+            if degraded and request_id:
+                try:
+                    from cygnusx.infrastructure.database.models.model_routing import (
+                        ModelRoutingDecisionModel,
+                    )
+
+                    self._db.add(
+                        ModelRoutingDecisionModel(
+                            request_id=request_id,
+                            step_index=0,
+                            agent_id=target_entry["agent_id"],
+                            complexity=normalized.complexity,
+                            model_tier="auto",
+                            chosen_provider=classifier_config.name,
+                            decision_reason="router_degraded",
+                            degraded=True,
+                            degrade_reason=degrade_reason or normalized.degrade_reason,
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - audit must not block routing
+                    logger.warning("路由降级决策审计写入失败: {}", exc)
             return target_ctx, route_info
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[Agent路由] 意图分派失败，按原 Agent 继续: {e}")
@@ -2915,7 +2982,7 @@ class ChatService(
 
         if keyword_toggle is None and overdrive is None and ctx.features.get("router"):
             pre_routed_ctx, pre_route_info = await self._route_to_agent(
-                ctx, user_content, user_id, attachment_dicts
+                ctx, user_content, user_id, attachment_dicts, str(current_session_id)
             )
             router_toggle = _resolve_overdrive_router_toggle(pre_route_info, effective_overdrive)
             if router_toggle is not None:
@@ -2985,7 +3052,9 @@ class ChatService(
             target_ctx, route_info = (
                 (pre_routed_ctx, pre_route_info)
                 if pre_route_info is not None
-                else await self._route_to_agent(ctx, user_content, user_id, attachment_dicts)
+                else await self._route_to_agent(
+                    ctx, user_content, user_id, attachment_dicts, str(current_session_id)
+                )
             )
             if target_ctx is not None and route_info is not None:
                 ctx = target_ctx
@@ -2993,10 +3062,24 @@ class ChatService(
                 # model explicitly selected for this session across that
                 # second context assembly; otherwise the target Agent's YAML
                 # default (often Qwen) silently replaces the UI selection.
-                if model_id is not None:
+                if model_id is not None and not route_info.get("degraded"):
                     selected_model = await self._resolve_model(model_id)
                     if selected_model is not None and selected_model.api_key:
                         ctx.model_config = selected_model
+                elif route_info.get("degraded"):
+                    from cygnusx.infrastructure.database.repositories.ai_provider_repository import (
+                        SqlAlchemyAIProviderConfigRepository,
+                    )
+
+                    try:
+                        default_config = await SqlAlchemyAIProviderConfigRepository(self._db).get_default()
+                    except Exception as exc:  # noqa: BLE001 - preserve degraded chat path
+                        default_config = None
+                        logger.warning("降级路径读取默认 Provider 失败，沿用已装配模型: {}", exc)
+                    if default_config is not None and default_config.is_active:
+                        fallback_model = await self._resolve_model(str(default_config.id))
+                        if fallback_model is not None and fallback_model.api_key:
+                            ctx.model_config = fallback_model
                 if ctx.model_config is not None:
                     model_config = ctx.model_config
                 bound_skills = list(getattr(ctx, "skills", []) or [])
@@ -4152,6 +4235,9 @@ class ChatService(
                 handoff_handler=_activate_langgraph_handoff,
                 extend_max_rounds=extend_max_rounds,
                 auto_approve=auto_approve_operations,
+                explicit_model_id=(model_config.name if model_id is not None else None),
+                complexity=str((route_info or {}).get("complexity") or "medium"),
+                model_tier=str(getattr(ctx.agent, "model_tier", "auto") or "auto"),
             ):
                 yield chunk
             return

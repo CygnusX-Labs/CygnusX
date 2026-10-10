@@ -8,6 +8,7 @@ color: "#0f766e"
 category: analysis
 # 清单式核验任务（低温度、结构化输出），用低成本模型；重推理解析仍由领域专家承担。
 model: deepseek-v4-flash
+model_tier: light
 prompt_file: prompts/data.md
 welcome_message: "你好！我是数据管理员。请提供项目、样本表和已有 Artifact 引用；我会核验输入完整性、分组与可追溯证据。"
 temperature: 0.2

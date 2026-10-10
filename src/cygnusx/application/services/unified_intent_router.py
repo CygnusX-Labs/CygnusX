@@ -25,6 +25,8 @@ class CollaborationDecision:
     target_agent_id: str | None = None
     fanout_tasks: tuple[dict[str, str], ...] = ()
     overdrive_intent: OverdriveIntent = "none"
+    complexity: Literal["low", "medium", "high"] = "medium"
+    degrade_reason: str | None = None
 
     @property
     def needs_clarification(self) -> bool:
@@ -61,6 +63,10 @@ def normalize_decision(
     overdrive_intent: OverdriveIntent = (
         raw_overdrive_intent if raw_overdrive_intent in _VALID_OVERDRIVE_INTENTS else "none"
     )  # type: ignore[assignment]
+    raw_complexity = str(payload.get("complexity") or "medium").strip().lower()
+    complexity: Literal["low", "medium", "high"] = (
+        raw_complexity if raw_complexity in {"low", "medium", "high"} else "medium"  # type: ignore[assignment]
+    )
     return CollaborationDecision(
         intent=intent,
         confidence=confidence,
@@ -68,6 +74,8 @@ def normalize_decision(
         target_agent_id=target_agent_id,
         fanout_tasks=tuple(tasks),
         overdrive_intent=overdrive_intent,
+        complexity=complexity,
+        degrade_reason=(str(payload.get("degrade_reason"))[:240] if payload.get("degrade_reason") else None),
     )
 
 

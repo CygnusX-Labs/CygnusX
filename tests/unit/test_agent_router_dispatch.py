@@ -610,6 +610,7 @@ def test_site_yaml_enabled_agents_have_config_files():
         "scrna_integration",
         "scrna_advanced",
         "code",
+        "explorer",
         "viz",
         "data",
         "qc",

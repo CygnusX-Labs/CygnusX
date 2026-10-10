@@ -3,7 +3,8 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 
 from cygnusx.api.deps import DbSession
 from cygnusx.api.v1.admin.users import AdminRequired
@@ -16,8 +17,10 @@ from cygnusx.application.schemas.ai_provider import (
     AIProviderDiscoverResponse,
     AIProviderTemplate,
 )
+from cygnusx.application.services.ai_metrics_service import AiMetricsService
 from cygnusx.application.services.ai_provider_service import AIProviderConfigService
 from cygnusx.core.config import reload_settings
+from cygnusx.infrastructure.database.models.model_routing import ModelRoutingDecisionModel
 
 router = APIRouter()
 
@@ -27,6 +30,50 @@ def get_service(db: DbSession) -> AIProviderConfigService:
 
 
 ServiceDep = Annotated[AIProviderConfigService, Depends(get_service)]
+
+
+@router.get("/routing-decisions", summary="查询动态模型路由决策")
+async def list_routing_decisions(
+    _admin: AdminRequired,
+    db: DbSession,
+    request_id: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict[str, Any]]:
+    query = select(ModelRoutingDecisionModel).order_by(
+        ModelRoutingDecisionModel.created_at.desc()
+    ).limit(limit)
+    if request_id:
+        query = query.where(ModelRoutingDecisionModel.request_id == request_id)
+    result = await db.execute(query)
+    rows = result.scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "request_id": row.request_id,
+            "step_index": row.step_index,
+            "agent_id": row.agent_id,
+            "complexity": row.complexity,
+            "model_tier": row.model_tier,
+            "chosen_provider": row.chosen_provider,
+            "cascade_providers": row.cascade_providers,
+            "candidates_considered": row.candidates_considered,
+            "decision_reason": row.decision_reason,
+            "cascade_events": row.cascade_events,
+            "degraded": row.degraded,
+            "degrade_reason": row.degrade_reason,
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/routing-decisions/summary", summary="按日汇总动态模型路由决策")
+async def routing_decision_summary(
+    _admin: AdminRequired,
+    db: DbSession,
+    days: int = Query(default=7, ge=1, le=90),
+) -> list[dict[str, Any]]:
+    return await AiMetricsService(db).routing_decision_summary(days)
 
 
 @router.get("/templates", response_model=list[AIProviderTemplate], summary="内置 Provider 模板列表")

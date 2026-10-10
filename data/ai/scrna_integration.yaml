@@ -4,7 +4,8 @@ description: 负责细胞 QC、双细胞、批次校正、HVG、降维、聚类�
 avatar: "🧬"
 color: "#8e44ad"
 category: analysis
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/scrna_team/integration.md
 welcome_message: "你好！我可以协助细胞 QC、批次整合、UMAP/Leiden 聚类和 marker 检查。"
 temperature: 0.2

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import select as sa_select
 from sqlalchemy.exc import SQLAlchemyError
 
 from cygnusx.application.services.agent_handoff_service import HANDOFF_TOOL_NAME
@@ -31,12 +32,13 @@ from cygnusx.application.services.chat_sandbox_tools import (
     chat_sandbox_timeout_result,
     execute_chat_sandbox,
 )
+from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
+from cygnusx.application.services.mas_plan_adapter import MAS_PLAN_PREVIEW_TOOL_NAME
+from cygnusx.application.services.model_selector import ModelSelector, SelectionInput
 from cygnusx.application.services.network_request_tool import (
     NETWORK_REQUEST_TOOL_NAME,
     execute_network_request,
 )
-from cygnusx.application.services.execution_events import execution_chunk, execution_metadata
-from cygnusx.application.services.mas_plan_adapter import MAS_PLAN_PREVIEW_TOOL_NAME
 from cygnusx.application.services.parallel_subagent_service import PARALLEL_SUBAGENTS_TOOL_NAME
 from cygnusx.application.services.studio_approval_service import (
     APPROVAL_TTL_SECONDS,
@@ -54,8 +56,10 @@ from cygnusx.domain.skill.services import SKILL_TOOL_NAMES
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
     ChatChunk,
     merge_token_usage,
+    model_health_monitor,
     provider_manager,
 )
+from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
 
 _EmitFn = Callable[[ChatChunk], Awaitable[None]]
 
@@ -262,6 +266,9 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
         handoff_handler: Any | None = None,
         extend_max_rounds: bool = False,
         auto_approve: bool = False,
+        explicit_model_id: str | None = None,
+        complexity: str = "medium",
+        model_tier: str = "auto",
     ) -> AsyncIterator[ChatChunk]:
         """LangGraph 引擎路径：状态图驱动 ReAct 循环，事件协议与手写循环一致
 
@@ -287,6 +294,35 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             "skills": list(skills or []),
             "skill_pins": skill_pins or {},
         }
+        routing_audit: list[Any] = []
+
+        async def _flush_routing_audit() -> None:
+            if not routing_audit:
+                return
+            try:
+                add_all = getattr(self._service._db, "add_all", None)
+                if callable(add_all):
+                    add_all(routing_audit)
+                else:
+                    for audit in routing_audit:
+                        self._service._db.add(audit)
+                routing_audit.clear()
+            except Exception as audit_exc:  # noqa: BLE001
+                logger.warning("动态路由决策批量审计写入失败: {}", audit_exc)
+
+        # 动态路由是灰度能力；关闭时完全复用传入的静态绑定模型。
+        routing_selector: ModelSelector | None = None
+        if get_settings().dynamic_model_routing_enabled:
+            provider_result = await self._service._db.execute(
+                sa_select(AIProviderConfigModel).where(AIProviderConfigModel.is_active.is_(True))
+            )
+            routing_selector = ModelSelector(
+                list(provider_result.scalars().all()),
+                health=model_health_monitor,
+                max_cascades=get_settings().dynamic_routing_max_cascades,
+                max_upgrades=get_settings().dynamic_routing_max_upgrades,
+                quality_degrade_enabled=get_settings().dynamic_routing_quality_degrade_enabled,
+            )
 
         # 压缩审计改由消费协程收尾时统一落库：_prepare_messages 在 LangGraph
         # 图 task 内被调用，若在图内直接写请求级 session，会与消费协程的
@@ -531,7 +567,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         ),
                         timeout=hard_timeout,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.error(
                         "[LangGraph] chat sandbox overall timeout: session={} timeout={}",
                         session_id,
@@ -859,6 +895,55 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 # 显式 Finalize 动作（submit_output，§3.3.1）随 Runtime 挂载（幂等）：
                 # 仅 LangGraph 路径下发给模型，legacy 逃生舱不识别本工具。
                 runtime_tools = runtime_state["tools"]
+                retry_provider = runtime_state.pop("_cascade_provider", None)
+                if routing_selector is not None and retry_provider is None:
+                    selection = routing_selector.select(
+                        SelectionInput(
+                            request_id=str(session_id),
+                            step_index=execution_round,
+                            agent_id=execution_agent_id,
+                            complexity=complexity,
+                            model_tier=model_tier,
+                            explicit_model_id=explicit_model_id,
+                        )
+                    )
+                    selected = next(
+                        (item for item in routing_selector.providers if item.name == selection.primary),
+                        None,
+                    )
+                    if selected is not None:
+                        runtime_state["model_config"] = selected
+                    try:
+                        from cygnusx.infrastructure.database.models.model_routing import (
+                            ModelRoutingDecisionModel,
+                        )
+
+                        routing_audit.append(
+                            ModelRoutingDecisionModel(
+                                request_id=str(session_id),
+                                step_index=execution_round,
+                                agent_id=execution_agent_id,
+                                complexity=complexity,
+                                explicit_model_id=explicit_model_id,
+                                model_tier=str(getattr(runtime_state["model_config"], "tier", "auto")),
+                                chosen_provider=selection.primary,
+                                cascade_providers=list(selection.cascade),
+                                candidates_considered=[
+                                    {
+                                        "provider": item.provider,
+                                        "healthy": item.healthy,
+                                        "cost_est": item.cost_est,
+                                        "rank_score": item.rank_score,
+                                    }
+                                    for item in selection.candidates_considered
+                                ],
+                                decision_reason=selection.decision_reason,
+                                degraded=selection.degraded,
+                                degrade_reason=selection.degrade_reason,
+                            )
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("动态路由决策审计写入失败: {}", exc)
                 if runtime_tools and not any(
                     (t.get("function") or {}).get("name") == SUBMIT_OUTPUT_TOOL_NAME
                     for t in runtime_tools
@@ -885,6 +970,8 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                 )
                 deps_holder["deps"] = deps
                 runtime = LangGraphRuntimeService(deps, max_rounds=max_rounds)
+                retry_requested = False
+                step_finish_reason: str | None = None
                 async for chunk in runtime.stream(runtime_state["llm_messages"]):
                     if chunk.type == "text":
                         if chunk.metadata.get("is_reasoning"):
@@ -910,6 +997,56 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                             # tool_result 随后会把 error 信封回灌给 Agent，继续下一轮。
                             yield chunk
                             continue
+                        if routing_selector is not None:
+                            next_provider = routing_selector.on_step_result(
+                                str(session_id), execution_round, failed=True, reason=error
+                            )
+                            if next_provider:
+                                selected = next(
+                                    (item for item in routing_selector.providers if item.name == next_provider),
+                                    None,
+                                )
+                                if selected is not None:
+                                    runtime_state["_cascade_provider"] = selected.name
+                                    runtime_state["model_config"] = selected
+                                    try:
+                                        routing_audit.append(
+                                            ModelRoutingDecisionModel(
+                                                request_id=str(session_id),
+                                                step_index=execution_round,
+                                                agent_id=execution_agent_id,
+                                                complexity=complexity,
+                                                explicit_model_id=explicit_model_id,
+                                                model_tier=str(getattr(selected, "tier", "auto")),
+                                                chosen_provider=selected.name,
+                                                cascade_providers=[],
+                                                candidates_considered=[],
+                                                decision_reason=(
+                                                    "cascade_timeout"
+                                                    if "timeout" in error.lower()
+                                                    else "cascade_throttle"
+                                                    if "429" in error
+                                                    else "cascade_server_error"
+                                                ),
+                                                cascade_events=[
+                                                    {
+                                                        "event": "cascade",
+                                                        "to_provider": selected.name,
+                                                        "trigger": error[:160],
+                                                    }
+                                                ],
+                                                degraded=False,
+                                            )
+                                        )
+                                    except Exception as audit_exc:  # noqa: BLE001
+                                        logger.warning("级联决策审计写入失败: {}", audit_exc)
+                                    logger.warning(
+                                        "模型调用失败，切换级联候选 provider={} step={}",
+                                        next_provider,
+                                        execution_round,
+                                    )
+                                    retry_requested = True
+                                    break
                         # 正文保留已累计内容，错误原因写入 metadata.error
                         await self._service.update_message_content(
                             ai_message_id,
@@ -920,6 +1057,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         yield chunk
                         for terminal_chunk in _failed_terminal_events(error):
                             yield terminal_chunk
+                        await _flush_routing_audit()
                         return
                     elif chunk.type == "tool_call":
                         execution_round = max(execution_round, int(chunk.metadata.get("round") or 1))
@@ -1023,8 +1161,29 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         yield chunk
                     else:
                         # 其余事件直接透传（metadata 已对齐 legacy）
+                        if chunk.type == "done":
+                            step_finish_reason = str(chunk.metadata.get("finish_reason") or "")
                         yield chunk
 
+                if routing_selector is not None and step_finish_reason in {"length", "max_tokens"}:
+                    next_provider = routing_selector.on_step_result(
+                        str(session_id),
+                        execution_round,
+                        failed=True,
+                        finish_reason=step_finish_reason,
+                        provider=str(getattr(runtime_state["model_config"], "name", "")),
+                    )
+                    if next_provider:
+                        runtime_state["_cascade_provider"] = next_provider
+                        selected = next(
+                            (item for item in routing_selector.providers if item.name == next_provider),
+                            None,
+                        )
+                        if selected is not None:
+                            runtime_state["model_config"] = selected
+                            retry_requested = True
+                if retry_requested:
+                    continue
                 accumulated_usage = merge_token_usage(accumulated_usage, runtime.last_usage)
                 # ask_user 澄清：问题经 ask_request 事件展示给用户，收尾本轮，
                 # 等用户下一条消息回答（对齐 legacy stop_after_tools 语义）。
@@ -1112,6 +1271,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                     yield ChatChunk(type="error", content=error)
                     for terminal_chunk in _failed_terminal_events(error):
                         yield terminal_chunk
+                    await _flush_routing_audit()
                     return
                 next_state = await handoff_handler(directive)
                 runtime_state.update(next_state)
@@ -1220,7 +1380,11 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             )
             for terminal_chunk in _failed_terminal_events(metadata_error):
                 yield terminal_chunk
+            await _flush_routing_audit()
             return
+
+        # 决策日志只在请求收尾时批量加入会话，失败不阻断主链路。
+        await _flush_routing_audit()
 
         # 收尾：complete + usage + 会话用量累计 + done（与 legacy 一致）
         _flush_timeline_text()

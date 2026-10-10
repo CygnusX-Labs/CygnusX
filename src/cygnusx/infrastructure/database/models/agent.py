@@ -7,7 +7,17 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -32,6 +42,8 @@ class AgentTemplateModel(Base, TimestampMixin):
             self.model_name = ""
         if self.model_engine is None:
             self.model_engine = ""
+        if self.model_tier is None:
+            self.model_tier = "auto"
         if self.system_prompt is None:
             self.system_prompt = ""
         if self.welcome_message is None:
@@ -74,6 +86,7 @@ class AgentTemplateModel(Base, TimestampMixin):
     model_name: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     # 展示用模型引擎 label（从关联 provider config 动态解析）
     model_engine: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    model_tier: Mapped[str] = mapped_column(String(16), default="auto", nullable=False)
 
     system_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
     welcome_message: Mapped[str] = mapped_column(Text, default="", nullable=False)

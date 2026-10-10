@@ -92,6 +92,7 @@ from cygnusx.infrastructure.database.models.mcp_builder import (
     MCPVisibilityModel,
 )
 from cygnusx.infrastructure.database.models.mcp_log import MCPLogModel
+from cygnusx.infrastructure.database.models.model_routing import ModelRoutingDecisionModel
 from cygnusx.infrastructure.database.models.notification import NotificationModel
 from cygnusx.infrastructure.database.models.overdrive import (
     OverdriveCommandModel,
@@ -101,6 +102,8 @@ from cygnusx.infrastructure.database.models.overdrive import (
 )
 from cygnusx.infrastructure.database.models.project import ProjectModel
 from cygnusx.infrastructure.database.models.report import ReportFileModel, ReportModel
+from cygnusx.infrastructure.database.models.run import RunModel
+from cygnusx.infrastructure.database.models.run_event import RunEventModel
 from cygnusx.infrastructure.database.models.sandbox import SandboxSessionModel
 from cygnusx.infrastructure.database.models.schedule import (
     ReminderDeliveryModel,
@@ -115,8 +118,6 @@ from cygnusx.infrastructure.database.models.skill import (
     SkillVersionModel,
 )
 from cygnusx.infrastructure.database.models.task import TaskModel
-from cygnusx.infrastructure.database.models.run import RunModel
-from cygnusx.infrastructure.database.models.run_event import RunEventModel
 from cygnusx.infrastructure.database.models.team import TeamMemberModel, TeamModel
 from cygnusx.infrastructure.database.models.terminal import TerminalSessionModel
 from cygnusx.infrastructure.database.models.user import UserModel, WorkspaceModel
@@ -162,10 +163,12 @@ __all__ = [
     "ChatMessageFeedbackModel",
     "ChatAssistantModel",
     "ChatHandoffEventModel",
+    "ChatMessageEventModel",
     "CollaborationDegradationEventModel",
     "AIProviderConfigModel",
     "AiCallMetricModel",
     "AiMetricAlertModel",
+    "ModelRoutingDecisionModel",
     "AnnouncementModel",
     "AuditLogModel",
     "BlastDatabaseModel",

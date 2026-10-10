@@ -41,6 +41,7 @@ class AgentTemplateDTO(BaseModel):
     model_id: EmptyStrUUID = None
     model_name: str = ""
     model_engine: str = ""
+    model_tier: str = "auto"
     system_prompt: str = ""
     welcome_message: str = ""
     mcp_ids: list[Any] = Field(default_factory=list)
@@ -64,6 +65,7 @@ class CreateAgentRequest(BaseModel):
     color: str = "#4f8ef7"
     category: str = "general"
     model_id: EmptyStrUUID = None
+    model_tier: str = "auto"
     system_prompt: str = ""
     welcome_message: str = ""
     mcp_ids: list[Any] = Field(default_factory=list)
@@ -83,6 +85,7 @@ class UpdateAgentRequest(BaseModel):
     color: str | None = None
     category: str | None = None
     model_id: EmptyStrUUID = None
+    model_tier: str | None = None
     system_prompt: str | None = None
     welcome_message: str | None = None
     mcp_ids: list[Any] | None = None

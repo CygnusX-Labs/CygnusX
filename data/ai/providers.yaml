@@ -19,8 +19,14 @@ providers:
   context_window: 262144
   top_p: 1.0
   timeout: 120
-  is_default: false
+  is_default: true
   is_active: true
+  tier: light
+  cost_per_1m_in: 0.2
+  cost_per_1m_out: 0.8
+  latency_budget_ms: 3000
+  vendor: deepseek
+  weight: 100
   extra_params: {}
 - name: qwen3.8-flash
   provider_type: openai_compatible
@@ -34,6 +40,10 @@ providers:
   timeout: 120
   is_default: false
   is_active: true
+  tier: light
+  latency_budget_ms: 3000
+  vendor: aliyun
+  weight: 100
   extra_params: {}
 - name: qwen3.8-omni-flash
   provider_type: openai_compatible
@@ -47,6 +57,10 @@ providers:
   timeout: 120
   is_default: false
   is_active: true
+  tier: light
+  latency_budget_ms: 3000
+  vendor: aliyun
+  weight: 100
   extra_params: {}
 - name: qwen3.8-max
   provider_type: openai_compatible
@@ -60,4 +74,9 @@ providers:
   timeout: 120
   is_default: false
   is_active: true
+  tier: heavy
+  cost_per_1m_out: 12.0
+  latency_budget_ms: 15000
+  vendor: aliyun
+  weight: 100
   extra_params: {}

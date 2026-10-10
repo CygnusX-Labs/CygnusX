@@ -406,7 +406,7 @@ StateGraph:
 用户（Studio 会话）
     │ 自然语言需求
     ▼
-agent-mcp-builder（qdoubao-seed-evolving, temperature=0.2）
+agent-mcp-builder（qwen3.8-max, temperature=0.2）
     │ 六阶段工作流（Prompt 驱动）
     │ ① 规划 → ② 搜索 → ③ 编码 → ④ 测试 → ⑤ 文档 → ⑥ 注册
     │
@@ -447,7 +447,7 @@ Celery beat（每 5 分钟）
 
 | 文件 | 内容 |
 |------|------|
-| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qdoubao-seed-evolving`，temperature 0.2，max_tokens 65536，`tool_packs: [workspace, memory, handoff]`（handoff.allowed_targets=[agent-general, agent-code]，max_hops_per_session=10），`skill_ids: [mcp-server-builder]`（六阶段工作流与代码模板由该 Skill 承载），studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.agentteams`（expert 可招募、execution_modes=[readonly_consultation, workspace_execution]、max_parallel_work_items=1 等）+ `features.mcp_builder`（配额/TTL/产物目录元数据） |
+| `data/ai/mcp_builder.yaml` | Agent 配置：`agent-mcp-builder`，model `qwen3.8-max`，temperature 0.2，max_tokens 65536，`tool_packs: [workspace, memory, handoff]`（handoff.allowed_targets=[agent-general, agent-code]，max_hops_per_session=10），`skill_ids: [mcp-server-builder]`（六阶段工作流与代码模板由该 Skill 承载），studio.enabled + default_mode=studio + runtime_profile=analysis-core，`features.agentteams`（expert 可招募、execution_modes=[readonly_consultation, workspace_execution]、max_parallel_work_items=1 等）+ `features.mcp_builder`（配额/TTL/产物目录元数据） |
 | `data/ai/prompts/mcp_builder.md` | 六阶段系统提示词（约 5.8KB）：规划/搜索/编码/测试/文档/注册；不含代码模板——模板已迁移到 Skill `mcp-server-builder` 的 `references/`（`template_local_computation.py` 本地计算版 + `template_external_api.py` 外部 API 版），Prompt 要求接到构建需求后先加载该 Skill；保留安全红线、"绝不代为提交"约束（注册须用户/前端触发 API） |
 | `data/CygnusX.yaml` | `agents.enabled` 追加 `mcp_builder`（加载白名单） |
 | `data/ai/prompts/router.md` | 不维护静态候选名单——router 依据运行时可用 Agent 目录路由，构建师随 Agent 目录上线即可被路由（"创建/生成 MCP Server、给 AI 加新工具"类请求） |

@@ -5,7 +5,8 @@ description: 测序原始数据、比对结果、变异与信号文件、跨样�
 avatar: "🛡️"
 color: "#b45309"
 category: analysis
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/qc.md
 welcome_message: "你好！我是质量审计员。可以解释 FASTQ/FastQC/fastp/MultiQC 等 QC 指标，设计质控方案，也可以审查工作区中的报告、日志和分析产物并给出可复核的质量结论。"
 # AgentTeams consultation 契约：结论首行必须仅为 PASSED / WARNING / BLOCKED 之一

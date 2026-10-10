@@ -331,8 +331,8 @@ async def test_unbound_builtin_agent_resolves_default_model_for_studio():
     """Studio 创建时应为历史空绑定的内置 Agent 解析默认模型。"""
     provider = SimpleNamespace(
         id=uuid4(),
-        name="qdoubao-seed-evolving",
-        model="qdoubao-seed-evolving",
+        name="legacy-model",
+        model="legacy-model",
         is_active=True,
         is_default=True,
     )
@@ -357,8 +357,8 @@ async def test_unbound_builtin_agent_resolves_default_model_for_studio():
 
     assert model_id == provider.id
     assert agent.model_id == provider.id
-    assert agent.model_name == "qdoubao-seed-evolving"
-    assert agent.model_engine == "qdoubao-seed-evolving"
+    assert agent.model_name == "legacy-model"
+    assert agent.model_engine == "legacy-model"
 
 
 @pytest.mark.asyncio
@@ -593,7 +593,7 @@ def test_atacseq_agent_loads_domain_pack_and_atacflow_skill() -> None:
     assert config["features"]["managed_prompt"] is True
     assert config["features"]["managed_profile"] is True
     assert config["features"]["engine"] == "langgraph"
-    assert config["studio"]["runtime_profile"] == "analysis-core"
+    assert config["studio"]["runtime_profile"] == "analysis-atacseq"
     assert "先调用 `knowledge_search`" in config["system_prompt"]
     atac_pack = next(
         pack for pack in config["features"]["tool_packs"] if pack["id"] == "atacseq"
@@ -643,7 +643,7 @@ def test_mcp_builder_agent_loads_successfully():
     assert data is not None, "mcp_builder.yaml 加载失败"
     assert data["agent_id"] == "agent-mcp-builder"
     assert data["name"] == "MCP 构建师"
-    assert data["model"] == "qdoubao-seed-evolving"
+    assert data["model"] == "legacy-model"
 
     # Studio 配置验证
     assert "studio" in data

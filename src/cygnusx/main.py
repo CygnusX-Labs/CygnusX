@@ -1,6 +1,7 @@
 """FastAPI 应用入口"""
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -339,12 +340,59 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("知识库自动增量索引失败，仍可手动执行 reindex 脚本: {}", exc)
 
     knowledge_index_task = asyncio.create_task(_auto_reindex_knowledge())
+
+    async def _probe_idle_providers() -> None:
+        if not settings.dynamic_model_routing_enabled:
+            return
+        from sqlalchemy import select
+
+        from cygnusx.infrastructure.ai_provider.openai_compatible import (
+            model_health_monitor,
+            provider_manager,
+        )
+        from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
+        from cygnusx.infrastructure.database.session import get_session_factory
+
+        async def probe(provider: AIProviderConfigModel) -> float:
+            started = time.perf_counter()
+            async for _ in provider_manager.chat_stream(
+                config=provider,
+                messages=[{"role": "user", "content": "ping"}],
+                system_prompt="Reply with one token.",
+                temperature=0,
+                max_tokens=1,
+                tools=None,
+                deep_thinking=False,
+                _is_probe=True,
+            ):
+                pass
+            return (time.perf_counter() - started) * 1000
+
+        while True:
+            try:
+                factory = get_session_factory()
+                if factory is not None:
+                    async with factory() as session:
+                        rows = (
+                            await session.execute(
+                                select(AIProviderConfigModel).where(AIProviderConfigModel.is_active.is_(True))
+                            )
+                        ).scalars().all()
+                        await model_health_monitor.probe_once(list(rows), probe)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - probes never block startup or requests
+                logger.warning("AI Provider 主动探测失败: {}", exc)
+            await asyncio.sleep(60)
+
+    provider_probe_task = asyncio.create_task(_probe_idle_providers())
     yield
 
     # 关闭时清理：取消未完成的沙盒预热 + 欢迎词补齐 + 知识库索引 + 关闭数据库
     sandbox_task.cancel()
     welcome_task.cancel()
     knowledge_index_task.cancel()
+    provider_probe_task.cancel()
     from cygnusx.infrastructure.database.session import close_db
 
     await close_db()

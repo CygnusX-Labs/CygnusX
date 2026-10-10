@@ -253,6 +253,9 @@ class AgentService:
         models_by_id = {m.id: m for m in active_models}
         default_model = next((model for model in active_models if model.is_default), None)
         fallback_model = default_model or (active_models[0] if active_models else None)
+        models_by_tier = {}
+        for model in active_models:
+            models_by_tier.setdefault(getattr(model, "tier", "light"), model)
 
         for cfg in yaml_configs:
             existing = await self.get_agent(cfg["agent_id"])
@@ -315,6 +318,8 @@ class AgentService:
 
                     if existing.model_id not in models_by_id:
                         configured_model = models_by_name.get(str(cfg.get("model") or ""))
+                        if configured_model is None and cfg.get("model_tier") in {"light", "heavy"}:
+                            configured_model = models_by_tier.get(str(cfg["model_tier"]))
                         target_model = configured_model or fallback_model
                     else:
                         target_model = None
@@ -322,10 +327,14 @@ class AgentService:
                         existing.model_id = target_model.id
                         existing.model_name = target_model.name
                         existing.model_engine = target_model.model
+                    existing.model_tier = str(cfg.get("model_tier") or "auto")
                 continue
 
             # 按 model name 解析 model_id
             model_name = cfg.get("model", "")
+            if not model_name and cfg.get("model_tier") in {"light", "heavy"}:
+                tier_model = models_by_tier.get(str(cfg["model_tier"]))
+                model_name = tier_model.name if tier_model is not None else ""
             model_id = None
             model_engine = ""
             if model_name and model_name in models_by_name:
@@ -362,6 +371,7 @@ class AgentService:
                 "model_id": model_id,
                 "model_name": model_name,
                 "model_engine": model_engine,
+                "model_tier": str(cfg.get("model_tier") or "auto"),
                 "system_prompt": cfg.get("system_prompt", ""),
                 "welcome_message": cfg.get("welcome_message", ""),
                 "mcp_ids": mcp_ids,
@@ -729,6 +739,10 @@ class AgentService:
                 agent.model_id = provider.id
                 agent.model_name = provider.name
                 agent.model_engine = provider.model
+                changed = True
+            declared_tier = getattr(agent, "model_tier", "auto") or "auto"
+            if declared_tier not in {"light", "heavy", "auto"}:
+                agent.model_tier = "auto"
                 changed = True
 
         if changed:
@@ -1274,6 +1288,7 @@ class AgentService:
             model_id=a.model_id,
             model_name=a.model_name,
             model_engine=a.model_engine,
+            model_tier=getattr(a, "model_tier", "auto") or "auto",
             system_prompt=a.system_prompt,
             welcome_message=a.welcome_message,
             mcp_ids=list(a.mcp_ids or []),

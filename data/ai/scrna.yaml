@@ -4,7 +4,8 @@ description: 面向单细胞转录组质控、聚类、注释与下游分析。
 avatar: "🔬"
 color: "#e74c3c"
 category: analysis
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/scrna.md
 welcome_message: "你好！请提供 10x 矩阵、h5ad/rds 文件或单细胞分析目标。"
 temperature: 0.3

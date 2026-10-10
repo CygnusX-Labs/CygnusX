@@ -6,7 +6,8 @@ avatar: "☁️"
 color: "#0284c7"
 category: operations
 is_active: true
-model: qdoubao-seed-evolving
+model: qwen3.8-max
+model_tier: heavy
 prompt_file: prompts/cloud_ops.md
 welcome_message: "你好！我是云运维工程师，可以协助管理员检查 CygnusX 平台健康状态，分析云服务器、对象/文件/块存储、容器仓库、网络、Terraform 和 Slurm 集群问题。巡检默认只读，任何变更前都会先给出风险与回滚方案。"
 temperature: 0.2
