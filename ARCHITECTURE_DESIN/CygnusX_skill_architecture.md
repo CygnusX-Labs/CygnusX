@@ -165,6 +165,65 @@ sequenceDiagram
 - 每次调用落 `skill_invocations`（skill_version、source、duration、session/message/user），管理端可查聚合统计
 - 回灌截断：`SKILL_TOOL_MAX_CHARS = 24000`（技能回灌比普通工具结果宽松）
 
+### 4.3 Skill 路由审查：`skill_route` 与子 Agent
+
+`skill_route` 是平台内置的只读工具，不是一个单独注册的 `skill_router` Agent。它的作用是把
+“候选筛选”和“正文适配审查”从主 Agent 的上下文中拆出一次受限子任务，再把结构化结论返回给
+发起调用的主 Agent。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant P as 主 Agent
+    participant T as skill_route 工具
+    participant S as SkillRouteService
+    participant G as ParallelSubAgentService
+    participant A as agent-general（临时 scout）
+    participant K as Skill Store / DB
+
+    U->>P: 提出可能由 Skill 覆盖的专业任务
+    P->>T: skill_route(query, limit)
+    T->>S: L1 元数据筛选
+    S->>K: 读取候选 Skill 元数据和 SKILL.md 正文
+    T->>G: safe_only=true，runtime_authorized=true
+    G->>A: 单个只读子任务，注入候选正文
+    A-->>G: matched / skill_id / confidence / fit_checks
+    G-->>T: 子任务结果
+    T-->>P: 路由审查结论
+    alt 命中 Skill
+        P->>P: use_skill(skill_id)
+        P->>P: 按 Skill 分析或调用沙箱工具
+    else 未命中
+        P->>P: 说明无匹配 Skill，按通用能力处理
+    end
+```
+
+#### 4.3.1 当前实现边界
+
+- 工具注册：`tool_configs/tools_schema.yaml` 的 `skill_route`，调用
+  `SkillRouteToolService.route`，`invocation_mode=backend_sync`，只读且不需要二次确认。
+- 候选准备：`SkillRouteService.prepare_candidates` 先按 Skill ID、名称、描述、标签和入口做
+  确定性元数据筛选，再读取最多 5 个候选的 `SKILL.md` 正文供审查。
+- 子 Agent：当前真正装配和执行的目标是 `agent-general`，不是独立的
+  `skill_router` 配置。`skill-route-scout` 只是 SSE 子 Agent 卡片使用的展示标识。
+- 子任务限制：使用 `safe_only=true`、`runtime_authorized=true`，并由
+  `ParallelSubAgentService` 剥离 `skill_route`、`parallel_subagents`、handoff、记忆写入等
+  控制类工具，防止递归路由、跨会话交接和副作用操作。
+- 主 Agent 关系：`agent-general` 只返回审查结论，不接管用户会话，也不负责最终分析。结论回到
+  原主 Agent 后，原主 Agent 仍必须调用 `use_skill` 固定会话版本，再进行分析或沙箱执行。
+- 双执行路径：Legacy Chat 和 LangGraph Chat 都在本地 runtime 处理 `skill_route`，并发出
+  `subagents` 的 `started` / `aggregated` SSE 事件；实际工具执行仍经统一 Tool Bridge。
+
+#### 4.3.2 路由触发策略
+
+共享沙盒协议要求：只要任务可能由已安装 Skill 覆盖，就先调用 `skill_route`。覆盖范围包括分析
+流程、数据处理、绘图、领域工具、软件包使用、参数规范、结果解释和交付格式等专业任务。
+普通闲聊、简单事实问答以及明确不涉及已安装 Skill 的任务无需路由。路由是“按需探测”，不是平台
+收到每条消息后的全局前置 Agent。
+
+该策略仍保持渐进式披露：`skill_route` 只做候选和适配审查，`use_skill` 才加载会话固定版本的
+正文，`skill_resource` 才读取 `references/` 或 `assets/`，沙箱工具才执行代码。
+
 ## 5. 安装 / 导入 / 同步
 
 ### 5.1 五入口统一"预览 → 确认"（`application/services/skill_import_service.py`）
