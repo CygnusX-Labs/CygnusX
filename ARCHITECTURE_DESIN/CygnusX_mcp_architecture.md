@@ -316,23 +316,28 @@ OpenAICompatible   LiteLLM         Kimi (Legacy)
 (httpx SSE 直连)  (100+ 模型)
 ```
 
-### 3.2 当前配置的模型
+### 3.2 当前配置的模型（Provider YAML 声明）
 
 | 名称 | 模型 | 端点 |
 |------|------|------|
 | deepseek-v4-flash | deepseek-v4-flash | DeepSeek（`https://api.deepseek.com`） |
 | qwen3.8-flash | qwen3.8-flash | 阿里云 DashScope 兼容端点 |
-| doubao-seed-evolving（默认） | doubao-seed-evolving | 火山方舟 |
+| qwen3.8-omni-flash | qwen3.8-omni-flash | 阿里云 DashScope 兼容端点 |
+| qwen3.8-max | qwen3.8-max | 阿里云 DashScope 兼容端点 |
 
-### 3.3 多模型路由
+当前默认声明为 `deepseek-v4-flash`。以上是磁盘配置，不代表远程模型已通过实际调用验证。动态选型现状见 `CygnusX_model_routing_architecture.md`。
+
+### 3.3 专家意图路由与模型选型
 
 ```text
 用户消息 → Router Agent (features.router: true)
-  → LLM 意图分类 (temperature=0, max_tokens=200)
-  → 输出 {"agent_id": "...", "reason": "...", "consult_agent_ids": [...]}
+  → LLM 意图分类 (temperature=0, max_tokens=10000)
+  → 输出 {"agent_id": "...", "reason": "...", "complexity": "low|medium|high", ...}
   → 组装目标 Agent 上下文 (模型/提示词/工具/MCP)
   → LangGraph ReAct 循环执行
 ```
+
+Router 选择目标 Agent；开启动态模型路由后，LangGraph 外层的 `ModelSelector` 再选择调用用的 Provider。两条路径的边界、开关和限制见 `CygnusX_model_routing_architecture.md`。
 
 ### 3.4 LangGraph 执行引擎
 

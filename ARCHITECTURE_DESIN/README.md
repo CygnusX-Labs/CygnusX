@@ -101,6 +101,9 @@ sequenceDiagram
 ### `CygnusX_agent_execution_framework.md` — 当前执行框架（as-built 主文档，2026-08-18；已吸收 observability 文档）
 Agent 执行面的唯一现状快照：多入口、共享工具契约、分路径执行；`execution_path` 六路径登记表（chat_legacy / chat_langgraph / studio_chat_loop / agentteams_manager_consultation / agentteams_worker_react / agentteams_tool_execution，含 degraded 降级语义）；Legacy ReAct、LangGraph 节点（`llm_call_node`/`tool_exec_node`/双 route）、Worker 受限 ReAct（独立 child_session、五条禁止）三类闭环；AgentTeams 协助室意图四态判定与 Case 执行链；统一事件框架（七字段、生命周期事件 + 已并入的 `agent_tool_call`/`agent_tool_started`/`agent_tool_result` 三级工具事件链、`tool_call_id` 贯穿、Worker→房间证据投影表、前端事件→文案映射与"默认展开底层事件"）；运行保护（轮次治理、`StudioLoopGuard`、`duplicate_tool_call` 与无进展 Guard 语义）；消息/Case/Workspace 状态边界；修改扩展规则与验证清单。
 
+### `CygnusX_model_routing_architecture.md` — 动态模型路由架构（as-built，2026-10-11）
+记录 Router 专家意图路由与模型选型的边界、Provider 档位和成本配置、complexity 难度、健康监控、LangGraph 接入、级联与决策审计；明确默认关闭、覆盖路径和真实调用验收缺口。动态模型调度相关改动先读本文，并以代码、配置和迁移核对现状。
+
 ### `CygnusX_agent_framework_baseline.md` — AI 助手基线与工具契约（as-built + 操作指南，2026-07-26/29；已吸收 extension_guide）
 配置驱动 Tool Agent 的规范基线：`data/ai/` 配置 → `ensure_builtin_agents()` → 数据库运行时链，改 md 提示词必须经营理端 API 发布；七个内置 Agent 清单与请求执行链路；工具与提示词契约——工作区五工具白名单一致性约束、Skill 三层渐进披露、时效检索降级契约、记忆与 Handoff 契约（`allowed_targets`、`max_hops_per_session`）、ask_user 全执行器统一中断语义与数据缺失澄清、会话隔离（`.s{session_id}` 标记）；Router/双执行器/Studio 边界；MAS 启用五前置条件；修改扩展流程与"不要采用的方式"反模式清单（prompt 假装执行、shell 拼接、任意 subprocess、高权限工具全发）；发布验收清单与验证证据；P1–P4 能力状态历史与优化方案实施边界（附录）。
 
