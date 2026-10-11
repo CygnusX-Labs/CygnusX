@@ -2,379 +2,228 @@
   <img src="docs/logo.png" alt="CygnusX Logo" width="250">
 </p>
 
-<h1 align="center">CygnusX · 天鹅座智能科研平台</h1>
+<h1 align="center">CygnusX BioOps · 天鹅座智能科研平台</h1>
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python Version"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20Commons%20Clause-green" alt="License"></a>
 </p>
 
-<p align="center"><strong>可复现的组学分析多 Agent 交付基础设施 —— 华中农业大学园艺林学学院</strong></p>
+<p align="center"><strong>AI for Science Infrastructure for Life Sciences</strong></p>
+<p align="center">面向生命科学的受控科研 Agent 与可信计算交付基础设施</p>
 
-让每一次组学交付都**可审计、可验证、可复用**：以多 Agent 协同（AgentTeams）为组织层，以版本锁定的 Flow Framework 为执行层，以 Skills 沉淀领域经验，交付物附带 Case / Artifact / Evidence / Manifest 溯源证据包。
+CygnusX BioOps 面向生命科学研究，以受控科研 Agent 为智能协作层，以版本化 Flow Framework 为确定性执行层，通过标准化组学分析工作流、工具权限治理和科学证据追溯机制，探索从自然语言科研需求到可复现计算结果的可信交付路径。
 
-> 📜 **Licensed under Apache-2.0 + Commons Clause — non-commercial use only.**
-> See [LICENSE](./LICENSE) for details. Commercial use requires a separate agreement.
+> **From Research Questions to Reproducible Scientific Evidence.**
+>
+> 从科研问题出发，组织受控计算实验，形成可验证、可追溯、可复现的科研证据。
+>
+> 这是平台的技术方向与发展愿景，不代表所有科研发现闭环能力已经实现。
 
-## 要解决的问题
+## 四大技术支柱
 
-组学数据分析是药物研发、种业育种和科研服务中的高频长链路任务。传统工作方式需要在聊天工具、表格和命令行之间反复配置，结果产生后的增量需求要排队等待专业人员，人员变动后项目常陷入从脚本和聊天记录中"考古"的困境。具体表现为四类核心问题：
+| 支柱 | 工程含义 |
+| --- | --- |
+| **Research Agents** | 理解科研需求，拆解任务，进行角色路由、多 Agent 协作和受控工具调度。 |
+| **Reproducible Workflows** | 以声明式 Flow Framework、Snakemake、版本化流程和锁定环境执行标准分析。 |
+| **Governed Execution** | 以 Skill 契约、工具权限、沙箱隔离、人工审批和质量门限制 Agent 行动范围。 |
+| **Verifiable Evidence** | 以 Case / Artifact / Evidence / Manifest 关联输入、参数、环境、质量记录和审计信息。 |
 
-1. **提交成本高且易出错**：标准分析需人工准备配置文件、样本表和对比组，字段遗漏往往到计算后期才暴露；
-2. **增量需求响应慢**：换对比、补富集、调整阈值等高频需求需生信人员重新理解和设计；
-3. **流程资产难复用**：更换比对器或增加 QC 步骤，往往意味着重写并重新审核整条管线；
-4. **交付缺乏可核验证据**：结果压缩包缺少当时的参数、环境、软件版本和重跑记录；大模型直接生成的流程虽灵活，却无法成为受控场景的可信执行依据。
+## Why CygnusX BioOps?
 
-本项目要解决的工程问题是：**如何保留大模型处理自然语言需求的灵活性，同时让执行、质量判断和交付证据始终由可版本化、可审计的流程与规则决定。**
+科学计算中的 AI 不应只生成看似合理的回答。每次执行还需要回答：
 
-## 核心机制：AI 只调度、不生成
+### 可信计算的五个基本问题
 
-平台把经过专家搭建和审核的分析管线固化为声明式、版本化流程资产；Skill 用触发条件、输入契约、版本号、失败语义和权限边界描述稳定业务动作。AI 只完成需求解析、计划拆解、角色路由和结果解释，**不直接编写或改写执行流程**。
+| 问题 | 平台关注点 |
+| --- | --- |
+| **Who can execute?** | 身份、权限、资源范围和审批边界。 |
+| **Where did the results come from?** | 输入数据、流程版本、环境、工具调用和外部来源。 |
+| **Why should we trust them?** | 质量指标、验证过程和证据与推断的区分。 |
+| **Can we reproduce them?** | 参数、依赖、随机性和重跑入口。 |
+| **What actually happened?** | 时间线、决策、变更、异常和产物指纹。 |
 
-能力边界由系统强制：Agent 无 shell、流程 YAML 与数据库写权限；高风险操作需短期审批令牌；提交采用幂等键避免重复计算；质量规则缺失或风险超阈值时任务自动转人工审批，而不由模型自行放行。每次执行自动关联流程版本、参数、环境快照、软件清单、产物指纹、随机种子和重跑命令，生成可核验的证据包与交付 README——**把可复现性变成分析任务的默认产物**，而非对用户的额外要求。
+因此，平台把一次计算的完成定义为：在明确权限边界内产生结果，并留下来源说明、质量证据、可复现信息和完整审计记录。
 
-参考 RNA-seq 场景的工程估算（**均为工程估算，不含计算运行时间，须以试点实测校准**）：
+组学交付中的时间和人力数字仅用于工程估算，不是性能承诺，且不包含计算运行时间，必须以试点实测校准：
 
-| 指标 | 传统参考方式 | 平台目标 |
-|---|---|---|
+| 指标 | 传统参考方式 | 平台目标（估算） |
+| --- | --- | --- |
 | 标准分析提交配置 | 约 20 分钟 | 约 5 分钟 |
 | 已沉淀 Skill 范围内的增量分析响应 | 约 480 分钟 | 30 分钟以内 |
 | 流程定制改造 | 约 5 人天 | 约 1 天 |
 | 人员交接后的项目核验 | 以周计且常失败 | 约 10 分钟照单核验 |
 
-> **适用边界**：平台面向 RNA-seq、单细胞、ATAC-seq 等科研/研发组学分析，适用于私有化或混合部署；不输出临床诊断报告，不把尚未完成的合规适配（GxP / 21 CFR Part 11）表述为已实现能力。
+## 从 Agent 到科研基础设施
 
-## 平台概览
-
-CygnusX 提供从轻量探索到受控交付的四级入口（L1–L4），共享同一份用户工作区数据底座（下载入库、零搬运、`omic://` 逻辑引用，按用户与 Case 严格隔离）：
-
-| 产品形态 | 定位 | 特点 |
-|---|---|---|
-| 生信工具箱 | 简单、重复、确定性计算（序列分析 / 可视化 / 表达分析等 17+ 工具） | 零 token 消耗，部分纯浏览器本地运算 |
-| 星尘 AI 助手 | 轻量、探索性需求，对话式调用工具与知识库 | MCP + Skill + 轻量沙箱，内置高频组学快捷场景 |
-| AI 工作台（OmicStudio） | 交互式深度分析，面向专业生信工作者 | 沙箱终端 + 代码编辑 + 人工审核，沙箱隔离、用完即毁 |
-| 多 Agent 协作室 | 以"虚拟生物信息部门"组织多 Agent 协同：通用任务由部门经理直接调度，正式分析走 Case 受控交付 | 部门经理调度 / 计划 → 审批 → 执行 → 质控 → 交付，全程受控可审计 |
-
-核心原则：**不让 LLM 为确定性计算花 token，不让探索性分析污染交付链路** —— 越靠近探索越自由，越接近交付约束越强。L1–L4 同时是一套成本模型：L4 协作室是 token 最贵的层，升级规则本身即成本闸门（≥3 个专业步骤、需正式交付或用户显式要求时才刻意进入）。
-
-竞赛方案与产品叙事见 `docs/info/26.8.21/CygnusXBioOps_初赛_v1.pdf`。
-
-## 平台愿景与核心理念
-
-### 为什么要搭建这个平台
-
-生命科学的数据分析交付，正在经历一场深刻的范式迁移，从凭经验摸索的“个人手艺”，走向机器可核验的“工业交付”。在大语言模型席卷一切的浪潮里，有人惊叹于生成式 AI 的天马行空，有人受阻于科学计算对绝对严谨的苛求。面对“AI for Science”这道复杂的时代命题，CygnusX BioOps 既不做盲目乐观的追随者，也不做止步不前的旁观者，我们选择成为最接地气的探路者。
-
-我们给出的答案，不是堆砌更多聪明的 Agent，而是构建一套让科学敢于探索的确定性系统：为大模型画定清醒的权力边界，用 Skill 契约驯服幻觉；把散落的专家智慧固化为可流转的流程资产，把每一次推演封存为经得起时间推敲的“证据胶囊”。人负责提出最具想象力的科学假说，系统负责守护物理世界中最严谨的计算证据。
-
-通往智能科研的坦途不会凭空出现，总需要有人在代码、数据与生物学规律之间，扎硬寨、打硬仗，摸清大模型在严谨科学领域的边界与可能，这不是停留在纸面上的推演。在真实的高校基因组学实验室里，我们已经迈出了受控验证的第一步；未来，我们更将以扎实的工程持续探明这条路，让每一次科学推导皆有证据，让每一次组学发现都经得起历史检验。
-
-### 平台定位
-
-**从科研现象出发，组织可验证、可复现、可追溯的计算实验。**
-
-CygnusX 面向生命科学研究，致力于建设连接**科学问题、计算实验与实验验证**的科研计算基础设施。传统平台通常以“上传数据、运行 Pipeline、获得结果”为入口；CygnusX 则希望逐步把入口提升到科研问题本身：研究者提出观察到的现象或待解决的问题，系统协助组织数据、流程、计算资源、质量控制和证据。
-
-例如，面对“候选分子 X 对非小细胞肺癌细胞具有抑制作用，可能的分子机制是什么？”这类问题，平台的长期方向不是直接生成一个看似确定的答案，而是协助建立一条可检查的研究链路：
-
-```text
-实验现象 → 科学问题 → 研究假设 → 实验/测序方案
-    → 计算实验 → 结果与证据 → 实验验证 → 新的研究问题
+```mermaid
+flowchart TD
+    Q[科研问题 / 分析需求] --> A[Research Agents]
+    A --> C[Skill / MCP / Tool Contracts]
+    C --> G[Governed Execution]
+    G --> F[Versioned Flow Framework]
+    F --> S[Scientific Computing & Quality Control]
+    S --> E[Artifact / Evidence / Manifest]
+    E --> R[Reproducible Research Delivery]
 ```
 
-最终形成的是**人机协同的科研计算闭环**，而不是无人审核的自动化科研。
+当前标准交付链路从明确的分析任务开始；面向科研问题的假设组织、实验设计和闭环发现仍属于逐步建设的长期方向。科研人员负责科学假设、实验验证和关键结论，系统负责在授权范围内组织计算、记录证据并报告限制。
 
-### 核心理念
+## 核心原则：AI 只调度受控生产流程
 
-> **人提出科学问题，系统逐步组织计算实验；人判断科学证据，系统持续沉淀与执行。**
+分析管线由专家搭建并审核，固化为声明式、版本化流程资产。AI 负责需求解析、计划拆解、角色路由、工具调度和结果解释，不直接修改正式分析 Pipeline 或数据库。
 
-CygnusX 的愿景是演进方向，不代表当前能力承诺。当前平台首先保证标准化计算任务能够可靠交付，再逐步增加 Agent 的理解、规划、编排和反馈能力。系统可以在明确边界内扩大自动化范围，但其行动始终受到以下约束：
+Agent 不获得 shell、流程 YAML 或正式数据库写权限；高风险动作需要一次性人工审批凭证，提交使用幂等键避免重复计算。OmicStudio 可以在受限沙箱内进行探索性代码生成和执行，但探索空间与正式交付链路隔离。每次执行关联流程版本、参数、环境、软件清单、产物指纹、随机性信息和重跑命令。
 
-- 可用数据、分析流程与工具权限
-- 计算资源与成本策略
-- 质量规则、产物规范与合规要求
-- 计划审批、人工复核与交付门禁
+## 平台概览：L1–L4
 
-因此，自动化不是无限授权，而是**在可审计、可回退的边界内逐步扩大系统可以自主完成的工作范围**。Agent 可以辅助提出方案、调用工具、执行计算和整理证据，但模型生成的假设不能直接视为科学结论，关键判断仍由科研人员负责。
+| 入口 | 定位 | 当前边界 |
+| --- | --- | --- |
+| **L1 生信工具箱** | 确定性、重复性生信工具和可视化。 | 工具注册、参数校验和任务状态由平台控制。 |
+| **L2 星尘 AI 助手** | 轻量需求理解、知识检索和工具调用。 | 适合探索性任务，不替代正式科学审核。 |
+| **L3 OmicStudio** | 面向专业人员的交互式深度分析。 | 代码和终端运行在隔离沙箱，能力由 Agent capability 授权。 |
+| **L4 多 Agent 协作室** | Manager、领域专家、Quality Auditor 和 Delivery Reporter 的协作。 | 正式分析进入 Case 受控交付链；通用任务可走轻量调度。 |
 
-### 可信计算的五个基本问题
+越接近正式交付，权限、质量门和审计要求越严格。L1–L4 是不同的工作形态和成本边界，不是对科研结论自动化程度的承诺。
 
-CygnusX 对每一次计算实验和每一项交付都坚持回答以下五个问题。它们既是平台愿景中的价值判断，也是权限、证据和交付设计必须满足的工程标准：
-
-| 问题 | 核心关注点 | 平台要求 |
-|---|---|---|
-| **Permission**<br>谁可以执行？ | 执行者身份、权限范围与审批边界 | 只有经过授权的用户、Agent 和工具，才能在明确的 Case 与资源边界内执行操作 |
-| **Provenance**<br>结果来自哪里？ | 数据、流程、环境、模型与外部来源 | 结果关联输入数据、流程版本、软件环境、工具调用和文献或数据库来源 |
-| **Evidence**<br>为什么应该相信？ | 结论依据、质量指标与验证过程 | 交付必须附带可检查的产物、质量控制结果和证据，并区分计算结果、外部证据与综合推断 |
-| **Reproducibility**<br>能否再次运行？ | 参数、依赖、随机性与运行入口 | 固化参数、环境、软件清单、随机种子和重跑命令，使同一任务能够被复现或解释差异 |
-| **Audit**<br>究竟发生了什么？ | 时间线、决策、变更与异常 | 保留完整的执行日志、审批记录、工具调用、产物指纹和失败信息，支持事后核验 |
-
-这五个问题共同定义了平台对“完成”的最低要求：**不是产生一个结果文件，而是产生一个有权限边界、有来源说明、有证据支撑、可重跑且完整留痕的科研交付。**
-
-### 从分析任务走向科研问题
-
-平台能力将从稳定交付明确任务开始，逐步向更高层次的科研问题组织能力演进：
+## System Architecture
 
 ```text
-当前：数据 → 分析任务 → Pipeline → 计算结果
-
-演进：科研现象 → 科学问题 → 研究假设 → 实验设计
-      → 计算实验 → 证据整理 → 人工审核 → 实验验证
+Browser → Nginx → Vue 3 / FastAPI
+                     ├── PostgreSQL + pgvector / Redis / MinIO
+                     ├── Celery / RocketMQ → Snakemake → shared storage
+                     └── AgentTeams Bridge / Gateway → role-scoped workers
 ```
 
-现有 L1–L4 入口对应这条演进路径的不同自动化和约束层级：工具箱负责确定性计算，星尘 AI 助手支持轻量探索，OmicStudio 支持交互式深度分析，多 Agent 协作室负责正式任务的计划、审批、执行、质控和交付。越靠近正式交付，权限、质量门和审计要求越严格。
+- **后端**：Python 3.11、FastAPI、SQLAlchemy、Alembic、PostgreSQL/pgvector、Redis、MinIO/S3、Celery 和 RocketMQ。
+- **前端**：Vue 3、TypeScript、Vite、Naive UI 和 Pinia。
+- **AI 与 Agent**：数据驱动 Agent 装配、ReAct 与 LangGraph 双执行引擎、统一生命周期事件、MCP 三层接入、pgvector 记忆和 AgentTeams 协作层。
+- **流程执行**：Flow YAML 描述元数据、参数、样本表、执行资源和 pipeline 映射；`GenericFlowBuilder` 生成流程输入，Snakemake 在受控 Worker 中执行。
+- **运行隔离**：Studio 与终端使用非 root、只读根文件系统、capability 路由、资源限制和网络白名单等沙箱基线。
 
-### 能力演进路线
+## Scientific Evidence & Reproducibility
 
-| 阶段 | 平台形态 | 重点能力 | 角色边界 |
-|---|---|---|---|
-| **Phase 1** | **Reliable Workflow** | YAML、版本化 Pipeline、容器、Snakemake、数据预检、QC、日志和标准化交付 | 系统可靠执行；研究者定义问题和参数 |
-| **Phase 2** | **AI-assisted Computing** | 自然语言交互、参数生成、工具调用、任务监控、异常诊断和报告整理 | Agent 辅助明确任务，不替代科研判断 |
-| **Phase 3** | **Controlled Agentic Execution** | 任务契约、允许的 Workflow/工具、计算策略、质量规则、Artifact 策略和审计轨迹 | Agent 在授权边界内自主编排，关键节点可审批、可回退 |
-| **Phase 4** | **Goal-oriented Computational Experiment** | 科研目标理解、实验计划建议、计算实验组织和多来源证据整合 | 系统协助组织研究过程，科研人员负责假设与结论 |
-| **Future Exploration** | **Closed-loop Scientific Discovery** | 计算结果 → 实验验证 → 新数据 → 下一轮研究任务 | 探索方向，不作为当前产品承诺 |
-
-### 从结果文件走向证据链
-
-CygnusX 不把 `DEG.csv`、火山图或富集表视为交付终点，而是将结果放回科研问题的上下文中，形成可追溯的证据链：
+正式交付以 Case 组织，并把以下对象关联起来：
 
 ```text
 Research Question
         ↓
-Experimental Data → Computational Analysis → Quality Control
-        ↓                         ↓
- Literature Evidence       Analysis Artifacts
-        └──────────────┬──────────────┘
-                       ↓
-              Evidence Report
-                       ↓
-                Human Review
+Input Data → Versioned Flow → Quality Control
+        ↓           ↓
+External Evidence → Artifacts
+              ↓
+       Evidence Report → Human Review
 ```
 
-正式交付通过 Case 受控流程组织，并附带 `Case / Artifact / Evidence / Manifest` 溯源证据包；结论明确区分**本平台计算、外部文献证据和综合推断**。这样交付的不只是“分析结果”，而是围绕科研问题组织起来、能够复核和复现的证据。
+交付物区分三类来源：本平台计算、外部文献或数据库证据、综合推断。`Case / Artifact / Evidence / Manifest` 用于记录输入、参数、环境、软件版本、质量结果、产物哈希、审计事件和重跑入口。系统提供可核验的计算证据，不把模型生成内容直接当作科学结论，也不宣称临床诊断或法规合规能力。
 
-### 长期愿景
+## Capabilities & Development Status
 
-CygnusX 不试图在今天定义未来科研 Agent 的终点，而是建设一套能够随技术进步持续扩展的基础设施：
+### 已实现或作为当前工程基线维护
 
-```text
-可靠 Workflow
-    ↓
-AI-assisted Workflow
-    ↓
-Agentic Workflow
-    ↓
-受控计算实验
-    ↓
-面向科研目标的计算实验
-    ↓
-未来的科学发现协作
-```
+- L1–L4 入口、受控 Agent 执行、统一事件与审计链路。
+- 声明式 Flow catalog、YAML 参数表单、热重载和 Snakemake Worker 执行。
+- MCP 内置 Preset、外部 Server 和管线专属接入；MCP Builder 生成内容需经过静态检查、沙箱测试和人工审核。
+- 平台 Skill 的磁盘真相源、数据库索引、版本管理、Agent 绑定和渐进式发现。
+- PostgreSQL + pgvector 记忆/知识检索、任务日志、产物归档和证据元数据。
+- Studio capability 沙箱、终端隔离、资源配额、网络限制和结构化安全审计。
 
-每一步都建立在前一步的可靠性、可审计性和可复现性之上。平台的长期目标可以概括为：**从可靠的科研计算工作流出发，逐步让系统具备理解任务、组织工具、执行计算、验证结果和协助实验设计的能力。**
+### 内部研发与独立生态组件
 
-## 技术栈与总体架构
+平台主体在内部私有研发仓库持续迭代；FlowFrame、RNAFlow、ATACFlow、Treasure-Seeking Mouse、BioReport 等组件的具体集成范围以对应仓库、版本和文档为准。没有明确接入证据的组件，不能视为公开版本的内置能力。
 
-- **后端**：FastAPI + SQLAlchemy 2.0 + PostgreSQL 14+（pgvector）+ Redis 7 + MinIO/S3（证据与过程记录持久层）+ Celery / RocketMQ
-- **前端**：Vue 3 + TypeScript + Vite + Naive UI + Pinia
-- **流程引擎**：Snakemake 8+，Flow Framework 版本化 + Conda 环境锁定 + 容器执行
-- **AI / 多 Agent**：统一 Agent 装配（`data/ai/*.yaml` 声明，19 个内置 Agent，mtime 热重载）；双执行引擎（手写 ReAct + LangGraph 状态图）同语义；6 条执行路径共享统一生命周期事件契约；MCP 三层工具接入；分层记忆系统（pgvector + HNSW）；AgentTeams Bridge/Gateway 协同层
-- **部署**：Docker Compose 多栈编排（主栈 + 独立 Worker 计算栈 + AgentTeams 栈），支持单机、跨机器与（规划中）Slurm/Kubernetes
+### 长期方向（未作为当前产品承诺）
 
-```text
-Browser → Nginx → Web/API ──→ PostgreSQL / Redis / MinIO
-                     │
-                     ├──→ Celery/RocketMQ Worker 栈 → Snakemake → /data/cygnusx（共享存储）
-                     └──→ AgentTeams Bridge/Gateway → 专家 Worker 池（按角色令牌最小权限）
-```
+- 面向科研目标的假设组织、计算实验规划和实验反馈闭环。
+- HPC / Systems Agent、Slurm/Kubernetes 扩展和桌面客户端。
+- 更广泛的科研数据发现、标准化分析、报告和领域知识生态集成。
 
-多 Agent 协作室以**"虚拟生物信息部门"**为组织模型：**Manager 扮演生信部门经理**，只编排不执行（接单 / 派单 / 验收 / 交付 / 例外处理五职责，失败显式化、禁止静默兜底），将任务分派给各领域专家 Agent；**领域执行者不判定质量**（专家能力遵循 `capabilities / not_suitable_for / handoff_when / preferred_inputs` 四段契约，含负向边界）；**Quality Auditor 独立核验**；**Delivery Reporter 只交付已过质量门的产物**。
-
-协作室按任务严肃程度分**两种工作模式**：
-
-- **部门经理调度模式（通用任务）**：Manager 理解需求后直接分派专家 Agent 并行分析、汇总答复，轻量快速，不建 Case；
-- **Case 受控交付模式（正式分析）**：创建 Case 后走受控流水线——计划生成与审批 → 任务执行 → 质量审核 → 交付，交付物附带 Case / Artifact / Evidence / Manifest 完整溯源证据链，须过完成门三件套（产物结构 + 证据 + 质量指标），结论强制三层 provenance 标注（本平台计算 / 文献证据 / 综合推断）。
-
-详细设计见 `ARCHITECTURE_DESIN/`（索引：`ARCHITECTURE_DESIN/README.md`）。
-
-## 快速开始
+## Quick Start
 
 ### 环境要求
 
-- Python >= 3.11、Node.js >= 18、Docker >= 24.0、uv
+Python >= 3.11、Node.js >= 18、Docker >= 24、[uv](https://docs.astral.sh/uv/)。
 
 ### 本地开发
 
 ```bash
-uv sync                          # 后端依赖
-cd frontend && npm install       # 前端依赖
-make docker-up                   # PostgreSQL + Redis 等基础设施
-make migrate                     # 数据库迁移
-make init-admin                  # 初始化管理员（或访问 /setup 网页注册）
-make dev                         # 后端 :8000
-make frontend-dev                # 前端 :5173（另一个终端）
+uv sync --frozen
+cd frontend && npm ci
+make docker-up
+make migrate
+make dev
 ```
 
-访问 http://localhost:5173（前端）或 http://localhost:8000/docs（API 文档）。
+另开终端运行 `cd frontend && npm run dev`，然后访问 `http://localhost:5173`；API 文档位于 `http://localhost:8000/docs`。生产或完整部署请先阅读 `wiki/deployment/` 和 `deploy/docker/README.md`，并替换 `.env.example` 中的默认密钥。
 
-### Docker 部署（推荐）
+## Technical Details
 
-```bash
-cp .env.example .env && chmod 600 .env   # 替换所有默认密码与密钥
-make frontend-build
-make docker-up-all                       # 主栈 + Worker 一键全启
-```
+### Agent、MCP 和 Skill
 
-访问 `http://<服务器地址>:8888`。首次无管理员时访问 `/setup` 创建首位管理员（创建后该入口永久关闭，后端强制校验）。
+Agent 的身份、提示词、模型、工具白名单和运行时能力由 `data/ai/*.yaml` 声明，并由加载器装配。执行路径包括 Chat、Studio、AgentTeams Manager 和 Worker；所有路径共享轮次限制、工具调用审计、失败隔离和终态事件契约。
 
-> 📖 **部署与运维细节已收口到 `wiki/`**：Make 命令速查、deploy/ 部署拓扑、单机/跨机/生产、镜像构建、
-> Multi-Agent 与 AgentTeams 开启步骤，分别见
-> `wiki/operations/common-commands.md`、`wiki/deployment/index.md`、
-> `wiki/deployment/docker-deployment.md`、`wiki/deployment/agentteams-enablement.md`。
-> 完整说明另见 `docs/update_info/26.6/Makefile_命令说明.md` 与 `deploy/docker/README.md`。
+MCP 工具通过内置 Preset、外部 Server 和管线专属 Server 分层接入。MCP Builder 的规划、编码、测试、文档和注册过程在沙箱中完成，生成代码不能绕过审核直接进入生产工具池。
 
-## 项目结构
+平台 Skill 与 `.agents/skills/` 中供开发助手使用的技能目录是两套不同体系。业务 Skill 通过 `data/ai/skills/`、数据库索引和 Agent 声明绑定；两者不能相互推断或混用。
 
-```
+### Flow、工具桥接与科研数据
+
+- `flows/*.yaml` 描述 `meta`、`parameters`、`sample_sheet`、`execution` 和 `pipeline_mapping`；Flow repository 支持 mtime 热重载，`GenericFlowBuilder` 生成分析输入。
+- `tool_configs/tools_schema.yaml` 将工具编译为 LLM function，`ToolBridgeService` 通过 `backend_shim`、同步、异步和页面调用模式分发，并以 `llm_payload` / `ui_payload` 双通道返回结果。
+- 数据下载入口可接入 EBI/NCBI 公共数据和云存储直拉，任务复用统一状态与日志链路；默认开关关闭，启用前需配置对应二进制和环境变量。
+- `docs/knowledge/` 与 `wiki/` 是知识内容源，管理员编辑后可同步数据库并向量化供检索使用。
+
+### 终端与 Studio 沙箱
+
+云端终端通过 xterm.js、WebSocket 代理和容器 ttyd 提供即用即毁会话；Studio 按 `code`、`browser`、`document` capability 选择运行镜像。两者均使用非 root、只读根文件系统、资源上限和受限网络，退出或回收后不保留运行容器。
+
+### 数据、日志与安全
+
+- 运行时数据统一使用配置驱动的 `/data/cygnusx` 存储根，按用户和 Case 隔离。
+- 日志、审计和 OTel 指标分别保留应用、任务、沙箱和交付事件；遥测故障不应中断业务。
+- 沙箱默认使用 `cap_drop=ALL`、非 root、只读 rootfs、资源上限和受限网络；生产环境必须配置随机密钥并妥善轮换。
+
+### 项目结构
+
+```text
 src/cygnusx/          后端 Python 包（DDD 分层）
-  api/v1/             FastAPI 路由（含 admin/）
-  application/        应用层（services/ 用例编排 + schemas/ DTO）
-  domain/             领域层（user/flow/task/file/ai/mcp/skill/cookie）
-  infrastructure/     基础设施（ai_provider / database / celery_app / mcp / execution / ...）
-  core/               配置、安全、日志、遥测
-  middleware/         auth / rbac / cookie / rate_limit / trace_context
-frontend/             Vue 3 前端（components / composables / stores / views）
-deploy/               部署编排（见上节）
-integrations/agentteams/  AgentTeams Bridge / Gateway / Worker 工程（独立测试工程）
-flows/                Snakemake 流程 YAML 声明（rna_seq / atac_seq）
-pipelines/            流程实现（RNAFlow / ATACFlow / scrna / EBIDownload / jbrowse2 / ...）
-tool_configs/         生信工具箱配置（tools_schema.yaml / terminal / jbrowse / enrichments / deg / ...）
-data/                 运行时配置（CygnusX.yaml / ai/*.yaml / ai/domains/*.yaml / worker_config.yaml）
-wiki/                 面向用户/管理员/开发者的稳定说明文档（变更功能时同步，正文自动入知识库）
+frontend/             Vue 3 前端
+flows/                Flow YAML 声明
+pipelines/            RNAFlow / ATACFlow / scrna 等流程实现
+tool_configs/         工具箱与终端配置
+data/                 Agent、Skill 和运行时配置
+integrations/         AgentTeams Bridge / Gateway
+deploy/               Docker Compose 与运行时镜像
 alembic/              数据库迁移
-docs/                 文档（knowledge/ 知识库源、info/ 竞赛与评审材料、modules/ 模块设计）
-ARCHITECTURE_DESIN/   项目级架构与设计文档（索引见其 README.md）
-report/               架构审查、安全审查、K8s/存储/调度方案报告
-scripts/              运维脚本（worker-compose.sh、迁移检查、知识库同步等）
-tests/                后端测试（unit / integration / e2e / performance，260+ 测试文件）
+ARCHITECTURE_DESIN/   项目级架构与设计索引
+tests/                unit / integration / e2e 测试
 ```
 
-## 核心扩展机制
+## Documentation
 
-### Agent 执行框架：双引擎、多路径、统一事件
+- **架构索引**：[`ARCHITECTURE_DESIN/README.md`](ARCHITECTURE_DESIN/README.md)
+- **平台总览**：[`ARCHITECTURE_DESIN/CygnusX_platform_architecture.md`](ARCHITECTURE_DESIN/CygnusX_platform_architecture.md)
+- **Agent 执行框架**：[`ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`](ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md)
+- **Flow 接入**：[`ARCHITECTURE_DESIN/CygnusX_flow_architecture.md`](ARCHITECTURE_DESIN/CygnusX_flow_architecture.md)
+- **MCP**：[`ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`](ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md)
+- **沙箱**：[`ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md`](ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md)
+- **使用与部署**：[`wiki/`](wiki/)、[`deploy/docker/README.md`](deploy/docker/README.md)
+- **工具页面规范**：[`tool_configs/tools_design.md`](tool_configs/tools_design.md)
 
-Agent 的身份 / 提示词 / 工具白名单 / 模型全部由 `data/ai/*.yaml` 声明，DB 发布 + mtime 热重载。执行层有**双引擎同语义**（手写 ReAct 与 LangGraph 状态图共享 ask_user 中断、handoff、工具回灌语义）与 **6 条登记执行路径**（`chat_legacy` / `chat_langgraph` / `studio_chat_loop` / `agentteams_manager_consultation` / `agentteams_worker_react` / `agentteams_tool_execution`），全部共享统一生命周期事件契约（`agent_turn_started` / `agent_final_result` / `agent_loop_guard_triggered` 等，按 `run_id / round / execution_path / tool_call_id` 关联，SSE 投影到前端调试时间线）。运行保护内建：轮次上限与可确认扩轮、StudioLoopGuard（工具总数 / 连续失败 / auto→supervised 降级）、Worker duplicate_tool_call 与无进展 Guard、`asyncio.timeout`、Worker 失败隔离。详见 `ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`。
+## Roadmap
 
-### Flow（流程）扩展：YAML 声明式接入
+路线围绕“可靠工作流 → AI 辅助工作流 → 受控 Agent 编排 → 面向科研目标的计算实验”逐步推进。每个阶段都以权限、证据、可复现性和人工责任边界为前置条件；尚未完成验收的 HPC、桌面端、自动实验设计和闭环发现能力不作为当前版本承诺。
 
-新增分析流程通常只需在 `flows/` 添加 YAML，无需改后端代码：`meta`（全局唯一 id）+ `parameters`（动态表单）+ `execution`（Snakefile 路径与资源）+ `sample_sheet` + `pipeline_mapping`（参数 → 流程输入文件映射，由 `GenericFlowBuilder` 动态生成 config/samples/contrasts）。改后 `POST /api/v1/flows/reload` 热重载。参考 `flows/rna_seq.yaml`、`flows/atac_seq.yaml`。
+## Repository Scope & Development Status
 
-### 领域包与超频模式（Overdrive）
+CygnusX BioOps 采用内部持续研发与外部独立发布相结合的工程管理方式。
 
-LLM 规划治理分两层：`data/ai/domains/*.yaml` 领域包（现有 general / omics / phylo 三包）以 **authoritative 锚点硬约束** + `validate_plan` 防止错派 Agent；未命中领域包的长尾需求走**通用四阶段骨架**（输入核验 → 核心分析 → 可视化 → 汇总交付）+ `validate_capability_match` 能力匹配软校验 + 修复回路（repair prompt），违例经 `plan_violations` 指标观测。领域包热加载，"同一类需求复现 2–3 次即沉淀为领域包"。
+项目主体研发工作在内部私有研发仓库中持续推进。公开仓库 `OmicHub_BioOps` 作为独立发布与对外展示入口，其提交记录不代表项目全部研发历史，也不意味着公开版本已经包含内部研发中的所有功能。
 
-### 工具箱 ↔ AI 助手联动
+项目持续围绕 AI for Science、科研 Agent、可信计算、科学工作流与证据可追溯机制开展工程迭代。具体可用功能、部署方式、测试结果和开放范围，以对应发布版本及文档为准。
 
-工具在 `tool_configs/tools_schema.yaml` 注册为 LLM function（当前 43 个，mtime 热重载），经内置 MCP `cygnusx-tools` 由 `ToolBridgeService` 校验分发（`backend_shim` / `backend_sync` / `backend_async` / `open_page` 四种调用模式），返回双通道结果：`llm_payload`（≤3KB 摘要回灌 LLM）+ `ui_payload`（前端渲染 `plotly_figure` / `table_data` / `confirm_card` / 任务进度卡）。大文本参数用 `upload://file_id` 引用已上传文件。新增工具步骤与规范见 `tool_configs/tools_design.md`。
+## License
 
-### MCP 子系统与 MCP Builder
+根目录 [`LICENSE`](LICENSE) 当前包含 Apache License 2.0 与 Commons Clause 条件。Commons Clause 对将软件用于向第三方收费提供实质相同功能作出限制，使用前请阅读完整文本。
 
-MCP 分三层：内置 preset（`cygnusx-platform` 11 工具、`cygnusx-pipelines` 10 工具、`cygnusx-tools` 动态工具桥）、外部 MCP（STDIO / SSE / HTTP，30s 超时 + 三层安全校验）、管线专属 MCP。**MCP Builder**（`agent-mcp-builder`）是 LLM 生成工具的安全生产线：六阶段流水线（规划 / 搜索 / 编码 / 测试 / 文档 / 注册）+ 约 12 类 AST 静态检查 + 沙箱 STDIO 执行测试 + 人工审核转正，配额 5 个/用户、TTL 24h 过期自动下线——生成代码永不直进生产工具池。详见 `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`（§5 为 MCP 构建师 as-built 章节，原 `mcp_builder_agent.md` 已并入其中）。
-
-### Skill 工程体系
-
-平台内置技能市场、多通道导入与版本回滚；`skills/bio_skills/` 沉淀 75+ 领域 Skill（覆盖单细胞、空间组学、宏基因组等方向）；Bridge/MAS 契约层（`integrations/agentteams/skills/contracts.yaml`）经 allowlist 映射到可执行 Skill，均定义调用条件与失败语义；`mcp-builder` / `skill-builder` Agent 可将规范与代码沉淀为新的复用资产。
-
-### 记忆系统
-
-自研 PostgreSQL + pgvector 薄层（不依赖 mem0）：`memory_blocks` 命名块（profile / preferences / current_focus，version 乐观锁）+ `memory_facts`（vector(1024) + HNSW，时间衰减排序 `similarity × exp(-λ·age)`，`content_hash` 幂等，superseded 修正链，来源溯源）。分区语义：profile/preference 进共享分区（跨 Agent），project/summary 进 Agent 隔离分区，召回两路合并、共享优先去重；异步 settle 采用游标增量 + 区间幂等 + LLM 事实抽取。Studio 另有 `MEMORY.md` 文件记忆（200 条 / 8000 字符上限）+ Git checkpoint 保护。L4 接入纪律：Manager 注入共享 + Manager 分区，专家零注入防污染。详见 `ARCHITECTURE_DESIN/CygnusX_memory_architecture.md`。
-
-### 数据下载与聚合
-
-「数据下载」（`/downloads`）统一承载公共数据库（EBIDownload → EBI/NCBI FASTQ）与云存储直拉（OSS/TOS/OBS 官方 CLI），复用通用 Task 聚合与实时日志链路，产物自动入库「数据管理」。默认关闭，通过 `ENABLE_EBI_DOWNLOAD` / `ENABLE_CLOUD_STORAGE_DOWNLOAD` 及 `/data/cygnusx/bin/` 下对应二进制启用。
-
-### 知识库
-
-`docs/knowledge/`（`meta.yaml` 导航 + Markdown 正文）与 `wiki/` 为源，直接读盘热更新，管理员可在线编辑（路径遍历防护 + 原子写）；运行时经 `make sync-knowledge` 同步数据库并向量化供 AI 检索。架构见 `ARCHITECTURE_DESIN/CygnusX_knowledge_architecture.md`。
-
-### 云端沙盒终端
-
-即用即毁隔离容器终端（xterm.js → FastAPI WS 代理 → 容器 ttyd）：根文件系统只读、`cap_drop ALL`、非 root、资源硬限制、仅挂载本人 workspace、退出自动销毁。参数集中在 `tool_configs/terminal/terminal_config.yaml`（热重载）。详见 `tool_configs/terminal/README.md`。
-
-### Studio 沙箱安全基线
-
-OmicStudio 分析沙箱按 **capability 路由**（`code` / `browser` / `document`，Agent 的 `features.studio.sandbox_capabilities` 是唯一授权源，按"覆盖请求且能力最小"选镜像），容器安全基线 10+ 项：硬 CPU（nano_cpus）、mem_limit、pids_limit=512、`cap_drop ALL`、no-new-privileges、显式 seccomp、uid 10001、只读 rootfs、/tmp tmpfs（512MiB nosuid,nodev,noexec）、默认 network none + 可选 egress 白名单代理、10GiB 工作区配额兜底（agent watcher + HTTP 413）。容器复用时重校验基线，不合规旧容器自动停删重建；`sandbox.create / rebuild / capability_denied / reuse / reclaim / quota_exceeded` 六类结构化审计事件。详见 `ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md`。
-
-## 数据、日志与安全
-
-- **数据目录**：运行时数据统一收口宿主机 `/data/cygnusx`（bind mount，`docker-purge` 不删），按用户与 Case 严格隔离；目录结构与备份迁移见 `wiki/architecture/data-directory.md`。
-- **日志与可观测性**：日志统一收口 `/data/cygnusx/logs/`，loguru 轮转 + 宿主机 logrotate 兜底；OpenTelemetry 产出 Trace / Log / Metrics 三信号，`/metrics` 暴露 Prometheus 指标，管理端提供「AI 指标仪表盘」与「会话日志排查」（`/admin/session-logs`），未配置 OTLP 端点时自动降级、遥测异常绝不中断业务。详见 `wiki/architecture/logging.md` 与 `wiki/operations/troubleshooting.md`。
-- **安全**：24 项安全加固已落地（路径穿越防护、生产默认密钥启动失败、Redis 认证、AI key Fernet 加密、MCP RCE/SSRF 防护、JWT 吊销、沙盒网络隔离等），叠加 Studio 沙箱容器安全基线（`cap_drop ALL`、只读 rootfs、资源硬限制、默认 network none）。完整清单见 `wiki/security/hardening-checklist.md`、`docs/SECURITY_AUDIT.md` 与 `report/05_安全审查报告.md`。
-- **首次部署 `.env` 必填强随机值**：`JWT_SECRET_KEY`、`APP_SECRET_KEY`、`REDIS_PASSWORD`、`AI_PROVIDER_KEY_ENCRYPTION_KEY`（Fernet key，**设置后不可更改**）、`FLOWER_BASIC_AUTH`；生产检查项见 `wiki/deployment/production-checklist.md`。不要在 `.env`、`bridge.env`、README 或日志中保存真实密钥与令牌，泄露后立即撤销轮换。
-
-## 文档索引
-
-- **使用与运维手册（wiki，权威层）**：`wiki/`（Home.md 门户；getting-started / architecture / features / development / deployment / operations / security 八个分区，部署拓扑、命令速查、AgentTeams 开启、日志排障与安全清单均以 wiki 为准，正文自动同步平台知识库）
-- **架构与设计**：`ARCHITECTURE_DESIN/README.md`（总索引）——Agent 执行框架与最终基线、协作室（AgentTeams）as-built 架构、记忆系统、MCP 子系统、沙箱安全基线、日志架构、Worker 镜像计划、平台愿景定义等
-- **竞赛/评审材料**：`docs/info/26.8.21/`（BioOps 初赛方案 PDF、协作室 L4 审查报告与实施手册）
-- **模块设计**：`docs/modules/`；**命令详表**：`docs/update_info/26.6/Makefile_命令说明.md`
-- **部署细节**：`deploy/docker/README.md`、`deploy/agentteams/README.md`、`deploy/docker/POLARDB_POSTGRES.md`
-- **审查与规划报告**：`report/`（架构梳理、安全审查、任务调度、K8s、存储迁移等）
-
-## TODO · HPC / Systems Agent (`agent-hpc`)
-
-高性能计算 Agent，用于编写、编译并运行 Rust 等高性能系统代码，解决大规模基因组/单细胞分析中的瓶颈计算。
-
-### [Phase 1: Agent Definition & Architecture]
-- [ ] **Define Agent Responsibilities (`agent-hpc`)**:
-  - 核心职责：针对大规模基因组/单细胞瓶颈计算（如超大 BAM/VCF 流式解析、k-mer 频数统计、定制化高性能算法）编写、编译并运行高性能系统代码。
-  - 支持能力：Rust CLI 自动化编译与运行 (`cargo run/build --release`)、Polars 高性能数据流处理、与 Python (PyO3) / C-ABI 互操作。
-- [ ] **Register Agent in Platform Config**:
-  - 新增 Agent：`agent-hpc`（或 `agent-compute`）
-  - 映射运行时沙箱类型：`analysis-hpc` -> `cygnusx-analysis:hpc-v0.0.1dev`
-
-### [Phase 2: Dockerfile & Environment for `analysis-hpc`]
-- [ ] **Base OS & Build Toolchain**:
-  - [ ] 基础镜像：基于轻量稳定 Linux 镜像（如 `debian:bookworm-slim` 或 `ubuntu:24.04`）
-  - [ ] 预装必备编译依赖：`build-essential`, `clang`, `lld` (加速链接), `cmake`, `pkg-config`, `libssl-dev`, `zlib1g-dev`
-- [ ] **Rust Toolchain Configuration**:
-  - [ ] 通过 `rustup` 安装 Stable 官方工具链（含 `rustc`, `cargo`, `rustfmt`, `clippy`）
-  - [ ] 配置 Cargo 缓存路径与并行编译优化环境变量（如 `RUSTFLAGS="-C target-cpu=native"` 或基于通用体系架构的优化）
-  - [ ] 预装常用辅助开发 CLI 工具：
-    - `cargo-binstall` (极速二进制安装工具)
-    - `sccache` (编译缓存加速工具，降低 Agent 反复编译开销)
-- [ ] **Pre-cached Bioinformatics & Numerical Rust Crates**:
-  *(在镜像构建阶段预先下载并编译常用基础依赖，极大缩短 Agent 运行时首编译耗时)*
-  - [ ] **生物信息核心库**：`noodles` (高性能 BAM/VCF/FASTQ 解析生态), `bio` (bio-rs 算法库), `needletail` (超快 FASTA/FASTQ 解析)
-  - [ ] **高性能数据与数值计算**：`polars` (带 SIMD/并行加速), `rayon` (数据并行库), `ndarray`, `sprs` (稀疏矩阵)
-  - [ ] **多线程与系统抽象**：`tokio`, `crossbeam`, `serde`, `serde_json`, `clap`
-
-### [Phase 3: Image Build, Smoke Tests & Registry Push]
-- [ ] **Compiler Smoke Test**:
-  - [ ] 验证 `cargo --version` 与 `rustc --version`
-  - [ ] 执行一段轻量测试代码（例如使用 `noodles` 读取 BAM header 或 `needletail` 统计 base quality），验证链接与编译链路通畅
-- [ ] **Build & Push Image**:
-  - [ ] 构建并推送镜像：`cygnusx-analysis:hpc-v0.0.1dev`
-
-### [Phase 4: Agent Audit & Platform Verification]
-- [ ] **Run Platform Audit Check**:
-  - 确认沙箱检查通过并正确列出新增 Agent：
-    ```bash
-    PASS: audited 20 enabled agents
-      ...
-      agent-atacseq     analysis-atac    cygnusx-analysis:atac-v0.0.1dev
-      agent-hpc         analysis-hpc     cygnusx-analysis:hpc-v0.0.1dev
-    ```
-- [ ] **End-to-End Task Validation**:
-  - 让 `agent-hpc` 接收一个密集数据处理任务（如生成一个统计 FASTQ GC 含量的 Rust CLI 并运行），验证沙箱内从写代码到 `cargo run --release` 的闭环稳定性。
-
-## TODO · 桌面客户端（规划中）
-
-除网页端外，将推出**桌面客户端**：用户在本地服务器或云端服务器部署分析服务（Docker Compose 一键全启），安装客户端后填入服务器地址即可使用全部分析能力——客户端只做展示与交互，分析仍在服务端执行，数据不出用户自己的服务器。
-
-- [ ] 技术选型：Tauri 2.0（Rust 壳，包体小）内嵌 Vue 3 前端 dist
-- [ ] 壳工程搭建：`desktop/` Tauri 骨架，webview 加载本地 dist 或远程 URL
-- [ ] 登录页支持"服务器地址"配置（连接自建/云端部署的分析服务）
-- [ ] 壳内 webview 行为验证：JBrowse iframe/blob URL、文件下载、SSE/WS（终端、AI 流式输出）
-- [ ] 打包分发：Windows / macOS / Linux 三平台安装包（按 git SHA tag，禁 `latest` 裸推）
-- [ ] 自动更新与版本兼容提示（客户端版本 ↔ 服务端 API 版本）
+仓库元数据存在待统一项：根目录 `pyproject.toml` 当前仍声明 `MIT`，与 `LICENSE` 不一致。本 README 不替项目作出许可证选择；发布前应由项目维护者统一 `LICENSE`、Python 包元数据和各子工程许可证，并在发布说明中明确适用范围。
