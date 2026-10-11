@@ -364,7 +364,7 @@ wheels = [
 ]
 
 [[package]]
-name = "omichub-agentteams-bridge"
+name = "cygnusx-agentteams-bridge"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
