@@ -339,7 +339,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:  # noqa: BLE001 - indexing must not block web startup
             logger.warning("知识库自动增量索引失败，仍可手动执行 reindex 脚本: {}", exc)
 
-    knowledge_index_task = asyncio.create_task(_auto_reindex_knowledge())
+    if settings.knowledge_auto_reindex_enabled:
+        knowledge_index_task = asyncio.create_task(_auto_reindex_knowledge())
+    else:
+        knowledge_index_task = None
+        logger.info("知识库自动增量索引已暂停（KNOWLEDGE_AUTO_REINDEX_ENABLED=false）")
 
     async def _probe_idle_providers() -> None:
         if not settings.dynamic_model_routing_enabled:
@@ -391,7 +395,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 关闭时清理：取消未完成的沙盒预热 + 欢迎词补齐 + 知识库索引 + 关闭数据库
     sandbox_task.cancel()
     welcome_task.cancel()
-    knowledge_index_task.cancel()
+    if knowledge_index_task is not None:
+        knowledge_index_task.cancel()
     provider_probe_task.cancel()
     from cygnusx.infrastructure.database.session import close_db
 

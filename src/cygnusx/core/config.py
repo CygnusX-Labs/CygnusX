@@ -183,6 +183,9 @@ class Settings(BaseSettings):
     goal_fanout_enabled: bool = False
     goal_lease_seconds: int = 120
     goal_continuation_delay_seconds: int = 1
+    # ===== 知识库索引 =====
+    # 启动时自动增量重建已发布知识库文档的索引；容器/开发环境可置 false 暂停
+    knowledge_auto_reindex_enabled: bool = True
     # ===== P4 记忆语义召回（默认关闭；失败时回退关键词召回） =====
     agent_memory_semantic_retrieval_enabled: bool = False
     agent_memory_embedding_model: str = ""
