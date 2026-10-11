@@ -2605,3 +2605,26 @@ export interface AIQuickAction {
 ```
 
 `path` 是必填的相对产物路径；`size`、`sha256`、`url`、`kind`、`source` 按产物能力提供。没有文件的工具也必须返回版本号和空列表。直接返回的 Plotly 图表使用 `source: inline`，同时保留 `ui_payload.plotly_figures` 供前端预览；不得为不同 Agent 另造结果字段。
+
+## 38. 前端现状核对补充与后续评估项
+
+> **范围与口径（2026-10-11）**：本节记录对当前源码的静态核对结果，用于补充本规范的 as-built 事实；“评估项”是建议，不表示已经批准或实施。未进行浏览器截图、跨视口实测或 iframe 子应用源码审计。详细调查记录见 `docs/frontend-architecture-ui-ux-audit-2026-10-11.md`。
+
+### 38.1 已核实现状
+
+1. **主平台与寻宝鼠边界**：主平台由 `frontend/src/main.ts` 单入口创建 Vue 应用，路由页面使用动态 import。`/treasure-mouse` 对应 `TreasureMouseView.vue`，该组件展示加载/错误状态并 iframe 嵌入同源 `/treasure-mouse/`。寻宝鼠子应用源码不在 `frontend/src`，本节不描述其内部布局、主题或状态实现。
+2. **全局壳层与 fullscreen 语义**：受保护路由均由 `DefaultLayout.vue` 承载。路由 `meta.fullscreen` 在该布局中让内容区 padding 归零并使用原生滚动容器；它不会移除全局 Header 或 Sidebar。AI/Studio 路由会自动折叠全局 Sidebar。工具区域另有零外层 padding 规则，普通内容区使用 24px。
+3. **AI/Studio 内部工具栏**：`AIChatView.vue` 挂载 `AgentWorkspace.vue`；后者包含 60px `AgentSidebar`，活跃会话时 `AgentSandbox.vue` 渲染会话级 header。Studio 页面在全局 Header 下方渲染自己的 `.studio-topbar`。这些是全局壳层内的工作区导航/操作区，不替代全局 Header。
+4. **项目上下文**：Agent session 数据包含 `project_id`，`agentHub` 在 chat stream 请求中传递该字段。新 Studio 会话提供项目选择；未选择时前端提示后端将会话归入默认项目。项目详情使用路由 `projectId` 加载项目及关联概览；Studio API DTO 支持 `project_id`，报告转 Studio 使用 `report_id` 来源入口。项目关联确实存在，但各入口的传递规则不同；当前证据不支持“平台缺少项目上下文”或“必须强制选择项目”的结论。
+5. **错误边界**：`App.vue` 的 RouterView 外层存在 `AppErrorBoundary`。`main.ts` 未注册 `app.config.errorHandler`，router 未注册 `router.onError`；动态 import/chunk 错误的实际用户恢复行为尚未通过浏览器验证，因此作为待验收项记录。
+6. **导航定义**：`DefaultLayout.vue` 分别计算 `topNavItems` 与 `mainNavItems`，不是同一个菜单 schema 的两个投影。侧栏展开分组写入 `localStorage`；模块锁定显示和内容访问共同读取 modules store 与用户 `disabled_modules`。
+
+### 38.2 后续评估项（非已实施设计）
+
+- 先取得寻宝鼠 iframe 子应用源码或受控运行证据，再判断哪些主题和交互规范可以跨应用共享；不要仅凭父页面推断子应用视觉。
+- 对比文件管理、AI 助手、Studio 的全局壳层、内部工具栏和滚动容器职责。确认实际重复后，再决定是否抽象 `WorkspaceLayout`；保留各业务工作区所需的导航和信息密度。
+- 按 chat、Studio、下载、分析任务、文件空间逐条核对后端项目关联契约。前端当前允许未选择项目时使用默认项目；任何改变默认行为的提议都需先核实业务边界。
+- 在实现统一错误体验前，先以浏览器验证 `AppErrorBoundary` 对异步路由加载失败的表现；再决定是否增加 router error hook 或重试 UI。
+- 评估项验收应覆盖 1920、1440、1280、1024、768、390px，明暗主题、键盘焦点、reduced motion/transparency 和 forced colors；静态 CSS 检索不能代替这些验收。
+
+本节不改变前端组件、路由、样式或运行行为。新增要求只有在后续实施并完成验证后，才能从“评估项”转为实现规范。
