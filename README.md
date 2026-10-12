@@ -216,14 +216,8 @@ tests/                unit / integration / e2e 测试
 
 ## Repository Scope & Development Status
 
-CygnusX BioOps 采用内部持续研发与外部独立发布相结合的工程管理方式。
-
-项目主体研发工作在内部私有研发仓库中持续推进。公开仓库 `OmicHub_BioOps` 作为独立发布与对外展示入口，其提交记录不代表项目全部研发历史，也不意味着公开版本已经包含内部研发中的所有功能。
-
 项目持续围绕 AI for Science、科研 Agent、可信计算、科学工作流与证据可追溯机制开展工程迭代。具体可用功能、部署方式、测试结果和开放范围，以对应发布版本及文档为准。
 
 ## License
 
-根目录 [`LICENSE`](LICENSE) 当前包含 Apache License 2.0 与 Commons Clause 条件。Commons Clause 对将软件用于向第三方收费提供实质相同功能作出限制，使用前请阅读完整文本。
-
-仓库元数据存在待统一项：根目录 `pyproject.toml` 当前仍声明 `MIT`，与 `LICENSE` 不一致。本 README 不替项目作出许可证选择；发布前应由项目维护者统一 `LICENSE`、Python 包元数据和各子工程许可证，并在发布说明中明确适用范围。
+根目录 [`LICENSE`](LICENSE) 当前包含 Apache License 2.0 与 Commons Clause 条件。Commons Clause 对将软件用于向第三方收费提供实质相同功能作出限制，使用前请阅读完整文本。`pyproject.toml` 包元数据已同步声明为 Apache-2.0（with Commons Clause），与 `LICENSE` 保持一致。
