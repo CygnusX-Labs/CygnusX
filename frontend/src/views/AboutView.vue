@@ -105,6 +105,19 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
     duration,
   }
 })
+
+const valueStreams = [
+  { number: '01', title: 'Discovery · 科研发现', text: '从公共数据库、文献资源或已有数据出发，整理科研问题与研究素材。', icon: TelescopeOutline },
+  { number: '02', title: 'Execution · 受控计算', text: '将科研任务转化为可管理、可复现的分析执行过程。', icon: ShieldCheckmarkOutline },
+  { number: '03', title: 'Evidence · 证据交付', text: '关联数据、流程、运行记录与结果，支持核验和科研报告交付。', icon: SparklesOutline },
+]
+const ecosystemModules = [
+  { name: '科研寻宝鼠', text: '公共组学数据发现、文献检索与证据探索。', status: '生态组件' },
+  { name: 'Polariseq', text: '面向公共测序数据的数据传输与下载工具。', status: '生态组件' },
+  { name: 'FlowFrame', text: '标准化、可复用的分析流程框架。', status: '流程协议' },
+  { name: 'BioReport', text: '组织分析结果并生成标准化科研报告。', status: '流程产物' },
+]
+function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 </script>
 
 <template>
@@ -183,62 +196,9 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
       </div>
 
       <h1 class="about-title">CygnusX</h1>
-      <p class="about-subtitle">天鹅座智能科研平台<span class="subtitle-llm">· LLM 深度赋能</span></p>
-
-      <div class="about-quote-box">
-        <p class="about-quote-title">We are made of star-stuff</p>
-        <p class="about-quote">
-          我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。
-          组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。
-          当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。
-        </p>
-      </div>
-
-      <!-- 特性 -->
-      <div class="features">
-        <div class="feature-item feature-item--primary animate-fade-in-up delay-100">
-          <NIcon :size="24" class="feature-icon feature-icon--accent"><SparklesOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">AI 智能分析</div>
-            <div class="feature-desc">LLM 解读结果 · 自动生成报告</div>
-          </div>
-        </div>
-        <div class="feature-item animate-fade-in-up delay-200">
-          <NIcon :size="24" class="feature-icon feature-icon--accent"><ChatbubbleEllipsesOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">智能问答</div>
-            <div class="feature-desc">自然语言查询 · 对话式交互</div>
-          </div>
-        </div>
-        <div class="feature-item animate-fade-in-up delay-200">
-          <NIcon :size="24" class="feature-icon"><FlaskOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">多组学分析</div>
-            <div class="feature-desc">RNA-seq / ATAC-seq / 单细胞</div>
-          </div>
-        </div>
-        <div class="feature-item animate-fade-in-up delay-300">
-          <NIcon :size="24" class="feature-icon"><RocketOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">Snakemake 流程</div>
-            <div class="feature-desc">可复现、可扩展、自动化</div>
-          </div>
-        </div>
-        <div class="feature-item animate-fade-in-up delay-400">
-          <NIcon :size="24" class="feature-icon"><ShieldCheckmarkOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">私有化部署</div>
-            <div class="feature-desc">数据不出内网，安全可控</div>
-          </div>
-        </div>
-        <div class="feature-item animate-fade-in-up delay-500">
-          <NIcon :size="24" class="feature-icon"><TelescopeOutline /></NIcon>
-          <div class="feature-text">
-            <div class="feature-title">任务追踪</div>
-            <div class="feature-desc">实时监控 / DAG 可视化</div>
-          </div>
-        </div>
-      </div>
+      <p class="about-slogan">FROM STARDUST, TO DISCOVERY</p>
+      <p class="about-subtitle">面向生命科学的受控科研 Agent 与可信计算交付平台</p>
+      <p class="about-lead">连接科研数据发现、受控计算与可追溯证据交付，让科研探索从问题出发，以可信结果落地。</p>
 
       <div class="about-actions">
         <NButton class="about-btn-primary" size="large" @click="router.push('/flows')">
@@ -250,6 +210,7 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
         <NButton class="about-btn-ghost" size="large" @click="router.push('/dashboard')">
           进入控制台
         </NButton>
+        <NButton class="about-btn-ghost" size="large" @click="scrollToSection('ecosystem')">了解技术架构</NButton>
         <NButton
           v-if="siteConfig.platformGithub"
           class="about-btn-ghost"
@@ -264,6 +225,32 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
           GitHub
         </NButton>
       </div>
+
+      <section id="values" class="about-section" aria-labelledby="values-title">
+        <p class="section-kicker">FROM QUESTION TO EVIDENCE</p>
+        <h2 id="values-title">从科研问题到可信发现</h2>
+        <p class="section-intro">通过科研发现、受控计算与证据交付，构建可追溯、可复现的科研工作流。</p>
+        <div class="value-grid">
+          <article v-for="stream in valueStreams" :key="stream.number" class="value-card">
+            <div class="value-card__top"><span>{{ stream.number }}</span><NIcon :size="22"><component :is="stream.icon" /></NIcon></div>
+            <h3>{{ stream.title }}</h3><p>{{ stream.text }}</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="ecosystem" class="about-section" aria-labelledby="ecosystem-title">
+        <p class="section-kicker">AI4S ECOSYSTEM</p>
+        <h2 id="ecosystem-title">CygnusX AI4S Ecosystem</h2>
+        <p class="section-intro">从数据发现、数据获取，到标准分析与科研证据交付。</p>
+        <div class="ecosystem-platform"><span>CygnusX BioOps</span><small>平台集成与科研任务编排层</small></div>
+        <div class="ecosystem-grid"><article v-for="item in ecosystemModules" :key="item.name" class="ecosystem-card"><span class="status-label">{{ item.status }}</span><h3>{{ item.name }}</h3><p>{{ item.text }}</p></article></div>
+      </section>
+
+      <section class="about-section vision-section" aria-labelledby="vision-title">
+        <p class="section-kicker">OUR VISION</p><h2 id="vision-title">We are made of star-stuff.</h2>
+        <p class="about-quote">我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。</p>
+        <p class="vision-signoff">从星辰中来，向发现而去。</p>
+      </section>
 
       <!-- 底部 -->
       <div class="about-footer">
@@ -414,7 +401,8 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #11193c;
 }
 
@@ -1079,4 +1067,27 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
   .star.has-cross { opacity: var(--star-opacity, 0.7); }
   .nebula-band { opacity: var(--base-opacity, 0.85); }
 }
+.about-content { max-width: 1120px; padding: 48px 32px 64px; }
+.about-hero { min-height: min(680px, calc(100vh - 100px)); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 0 56px; }
+.about-slogan { margin: 0 0 16px; color: #b9c9ff; font-size: 13px; letter-spacing: .2em; font-weight: 600; }
+.about-lead { max-width: 680px; margin: 0 auto 28px; color: #d6def8; font-size: 15px; line-height: 1.8; }
+.about-section { scroll-margin-top: 24px; max-width: 1040px; margin: 0 auto; padding: 80px 0; text-align: left; }
+.about-section h2 { margin: 0 0 12px; color: #f2f5ff; font-size: 30px; text-align: center; }
+.section-kicker { margin: 0 0 12px; color: #9db4ff; font-size: 12px; letter-spacing: .16em; text-align: center; }
+.section-intro { max-width: 680px; margin: 0 auto 32px; color: #c4cee8; font-size: 15px; line-height: 1.7; text-align: center; }
+.value-grid, .ecosystem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.value-card, .ecosystem-card { padding: 24px; border: 1px solid rgba(190, 205, 255, .16); border-radius: 12px; background: rgba(18, 24, 56, .64); backdrop-filter: blur(12px); transition: transform 220ms ease, border-color 220ms ease; }
+.value-card:hover, .ecosystem-card:hover { transform: translateY(-2px); border-color: rgba(160, 184, 255, .4); }
+.value-card__top { display: flex; justify-content: space-between; color: #9db4ff; font-size: 12px; letter-spacing: .12em; }
+.value-card h3, .ecosystem-card h3 { margin: 22px 0 10px; color: #f2f5ff; font-size: 17px; }
+.value-card p, .ecosystem-card p { margin: 0; color: #c4cee8; font-size: 14px; line-height: 1.7; }
+.ecosystem-platform { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, 100%); margin: 0 auto 24px; padding: 18px 24px; border: 1px solid rgba(160, 184, 255, .34); border-radius: 12px; background: rgba(53, 70, 140, .46); color: #fff; font-size: 19px; font-weight: 650; }
+.ecosystem-platform small { color: #c4d0ff; font-size: 13px; font-weight: 400; }
+.ecosystem-grid { grid-template-columns: repeat(4, 1fr); }
+.status-label { color: #9db4ff; font-size: 11px; letter-spacing: .08em; }
+.vision-section { max-width: 780px; text-align: center; }
+.vision-section .about-quote { margin: 24px 0; color: #e8edff; font-size: 15px; line-height: 2; text-align: left; text-indent: 2em; }
+.vision-signoff { color: #b9c9ff; font-size: 14px; }
+@media (max-width: 760px) { .about-content { padding: 24px 20px 48px; } .about-hero { min-height: auto; padding: 40px 0 56px; } .about-section { padding: 56px 0; } .value-grid, .ecosystem-grid { grid-template-columns: 1fr; } .about-section h2 { font-size: 26px; } .about-actions { flex-direction: column; width: min(320px, 100%); margin: 0 auto; gap: 12px; } .about-actions .n-button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .value-card, .ecosystem-card { transition: none; } }
 </style>
