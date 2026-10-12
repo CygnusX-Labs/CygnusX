@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "CygnusX - 私有化多组学分析平台"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Apache-2.0 (with Commons Clause)" }
 authors = [
     { name = "CygnusX Team" },
 ]
