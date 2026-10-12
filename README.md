@@ -80,7 +80,7 @@ flowchart TD
 研究既可以从公共数据与文献发现开始，也可以从已有实验数据或分析产物导入开始。平台通过明确的接口、配置和产物约定，连接各组件的输入输出，并维护项目关系、权限边界、任务状态、运行记录与证据关联。
 
 <p align="center">
-  <img src="docs/cygnusx-ecosystem.png" alt="CygnusX 科研生态：统一组织层、专业能力层与流程规范底座" width="1100">
+  <img src="docs/CygnusX 科研生态全景.png" alt="CygnusX 科研生态：统一组织层、专业能力层与流程规范底座" width="1100">
 </p>
 
 | 组件 | 在科研链路中的职责 | 与平台及其他组件的关系 |
