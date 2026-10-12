@@ -2,7 +2,7 @@
 
 > **文档类型**：as-built（记录仓库当前已落地架构）。
 > **基线日期**：2026-10-03，基于 `flows/rna_seq.yaml` v2.3.0 / `flows/atac_seq.yaml` 与 `src/cygnusx/domain/flow/`、`application/services/`、`tools/`、`infrastructure/` 代码实测核对。
-> **前身**：`flows/flows_design.md`（v1.0 设计提案）与 `flows/flows_design_detailed.md`（v1.1 细化版）。两份提案已全部落地，本文为其现状转正；提案原文保留在 `flows/` 目录作历史参考（登记于 `ARCHITECTURE_DESIN/README.md` "相关文档"）。
+> **前身**：`flows/flows_design.md`（v1.0 设计提案）与 `flows/flows_design_detailed.md`（v1.1 细化版）。两份提案已全部落地，本文为其现状转正；提案原文保留在 `flows/` 目录作历史参考（登记于 `ARCHITECTURE_DESIGN/README.md` "相关文档"）。
 > **边界**：本文只覆盖 **L1 分析中心流程接入链路**（仓库根 `flows/*.yaml` → 表单/AI 工具 → Celery/Snakemake）。`data/ai/flows/`（FlowRegistry，AgentTeams/MAS 治理流程注册表）是**另一套体系**，见 `CygnusX_platform_architecture.md` §13.2 与 `CygnusX_agent_execution_framework.md`；流程本体（snakefile/rules/config 四件套）的内部结构规范见 `Protocol/FlowFrame/flow-framework` v2.0。
 
 ---

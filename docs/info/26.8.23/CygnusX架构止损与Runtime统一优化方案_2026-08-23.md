@@ -2,7 +2,7 @@
 
 > **状态**：实施稿（待评审）  
 > **日期**：2026-08-23  
-> **范围**：针对 `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md` 架构审核中 P0/P1 级问题的优化方案，不含 MAS/Overdrive 路线选择（已确认：MAS 由 AgentTeams 协作室替代）。  
+> **范围**：针对 `ARCHITECTURE_DESIGN/CygnusX_platform_architecture.md` 架构审核中 P0/P1 级问题的优化方案，不含 MAS/Overdrive 路线选择（已确认：MAS 由 AgentTeams 协作室替代）。  
 > **目标读者**：后端架构、Agent 执行、Studio、AgentTeams 相关开发。
 
 ---
@@ -35,7 +35,7 @@
 
 #### 2.1.1 现状
 
-- `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md:146` 写：`| AgentTeams | `/api/v1/agentteams` | ... |`
+- `ARCHITECTURE_DESIGN/CygnusX_platform_architecture.md:146` 写：`| AgentTeams | `/api/v1/agentteams` | ... |`
 - 实际挂载：`src/cygnusx/api/v1/router.py:119` 为 `api_router.include_router(agentteams.router, prefix="/agent-teams", ...)`
 - 部分前端/文档已使用 `/agent-teams`，部分旧文档使用 `/agentteams`。
 
@@ -51,8 +51,8 @@
 
 | 文件 | 修改内容 |
 |---|---|
-| `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md:146` | `/api/v1/agentteams` → `/api/v1/agent-teams` |
-| `ARCHITECTURE_DESIN/deprecated/CygnusX_agentteams_overdrive.md`（如存在旧前缀） | 全部替换 |
+| `ARCHITECTURE_DESIGN/CygnusX_platform_architecture.md:146` | `/api/v1/agentteams` → `/api/v1/agent-teams` |
+| `ARCHITECTURE_DESIGN/deprecated/CygnusX_agentteams_overdrive.md`（如存在旧前缀） | 全部替换 |
 | `docs/modules/*.md` 中涉及 AgentTeams 的接口 | 全部替换 |
 | `frontend/src/api/agentteams*.ts` 或 `agent-teams*.ts` | 确认统一使用 `/agent-teams` |
 | `tests/e2e/*agentteams*.py` | 确认统一使用 `/agent-teams` |
@@ -441,7 +441,7 @@ agent_turn_started
 |---|---|---|
 | 标记 deprecated | `mas_enabled` 等 `config.py:123-132` | 保留字段但加注释说明由 AgentTeams 替代 |
 | 隐藏 API | `src/cygnusx/api/v1/router.py:123` | `mas.router` 仍挂载，但文档中不再作为用户入口；建议加 admin-only 或完全移除 |
-| 文档归档 | `ARCHITECTURE_DESIN/CygnusX_mas_a2a_plan.md` | 移动到 `ARCHITECTURE_DESIN/archive/` 或顶部加醒目状态“已归档，由 AgentTeams 替代” |
+| 文档归档 | `ARCHITECTURE_DESIGN/CygnusX_mas_a2a_plan.md` | 移动到 `ARCHITECTURE_DESIGN/archive/` 或顶部加醒目状态“已归档，由 AgentTeams 替代” |
 | 代码保留策略 | `src/cygnusx/application/services/mas_service.py` | 若 Overdrive 已覆盖其能力，进入 deprecation 倒计时；若仍有独立 API 被调用，先加 `@deprecated` |
 | 数据库表 | `mas_runs`, `mas_nodes`, `mas_artifacts` 等 | 评估是否有生产数据；无数据则准备 drop 迁移，有数据则冻结只读 |
 
@@ -467,7 +467,7 @@ agent_turn_started
 
 - `plan_ai.md` 已归档或加状态说明。
 - `config.py` 中 `mas_enabled` 注释明确说明“由 AgentTeams 替代，保留仅作回滚”。
-- 新增文档 `ARCHITECTURE_DESIN/CygnusX_chat_execution_layers.md` 明确 L1/L2/L3 边界。
+- 新增文档 `ARCHITECTURE_DESIGN/CygnusX_chat_execution_layers.md` 明确 L1/L2/L3 边界。
 - 单测/集成测试验证：Overdrive 派生的 Worker 不会创建 Case；AgentTeams Case 不会调用 Overdrive manifest。
 
 ---
@@ -522,7 +522,7 @@ agent_turn_started
 
 ### Phase 4：边界文档化（0.5 周）
 
-1. 编写 `ARCHITECTURE_DESIN/CygnusX_chat_execution_layers.md`。
+1. 编写 `ARCHITECTURE_DESIGN/CygnusX_chat_execution_layers.md`。
 2. 更新 `CygnusX_platform_architecture.md` 实现状态表。
 3. 全仓库搜索旧 `agentteams` 前缀，确保无遗漏。
 

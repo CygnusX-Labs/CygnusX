@@ -83,4 +83,4 @@
 | `integrations/agentteams/skills/contracts.yaml` | Skill actor、调用入口、审批要求、失败语义与边界。 |
 | `data/ai/mas/agent_capabilities.yaml` | CygnusX MAS 的可分派 Agent 与能力校验表。 |
 | `data/ai/orchestrator.yaml` | 受控 DAG 计划草案生成、确认门和工具包声明。 |
-| `ARCHITECTURE_DESIN/CygnusX_mas_a2a_plan.md` | Run/Node/Artifact/Approval/Event、状态机、Outbox、HITL 和质量门设计。 |
+| `ARCHITECTURE_DESIGN/CygnusX_mas_a2a_plan.md` | Run/Node/Artifact/Approval/Event、状态机、Outbox、HITL 和质量门设计。 |

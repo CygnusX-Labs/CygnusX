@@ -34,9 +34,9 @@ CygnusX BioOps 面向药企、育种企业、医学检验与科研服务机构�
 
 | 事实 | 仓库依据 |
 | --- | --- |
-| MAS 的目标、边界、状态机、Outbox、审批、质量门和验收项 | `ARCHITECTURE_DESIN/CygnusX_mas_a2a_plan.md` |
-| 当前 Agent 装配、工具来源、MAS 启用条件与运行边界 | `ARCHITECTURE_DESIN/CygnusX_agent_framework_baseline.md` |
-| AgentTeams 超频/房间交互与 Matrix Gateway 的渐进方案 | `ARCHITECTURE_DESIN/deprecated/CygnusX_agentteams_overdrive.md` |
+| MAS 的目标、边界、状态机、Outbox、审批、质量门和验收项 | `ARCHITECTURE_DESIGN/CygnusX_mas_a2a_plan.md` |
+| 当前 Agent 装配、工具来源、MAS 启用条件与运行边界 | `ARCHITECTURE_DESIGN/CygnusX_agent_framework_baseline.md` |
+| AgentTeams 超频/房间交互与 Matrix Gateway 的渐进方案 | `ARCHITECTURE_DESIGN/deprecated/CygnusX_agentteams_overdrive.md` |
 | AgentTeams 非侵入式 Bridge、浏览器隔离和 staging Demo 边界 | `integrations/agentteams/README.md` |
 | 角色 Team 定义与 Skill 调用契约 | `integrations/agentteams/teams/bioops-delivery.yaml`、`integrations/agentteams/skills/contracts.yaml` |
 | 内置 Agent、提示词、工具包、Skill、MCP 与 MAS 配置加载机制 | `data/ai/README.md` |

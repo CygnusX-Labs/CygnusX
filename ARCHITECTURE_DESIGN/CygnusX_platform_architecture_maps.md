@@ -5,7 +5,7 @@
 **范围**：当前仓库已落地的前端、FastAPI 后端、Agent/Chat、Studio 沙箱、AgentTeams、异步任务、FlowFrame 工作流和基础设施。  
 **图例**：图中实线表示当前代码或部署配置中存在的链路；`待验收/规划` 只表示设计文档提到但不能由当前代码直接证明的能力。
 
-> 这份文档是“看图入口”。详细契约仍以 `ARCHITECTURE_DESIN/` 下对应的 as-built 文档和代码为准；愿景、提案和历史快照不作为当前实现证据。
+> 这份文档是“看图入口”。详细契约仍以 `ARCHITECTURE_DESIGN/` 下对应的 as-built 文档和代码为准；愿景、提案和历史快照不作为当前实现证据。
 
 ## 0. 这个平台模块如何发挥作用
 
@@ -358,7 +358,7 @@ flowchart TB
 
 - 生产环境的真实 Docker 沙箱、外部 Worker、AgentTeams Matrix/Bridge、SearXNG、RocketMQ 和对象存储连通性。
 - gVisor/Kata 等更强隔离层；它们属于升级触发条件，不是当前默认运行时。
-- `ARCHITECTURE_DESIN` 中标为 proposal、plan、vision、deprecated 或历史快照的内容，不能直接画成已上线能力。
+- `ARCHITECTURE_DESIGN` 中标为 proposal、plan、vision、deprecated 或历史快照的内容，不能直接画成已上线能力。
 
 ## 10. 相关文档索引
 

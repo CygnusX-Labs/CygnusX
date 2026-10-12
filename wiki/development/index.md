@@ -1,6 +1,6 @@
 # 开发规范
 
-本章节面向 CygnusX 开发者，说明如何新增模块、设计 API、编写前端页面、管理数据库迁移、扩展 Flow/工具以及执行验证。修改前先读 [Wiki 总览](../README) 和 `ARCHITECTURE_DESIN/README.md` 中对应的 as-built 文档。
+本章节面向 CygnusX 开发者，说明如何新增模块、设计 API、编写前端页面、管理数据库迁移、扩展 Flow/工具以及执行验证。修改前先读 [Wiki 总览](../README) 和 `ARCHITECTURE_DESIGN/README.md` 中对应的 as-built 文档。
 
 ## 内容导航
 
@@ -13,9 +13,9 @@
 
 ## 开发前必读
 
-1. 先阅读 `ARCHITECTURE_DESIN/CygnusX_platform_design.md` 的设计原则与模块类型划分，并核对对应的 as-built 文档。
+1. 先阅读 `ARCHITECTURE_DESIGN/CygnusX_platform_design.md` 的设计原则与模块类型划分，并核对对应的 as-built 文档。
 2. 新增模块前，按 [模块设计与接入](module-design) 完成可审查设计文档；当前设计文档应保存在
-   `ARCHITECTURE_DESIN/` 或 `docs/` 的活动位置，不要把日期快照或提案当作唯一规范。
+   `ARCHITECTURE_DESIGN/` 或 `docs/` 的活动位置，不要把日期快照或提案当作唯一规范。
 3. 前后端接口先定契约（Pydantic DTO ↔ TypeScript types），再写页面。
 4. 所有资源操作必须校验认证、角色与所属关系。
 

@@ -2,7 +2,7 @@
 
 **版本**：v1.0 汇总版  
 **日期**：2026-08-22  
-**范围**：`ARCHITECTURE_DESIN/` 下项目级架构、现状、设计规范和实施方案  
+**范围**：`ARCHITECTURE_DESIGN/` 下项目级架构、现状、设计规范和实施方案  
 **文档定位**：统一导航与架构总览，不替代各领域的详细设计文档
 
 > 本文将目录内多个时期的“当前实现”“评审方案”和“未来规划”归并为一张架构地图。凡标记为“规划/候选/待验收”的内容，不应当作已经上线的能力；具体实现以代码、配置和对应领域文档为准。
@@ -493,7 +493,7 @@ pending → queued → running → success
 - 仓库根 `flows/*.yaml`：L1 分析中心流程注册表（`Settings.flow_yaml_dir`，磁盘扫描 + mtime 热重载、无 DB 注册、免重启；详情见 `CygnusX_flow_architecture.md`）。注意与 `data/ai/flows/` 是**两套体系**：后者是 AgentTeams/MAS 治理流程注册表（FlowRegistry，flow/artifacts/stages/executors schema），服务于意图路由、能力对账与协作室，不驱动 L1 表单与任务执行；
 - `data/ai/*.yaml`：Agent、工具、Studio、MCP、提示词等站点配置；
 - 数据库：用户可编辑 Agent、模型、MCP、权限和运行状态；
-- `ARCHITECTURE_DESIN/`：设计约束、实施计划、验收和交接文档。
+- `ARCHITECTURE_DESIGN/`：设计约束、实施计划、验收和交接文档。
 
 配置热重载必须有默认值、非法回退、字段校验和变更影响说明。生产配置不能依赖开发机绝对路径。
 
@@ -591,7 +591,7 @@ Docker 是当前容器边界，不等价于 VM 级隔离。对于未认证任意
 
 ## 17. 来源文件清单
 
-本总览提取自 `ARCHITECTURE_DESIN/` 当前文件，包括：
+本总览提取自 `ARCHITECTURE_DESIGN/` 当前文件，包括：
 
 - `README.md`
 - `CygnusX_log_architecture.md`

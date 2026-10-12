@@ -3,7 +3,7 @@
 > 调查日期：2026-10-09。
 > 类型：当前工作树调查快照，供动态模型调度方案评估使用。
 > 依据：仓库代码、YAML 配置和离线路由测试；未完成部署数据库、真实 Provider 和生产指标核验。
-> 本文位于用户指定的评估目录，不替代 `ARCHITECTURE_DESIN/` 的架构权威基线。后续实施仍须先查该目录索引与对应 as-built 文档。
+> 本文位于用户指定的评估目录，不替代 `ARCHITECTURE_DESIGN/` 的架构权威基线。后续实施仍须先查该目录索引与对应 as-built 文档。
 
 ## 1. 调查结论
 
@@ -281,11 +281,11 @@ uv run pytest tests/unit/test_agent_router.py tests/unit/test_agent_router_dispa
 
 架构基线入口：
 
-- `ARCHITECTURE_DESIN/README.md`。
-- `ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`：不同执行路径与保护边界。
-- `ARCHITECTURE_DESIN/CygnusX_agent_architecture.md`：Agent 组成、上下文与调用契约。
-- `ARCHITECTURE_DESIN/CygnusX_agent_framework_baseline.md`：Router 和专家执行边界。
-- `ARCHITECTURE_DESIN/CygnusX_token_billing_architecture.md`：usage、费用展示与平台扣费。
-- `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`：Provider 与多模型路由描述；模型表和 token 上限需结合本文漂移说明核对。
+- `ARCHITECTURE_DESIGN/README.md`。
+- `ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md`：不同执行路径与保护边界。
+- `ARCHITECTURE_DESIGN/CygnusX_agent_architecture.md`：Agent 组成、上下文与调用契约。
+- `ARCHITECTURE_DESIGN/CygnusX_agent_framework_baseline.md`：Router 和专家执行边界。
+- `ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md`：usage、费用展示与平台扣费。
+- `ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md`：Provider 与多模型路由描述；模型表和 token 上限需结合本文漂移说明核对。
 
 `CygnusX_chat_execution_layers.md` 自身标注为施工快照，只用作历史定位辅助；历史提案和 `data/ai/update/README.md` 中的分档记录也不能覆盖当前代码与配置。

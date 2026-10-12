@@ -246,7 +246,7 @@ from cygnusx.infrastructure.database.repositories import SqlAlchemyUserRepositor
   - `GET /health`：alembic 库版本戳 vs 代码 head（ScriptDirectory，不连库）、同步状态、public 表计数、连接池占用快照、只读副本配置状态；
   - `GET /drift`：与 `check_schema_drift.py` 同逻辑的实时对账（缺失表/列、多余表）。
 - **前端**：`frontend/src/views/AdminDatabaseHealthView.vue` + `frontend/src/api/admin/database.ts`，路由懒加载、管理员守卫、管理菜单入口。
-- **样式**：遵循 `ARCHITECTURE_DESIN/CygnusX_frontend.md`——只消费语义令牌（`--neutral-card` / `--neutral-border` / `--arco-*`，明暗主题自适应）；PageHeader + `#actions` 刷新（`:loading`，禁止整页 reload）；表格全部固定列宽 + `scroll-x` + `row-key`；状态同时以文字 + `NTag` 颜色表达；加载 `NSkeleton`/`NSpin`、空态 `NEmpty`、失败保留上下文 + 重试。
+- **样式**：遵循 `ARCHITECTURE_DESIGN/CygnusX_frontend.md`——只消费语义令牌（`--neutral-card` / `--neutral-border` / `--arco-*`，明暗主题自适应）；PageHeader + `#actions` 刷新（`:loading`，禁止整页 reload）；表格全部固定列宽 + `scroll-x` + `row-key`；状态同时以文字 + `NTag` 颜色表达；加载 `NSkeleton`/`NSpin`、空态 `NEmpty`、失败保留上下文 + 重试。
 
 ---
 

@@ -4,7 +4,7 @@
 → 沙箱启动验证（tools/list + tools/call）→ 审核 → 发布版本快照。
 
 设计文档：docs/26.7.30/mcp_builder_framework.md
-约束红线：ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md §10
+约束红线：ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md §10
 """
 
 from __future__ import annotations

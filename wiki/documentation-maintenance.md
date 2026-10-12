@@ -16,7 +16,7 @@ Wiki 是 CygnusX 面向用户、管理员和开发者的稳定说明层。它不
 | Wiki 主题 | 优先核对来源 |
 | --- | --- |
 | 快速开始、部署、运维、安全 | `README.md`、`.env.example`、`Makefile`、`deploy/` |
-| AI、Agent、工作台和协作室 | `data/ai/`、`src/cygnusx/application/services/`、`ARCHITECTURE_DESIN/`、测试 |
+| AI、Agent、工作台和协作室 | `data/ai/`、`src/cygnusx/application/services/`、`ARCHITECTURE_DESIGN/`、测试 |
 | 知识库 | `docs/knowledge/`、知识库服务和同步脚本 |
 | Flow、工具和生信分析 | `flows/`、`tool_configs/`、`pipelines/` |
 | 前端与 API | `frontend/`、`src/cygnusx/api/`、DTO 和相关测试 |

@@ -2491,4 +2491,4 @@ export interface AIQuickAction {
 6. 不输出泛化视觉建议，不臆测不存在的接口或组件。
 ```
 
-另外：文件名规范化已完成——原拼写错误文件名 `fontend.md` 已更名为 `CygnusX_frontend.md`，`$cygnusx-frontend-design`、`ARCHITECTURE_DESIN/README.md` 和其它文档、代码注释中的引用已同步更新（2026-09-18）。如仍有自动化脚本依赖旧文件名，请更新脚本路径。
+另外：文件名规范化已完成——原拼写错误文件名 `fontend.md` 已更名为 `CygnusX_frontend.md`，`$cygnusx-frontend-design`、`ARCHITECTURE_DESIGN/README.md` 和其它文档、代码注释中的引用已同步更新（2026-09-18）。如仍有自动化脚本依赖旧文件名，请更新脚本路径。

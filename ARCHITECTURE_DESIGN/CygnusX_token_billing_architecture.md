@@ -177,7 +177,7 @@ message_cookie_cost = ROUND_HALF_UP(raw_cookie_cost, 0.01)
 
 遇到 token 或费用不一致时，按以下顺序检查：
 
-1. **先读文档**：阅读本文件，并从 `ARCHITECTURE_DESIN/README.md` 找到相关的 Chat、数据库、日志或 Agent 执行架构文档。
+1. **先读文档**：阅读本文件，并从 `ARCHITECTURE_DESIGN/README.md` 找到相关的 Chat、数据库、日志或 Agent 执行架构文档。
 2. **锁定一次模型请求**：记录 provider、model、session_id、message_id、请求轮次和最终 `usage`。
 3. **对比原始响应**：检查供应商原始 SSE 最后一条 usage 与规范化后的 `metadata_json.usage` 是否一致。
 4. **检查多轮请求**：Studio/工具循环必须逐轮累加；不能只看最后一轮，也不能把同一轮重复合并。

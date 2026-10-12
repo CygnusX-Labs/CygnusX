@@ -39,7 +39,7 @@
 
 ## 影响文件
 
-源码改动集中在 `frontend/src/components/`、`frontend/src/layouts/`、`frontend/src/styles/`、`frontend/src/views/`，以及新增 `frontend/src/layouts/navigationRegistry.ts`、`frontend/src/utils/progress.ts` 和对应测试。活动架构文档 `ARCHITECTURE_DESIN/CygnusX_frontend.md` 增加了导航/布局/主题图和 chunk 验收事实。未修改后端、API、数据库、SSE/WS 协议、流程 YAML、依赖锁文件或五个已有脏子模块。
+源码改动集中在 `frontend/src/components/`、`frontend/src/layouts/`、`frontend/src/styles/`、`frontend/src/views/`，以及新增 `frontend/src/layouts/navigationRegistry.ts`、`frontend/src/utils/progress.ts` 和对应测试。活动架构文档 `ARCHITECTURE_DESIGN/CygnusX_frontend.md` 增加了导航/布局/主题图和 chunk 验收事实。未修改后端、API、数据库、SSE/WS 协议、流程 YAML、依赖锁文件或五个已有脏子模块。
 
 ## 路由、深链和状态检查
 

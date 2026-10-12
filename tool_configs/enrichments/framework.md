@@ -2,7 +2,7 @@
 
 > 本文件是 `kegg-enrichment` 工具的目录级架构说明。它落实
 > `tool_configs/tools_design.md` 的工具配置外置要求，并与
-> `ARCHITECTURE_DESIN/CygnusX_frontend.md` 的工作台页面、主题和状态反馈规范保持一致。
+> `ARCHITECTURE_DESIGN/CygnusX_frontend.md` 的工作台页面、主题和状态反馈规范保持一致。
 >
 > 路由 key 保持 `kegg-enrichment` 以兼容既有链接；产品名称统一为 **GO / KEGG 富集分析**。
 

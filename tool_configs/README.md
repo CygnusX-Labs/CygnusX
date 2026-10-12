@@ -96,4 +96,4 @@ tool_configs/
 
 ## 架构文档归属
 
-工具箱子系统的 as-built 全景见 `ARCHITECTURE_DESIN/CygnusX_toolbox_architecture.md`（后端框架、任务模型、ToolBridge 通道、注册表链路）；工具**页面**设计规范（布局/样式/交互）仍以本目录 `tools_design.md` 为唯一详细来源，`CygnusX_platform_design.md` §2.2 为其基线摘要。
+工具箱子系统的 as-built 全景见 `ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md`（后端框架、任务模型、ToolBridge 通道、注册表链路）；工具**页面**设计规范（布局/样式/交互）仍以本目录 `tools_design.md` 为唯一详细来源，`CygnusX_platform_design.md` §2.2 为其基线摘要。

@@ -1,6 +1,6 @@
 # CygnusX Wiki 总览
 
-本目录是 CygnusX 面向用户、开发者和运维人员的操作文档集合。它回答“现在如何使用和维护平台”，不替代代码、配置、迁移和架构基线。涉及实现边界时，以仓库当前代码和 [`ARCHITECTURE_DESIN/README.md`](../ARCHITECTURE_DESIN/README.md) 指向的 as-built 文档为准。
+本目录是 CygnusX 面向用户、开发者和运维人员的操作文档集合。它回答“现在如何使用和维护平台”，不替代代码、配置、迁移和架构基线。涉及实现边界时，以仓库当前代码和 [`ARCHITECTURE_DESIGN/README.md`](../ARCHITECTURE_DESIGN/README.md) 指向的 as-built 文档为准。
 
 ## 先看哪一页
 
@@ -96,7 +96,7 @@
 ## 文档边界
 
 - Wiki 页面描述稳定用法和当前可验证的能力，不复制临时施工记录、内部提示词或未实施提案。
-- `ARCHITECTURE_DESIN/` 记录系统边界、数据流和修改门禁；`docs/knowledge/` 记录实验室 SOP 与方法知识。
+- `ARCHITECTURE_DESIGN/` 记录系统边界、数据流和修改门禁；`docs/knowledge/` 记录实验室 SOP 与方法知识。
 - 页面中的命令默认从仓库根目录执行。端口、路径和开关以当前 `.env`、Compose 文件和 Makefile 为准。
 - Wiki 正文会被知识库集合自动发现；`_Sidebar.md` 仅用于导航，不进入检索正文。
 

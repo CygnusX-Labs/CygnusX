@@ -1438,7 +1438,7 @@ async def onlyoffice_convert(req: OnlyOfficeConvertRequest) -> dict[str, Any]:
 # ===== MCP Builder：容器内实验 MCP Server 生命周期管理 =====
 # 生成的 MCP Server 以 STDIO 子进程运行在本容器内（网络隔离 + 资源限制天然继承），
 # 宿主侧经 UDS 调用本组端点完成 tools/list 与 tools/call，无需暴露任何 TCP 端口。
-# 设计参考：docs/26.7.30/mcp_builder_framework.md §8.1 / ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md §5.5（as-built 沙箱执行层）
+# 设计参考：docs/26.7.30/mcp_builder_framework.md §8.1 / ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md §5.5（as-built 沙箱执行层）
 
 
 class MCPStartRequest(BaseModel):

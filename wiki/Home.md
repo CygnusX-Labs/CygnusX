@@ -59,5 +59,5 @@ Wiki 正文会自动同步到平台知识库；先阅读[Wiki 总览](README)了
 ## 权威来源
 
 - [Wiki 总览](README)
-- [架构文档索引](../ARCHITECTURE_DESIN/README)
+- [架构文档索引](../ARCHITECTURE_DESIGN/README)
 - [项目根 README](../README)

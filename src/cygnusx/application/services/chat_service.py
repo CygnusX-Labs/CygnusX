@@ -4202,7 +4202,7 @@ class ChatService(
 
         # LangGraph 统一 Runtime：普通聊天（非 Studio、非 MAS 编排）默认全部走状态图，
         # 收敛 chat_legacy/chat_langgraph 双引擎为单 Runtime（见
-        # ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md §2/§4）。
+        # ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md §2/§4）。
         # 仅两处保留手写循环：① Agent 显式声明 features.engine == "legacy"；
         # ② 全局逃生舱 chat_force_legacy_runtime（LangGraph 故障紧急回滚）。
         if (

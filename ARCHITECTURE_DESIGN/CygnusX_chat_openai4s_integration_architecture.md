@@ -100,12 +100,12 @@ OpenAI4S 的主要融合点是上下文压缩和运行时契约，而不是模�
 
 ### 2.1 架构文档
 
-- `ARCHITECTURE_DESIN/CygnusX_platform_architecture.md`：平台总体架构。
-- `ARCHITECTURE_DESIN/CygnusX_agent_architecture.md`：单 Agent 的数据模型、接口和装配。
-- `ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md`：Agent 执行路径、事件和运行保护。
-- `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md`：MCP 注册、发现、安全和 Builder。
-- `ARCHITECTURE_DESIN/CygnusX_skill_architecture.md`：平台 Skill 生命周期和调用契约。
-- `ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md`：Studio 沙箱和 capability 安全基线。
+- `ARCHITECTURE_DESIGN/CygnusX_platform_architecture.md`：平台总体架构。
+- `ARCHITECTURE_DESIGN/CygnusX_agent_architecture.md`：单 Agent 的数据模型、接口和装配。
+- `ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md`：Agent 执行路径、事件和运行保护。
+- `ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md`：MCP 注册、发现、安全和 Builder。
+- `ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md`：平台 Skill 生命周期和调用契约。
+- `ARCHITECTURE_DESIGN/CygnusX_sandbox_architecture.md`：Studio 沙箱和 capability 安全基线。
 - `docs/info/26.9.25/openai4s-long-conversation-architecture.md`：OpenAI4S 长对话参照。
 - `docs/info/26.9.23/migration-spec-openai4s-to-omichub.md`：上下文压缩迁移规格和验收状态。
 

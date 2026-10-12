@@ -146,7 +146,7 @@ sequenceDiagram
   fanout_result = await ParallelSubAgentToolService().run_parallel_subagents(
       context_summary=user_content, tasks=[...], context=tool_context)
   ```
-  返回 `{success, llm_payload, ui_payload}`；自带防递归/剥控制工具/隔离 session（C1–C7 约束，见 `parallel_subagent_service.py:39` 与 `ARCHITECTURE_DESIN/CygnusX_multi_agent_fanout.md`）。
+  返回 `{success, llm_payload, ui_payload}`；自带防递归/剥控制工具/隔离 session（C1–C7 约束，见 `parallel_subagent_service.py:39` 与 `ARCHITECTURE_DESIGN/CygnusX_multi_agent_fanout.md`）。
 - **ChatChunk 产出先例**：`yield ChatChunk(type="collaboration_fanout", metadata={...})`（:2387-2394）。
 - **sandbox_meta 标准写法**（JSONB 必须整体重新赋值，否则不变更检测）：
   ```python
@@ -545,7 +545,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 
 ### 10.1 修 2：parallel_subagents 工具 schema 与运行时对齐（fan-out 最少 1 个子任务）
 
-- 背景：实现删除了 `parallel_subagent_service.py` 中"fan-out 至少 2 个子任务"的运行时校验（超频单 assignment 分派需要），LLM 面工具契约需同步：`tool_configs/tools_schema.yaml` 的 `parallel_subagents` `tasks` 参数 `minItems: 2` → `minItems: 1`，描述中"2–5 个"改为"1–5 个"；`ARCHITECTURE_DESIN/CygnusX_multi_agent_fanout.md` 中 parallel_subagents 的"至少 2 个/2–5 个"能力下限描述同步改为"1–5 个"。
+- 背景：实现删除了 `parallel_subagent_service.py` 中"fan-out 至少 2 个子任务"的运行时校验（超频单 assignment 分派需要），LLM 面工具契约需同步：`tool_configs/tools_schema.yaml` 的 `parallel_subagents` `tasks` 参数 `minItems: 2` → `minItems: 1`，描述中"2–5 个"改为"1–5 个"；`ARCHITECTURE_DESIGN/CygnusX_multi_agent_fanout.md` 中 parallel_subagents 的"至少 2 个/2–5 个"能力下限描述同步改为"1–5 个"。
 - **不得误改的区分口径**（要改的只是工具 schema 的能力下限——1 个也合法）：
   - `chat_service.py` 的 `ROUTER_SYSTEM_PROMPT` 与 `MULTI_AGENT_SYSTEM_PROMPT_SUFFIX` 里"可拆成 2–5 个独立子任务才 fanout"是**何时拆**的语义建议，保持不变；
   - 统一路由 fanout 的 `len(fanout_tasks) >= 2` 是路由自动分派的门槛，保持不变。
@@ -561,14 +561,14 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
   3. 会话无 `matrix_room_id` 时前端 room-events 404 → 后端返回结构与前端静默处理兼容。（**注**：room-events SSE 通道已于 2026-09-11 移除，见 6.5 修订注记，该场景现由房间回流新通道的对应测试承担，以代码为准。）
 - **隔离检查**：确认 `_run_overdrive_turn` 内 Matrix 分支全部在 `if gateway_service.available:` 与 try/except 内，`agentteams_gateway_enabled` 默认 False（`core/config.py`）——已确认则只需在代码注释中标注"第二期提前实现，默认关闭"。
 - **回退方案（仅当决策为拒绝时执行）**：`_run_overdrive_turn` 中删除 Matrix 建房/镜像分支，保留 `agentteams_room_gateway_service.py` 与 room-events SSE（它们独立于聊天主路径，不影响），对应测试改为跳过。
-- 验证口径：新增降级测试通过；`grep -n "提前实现" ARCHITECTURE_DESIN/CygnusX_agentteams_overdrive.md` 有命中。
+- 验证口径：新增降级测试通过；`grep -n "提前实现" ARCHITECTURE_DESIGN/CygnusX_agentteams_overdrive.md` 有命中。
 
 ### 10.3 修 4：预置红测试（HEAD 上即红，非本次改动引入）与"先判对错再改"原则
 
 - **问题 A**：`tests/unit/test_agent_router.py` 2 个失败——路由 `intent` 期望 `delivery_case` 实得 `case`（路由意图逻辑与测试漂移）。
 - **问题 B**：`tests/unit/test_agent_router_dispatch.py` 2 个失败——`data/ai/` 注册表新增 3 个 scrna agent，未同步进 router 候选表。
 - **裁决原则：先判对错，再改过期的一侧，禁止为通过而改**：
-  - 问题 A：读失败用例与 `chat_service.py` 路由意图归一化逻辑（`_route_to_agent`/RouteInfo 归一化处），判断 `case` 与 `delivery_case` 哪个是当前设计意图（依据 `ARCHITECTURE_DESIN/CygnusX_multi_agent_fanout.md` 的意图枚举）。设计已统一为 `case` → 更新测试期望；`delivery_case` 才是契约 → 修归一化逻辑。
+  - 问题 A：读失败用例与 `chat_service.py` 路由意图归一化逻辑（`_route_to_agent`/RouteInfo 归一化处），判断 `case` 与 `delivery_case` 哪个是当前设计意图（依据 `ARCHITECTURE_DESIGN/CygnusX_multi_agent_fanout.md` 的意图枚举）。设计已统一为 `case` → 更新测试期望；`delivery_case` 才是契约 → 修归一化逻辑。
   - 问题 B：`git diff HEAD -- data/ai/` 看新增的 3 个 scrna agent；对照 router 候选表来源——候选若由 `list_agents(active_only=True)` 动态生成，则测试里写死的候选清单/快照过期 → 更新测试数据；若存在 `router.md`/yaml 人工候选表 → 把新 agent 补进去。
   - 修复汇报中必须写明：每处是"代码对、测试过期"还是"测试对、代码漂移"，及依据。
 - 验证口径：两个测试文件全绿；`pytest tests/unit -k router -q` 无回归。
@@ -583,7 +583,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 ### 10.5 修 6：工作区变更集拆分原则
 
 - 工作区混了两个独立 feature 的改动（超频/AgentTeams vs 参考基因组），提交时应拆成两个变更集；**只产出 `git add` 分组清单写进汇报，不执行任何 git 命令**。
-- **变更集 A：超频模式 + AgentTeams**：`src/cygnusx/application/schemas/chat.py`、`api/v1/chat.py`、`application/services/chat_service.py`、`application/services/parallel_subagent_service.py`、`application/services/agentteams_room_gateway_service.py`、`application/services/agentteams_service.py`、`application/services/agentteams_case_tool_service.py`、`api/v1/agentteams.py`、`api/v1/admin/agentteams_bridge.py`、`application/schemas/agentteams_bridge.py`、`core/config.py`（仅 gateway 相关 hunk）、`integrations/agentteams/`、`deploy/agentteams/`、`frontend/src/stores/agentHub.ts`、`composables/useAgentChatStream.ts`、`components/agent-workspace/OverdriveToggle.vue`、`AgentSandbox.vue`、`views/StudioView.vue`、`components/ai-chat/types.ts`、`KimiMessageItem.vue`、`views/AgentTeamsCaseView.vue`、`components/task/AgentTeamsCasesPanel.vue`、`components/admin/AgentTeamsBridgeTab.vue`、`api/admin/agentTeamsBridge.ts`、`tests/unit/test_overdrive_chat.py`、`test_agentteams_*`、`tool_configs/tools_schema.yaml`、`ARCHITECTURE_DESIN/CygnusX_agentteams_overdrive.md`、`CygnusX_multi_agent_fanout.md`
+- **变更集 A：超频模式 + AgentTeams**：`src/cygnusx/application/schemas/chat.py`、`api/v1/chat.py`、`application/services/chat_service.py`、`application/services/parallel_subagent_service.py`、`application/services/agentteams_room_gateway_service.py`、`application/services/agentteams_service.py`、`application/services/agentteams_case_tool_service.py`、`api/v1/agentteams.py`、`api/v1/admin/agentteams_bridge.py`、`application/schemas/agentteams_bridge.py`、`core/config.py`（仅 gateway 相关 hunk）、`integrations/agentteams/`、`deploy/agentteams/`、`frontend/src/stores/agentHub.ts`、`composables/useAgentChatStream.ts`、`components/agent-workspace/OverdriveToggle.vue`、`AgentSandbox.vue`、`views/StudioView.vue`、`components/ai-chat/types.ts`、`KimiMessageItem.vue`、`views/AgentTeamsCaseView.vue`、`components/task/AgentTeamsCasesPanel.vue`、`components/admin/AgentTeamsBridgeTab.vue`、`api/admin/agentTeamsBridge.ts`、`tests/unit/test_overdrive_chat.py`、`test_agentteams_*`、`tool_configs/tools_schema.yaml`、`ARCHITECTURE_DESIGN/CygnusX_agentteams_overdrive.md`、`CygnusX_multi_agent_fanout.md`
 - **变更集 B：参考基因组模块**：`src/cygnusx/reference_genomes/`、`api/v1/router.py`（该文件两个 feature 都碰，需 `git add -p` 拆 hunk）、`core/config.py`（同上，`reference_genomes_yaml` 的 hunk 归 B）、`refdata/reference_genomes.yaml`、`frontend/src/api/referenceGenomes.ts`、`types/referenceGenomes.ts`、`views/ReferenceGenomesView.vue`、`tests/unit/reference_genomes/`、`test_reference_genomes_sequence.py`、`scripts/reference_genomes_smoke.py`
 - **需人工裁决的混杂文件**：`api/v1/router.py`、`core/config.py`、`views/ProfileView.vue`（个人页 UI 重做，与两个 feature 均无关，建议单独第三个变更集）、`docs/knowledge/getting-started.md`、`.gitignore`、`.env.example`（逐文件确认归属）。
 - 子模块变动（`pipelines/*`、`Protocol/FlowFrame` 显示 `m`）与两个 feature 无关，不要纳入。
@@ -599,7 +599,7 @@ OVERDRIVE_MANAGER_PROMPT = """你是团队房间的 Manager（人格：{manager_
 # 前端
 cd frontend && npm run type-check && npm run build
 # 文档
-grep -n "拍平" ARCHITECTURE_DESIN/CygnusX_agentteams_overdrive.md && grep -n "minItems" tool_configs/tools_schema.yaml
+grep -n "拍平" ARCHITECTURE_DESIGN/CygnusX_agentteams_overdrive.md && grep -n "minItems" tool_configs/tools_schema.yaml
 ```
 
 全部通过后汇报：每项修复的改动文件+位置、修 4 的对错判断依据、变更集分组清单（修 6）、验证输出摘要。

@@ -1,6 +1,6 @@
 # 架构与数据
 
-本章节介绍 CygnusX 当前实现的整体架构、数据目录布局和日志体系。架构边界、验证门禁和各专项 as-built 文档见 [`ARCHITECTURE_DESIN/README.md`](../../ARCHITECTURE_DESIN/README.md)。
+本章节介绍 CygnusX 当前实现的整体架构、数据目录布局和日志体系。架构边界、验证门禁和各专项 as-built 文档见 [`ARCHITECTURE_DESIGN/README.md`](../../ARCHITECTURE_DESIGN/README.md)。
 
 ## 内容导航
 
@@ -10,7 +10,7 @@
 
 ## 阅读边界
 
-Wiki 用于操作和概念导航；涉及数据库表、Agent 执行路径、MCP、Skill、沙盒 capability、存储协议或镜像映射时，必须回到对应的 `ARCHITECTURE_DESIN/CygnusX_*.md` as-built 文档和当前代码核对。
+Wiki 用于操作和概念导航；涉及数据库表、Agent 执行路径、MCP、Skill、沙盒 capability、存储协议或镜像映射时，必须回到对应的 `ARCHITECTURE_DESIGN/CygnusX_*.md` as-built 文档和当前代码核对。
 
 ## 设计关键词
 

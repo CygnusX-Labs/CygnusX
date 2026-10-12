@@ -1213,7 +1213,7 @@ animation: cardIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
 ---
 
-*本章节的落地计划原见 `tools_update.md`（已归档至 `ARCHITECTURE_DESIN/deprecated/CygnusX_tools_update.md`，方案已全部落地，现状以 `ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md` 为准）；本文档记录架构规范与实现约定。*
+*本章节的落地计划原见 `tools_update.md`（已归档至 `ARCHITECTURE_DESIGN/deprecated/CygnusX_tools_update.md`，方案已全部落地，现状以 `ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md` 为准）；本文档记录架构规范与实现约定。*
 
 ## 十七、工具详情页页头统一规范
 

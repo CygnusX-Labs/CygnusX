@@ -1,6 +1,6 @@
 # CygnusX Design System v1
 
-> 2026-10-11 实施记录。现行权威规范为 `ARCHITECTURE_DESIN/CygnusX_frontend.md`；本文只归纳本轮已经落地的约束，不替代该文档。
+> 2026-10-11 实施记录。现行权威规范为 `ARCHITECTURE_DESIGN/CygnusX_frontend.md`；本文只归纳本轮已经落地的约束，不替代该文档。
 
 ## 来源与主题
 

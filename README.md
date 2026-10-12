@@ -325,18 +325,18 @@ data/                Agent、Skill 和运行时配置
 integrations/        AgentTeams Bridge / Gateway
 deploy/              Docker Compose 与运行时镜像
 alembic/             数据库迁移
-ARCHITECTURE_DESIN/  项目级架构与设计索引
+ARCHITECTURE_DESIGN/  项目级架构与设计索引
 tests/               unit / integration / e2e 测试
 ```
 
 ## Documentation
 
-- [架构索引](ARCHITECTURE_DESIN/README.md)
-- [平台总览](ARCHITECTURE_DESIN/CygnusX_platform_architecture.md)
-- [Agent 执行框架](ARCHITECTURE_DESIN/CygnusX_agent_execution_framework.md)
-- [Flow 接入架构](ARCHITECTURE_DESIN/CygnusX_flow_architecture.md)
-- [MCP 架构](ARCHITECTURE_DESIN/CygnusX_mcp_architecture.md)
-- [沙箱架构](ARCHITECTURE_DESIN/CygnusX_sandbox_architecture.md)
+- [架构索引](ARCHITECTURE_DESIGN/README.md)
+- [平台总览](ARCHITECTURE_DESIGN/CygnusX_platform_architecture.md)
+- [Agent 执行框架](ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md)
+- [Flow 接入架构](ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md)
+- [MCP 架构](ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md)
+- [沙箱架构](ARCHITECTURE_DESIGN/CygnusX_sandbox_architecture.md)
 - [使用与部署](wiki/)
 - [Docker 部署说明](deploy/docker/README.md)
 - [工具页面规范](tool_configs/tools_design.md)
