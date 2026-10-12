@@ -14,6 +14,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gitleaks:
+    name: Secret 扫描（gitleaks 全历史）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 安装 gitleaks（固定版本）
+        run: |
+          GITLEAKS_VERSION=8.24.3
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: 全历史 secret 扫描（命中即失败）
+        run: gitleaks git --verbose --redact .
+
   backend:
     name: 后端（ruff + pytest tests/unit + tests/e2e）
     runs-on: ubuntu-latest
