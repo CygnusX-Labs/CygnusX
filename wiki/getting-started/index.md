@@ -22,4 +22,4 @@
 | 单服务器生产 | Docker Compose 主栈 + Worker 栈 | `make docker-up-all` |
 | 多 Worker 扩展 | Worker 栈通过项目包装器扩展 | `./scripts/worker-compose.sh --scale worker=2 up -d` |
 
-完成部署后，访问 `http://localhost:5173`（开发）或 `http://<服务器IP>:8888`（Docker）。
+开发前端默认访问 `http://localhost:5173`；Docker 入口端口由 `CYGNUSX_HTTP_PORT` 决定，`.env.example` 默认是 `8888`。首次部署请先阅读 [Docker 部署](../deployment/docker-deployment)。

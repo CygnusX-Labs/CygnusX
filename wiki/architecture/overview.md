@@ -7,9 +7,9 @@ CygnusX 是私有化多组学分析平台。它将面向用户的控制面、可
 
 | 层级 | 当前实现 |
 | --- | --- |
-| 前端 | Vue 3、TypeScript、Vite、Pinia；Naive UI 与 Arco Design Vue 共用设计令牌 |
+| 前端 | Vue 3、TypeScript、Vite、Pinia、Naive UI；图表使用 ECharts/Plotly |
 | 后端 | FastAPI、Pydantic v2、SQLAlchemy 2.0、DDD 分层 |
-| 数据与检索 | PostgreSQL；可选 pgvector、只读副本、备份与指标验收 |
+| 数据与检索 | PostgreSQL + pgvector；可选只读副本、备份与指标验收 |
 | 异步任务 | Celery 为默认队列；可按配置启用 RocketMQ Worker |
 | 分析执行 | Snakemake、独立 Worker / 运行时镜像、共享存储 |
 | AI | OpenAI-compatible Provider、SSE、MCP、Skill、Agent 配置与工作台 |

@@ -26,7 +26,7 @@ CygnusX 的 AI 功能以 Agent 为入口：用户可以在普通对话中获取�
 | MCP 构建师 | 实验性 MCP 工具的规划、生成和测试；发布需审核 |
 | 傻妞 | 陪伴式多组学问题梳理和研究思路协助 |
 
-完整的角色边界、超频模式和常见问法见 [AI 助手与超频模式指南](../features/ai-collaboration)。
+完整的角色边界、多 Agent 协作和常见问法见 [AI 多 Agent 协作](../features/ai-collaboration)。
 
 ## 对话与执行边界
 
@@ -46,6 +46,6 @@ CygnusX 的 AI 功能以 Agent 为入口：用户可以在普通对话中获取�
 
 ## 相关页面
 
-- [AI 多 Agent 协作与超频模式](ai-collaboration)
+- [AI 多 Agent 协作](ai-collaboration)
 - [实验室知识库](knowledge-base)
 - [云端沙盒终端](sandbox-terminal)

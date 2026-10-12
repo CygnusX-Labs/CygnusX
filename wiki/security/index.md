@@ -26,3 +26,4 @@ OMICHBUB_INIT_ADMIN_PASSWORD=your-strong-password
 ```
 
 > `AI_PROVIDER_KEY_ENCRYPTION_KEY` 一旦设置并写入数据后不可更改，否则已加密字段将无法解密。
+> `OMICHBUB_*` 是当前初始化脚本使用的历史变量名，请保持与 `.env.example` 和 `scripts/init_admin.py` 一致。

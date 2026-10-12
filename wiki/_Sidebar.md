@@ -1,5 +1,6 @@
 # 导航
 
+- [Wiki 总览](README)
 - [Wiki 维护](documentation-maintenance)
 
 ## 快速开始
@@ -35,7 +36,7 @@
 
 ## 功能
 - [AI 助手与工作台](features/ai-chat)
-- [AI 多 Agent 协作与超频模式](features/ai-collaboration)
+- [AI 多 Agent 协作](features/ai-collaboration)
 - [分析流程](features/workflows)
 - [数据下载](features/downloads)
 - [实验室知识库](features/knowledge-base)

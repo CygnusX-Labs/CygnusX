@@ -2,7 +2,9 @@
 
 欢迎访问 CygnusX 私有化多组学分析平台 Wiki。本文档面向开发者、管理员和终端用户，汇总了平台的设计理念、部署方式、核心功能与运维排障知识。
 
-Wiki 正文会自动同步到平台知识库；维护规则和权威来源见 [Wiki 维护与知识库同步](documentation-maintenance)。
+Wiki 正文会自动同步到平台知识库；先阅读[Wiki 总览](README)了解文档边界、阅读顺序和权威来源。维护规则见 [Wiki 维护与知识库同步](documentation-maintenance)。
+
+> **当前实现提示**：平台使用配置驱动的存储根、声明式 Flow、受控 Agent 和隔离沙盒。Wiki 描述当前可验证能力；目标态设计和历史交接文档不作为现状依据。
 
 ## 快速开始
 - [快速开始指南](getting-started/quickstart)
@@ -37,7 +39,7 @@ Wiki 正文会自动同步到平台知识库；维护规则和权威来源见 [W
 
 ## 功能特性
 - [AI 助手与工作台](features/ai-chat)
-- [AI 多 Agent 协作与超频模式](features/ai-collaboration)
+- [AI 多 Agent 协作](features/ai-collaboration)
 - [分析流程与工作流](features/workflows)
 - [数据下载](features/downloads)
 - [实验室知识库](features/knowledge-base)
@@ -53,3 +55,9 @@ Wiki 正文会自动同步到平台知识库；维护规则和权威来源见 [W
 - [安全加固清单](security/hardening-checklist)
 - [环境变量与密钥](security/env-variables)
 - [安全索引](security)
+
+## 权威来源
+
+- [Wiki 总览](README)
+- [架构文档索引](../ARCHITECTURE_DESIN/README)
+- [项目根 README](../README)

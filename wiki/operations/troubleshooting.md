@@ -43,7 +43,13 @@ docker run --rm cygnusx-worker:dev snakemake --version
 docker run --rm --entrypoint /bin/sh cygnusx-worker:dev -c 'id; getent passwd 1000'
 ```
 
-预期运行身份为 `uid=1000(cygnusx)`。若出现 `KeyError: getpwuid(): uid not found: 1000`，说明正在使用旧镜像；重新执行 `make docker-build-worker` 后再启动 Worker：
+通用 Worker 镜像当前服务用户是 `uid=1000(cygnusx)`；该 UID 与 Studio、聊天沙盒和分析运行时不同，后者统一使用非 root `uid=10001`。若检查的是沙盒镜像，应改用：
+
+```bash
+docker run --rm --entrypoint /bin/sh cygnusx-sandbox-base:v0.0.2dev -c 'id; stat -c "%u:%g %a %n" /workspace'
+```
+
+预期沙盒身份为 `uid=10001`。若出现用户不存在或工作区不可写，说明镜像、挂载或目录授权与当前基线不一致；重新构建相关镜像并检查挂载权限：
 
 ```bash
 make docker-up-worker

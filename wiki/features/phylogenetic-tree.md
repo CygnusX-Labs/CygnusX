@@ -57,9 +57,11 @@
 
 | 方法 | 路由 | 说明 |
 |---|---|---|
-| POST | `/api/phylo/upload` | 上传序列文件 |
-| POST | `/api/phylo/submit` | 提交任务 |
-| GET | `/api/phylo/tasks/{id}/status` | 查询状态 |
-| GET | `/api/phylo/tasks/{id}/result` | 获取结果 |
-| DELETE | `/api/phylo/tasks/{id}/cancel` | 取消任务 |
-| GET | `/api/phylo/download/{id}/{format}` | 下载结果 |
+| POST | `/api/v1/phylogenetic-tree/upload` | 上传序列文件 |
+| POST | `/api/v1/phylogenetic-tree/submit` | 提交任务 |
+| GET | `/api/v1/phylogenetic-tree/tasks/{id}/status` | 查询状态 |
+| GET | `/api/v1/phylogenetic-tree/tasks/{id}/result` | 获取结果 |
+| DELETE | `/api/v1/phylogenetic-tree/tasks/{id}/cancel` | 取消任务 |
+| GET | `/api/v1/phylogenetic-tree/download/{id}/{format}` | 下载结果 |
+| GET | `/api/v1/phylogenetic-tree/methods` | 获取支持的方法和预设 |
+| POST | `/api/v1/phylogenetic-tree/validate` | 预校验参数组合 |

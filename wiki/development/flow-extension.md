@@ -4,10 +4,10 @@ CygnusX 采用 **YAML 声明式 + 通用构建器** 的架构接入不同的 Sna
 
 ## 流程加载方式
 
-1. 服务启动后，首次访问 `/api/v1/flows` 时懒加载 `flows/` 下所有 `*.yaml` / `*.yml` 文件；
+1. `FileSystemFlowRepository` 扫描 `flows/` 下所有 `*.yaml` / `*.yml` 文件，并按文件 mtime 缓存；
 2. `FlowDomainService` 用 Pydantic 模型校验结构、参数唯一性、条件渲染引用等；
 3. 校验通过的流程以 `meta.id` 为唯一键缓存在内存中；
-4. 新增或修改 YAML 后，调用 `POST /api/v1/flows/reload` 热重载，无需重启服务。
+4. 新增或修改 YAML 后，调用需要管理员权限的 `POST /api/v1/flows/reload` 热重载，无需重启服务。
 
 ## 核心设计
 

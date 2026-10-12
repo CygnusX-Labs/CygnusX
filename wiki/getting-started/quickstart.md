@@ -19,7 +19,7 @@
 cp .env.example .env
 
 # 2. 安装后端与前端依赖
-uv sync
+uv sync --frozen
 make frontend-install
 
 # 3. 启动 PostgreSQL 和 Redis 等主栈依赖
@@ -34,7 +34,7 @@ make dev
 make frontend-dev
 ```
 
-默认开发前端地址为 `http://localhost:5173`。首次没有管理员时，也可以访问 `/setup` 创建首位管理员。
+默认开发前端地址为 `http://localhost:5173`，后端文档地址为 `http://localhost:8000/docs`。首次没有管理员时，也可以访问 `/setup` 创建首位管理员。
 
 ## Docker 一键部署
 
