@@ -118,3 +118,39 @@ def test_get_content_fills_partial_registration_from_default(tmp_path: Path):
     assert (
         content.registration.disabled_message == DEFAULT_CONTENT["registration"]["disabled_message"]
     )
+
+
+def test_get_content_fills_hero_extended_fields_from_default(tmp_path: Path):
+    """旧配置仅有 hero.title/description 时，slogan/tags/vision 由默认补齐。"""
+    yaml_path = _write_yaml(
+        tmp_path / "CygnusX.yaml",
+        {"hero": {"title": "t", "description": "d"}},
+    )
+    content = SiteContentService(yaml_path).get_content()
+    assert content.hero.slogan == DEFAULT_CONTENT["hero"]["slogan"]
+    assert content.hero.tags == DEFAULT_CONTENT["hero"]["tags"]
+    assert content.hero.vision.title_en == DEFAULT_CONTENT["hero"]["vision"]["title_en"]
+    assert content.hero.vision.text == DEFAULT_CONTENT["hero"]["vision"]["text"]
+    assert content.hero.vision.label == DEFAULT_CONTENT["hero"]["vision"]["label"]
+
+
+def test_get_content_reads_hero_extended_fields_from_yaml(tmp_path: Path):
+    """yaml 配置 hero 扩展字段时返回其中文案；vision 部分缺省字段由默认补齐。"""
+    yaml_path = _write_yaml(
+        tmp_path / "CygnusX.yaml",
+        {
+            "hero": {
+                "title": "t",
+                "description": "d",
+                "slogan": "自定义标语",
+                "tags": ["标签一", "标签二"],
+                "vision": {"text": "自定义愿景"},
+            },
+        },
+    )
+    content = SiteContentService(yaml_path).get_content()
+    assert content.hero.slogan == "自定义标语"
+    assert content.hero.tags == ["标签一", "标签二"]
+    assert content.hero.vision.text == "自定义愿景"
+    assert content.hero.vision.title_en == DEFAULT_CONTENT["hero"]["vision"]["title_en"]
+    assert content.hero.vision.label == DEFAULT_CONTENT["hero"]["vision"]["label"]

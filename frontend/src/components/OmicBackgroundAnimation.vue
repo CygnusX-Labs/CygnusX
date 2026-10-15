@@ -25,7 +25,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <canvas ref="canvasRef" class="omic-canvas" />
+  <canvas ref="canvasRef" class="omic-canvas" aria-hidden="true" />
 </template>
 
 <style scoped>

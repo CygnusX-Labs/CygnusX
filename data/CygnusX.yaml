@@ -55,8 +55,18 @@ storage:
     bin: "shared/bin"
 
 hero:
-  title: "CygnusX 星尘工作站 🌌"
-  description: "华中农业大学园艺林学学院基因组学实验室出品！数据上传、流程分析、结果交付——像收集星尘一样，一站式攒齐你的组学宝藏 ✨ 让科研变得丝滑起来～"
+  title: "CygnusX BioOps · 天鹅座智能科研平台"
+  slogan: "让科学问题连接数据，让计算结果留下依据。"
+  description: "从公共数据发现或已有数据导入出发，连接科研 Agent、标准化分析与报告交付，在统一项目中组织数据、计算过程与证据，让科研人员把时间留给科学问题。"
+  tags:
+    - "数据与文献发现"
+    - "受控计算分析"
+    - "可追溯交付"
+    - "科研资产积累"
+  vision:
+    title_en: "FROM STARDUST, TO DISCOVERY"
+    text: "让每一次科研探索，都留下可以继续前行的证据。"
+    label: "平台愿景"
 
 quick_entries:
   - key: rna-seq

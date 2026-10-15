@@ -3,11 +3,31 @@
 from cygnusx.application.schemas.base import CygnusXBaseSchema
 
 
+class HeroVisionContent(CygnusXBaseSchema):
+    """Hero 右侧愿景区文案（可选，缺省时由默认值兜底）。
+
+    表达平台长期愿景，不作为当前已全面实现的能力承诺；
+    文案由 data/CygnusX.yaml 的 hero.vision 段驱动，改文件即生效。
+    """
+
+    title_en: str = "FROM STARDUST, TO DISCOVERY"
+    text: str = "让每一次科研探索，都留下可以继续前行的证据。"
+    label: str = "平台愿景"
+
+
 class HeroContent(CygnusXBaseSchema):
-    """Hero 欢迎区文案"""
+    """Hero 欢迎区文案。
+
+    title / description 为既有必填字段（平台名 / 平台介绍）；
+    slogan（核心标语）、tags（能力标签）、vision（愿景区）为后加的可选字段，
+    旧配置缺少这些字段时由默认值兜底，不影响渲染。
+    """
 
     title: str
     description: str
+    slogan: str = ""
+    tags: list[str] = []
+    vision: HeroVisionContent = HeroVisionContent()
 
 
 class QuickEntryContent(CygnusXBaseSchema):

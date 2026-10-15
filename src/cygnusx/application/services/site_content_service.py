@@ -17,11 +17,18 @@ from cygnusx.core.config import get_settings
 # 内置默认文案：yaml 缺失或损坏时的兜底，保持首页可用
 DEFAULT_CONTENT: dict[str, Any] = {
     "hero": {
-        "title": "欢迎使用 CygnusX",
+        "title": "CygnusX BioOps · 天鹅座智能科研平台",
         "description": (
-            "华中农业大学园艺林学学院私有化多组学分析平台。"
-            "从数据上传、流程分析到结果交付，一站式完成您的组学研究。"
+            "从公共数据发现或已有数据导入出发，连接科研 Agent、标准化分析与报告交付，"
+            "在统一项目中组织数据、计算过程与证据，让科研人员把时间留给科学问题。"
         ),
+        "slogan": "让科学问题连接数据，让计算结果留下依据。",
+        "tags": ["数据与文献发现", "受控计算分析", "可追溯交付", "科研资产积累"],
+        "vision": {
+            "title_en": "FROM STARDUST, TO DISCOVERY",
+            "text": "让每一次科研探索，都留下可以继续前行的证据。",
+            "label": "平台愿景",
+        },
     },
     "quick_entries": [
         {"key": "rna-seq", "title": "RNA-seq 分析", "desc": "转录组差异表达分析"},

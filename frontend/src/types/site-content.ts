@@ -1,8 +1,25 @@
 /** 首页文案（来自 /site-content） */
 
+export interface HeroVisionContent {
+  /** 英文标语，如 FROM STARDUST, TO DISCOVERY */
+  title_en: string
+  /** 中文愿景正文 */
+  text: string
+  /** 底部辅助小字标注，如「平台愿景」 */
+  label: string
+}
+
 export interface HeroContent {
+  /** 平台名称（语义 H1） */
   title: string
+  /** 平台介绍正文 */
   description: string
+  /** 核心标语（可选：旧配置缺省时由前端兜底为空串） */
+  slogan?: string
+  /** 能力标签（可选：旧配置缺省时为空数组） */
+  tags?: string[]
+  /** 右侧愿景区（可选：旧配置缺省时由前端兜底） */
+  vision?: HeroVisionContent
 }
 
 /** 快捷入口兜底文案：实际首页入口优先使用 site_settings.home_quick_entries */

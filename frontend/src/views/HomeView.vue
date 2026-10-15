@@ -3,7 +3,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import {
-  RocketOutline, BarChartOutline,
+  RocketOutline, BarChartOutline, InformationCircleOutline,
   CheckmarkCircleOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
@@ -24,11 +24,20 @@ import {
 import { isFestivalEffectsEnabled } from '@/utils/interfacePreferences'
 import { displayName as getDisplayName } from '@/utils/displayName'
 
-// 默认文案兜底：API 拉取失败时保证首页仍可正常渲染
+// 默认文案兜底：API 拉取失败或旧配置缺少新增字段时保证首页仍可正常渲染
 const DEFAULT_CONTENT: SiteContent = {
   hero: {
-    title: '欢迎使用 CygnusX',
-    description: '华中农业大学园艺林学学院私有化多组学分析平台。从数据上传、流程分析到结果交付，一站式完成您的组学研究。',
+    title: 'CygnusX BioOps · 天鹅座智能科研平台',
+    slogan: '让科学问题连接数据，让计算结果留下依据。',
+    description:
+      '从公共数据发现或已有数据导入出发，连接科研 Agent、标准化分析与报告交付，'
+      + '在统一项目中组织数据、计算过程与证据，让科研人员把时间留给科学问题。',
+    tags: ['数据与文献发现', '受控计算分析', '可追溯交付', '科研资产积累'],
+    vision: {
+      title_en: 'FROM STARDUST, TO DISCOVERY',
+      text: '让每一次科研探索，都留下可以继续前行的证据。',
+      label: '平台愿景',
+    },
   },
   quick_entries: [
     { key: 'rna-seq', title: 'RNA-seq 分析', desc: '转录组差异表达分析' },
@@ -104,7 +113,17 @@ onMounted(async () => {
   ])
 
   if (contentResult.status === 'fulfilled') {
-    content.value = contentResult.value.data
+    const data = contentResult.value.data
+    // 与兜底文案逐层合并：旧配置缺少 hero 新增字段（slogan/tags/vision）时仍能完整渲染
+    content.value = {
+      ...DEFAULT_CONTENT,
+      ...data,
+      hero: {
+        ...DEFAULT_CONTENT.hero,
+        ...data.hero,
+        vision: { ...DEFAULT_CONTENT.hero.vision!, ...data.hero?.vision },
+      },
+    }
   }
 
   if (settingsResult.status === 'fulfilled' && settingsResult.value.data.home_quick_entries?.length) {
@@ -123,28 +142,40 @@ onMounted(async () => {
     <!-- Hero 欢迎区 -->
     <section class="hero animate-fade-in-up">
       <OmicBackgroundAnimation context="hero" />
-      <div class="hero-content">
-        <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
-        <h1 class="hero-title">{{ content.hero.title }}</h1>
-        <p class="hero-desc">
-          {{ content.hero.description }}
-        </p>
-        <div class="hero-actions">
-          <NButton size="large" class="hero-btn-primary" @click="goTo('/flows')">
-            <template #icon>
-              <NIcon><RocketOutline /></NIcon>
-            </template>
-            开始分析
-          </NButton>
-          <NButton size="large" class="hero-btn-secondary" @click="goTo('/dashboard')">
-            <template #icon>
-              <NIcon><BarChartOutline /></NIcon>
-            </template>
-            查看仪表板
-          </NButton>
-          <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
-            ✨ 问问星尘AI
-          </NButton>
+      <div class="hero-inner">
+        <div class="hero-main">
+          <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
+          <h1 class="hero-title">{{ content.hero.title }}</h1>
+          <p v-if="content.hero.slogan" class="hero-slogan">{{ content.hero.slogan }}</p>
+          <p class="hero-desc">{{ content.hero.description }}</p>
+          <ul v-if="content.hero.tags?.length" class="hero-tags" aria-label="平台能力">
+            <li v-for="tag in content.hero.tags" :key="tag" class="hero-tag">{{ tag }}</li>
+          </ul>
+          <div class="hero-actions">
+            <NButton size="large" class="hero-btn-primary" @click="goTo('/flows')">
+              <template #icon>
+                <NIcon><RocketOutline /></NIcon>
+              </template>
+              开始分析
+            </NButton>
+            <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
+              <template #icon>
+                <NIcon><SparklesOutline /></NIcon>
+              </template>
+              问问星尘AI
+            </NButton>
+            <NButton size="large" class="hero-btn-secondary" @click="goTo('/about')">
+              <template #icon>
+                <NIcon><InformationCircleOutline /></NIcon>
+              </template>
+              了解平台
+            </NButton>
+          </div>
+        </div>
+        <div v-if="content.hero.vision" class="hero-vision">
+          <p class="hero-vision-en">{{ content.hero.vision?.title_en }}</p>
+          <p class="hero-vision-text">{{ content.hero.vision?.text }}</p>
+          <p class="hero-vision-label">{{ content.hero.vision?.label }}</p>
         </div>
       </div>
     </section>
@@ -250,8 +281,8 @@ onMounted(async () => {
   position: relative;
   overflow: hidden;
   border-radius: 16px;
-  padding: 40px 32px;
-  margin-bottom: 24px;
+  padding: 32px 36px;
+  margin-bottom: 20px;
   background: linear-gradient(135deg, #165DFF 0%, #6B8DD6 50%, #8E54E9 100%);
   color: #fff;
 }
@@ -260,10 +291,22 @@ onMounted(async () => {
   display: none;
 }
 
-.hero-content {
+/* 背景动画压暗：随机命中的流星/星尘模式只作氛围，不抢文字（仅作用于首页 Hero） */
+.hero :deep(.omic-canvas) {
+  opacity: 0.4;
+}
+
+.hero-inner {
   position: relative;
   z-index: 2;
-  max-width: 640px;
+  display: grid;
+  grid-template-columns: minmax(0, 65fr) minmax(0, 35fr);
+  gap: 40px;
+  align-items: center;
+}
+
+.hero-main {
+  min-width: 0;
 }
 
 .hero-greeting {
@@ -273,17 +316,81 @@ onMounted(async () => {
 }
 
 .hero-title {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 27px;
+  font-weight: 700;
   line-height: 36px;
-  margin: 0 0 12px;
+  margin: 0 0 6px;
+}
+
+/* 核心标语：次于 H1 的次级层级，保持清晰可读 */
+.hero-slogan {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  margin: 0 0 10px;
+  opacity: 0.95;
 }
 
 .hero-desc {
   font-size: 14px;
-  line-height: 22px;
-  opacity: 0.85;
-  margin: 0 0 24px;
+  line-height: 23px;
+  opacity: 0.92;
+  margin: 0 0 16px;
+  max-width: 58ch;
+}
+
+/* 能力标签：轻量半透明小标签，自然换行，不做抢眼按钮 */
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+
+.hero-tag {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  white-space: nowrap;
+}
+
+/* 右侧愿景区：与左栏留足空白，弱化标注置于底部 */
+.hero-vision {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 24px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  min-width: 0;
+}
+
+.hero-vision-en {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  line-height: 20px;
+  margin: 0;
+  opacity: 0.75;
+}
+
+.hero-vision-text {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 26px;
+  margin: 0;
+  opacity: 0.92;
+}
+
+.hero-vision-label {
+  font-size: 12px;
+  line-height: 18px;
+  margin: 6px 0 0;
+  opacity: 0.6;
 }
 
 .hero-actions {
@@ -654,6 +761,24 @@ onMounted(async () => {
   .guide-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  /* 平板：双栏改上下布局，愿景区横排精简展示 */
+  .hero-inner {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .hero-vision {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    padding-left: 16px;
+  }
+
+  .hero-vision-label {
+    margin: 0;
+  }
 }
 
 @media (max-width: 768px) {
@@ -662,11 +787,41 @@ onMounted(async () => {
   }
 
   .hero {
-    padding: 28px 20px;
+    padding: 24px 20px;
   }
 
   .hero-title {
-    font-size: 22px;
+    font-size: 21px;
+    line-height: 30px;
+  }
+
+  .hero-slogan {
+    font-size: 15px;
+  }
+
+  .hero-desc {
+    max-width: none;
+  }
+
+  /* 手机：背景动画进一步压暗，减少视觉噪声 */
+  .hero :deep(.omic-canvas) {
+    opacity: 0.25;
+  }
+
+  /* 愿景区精简：英文标语与中文愿景同行，标注靠右 */
+  .hero-vision {
+    gap: 4px 12px;
+    padding-left: 12px;
+  }
+
+  .hero-vision-en {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+  }
+
+  .hero-vision-text {
+    font-size: 14px;
+    line-height: 22px;
   }
 
   .entry-grid,
