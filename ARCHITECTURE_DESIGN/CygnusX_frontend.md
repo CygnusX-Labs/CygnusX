@@ -406,7 +406,7 @@ Hero 区域（`HomeView.vue`）、通知条幅（`AnnouncementBanner.vue`）等�
 | 阴影 | `0 0 0 2px rgba(255,255,255,0.3), 0 4px 20px rgba(0,0,0,0.2)`；hover 外发光加强到 3px 并 `translateY(-1px)` |
 | 圆角 / padding / 字号 | Hero `12px / 8px 20px / 14px`；Banner `10px / 6px 16px / 13px`（紧凑场景） |
 
-**次按钮（毛玻璃 + 高亮白边，如"查看仪表盘"）：**
+**次按钮（毛玻璃 + 高亮白边，如"问问星尘AI"、"了解平台"）：**
 
 | 属性 | 值 |
 | --- | --- |
@@ -1307,7 +1307,11 @@ Hero 横幅（`HomeView.vue` 的 `<section class="hero">`）背景不是位图�
 | ② 入场动效 | CSS `@keyframes fadeInUp`，0.5s 一次性淡入上滑 | 否 | `HomeView.vue` `.animate-fade-in-up` + `global.css` |
 | ③ Canvas 动画 | JS Canvas 2D + `requestAnimationFrame`，19 模式随机命中其一 + 共享极光氛围层 | 是 | `OmicBackgroundAnimation.vue` → `animationLibrary.ts` |
 
-Canvas 层必须遵守 §31 的装饰覆盖层契约：`position:absolute; inset:0; pointer-events:none; z-index:0`，并 `aria-hidden`，置于 `.hero-content` 之下、渐变底色之上；**严禁**被父级 `.hero > *` 之类通配选择器命中（否则 `absolute` 被拉成 `relative`，撑高 hero 并顶坏布局，见 §31.2 / §31.4）。内容层只允许按**类名**显式抬升 `z-index`。
+Canvas 层必须遵守 §31 的装饰覆盖层契约：`position:absolute; inset:0; pointer-events:none; z-index:0`，并 `aria-hidden`，置于 `.hero-inner` 之下、渐变底色之上；**严禁**被父级 `.hero > *` 之类通配选择器命中（否则 `absolute` 被拉成 `relative`，撑高 hero 并顶坏布局，见 §31.2 / §31.4）。内容层只允许按**类名**显式抬升 `z-index`。
+
+**使用方局部压暗（不改引擎）**：首页 Hero 在 `.hero :deep(.omic-canvas)` 上将画布整体压暗到 `opacity: 0.4`（`≤768px` 时 `0.25`），保证双栏文字区（见下）的对比度优先；登录页无此处理。这是接入方的使用方式调整，引擎 `CONFIG` 档位不变。
+
+**文案与布局（首页 Hero）**：卡片内容由 `/api/v1/site-content` 的 `hero` 段驱动（`title` 平台名 / `slogan` 核心标语 / `description` 平台介绍 / `tags` 能力标签 / `vision` 右侧愿景区），前端 `DEFAULT_CONTENT` 逐层合并兜底——接口失败或旧配置缺新增字段时仍能完整渲染。桌面端 `.hero-inner` 为 `65fr / 35fr` 双栏：左栏 `.hero-main` 依次放问候语、语义 H1（仅一个）、标语、介绍（`max-width: 58ch` 防碎行）、轻量半透明标签（`flex-wrap` 自然换行）与 §5.7 两档按钮（主"开始分析"，次"问问星尘AI / 了解平台"）；右栏 `.hero-vision` 放英文标语 + 中文愿景 + 小字标注，`1px` 半透明左边线留白分隔。`≤1024px` 收为上下布局（愿景横排精简），`≤768px` 更紧凑且 DOM 顺序保证"介绍 + 按钮在前、精简愿景在后"。能力标签是 `12px` 半透明圆角小标签，禁止做成抢眼大按钮；愿景文案是长期方向表达，不得写成"已全面实现"的能力承诺。
 
 引擎对外契约不变：组件 `onMounted` 动态 `import('@/utils/animationLibrary')`，按 `context` 取 `window.initHeroAnimation(canvas)`，返回的 cleanup 在 `onUnmounted` 调用；引擎内部监听 `resize` 与 `visibilitychange`（切后台停 rAF、回前台续），cleanup 一并解绑，杜绝句柄/内存泄漏。Hero 档位 `opacity:0.82 / density:5000 / speed:0.8 / glow:true`，登录页档位更淡更慢（`0.3 / 10000 / 0.6`）。渐变太抢眼，动画既要"压得住被看见"，又必须**克制、舒缓**——`speed` 取慢档、`opacity` 留余量，避免频率过高或过亮而喧宾夺主、抢标题与按钮（见 §32.3 频率克制原则）。整体转速另由主循环 **60fps 封顶**兜底（见 §32.3 原则 5），与 `speed` 解耦——保证高刷屏不会比 60Hz 转得更快。
 
@@ -1406,7 +1410,7 @@ onUnmounted(() => cleanup?.())
 </style>
 ```
 
-接入点（`HomeView.vue`）：`<section class="hero animate-fade-in-up">` 设 `position:relative; overflow:hidden` 与渐变底色，首子节点放 `<OmicBackgroundAnimation context="hero" />`，`.hero-content` 用**类名**显式 `position:relative; z-index:2` 抬到 canvas 之上。
+接入点（`HomeView.vue`）：`<section class="hero animate-fade-in-up">` 设 `position:relative; overflow:hidden` 与渐变底色，首子节点放 `<OmicBackgroundAnimation context="hero" />`，`.hero-inner` 用**类名**显式 `position:relative; z-index:2` 抬到 canvas 之上，内部再以 `65fr / 35fr` 双栏分列 `.hero-main`（文案 + 标签 + 按钮）与 `.hero-vision`（愿景）。
 
 **② 引擎骨架：档位 / DPR / 减少动效 / 随机命中 / 主循环。** `CONFIG` 决定 Hero 与登录两套强度；`resize` 按 `devicePixelRatio` 设物理尺寸并 `setTransform` 归一（**必须 6 参**，传 5 参 vue-tsc 报 TS2575）；`reduceMotion` 命中只画一帧、不启 rAF。
 
