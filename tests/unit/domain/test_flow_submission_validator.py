@@ -248,3 +248,65 @@ async def test_sample_sheet_ref_resolution(validator: FlowSubmissionValidator, r
 
     assert result.valid is True
     assert len(result.normalized_request.sample_sheet) == 2
+
+
+@pytest.mark.asyncio
+async def test_final_submission_rejects_path_outside_user_root(rna_flow) -> None:
+    context = _make_context()
+    context.extra["final_submission"] = True
+    result = await FlowSubmissionValidator().validate(
+        context,
+        rna_flow,
+        {
+            "name": "unsafe path",
+            "parameters": {
+                "project_name": "Test",
+                "Genome_Version": "hg38",
+                "species": "Homo sapiens",
+                "client": "Test",
+                "raw_data_path": "/tmp/not-owned",
+                "execution_mode": "local",
+                "Library_Types": "fr-unstranded",
+            },
+            "sample_sheet": [{"sample": "S1", "sample_name": "S1", "group": "ctrl"}],
+        },
+    )
+
+    assert result.valid is False
+    assert any(error.code == "PATH_OUTSIDE_USER_ROOT" for error in result.errors)
+
+
+@pytest.mark.asyncio
+async def test_file_reference_path_is_written_to_normalized_request(rna_flow) -> None:
+    fake_meta = FileMetadata(
+        ref="upload://reads",
+        resolved_type="upload",
+        file_id="reads",
+        file_name="reads.fastq.gz",
+        file_size=10,
+        internal_path="/owned/users/test-user/reads.fastq.gz",
+    )
+    resolver = ManagedFileResolver()
+    resolver._resolve_upload = AsyncMock(return_value=fake_meta)  # type: ignore[method-assign]
+    validator = FlowSubmissionValidator(file_resolver=resolver)
+    result = await validator.validate(
+        _make_context(),
+        rna_flow,
+        {
+            "name": "reference path",
+            "parameters": {
+                "project_name": "Test",
+                "Genome_Version": "hg38",
+                "species": "Homo sapiens",
+                "client": "Test",
+                "raw_data_path": "upload://reads",
+                "execution_mode": "local",
+                "Library_Types": "fr-unstranded",
+            },
+            "sample_sheet": [{"sample": "S1", "sample_name": "S1", "group": "ctrl"}],
+        },
+    )
+
+    assert result.valid is True
+    assert result.normalized_request is not None
+    assert result.normalized_request.parameters["raw_data_path"] == fake_meta.internal_path

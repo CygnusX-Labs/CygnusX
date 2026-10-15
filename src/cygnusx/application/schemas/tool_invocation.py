@@ -50,3 +50,10 @@ class ToolInvocationContext(BaseModel):
             "timestamp": self.timestamp.isoformat(),
             "extra": self.extra,
         }
+
+
+class ExternalToolConfirmationRequest(BaseModel):
+    """Request a server-side confirmation for an external MCP write."""
+
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, Any] = Field(default_factory=dict)

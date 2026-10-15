@@ -79,6 +79,7 @@ class DownloadRequest(CygnusXBaseSchema):
     dry_run: bool = Field(
         default=False, description="模拟下载，不实际下载文件（测试用，仅 SRA 下载支持）"
     )
+    confirmation_id: str | None = Field(default=None, max_length=128, exclude=True)
 
     @model_validator(mode="after")
     def validate_source_payload(self) -> "DownloadRequest":

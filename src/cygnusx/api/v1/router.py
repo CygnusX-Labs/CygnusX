@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from cygnusx.api.v1 import (
+    agent_tools,
     agents,
     agentteams,
     ai,
@@ -10,6 +11,7 @@ from cygnusx.api.v1 import (
     auth,
     chat,
     cookies,
+    datasets,
     docs,
     downloads,
     festival,
@@ -30,6 +32,8 @@ from cygnusx.api.v1 import (
     prompts,
     reminders,
     reports,
+    research_agent,
+    research_delivery,
     runs,
     sandbox,
     schedules,
@@ -65,6 +69,7 @@ from cygnusx.reference_genomes.api import router as reference_genomes_router
 from cygnusx.tools import register_tool_routers
 
 api_router = APIRouter()
+api_router.include_router(agent_tools.router, prefix="/agent-tools", tags=["AgentTools"])
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["SiteSettings"])
@@ -136,6 +141,7 @@ api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
 api_router.include_router(agentteams.router, prefix="/agent-teams", tags=["AgentTeams"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI Copilot"])
 api_router.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
+api_router.include_router(research_agent.router, prefix="/research-agent", tags=["Research Agent"])
 api_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
 api_router.include_router(mas.router, prefix="/mas", tags=["Multi-Agent System"])
 api_router.include_router(mas_rooms.router, prefix="/mas/rooms", tags=["MAS-Rooms"])
@@ -158,3 +164,7 @@ api_router.include_router(
 # 生信工具箱：自动发现 cygnusx.tools.<工具>.api 并挂载（每个工具自声明 prefix/tags）
 # 新增工具无需改本文件 —— 在 src/cygnusx/tools/<工具名>/api.py 声明 router/prefix/tags 即可。
 register_tool_routers(api_router)
+
+api_router.include_router(datasets.router, tags=["datasets"])
+
+api_router.include_router(research_delivery.router, tags=["research-delivery"])

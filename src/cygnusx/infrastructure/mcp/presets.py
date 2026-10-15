@@ -1036,6 +1036,9 @@ async def _platform_submit_download(
     arguments: dict[str, Any], user_id: str | None = None, **_kw: Any
 ) -> dict[str, Any]:
     """提交数据下载任务（SRA/GEO 公共数据库、云存储、直链）。"""
+    from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+
+    require_agent_write_gate("downloads.submit")
     from cygnusx.application.schemas.download import DownloadRequest
     from cygnusx.application.services.download_service import DownloadService
     from cygnusx.core.config import get_settings
@@ -2466,6 +2469,19 @@ def _build_cygnusx_tools_preset() -> dict[str, Any]:
     for tool in [*static_tools, *dynamic_tools]:
         view = _tool_view(tool)
         tools_by_name.setdefault(view["name"], view)
+
+    from cygnusx.application.schemas.agent_tools import capability_catalog
+    from cygnusx.core.config import get_settings
+
+    if get_settings().tool_gateway_read_enabled:
+        for capability in capability_catalog(include_dataset=getattr(get_settings(), "dataset_discovery_readonly", False), include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
+            if capability.tool_name in tools_by_name:
+                raise ValueError(f"共享工具注册冲突: {capability.tool_name}")
+            tools_by_name[capability.tool_name] = {
+                "name": capability.tool_name, "description": capability.description,
+                "inputSchema": capability.input_schema,
+            }
+            handlers[capability.tool_name] = _cygnusx_tools_handler
 
     return {
         "name": "cygnusx-tools",

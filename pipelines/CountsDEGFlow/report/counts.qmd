@@ -1,0 +1,29 @@
+## Counts-only differential expression
+
+This scientific report displays completed DESeq2 outputs. It does not run an analysis or validate biological hypotheses. Inputs must be reviewed raw counts; TPM, FPKM and transformed expression are unsupported.
+
+```{python}
+#| echo: false
+import csv
+import os
+from html import escape
+from pathlib import Path
+from IPython.display import HTML, display
+from bioreport.config import load_config
+
+report_config = load_config(os.environ["REPORT_CONFIG"])
+for key, title in (("sample_qc", "Sample quality summary"), ("deg", "Differential expression preview")):
+    path = Path(report_config["input_files"][key])
+    with path.open(encoding="utf-8", newline="") as stream:
+        rows = []
+        for index, row in enumerate(csv.reader(stream, delimiter="\t")):
+            if index > 100:
+                break
+            rows.append(row)
+    display(HTML("<h3>" + title + "</h3><table>" + "".join(
+        "<tr>" + "".join("<td>" + escape(cell) + "</td>" for cell in row) + "</tr>"
+        for row in rows
+    ) + "</table>"))
+```
+
+This preview preserves the original output order and missing values. Download the original `deg.tsv` for all rows and `session_info.txt` for recorded R software versions. Rendering never changes the statistical output.

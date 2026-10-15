@@ -89,6 +89,10 @@ function formatDuration(seconds: number): string {
 
 function handlePrimaryClick() {
   if (!primaryFile) return
+  if (props.report.report_kind === 'delivery') {
+    emit('download', props.report, primaryFile.id)
+    return
+  }
   emit('preview', props.report)
 }
 </script>
@@ -112,6 +116,13 @@ function handlePrimaryClick() {
             {{ report.title }}
           </h3>
           <span class="flow-label">{{ flowMeta.label }}</span>
+          <span v-if="report.report_kind === 'reproducibility'" class="flow-label">
+            执行证据报告 · v{{ report.version || 1 }} · {{ report.template_version }}
+            · {{ report.evidence_partial ? '证据不完整' : '当前采集范围无已知缺口' }} · 复现验证未执行
+          </span>
+          <span v-else-if="report.report_kind === 'delivery'" class="flow-label">
+            科研交付包 · {{ report.evidence_partial ? '部分交付' : '完整交付' }}
+          </span>
         </div>
       </div>
 
@@ -145,7 +156,7 @@ function handlePrimaryClick() {
           {{ report.flow_version }}
         </span>
         <span class="meta-tag">{{ report.sample_count }} 样本</span>
-        <span class="meta-tag">运行 {{ formatDuration(report.duration) }}</span>
+        <span v-if="report.report_kind !== 'reproducibility'" class="meta-tag">运行 {{ formatDuration(report.duration) }}</span>
         <NTooltip trigger="hover">
           <template #trigger>
             <span class="meta-tag">

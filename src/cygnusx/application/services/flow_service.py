@@ -12,6 +12,7 @@ from cygnusx.application.schemas.flow import (
     flow_config_to_detail,
     flow_config_to_list_item,
 )
+from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import NotFoundError
 from cygnusx.domain.flow.entities import FlowConfig
 from cygnusx.infrastructure.database.repositories import FileSystemFlowRepository
@@ -25,13 +26,13 @@ class FlowService:
 
     def list_flows(self, category: str | None = None) -> FlowListResponse:
         """获取流程列表（可按分类过滤）"""
-        configs = self._repo.list_flows(category)
+        configs = [c for c in self._repo.list_flows(category) if self._enabled(c.meta.id)]
         items = [flow_config_to_list_item(c) for c in configs]
         return FlowListResponse(items=items, total=len(items))
 
     def list_ai_enabled_flows(self) -> list[FlowConfig]:
         """获取所有启用 AI 助手的流程配置。"""
-        return [c for c in self._repo.list_flows() if c.ai and c.ai.enabled]
+        return [c for c in self._repo.list_flows() if c.ai and c.ai.enabled and self._enabled(c.meta.id)]
 
     def get_flow(self, flow_id: str) -> FlowDetailDTO:
         """获取流程详情"""
@@ -72,9 +73,13 @@ class FlowService:
         count = self._repo.reload()
         return FlowReloadResponse(loaded=count, message=f"已重新加载 {count} 个流程配置")
 
+    @staticmethod
+    def _enabled(flow_id: str) -> bool:
+        return flow_id != "counts_deg" or get_settings().counts_deg_flow_enabled
+
     def _get_or_404(self, flow_id: str) -> FlowConfig:
         """获取流程配置，不存在抛 404"""
         config = self._repo.get_by_flow_id(flow_id)
-        if config is None:
+        if config is None or not self._enabled(flow_id):
             raise NotFoundError(f"流程 '{flow_id}' 不存在")
         return config

@@ -224,6 +224,19 @@ pipeline_mapping: # PipelineMappingConfig — 见 §5.2
 
 ## 9. 关键文件索引
 
+### RNA 报告证据快照（Phase 0 内部能力）
+
+`application/schemas/report_snapshot.py` 定义版本化、不可变证据协议；
+`application/services/report_snapshot_builder.py` 通过 `report_snapshot_sources.py`
+只读查询 owner 的 RNA Task、可选明确确认的 Run、关联文件和事件，
+再由 `report_snapshot_manifest.py` 读取 ARDP 清单及当前本地文件指纹。
+普通 Task 无 Run 时仍可构建；缺失历史环境、输入身份、工具调用与 QC 决策显式记录缺口。
+采集时指纹和清单声明不等于执行时证明。快照冻结后含规范序列化及事实摘要。
+Phase 1 已接入独立报告 Job、不可变快照持久化、八模块 HTML 和现有 ReportService/API/ReportsView。
+科学 RNAFlow/BioReport 路径保留，不生成 PDF 或执行重跑。
+当前实现、安全、幂等、恢复与部署验收边界见 `CygnusX_report_architecture.md`；
+真实 RNA / PostgreSQL / Celery E2E 尚未验收，隔离集成不能替代现场证据。
+
 | 组件 | 文件 |
 |---|---|
 | FlowConfig schema（权威） | `src/cygnusx/domain/flow/entities.py`、`domain/flow/value_objects.py` |

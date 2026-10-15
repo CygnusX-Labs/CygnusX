@@ -46,6 +46,8 @@ celery_app = Celery(
         "cygnusx.infrastructure.celery_app.tasks.ai_metrics",
         "cygnusx.infrastructure.celery_app.tasks.observability",
         "cygnusx.infrastructure.celery_app.tasks.schedules",
+        "cygnusx.infrastructure.celery_app.tasks.reports",
+        "cygnusx.infrastructure.celery_app.tasks.datasets",
     ],
 )
 
@@ -93,10 +95,20 @@ celery_app.conf.task_routes = {
     "cygnusx.infrastructure.celery_app.tasks.ai_metrics.*": {"queue": "analysis"},
     "cygnusx.infrastructure.celery_app.tasks.observability.*": {"queue": "analysis"},
     "cygnusx.infrastructure.celery_app.tasks.schedules.*": {"queue": "schedules"},
+    "cygnusx.infrastructure.celery_app.tasks.reports.*": {"queue": "analysis"},
+    "cygnusx.infrastructure.celery_app.tasks.datasets.*": {"queue": "analysis"},
 }
 
 # 定时任务
 celery_app.conf.beat_schedule = {
+    "dataset-ingestion-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.datasets.reconcile_dataset_jobs",
+        "schedule": 60.0,
+    },
+    "reproducible-report-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.reports.reconcile_report_jobs",
+        "schedule": float(settings.report_generation_reconcile_seconds),
+    },
     "schedule-scan-due": {
         "task": "cygnusx.infrastructure.celery_app.tasks.schedules.scan_due_schedules",
         "schedule": 30.0,

@@ -20,17 +20,23 @@ from cygnusx.infrastructure.execution.local import LocalSnakemakeExecutor
 from cygnusx.infrastructure.storage.file_registry import FileRegistry
 
 
-async def _archive_pipeline_run(session: AsyncSession, task: Any, status: str, summary: str = "") -> None:
+async def _archive_pipeline_run(
+    session: AsyncSession, task: Any, status: str, summary: str = ""
+) -> None:
     """Write the standard project evidence capsule after a pipeline terminal state."""
+    if (getattr(task, "idempotency_key", None) or "").startswith("dataset:"):
+        # Dataset evidence uses verified manifests/snapshots, not the legacy directory scan.
+        return
+    from sqlalchemy import select
+
+    from cygnusx.application.services.artifact_manifest import sha256_stream
     from cygnusx.application.services.project_archive_service import (
         ArchivedFile,
         ProjectInfo,
         archive_run,
         md5_stream,
     )
-    from cygnusx.application.services.artifact_manifest import sha256_stream
     from cygnusx.infrastructure.database.models.run import RunModel
-    from sqlalchemy import select
     from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
 
     run = await session.scalar(select(RunModel).where(RunModel.task_id == task.id))
@@ -75,12 +81,10 @@ async def _register_pipeline_outputs(session: AsyncSession, task: Any) -> int:
 
     返回注册的文件数量；未找到 output 目录时返回 0。异常由调用方捕获并记录日志。
     """
+    if (getattr(task, "idempotency_key", None) or "").startswith("dataset:"):
+        return 0  # The gated ResearchProvenanceService registers only verified declared outputs.
     work_path = Path(task.work_dir)
-    output_dir = (
-        work_path.parent / "output"
-        if work_path.name == "work"
-        else work_path / "output"
-    )
+    output_dir = work_path.parent / "output" if work_path.name == "work" else work_path / "output"
     if not output_dir.is_dir():
         return 0
     registry = FileRegistry(session)
@@ -146,9 +150,10 @@ async def _execute_snakemake(
         if task is None:
             return {"status": "failed", "message": f"任务 {task_id} 不存在"}
 
+        from sqlalchemy import select
+
         from cygnusx.application.services.run_event_service import RunEventService
         from cygnusx.infrastructure.database.models.run import RunModel
-        from sqlalchemy import select
 
         run = await session.scalar(select(RunModel).where(RunModel.task_id == task_uuid))
         run_events = RunEventService(session) if run is not None else None
@@ -161,6 +166,10 @@ async def _execute_snakemake(
                 message=message,
                 source=source,
             )
+
+        from cygnusx.application.services.research_execution_binding import worker_preflight
+
+        await worker_preflight(session, task)
 
         # 推送开始日志
         await _add_and_publish_log(LogLevel.INFO, "开始执行 Snakemake 分析任务", source="celery")
@@ -215,7 +224,9 @@ async def _execute_snakemake(
             if result.get("status") == "success":
                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
                 if run_events and run is not None:
-                    await run_events.emit(run.id, task_id=task_uuid, status="completed", progress=1.0)
+                    await run_events.emit(
+                        run.id, task_id=task_uuid, status="completed", progress=1.0
+                    )
                 await _add_and_publish_log(LogLevel.INFO, "Snakemake 执行完成", source="snakemake")
 
                 # 任务成功后自动生成报告记录
@@ -226,19 +237,50 @@ async def _execute_snakemake(
                     duration_seconds = 0
                     if task.started_at and task.finished_at:
                         duration_seconds = int((task.finished_at - task.started_at).total_seconds())
-                    await report_service.create_report_from_task(
-                        task_id=str(task.id),
-                        user_id=str(task.user_id),
-                        flow_id=task.flow_id,
-                        work_dir=task.work_dir,
-                        sample_count=task.sample_count,
-                        duration=duration_seconds,
-                    )
+                    if task.idempotency_key and task.idempotency_key.startswith("dataset:"):
+                        from cygnusx.application.services.reproducible_report_service import (
+                            ReproducibleReportService,
+                        )
+                        from cygnusx.application.services.research_provenance_service import (
+                            ResearchProvenanceService,
+                        )
+
+                        graph = await ResearchProvenanceService(session).reconcile(
+                            task.user_id, task.id
+                        )
+                        await session.commit()
+                        if graph.result_observation_id:
+                            await ReproducibleReportService(session).enqueue(
+                                task.user_id, task.id, request_key=graph.result_observation_id
+                            )
+                            if task.flow_id == "counts_deg" and graph.compute_state in {
+                                "success",
+                                "completed",
+                            }:
+                                await ReproducibleReportService(session).enqueue(
+                                    task.user_id,
+                                    task.id,
+                                    request_key=graph.result_observation_id,
+                                    scientific=True,
+                                )
+                    else:
+                        await report_service.create_report_from_task(
+                            task_id=str(task.id),
+                            user_id=str(task.user_id),
+                            flow_id=task.flow_id,
+                            work_dir=task.work_dir,
+                            sample_count=task.sample_count,
+                            duration=duration_seconds,
+                        )
                     await _add_and_publish_log(LogLevel.INFO, "分析报告记录已生成", source="report")
                 except Exception as report_exc:  # noqa: BLE001
                     await _add_and_publish_log(
                         LogLevel.WARNING,
-                        f"生成报告记录失败（非阻塞）: {report_exc}",
+                        (
+                            "科研交付登记失败（非阻塞，需独立对账）"
+                            if (getattr(task, "idempotency_key", None) or "").startswith("dataset:")
+                            else f"生成报告记录失败（非阻塞）: {report_exc}"
+                        ),
                         source="report",
                     )
 
@@ -262,7 +304,9 @@ async def _execute_snakemake(
                     await _archive_pipeline_run(session, task, "completed", "Snakemake 执行完成")
                 except Exception as archive_exc:  # noqa: BLE001
                     await _add_and_publish_log(
-                        LogLevel.WARNING, f"生成项目归档失败（非阻塞）: {archive_exc}", source="archive"
+                        LogLevel.WARNING,
+                        f"生成项目归档失败（非阻塞）: {archive_exc}",
+                        source="archive",
                     )
 
                 return_status = "success"
@@ -287,7 +331,9 @@ async def _execute_snakemake(
                     await _archive_pipeline_run(session, task, "failed", task.error_message)
                 except Exception as archive_exc:  # noqa: BLE001
                     await _add_and_publish_log(
-                        LogLevel.WARNING, f"生成失败归档失败（非阻塞）: {archive_exc}", source="archive"
+                        LogLevel.WARNING,
+                        f"生成失败归档失败（非阻塞）: {archive_exc}",
+                        source="archive",
                     )
                 return_status = "failed"
 

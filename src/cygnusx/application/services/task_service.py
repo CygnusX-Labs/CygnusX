@@ -16,10 +16,13 @@ from cygnusx.application.schemas.task import (
     TaskSubmitRequest,
     task_to_response,
 )
+from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.flow_service import FlowService
+from cygnusx.application.services.managed_file_resolver import ManagedFileResolver
 from cygnusx.application.services.mas_task_projection import MASTaskProjection
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import NotFoundError, ValidationError
+from cygnusx.domain.flow.submission_validator import FlowSubmissionValidator
 from cygnusx.domain.task.services import TaskDomainService
 from cygnusx.domain.task.value_objects import TaskStatus
 from cygnusx.infrastructure.celery_app.tasks.analysis import run_snakemake
@@ -61,12 +64,54 @@ class TaskService:
         5. 投递 Celery 异步任务；
         6. 将任务状态推进为 QUEUED。
         """
+        if req.flow_id == "counts_deg":
+            from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+
+            # Experimental matrix Flow cannot be reached by bypassing Dataset APIs.
+            require_agent_write_gate("analysis.submit")
+            from cygnusx.application.services.dataset_analysis_service import (
+                validate_counts_task_request,
+            )
+
+            await validate_counts_task_request(self._db, UUID(user_id), req)
+
+        from cygnusx.application.services.research_execution_binding import (
+            validate_dataset_submission,
+        )
+
+        dataset_link = await validate_dataset_submission(self._db, UUID(user_id), req)
+
         if req.idempotency_key:
             existing = await self._repo.get_by_idempotency_key(req.idempotency_key)
             if existing is not None:
                 if str(existing.user_id) != user_id:
                     raise ValidationError("幂等键已被其他用户使用")
                 return task_to_response(existing)
+
+        # Every entry point converges here. Re-run the authoritative Flow validator
+        # immediately before creating work files or enqueueing a worker.
+        validation = await FlowSubmissionValidator(ManagedFileResolver()).validate(
+            ToolInvocationContext(
+                user_id=user_id,
+                session_id="task-submit",
+                db=self._db,
+                extra={"final_submission": True},
+            ),
+            self._flow_service.get_flow_config(req.flow_id),
+            {
+                "name": req.name,
+                "parameters": dict(req.parameters),
+                "sample_sheet": list(req.sample_sheet),
+                "comparisons": req.comparisons,
+                "execution_mode": req.execution_mode,
+            },
+        )
+        if not validation.valid or validation.normalized_request is None:
+            detail = "; ".join(error.message for error in validation.errors)
+            raise ValidationError(detail or "任务参数校验失败")
+        req = validation.normalized_request.model_copy(
+            update={"idempotency_key": req.idempotency_key}
+        )
 
         flow_config = self._flow_service.get_flow_config(req.flow_id)
         flow_detail = self._flow_service.get_flow(req.flow_id)
@@ -77,9 +122,9 @@ class TaskService:
         from cygnusx.application.services.file_service import ensure_directory_chain
         from cygnusx.infrastructure.storage import get_path_factory
 
-        project_relative = Path(work_dir).parent.relative_to(
-            get_path_factory().user_root(user_id)
-        ).as_posix()
+        project_relative = (
+            Path(work_dir).parent.relative_to(get_path_factory().user_root(user_id)).as_posix()
+        )
         await ensure_directory_chain(self._db, UUID(user_id), project_relative)
 
         # 参数快照：复制一份不可变的提交时参数
@@ -95,6 +140,21 @@ class TaskService:
             work_dir=work_dir,
         )
         config_file = str(files["config"])
+        if dataset_link is not None:
+            import yaml
+
+            config_path = Path(config_file)
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))  # noqa: ASYNC240
+            config["platform"] = {
+                "task_id": str(task_id),
+                "user_id": user_id,
+                "flow_id": req.flow_id,
+            }
+            config["cygnusx"] = {
+                **(dataset_link.execution_binding or {}),
+                "dataset_version_id": str(dataset_link.version_id),
+            }
+            config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")  # noqa: ASYNC240
         self._write_monitor_config(
             work_dir=work_dir,
             task_id=str(task_id),
@@ -118,6 +178,11 @@ class TaskService:
         # 写入工作目录等运行信息
         task.work_dir = work_dir
         await self._repo.save(task)
+
+        if dataset_link is not None:
+            dataset_link.task_id = task.id
+            # Persist the actual Task + binding before queue visibility. Ambiguous delivery is not replayed.
+            await self._db.commit()
 
         enqueue_task(
             run_snakemake,

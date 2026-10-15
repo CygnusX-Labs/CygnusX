@@ -1,0 +1,519 @@
+<script setup lang="ts">
+/**
+ * McpToolCallCard — 可折叠 MCP 工具调用卡片
+ *
+ * 从 KimiMessageItem.vue 的 .tool-card 逻辑抽离，默认折叠。
+ * 折叠态：工具图标 + 工具名 + 状态标签 + 旋转箭头，单行展示。
+ * 展开态：完整参数 JSON + 执行结果 + 内嵌操作区（确认/跳转/任务进度）。
+ */
+import { ref, computed } from 'vue'
+import { NButton, NIcon, NTag, useMessage } from 'naive-ui'
+import { BuildOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import TaskProgressCard from './TaskProgressCard.vue'
+import PipelineTaskCard from './PipelineTaskCard.vue'
+import { chatApi } from '@/api/chat'
+import type { ToolCall } from './types'
+import type { PipelineType } from '@/types/pipeline'
+import AgentToolProposalCard from '@/components/research/AgentToolProposalCard.vue'
+import { asToolProposal } from '@/api/agentTools'
+import { asImportProposal } from '@/api/datasets'
+import DatasetImportCard from '@/components/research/DatasetImportCard.vue'
+
+interface Props {
+  tool: ToolCall
+}
+
+const props = defineProps<Props>()
+const bioopsProposal = computed(() => {
+  const envelope = props.tool.uiPayload?.bioops as { result?: unknown } | undefined
+  return asToolProposal(envelope?.result)
+})
+
+const datasetImport = computed(() => {
+  const envelope = props.tool.uiPayload?.bioops as { result?: unknown } | undefined
+  return asImportProposal(envelope?.result)
+})
+
+const emit = defineEmits<{
+  confirmTool: [toolName: string, args: Record<string, unknown>]
+  openToolPage: [route: string, args: Record<string, unknown>]
+  generateVisualization: [taskId: string, type: PipelineType]
+  adjustParameters: [type: PipelineType]
+}>()
+
+const collapsed = ref(true)
+const confirming = ref(false)
+const confirmed = ref(false)
+const rejected = ref(false)
+// 卡片可能在轻量测试宿主中独立挂载（无 NMessageProvider），降级为控制台告警。
+const message = (() => {
+  try {
+    return useMessage()
+  } catch {
+    return { error: (..._a: unknown[]) => undefined, success: (..._a: unknown[]) => undefined }
+  }
+})()
+
+function toggle() {
+  collapsed.value = !collapsed.value
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    toggle()
+  }
+}
+
+const statusType = computed(() => {
+  switch (props.tool.status) {
+    case 'success': return 'success' as const
+    case 'error': return 'error' as const
+    case 'timed_out': return 'warning' as const
+    case 'awaiting_approval': return 'warning' as const
+    case 'running': return 'info' as const
+    default: return 'default' as const
+  }
+})
+
+const statusLabel = computed(() => {
+  switch (props.tool.status) {
+    case 'success': return '成功'
+    case 'error': return '失败'
+    case 'timed_out': return '超时·已降级'
+    case 'awaiting_approval': return '等待批准'
+    case 'running': return '执行中'
+    case 'pending': return '等待中'
+    default: return props.tool.status
+  }
+})
+
+const hasArgs = computed(() =>
+  props.tool.arguments && Object.keys(props.tool.arguments).length > 0,
+)
+
+const workspaceSummary = computed(() => {
+  if (!['list_workspace_files', 'search_workspace_files', 'workspace_list_files'].includes(props.tool.name)) {
+    return ''
+  }
+  if (!props.tool.result || typeof props.tool.result !== 'object') return ''
+
+  const summary = (props.tool.result as Record<string, unknown>).summary
+  return typeof summary === 'string' ? summary : ''
+})
+
+const workspaceSummaryPreview = computed(() => {
+  if (!workspaceSummary.value) return ''
+  // 展开态显示完整摘要；折叠态只保留首行结论（如"工作区根目录 下共 66 项"），
+  // 避免文件清单类长摘要在未展开时刷屏（完整内容仍在展开后的结果区可查）。
+  if (!collapsed.value) return workspaceSummary.value
+  const lines = workspaceSummary.value.split('\n').filter((line) => line.trim())
+  const firstLine = lines[0]?.trim() || ''
+  return lines.length > 1 ? `${firstLine} …（展开查看完整结果）` : firstLine
+})
+
+function isPipelineTask(tool: ToolCall): boolean {
+  return ['rna_seq', 'atac_seq'].includes(String(tool.uiPayload?.pipeline_type || ''))
+}
+
+function pipelineType(tool: ToolCall): PipelineType {
+  return String(tool.uiPayload?.pipeline_type) as PipelineType
+}
+
+type ConfirmCardUi = {
+  confirmation_id?: string
+  actions?: {
+    approve?: { url?: string }
+    reject?: { url?: string }
+  }
+}
+
+async function handleConfirmTool() {
+  if (confirming.value || confirmed.value) return
+  const ui = (props.tool.uiPayload || {}) as ConfirmCardUi
+  const confirmationId = String(ui.confirmation_id || '')
+  const approveUrl = ui.actions?.approve?.url || ''
+  if (!confirmationId) {
+    // 无服务端凭证的旧卡片不应再出现；兜底仅转达意图，不再自证 _confirmed。
+    emit('confirmTool', props.tool.name, { ...props.tool.arguments })
+    return
+  }
+  confirming.value = true
+  try {
+    // 人类（JWT 会话）点击才写 APPROVED；模型无法触达此端点。
+    await chatApi.approveToolConfirmation(confirmationId, approveUrl || undefined)
+    confirmed.value = true
+    emit('confirmTool', props.tool.name, {
+      ...props.tool.arguments,
+      _confirmation_id: confirmationId,
+    })
+  } catch (e) {
+    const detail = (e as { response?: { data?: { detail?: { message?: string } } } })
+      ?.response?.data?.detail
+    message.error(detail?.message || '确认失败，请重试')
+  } finally {
+    confirming.value = false
+  }
+}
+
+async function handleRejectTool() {
+  if (confirming.value) return
+  const ui = (props.tool.uiPayload || {}) as ConfirmCardUi
+  const confirmationId = String(ui.confirmation_id || '')
+  if (!confirmationId) return
+  try {
+    await chatApi.rejectToolConfirmation(confirmationId, undefined, ui.actions?.reject?.url)
+    confirmed.value = true
+    rejected.value = true
+  } catch {
+    message.error('拒绝失败，请重试')
+  }
+}
+
+function handleOpenToolPage() {
+  const route = String(props.tool.uiPayload?.route || '')
+  emit('openToolPage', route, props.tool.arguments)
+}
+</script>
+
+<template>
+  <div class="mcp-tool-card" :class="{ collapsed }">
+    <!-- 折叠态标题行（可点击展开/收起） -->
+    <div
+      class="tool-card-header"
+      role="button"
+      :aria-expanded="!collapsed"
+      tabindex="0"
+      @click="toggle"
+      @keydown="handleKeydown"
+    >
+      <n-icon size="15" class="tool-icon"><BuildOutline /></n-icon>
+      <span class="tool-name">{{ tool.name }}</span>
+      <span v-if="tool.purpose" class="tool-purpose">{{ tool.purpose }}</span>
+      <n-tag v-if="tool.name === 'skill_route'" size="tiny" type="warning" class="server-tag">
+        Skill 路由 · 子代理
+      </n-tag>
+      <n-tag v-else-if="tool.mcpServer" size="tiny" type="info" class="server-tag">
+        MCP: {{ tool.mcpServer }}
+      </n-tag>
+      <n-tag
+        size="tiny"
+        :type="statusType"
+        class="status-tag"
+      >
+        {{ statusLabel }}
+      </n-tag>
+      <n-icon
+        size="14"
+        class="expand-arrow"
+        :class="{ rotated: !collapsed }"
+      >
+        <ChevronForwardOutline />
+      </n-icon>
+    </div>
+
+    <p v-if="workspaceSummaryPreview" class="workspace-summary" :class="{ 'is-collapsed': collapsed }">
+      {{ workspaceSummaryPreview }}
+    </p>
+
+    <!-- 展开态内容 -->
+    <transition name="tool-expand">
+      <div v-show="!collapsed" class="tool-card-body">
+        <div v-if="tool.purpose" class="tool-section">
+          <div class="tool-section-title">调用理由</div>
+          <p class="tool-purpose-detail">{{ tool.purpose }}</p>
+        </div>
+        <div v-if="hasArgs" class="tool-section">
+          <div class="tool-section-title">参数</div>
+          <pre class="tool-pre">{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
+        </div>
+        <div class="tool-section">
+          <div class="tool-section-title">结果</div>
+          <pre class="tool-pre">{{ JSON.stringify(tool.result, null, 2) }}</pre>
+        </div>
+
+        <!-- 二次确认卡 -->
+        <AgentToolProposalCard v-if="bioopsProposal" :proposal="bioopsProposal" />
+        <DatasetImportCard v-if="datasetImport" :proposal="datasetImport" />
+        <div v-if="tool.uiPayload?.confirm_card" class="confirm-card">
+          <div class="confirm-title">⚠️ 需要确认</div>
+          <div class="confirm-desc">
+            该操作将执行 {{ tool.name }}，确认后继续？
+          </div>
+          <div v-if="tool.uiPayload?.args" class="confirm-preview">
+            <pre>{{ JSON.stringify(tool.uiPayload.args, null, 2) }}</pre>
+          </div>
+          <div class="confirm-actions">
+            <n-tag v-if="confirmed && !rejected" size="small" type="success" :bordered="false">
+              已确认，等待执行
+            </n-tag>
+            <n-tag v-else-if="rejected" size="small" type="default" :bordered="false">
+              已拒绝
+            </n-tag>
+            <template v-else>
+              <n-button
+                size="small"
+                type="primary"
+                :loading="confirming"
+                @click="handleConfirmTool"
+              >
+                确认执行
+              </n-button>
+              <n-button size="small" tertiary :disabled="confirming" @click="handleRejectTool">
+                拒绝
+              </n-button>
+            </template>
+          </div>
+        </div>
+
+        <!-- open_page 引导卡 -->
+        <div v-if="tool.uiPayload?.route" class="open-page-card">
+          <div class="open-page-title">🔗 前往工具页</div>
+          <div class="open-page-desc">
+            {{ tool.uiPayload.message || `${tool.name} 需要在专用工具页完成` }}
+          </div>
+          <div class="open-page-actions">
+            <n-button size="small" type="info" @click="handleOpenToolPage">
+              打开 {{ tool.uiPayload.route }}
+            </n-button>
+          </div>
+        </div>
+
+        <!-- 异步任务进度卡 -->
+        <PipelineTaskCard
+          v-if="tool.uiPayload?.task_id && isPipelineTask(tool)"
+          :task-id="String(tool.uiPayload.task_id)"
+          :pipeline-type="pipelineType(tool)"
+          :initial-status="tool.uiPayload.status ? String(tool.uiPayload.status) : undefined"
+          :initial-progress="tool.uiPayload.progress ? Number(tool.uiPayload.progress) : 0"
+          :prepared-params="tool.arguments?.prepared_params as Record<string, unknown> | undefined"
+          @generate-visualization="(taskId, type) => emit('generateVisualization', taskId, type)"
+          @adjust-parameters="(type) => emit('adjustParameters', type)"
+        />
+        <TaskProgressCard
+          v-else-if="tool.uiPayload?.task_id"
+          :task-id="String(tool.uiPayload.task_id)"
+          :progress-url="tool.uiPayload.progress_url ? String(tool.uiPayload.progress_url) : undefined"
+          :result-url="tool.uiPayload.result_url ? String(tool.uiPayload.result_url) : undefined"
+          :task-url="tool.uiPayload.task_url ? String(tool.uiPayload.task_url) : undefined"
+        />
+      </div>
+    </transition>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.mcp-tool-card {
+  border: 1px solid var(--chat-border, #e8e8e8);
+  border-radius: 8px;
+  background: var(--chat-surface, #f8f9fa);
+  overflow: hidden;
+  transition: border-color var(--motion-quick, 140ms) ease-out;
+}
+.mcp-tool-card:hover {
+  border-color: var(--chat-accent, #4f8ef7);
+}
+
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-text-primary, #1a1a1a);
+  user-select: none;
+  transition: background var(--motion-quick, 140ms) ease-out;
+}
+.tool-card-header:hover {
+  background: var(--chat-surface-hover, rgba(0, 0, 0, 0.03));
+}
+.tool-card-header:focus-visible {
+  outline: 2px solid var(--arco-primary, #4C6FFF);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.tool-icon {
+  flex-shrink: 0;
+  color: var(--chat-text-secondary, #666);
+}
+.tool-name {
+  flex-shrink: 0;
+}
+.tool-purpose {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--chat-text-muted, #999);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-purpose-detail {
+  margin: 0;
+  color: var(--chat-text-secondary, #666);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
+}
+.server-tag {
+  flex-shrink: 0;
+}
+.status-tag {
+  margin-left: auto;
+}
+.expand-arrow {
+  flex-shrink: 0;
+  color: var(--chat-text-muted, #999);
+  transition: transform var(--motion-quick, 140ms) ease-out;
+}
+
+.workspace-summary {
+  margin: 0;
+  padding: 0 12px 10px 35px;
+  color: var(--chat-text-secondary, #555);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
+  /* 展开态：list_workspace_files 等工具可能返回几十上百行文件清单，
+     限制高度并内部滚动，避免整条结果刷屏；折叠态由 is-collapsed 截断为单行 */
+  max-height: 220px;
+  overflow-y: auto;
+}
+.workspace-summary.is-collapsed {
+  max-height: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expand-arrow.rotated {
+  transform: rotate(90deg);
+}
+
+.tool-card-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--chat-border, #e8e8e8);
+}
+
+.tool-section {
+  margin-top: 10px;
+}
+.tool-section-title {
+  font-size: 12px;
+  color: var(--chat-text-muted, #999);
+  margin-bottom: 6px;
+}
+.tool-pre {
+  margin: 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 展开/折叠过渡 */
+.tool-expand-enter-active {
+  transition: opacity var(--motion-standard, 220ms) var(--motion-spring, ease-out),
+              max-height var(--motion-standard, 220ms) var(--motion-spring, ease-out);
+}
+.tool-expand-leave-active {
+  transition: opacity var(--motion-quick, 140ms) ease-in,
+              max-height var(--motion-quick, 140ms) ease-in;
+}
+.tool-expand-enter-from,
+.tool-expand-leave-to {
+  opacity: 0;
+}
+
+/* 二次确认卡 */
+.confirm-card {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--chat-surface, #fffbe6);
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+}
+.confirm-title {
+  font-weight: 600;
+  color: #d48806;
+  margin-bottom: 6px;
+}
+.confirm-desc {
+  font-size: 13px;
+  color: var(--chat-text-secondary, #666);
+  margin-bottom: 10px;
+}
+.confirm-preview {
+  margin-bottom: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.confirm-preview pre {
+  margin: 0;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 8px;
+  border-radius: 4px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+/* 深色模式：确认卡边框/标题由硬编码浅色改为状态色变量 */
+:root[data-theme="dark"] .confirm-card {
+  border-color: color-mix(in srgb, var(--chat-warning, #faad14) 40%, transparent);
+}
+:root[data-theme="dark"] .confirm-title {
+  color: var(--chat-warning, #faad14);
+}
+
+/* open_page 引导卡 */
+.open-page-card {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--chat-surface, #e6f7ff);
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+}
+.open-page-title {
+  font-weight: 600;
+  color: #096dd9;
+  margin-bottom: 6px;
+}
+.open-page-desc {
+  font-size: 13px;
+  color: var(--chat-text-secondary, #666);
+  margin-bottom: 10px;
+}
+.open-page-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+/* 深色模式：引导卡边框/标题由硬编码浅色改为 info 状态色变量 */
+:root[data-theme="dark"] .open-page-card {
+  border-color: color-mix(in srgb, var(--chat-info, #4f8ef7) 40%, transparent);
+}
+:root[data-theme="dark"] .open-page-title {
+  color: var(--chat-info, #4f8ef7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expand-arrow,
+  .tool-expand-enter-active,
+  .tool-expand-leave-active {
+    transition: none;
+  }
+}
+</style>

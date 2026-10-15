@@ -1,0 +1,54 @@
+{
+  "status": "CONDITIONAL_ISOLATED_BLOCKED_RUNTIME",
+  "targeted_backend": {
+    "passed": 135,
+    "deselected": 5,
+    "log": "targeted-final.log",
+    "exit": 0,
+    "seconds": 21.36
+  },
+  "frontend_research": {
+    "passed": 7,
+    "log": "frontend-research-final.log",
+    "exit": 0
+  },
+  "frontend_final_build": {
+    "exit": 0,
+    "log": "frontend-build-final.log",
+    "artifact": "frontend/dist/index.html"
+  },
+  "lint_dataset_core": {
+    "exit": 0,
+    "log": "lint-final.log"
+  },
+  "mypy_dataset_core": {
+    "exit": 0,
+    "checked_files": 14,
+    "log": "types-final.log"
+  },
+  "mypy_gateway_final": {
+    "exit": 0,
+    "log": "gateway-types-final.log"
+  },
+  "mypy_reconciler_final": {
+    "exit": 0,
+    "log": "reconciler-types-final.log"
+  },
+  "migration_topology": {
+    "exit": 0,
+    "log": "migration-chain-final.log"
+  },
+  "full_checks": "checks.json",
+  "full_final_ruff_errors": 297,
+  "full_final_mypy_errors": 1042,
+  "postgres_upgrade": "NOT_TESTED",
+  "live_worker": "BLOCKED",
+  "live_redis": "BLOCKED",
+  "live_geo": "NOT_TESTED",
+  "agent_writes_enabled": false,
+  "committed": false,
+  "pushed": false,
+  "deployed": false,
+  "phase4_admission": "BLOCKED",
+  "repository_preservation": "repository-preservation.json"
+}

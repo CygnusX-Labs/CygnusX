@@ -1,0 +1,1410 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-14T16:58:19.108413+00:00",
+  "scope": "local source and host audit; NOT deployment attestation",
+  "repositories": [
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub",
+      "submodule": false,
+      "branch": "feat/reproducible-report-phase0",
+      "head": "c68ea9e0d6ecb63cb5678444ad3dd1e2a8a00407",
+      "remote": "git@github.com:xsx123123/omichub.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M .env.example",
+        " M ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md",
+        " M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md",
+        " M ARCHITECTURE_DESIGN/README.md",
+        " m Protocol/FlowFrame",
+        " M deploy/docker/docker-compose.yml",
+        " M deploy/docker/nginx/nginx.conf",
+        " M deploy/docker/nginx/nginx.prod.conf",
+        " M frontend/src/api/report.ts",
+        " M frontend/src/components/report/ReportCardMinimal.vue",
+        " M frontend/src/components/report/ReportPreviewModal.vue",
+        " M frontend/src/types/report.ts",
+        " M frontend/src/views/AboutView.vue",
+        " M frontend/src/views/FlowsView.vue",
+        " M frontend/src/views/ReportsView.vue",
+        " M frontend/src/views/TaskDetailView.vue",
+        " M frontend/src/views/TreasureMouseView.vue",
+        " M mcp-server/ARCHITECTURE.md",
+        " M mcp-server/README.md",
+        " M mcp-server/client/api_client.py",
+        " M mcp-server/core/config.py",
+        " M mcp-server/main.py",
+        " M mcp-server/pipelines_main.py",
+        " M mcp-server/prompts/workflows.py",
+        " M mcp-server/tools/__init__.py",
+        " M mcp-server/tools/analysis.py",
+        " M mcp-server/tools/downloads.py",
+        " M mcp-server/tools/files.py",
+        " M mcp-server/tools/pipelines.py",
+        " M mcp-server/tools/runs.py",
+        " M mcp-server/tools/seqout.py",
+        " M mcp-server/tools/tasks.py",
+        " m pipelines/ATACFlow",
+        " m pipelines/RNAFlow",
+        " m pipelines/Treasure-Seeking_Mouse",
+        " m pipelines/tools",
+        " M src/cygnusx/api/deps.py",
+        " M src/cygnusx/api/v1/ai.py",
+        " M src/cygnusx/api/v1/downloads.py",
+        " M src/cygnusx/api/v1/pipelines.py",
+        " M src/cygnusx/api/v1/reports.py",
+        " M src/cygnusx/api/v1/router.py",
+        " M src/cygnusx/api/v1/runs.py",
+        " M src/cygnusx/api/v1/tasks.py",
+        " M src/cygnusx/application/schemas/download.py",
+        " M src/cygnusx/application/schemas/pipeline.py",
+        " M src/cygnusx/application/schemas/report.py",
+        " M src/cygnusx/application/schemas/task.py",
+        " M src/cygnusx/application/schemas/tool_invocation.py",
+        " M src/cygnusx/application/services/download_service.py",
+        " M src/cygnusx/application/services/managed_file_resolver.py",
+        " M src/cygnusx/application/services/report_service.py",
+        " M src/cygnusx/application/services/task_service.py",
+        " M src/cygnusx/application/services/tool_confirmation_service.py",
+        " M src/cygnusx/core/config.py",
+        " M src/cygnusx/core/exceptions.py",
+        " M src/cygnusx/domain/flow/submission_validator.py",
+        " M src/cygnusx/infrastructure/celery_app/celery.py",
+        " M src/cygnusx/infrastructure/celery_app/tasks/download.py",
+        " M src/cygnusx/infrastructure/database/models/__init__.py",
+        " M src/cygnusx/infrastructure/database/models/report.py",
+        " M src/cygnusx/infrastructure/database/repositories/report_repository.py",
+        " M src/cygnusx/infrastructure/storage/path_factory.py",
+        " M tests/unit/domain/test_flow_submission_validator.py",
+        " M tests/unit/tools/test_analysis_flow_tool.py",
+        " M tests/unit/tools/test_tool_bridge.py",
+        "?? ARCHITECTURE_DESIGN/CygnusX_report_architecture.md",
+        "?? alembic/versions/reportauditphase1_add_reproducible_report_tables.py",
+        "?? docs/architecture/cygnusx-treasure-agent-integration-adr.md",
+        "?? docs/audits/",
+        "?? docs/contracts/",
+        "?? docs/design/",
+        "?? docs/implementation/",
+        "?? docs/info/26.10.12/",
+        "?? docs/logo/",
+        "?? frontend/src/api/researchAgent.ts",
+        "?? frontend/src/assets/ecosystem/",
+        "?? frontend/src/components/report/__tests__/",
+        "?? frontend/src/components/research/",
+        "?? frontend/src/composables/__tests__/reproducible-report.test.ts",
+        "?? frontend/src/composables/useReproducibleReport.ts",
+        "?? mcp-server/core/runtime.py",
+        "?? mcp-server/tests/test_phase0b_runtime.py",
+        "?? scripts/audit_runtime_provenance.py",
+        "?? src/cygnusx/api/v1/research_agent.py",
+        "?? src/cygnusx/application/schemas/report_delivery.py",
+        "?? src/cygnusx/application/schemas/report_snapshot.py",
+        "?? src/cygnusx/application/schemas/research_agent.py",
+        "?? src/cygnusx/application/services/bioreport_adapter.py",
+        "?? src/cygnusx/application/services/report_archive.py",
+        "?? src/cygnusx/application/services/report_audit_pdf_renderer.py",
+        "?? src/cygnusx/application/services/report_audit_renderer.py",
+        "?? src/cygnusx/application/services/report_snapshot_builder.py",
+        "?? src/cygnusx/application/services/report_snapshot_manifest.py",
+        "?? src/cygnusx/application/services/report_snapshot_sources.py",
+        "?? src/cygnusx/application/services/reproducible_report_service.py",
+        "?? src/cygnusx/application/services/research_delivery_service.py",
+        "?? src/cygnusx/application/services/research_treasure_service.py",
+        "?? src/cygnusx/infrastructure/celery_app/tasks/reports.py",
+        "?? tests/integration/test_phase0b_http.py",
+        "?? tests/integration/test_phase0b_redis.py",
+        "?? tests/integration/test_phase0b_services.py",
+        "?? tests/integration/test_reproducible_report_isolated.py",
+        "?? tests/integration/test_reproducible_report_postgres.py",
+        "?? tests/unit/test_phase0a_security.py",
+        "?? tests/unit/test_phase0b_confirmation.py",
+        "?? tests/unit/test_report_delivery_phase2.py",
+        "?? tests/unit/test_report_pdf_and_bioreport_phase2.py",
+        "?? tests/unit/test_report_snapshot.py",
+        "?? tests/unit/test_reproducible_report_phase1.py",
+        "?? tests/unit/test_research_treasure_phase1.py"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/Protocol/FlowFrame",
+      "submodule": true,
+      "branch": "main",
+      "head": "977ad657bbe7d49f2200a5f3f550b70f25234f3d",
+      "remote": "git@github.com:xsx123123/FlowFrame.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M flow-framework/assets/templates/envs/fastqc.yaml"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/ATACFlow",
+      "submodule": true,
+      "branch": "main",
+      "head": "4a68b347ba3b9497a86eed2603b6577afc3c2f27",
+      "remote": "git@github.com:xsx123123/ATACFlow.git",
+      "dirty": true,
+      "dirty_paths": [
+        "m container_env",
+        " M envs/fastqc.yaml",
+        " M envs/python3.yaml",
+        " m report",
+        " D rules/utils/__pycache__/common.cpython-313.pyc",
+        " D rules/utils/__pycache__/datadeliver.cpython-313.pyc",
+        " D rules/utils/__pycache__/id_convert.cpython-313.pyc",
+        " D rules/utils/__pycache__/reference_update.cpython-313.pyc",
+        " D rules/utils/__pycache__/resource_manager.cpython-313.pyc",
+        " D rules/utils/__pycache__/validate.cpython-313.pyc",
+        " m src"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/ATACFlow/container_env",
+      "submodule": true,
+      "branch": "",
+      "head": "a41746e5712ea5898e2bf599356d86d5ed4e2711",
+      "remote": "git@github.com:xsx123123/Flowcontainer.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M images/Dockerfile.template"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/ATACFlow/report",
+      "submodule": true,
+      "branch": "",
+      "head": "4b9f6254d7f967cb9d35391a92b684cb2b113ac1",
+      "remote": "git@github.com:xsx123123/bioreport.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M docker/RNA/docker_build/Dockerfile",
+        "?? docker/RNA/docker_build/vendor/"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/ATACFlow/src",
+      "submodule": true,
+      "branch": "",
+      "head": "80e8ded2f958f2e26a8ada3587dffc0c8b54912f",
+      "remote": "git@github.com:xsx123123/JZ_Tools.git",
+      "dirty": true,
+      "dirty_paths": [
+        "D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/EBIDownload",
+      "submodule": true,
+      "branch": "main",
+      "head": "b351e03dfc845d229102d90f9bd88d6ca731f0de",
+      "remote": "git@github.com:xsx123123/EBIDownload.git",
+      "dirty": false,
+      "dirty_paths": [],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/RNAFlow",
+      "submodule": true,
+      "branch": "feat/result-manifest",
+      "head": "19f5068c4f9370ea27cb6fe554a3f061a1b62a51",
+      "remote": "git@github.com:xsx123123/RNAFlow.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M config/run_parameter.yaml",
+        " M envs/circexplorer2.yaml",
+        " M envs/fastqc.yaml",
+        " M envs/python3.yaml",
+        " m report",
+        " M rules/10.DEG_Enrichments.smk",
+        " M rules/utils/common.py",
+        " M rules/utils/datadeliver.py",
+        " M rules/utils/result_manifest.py",
+        " M snakefile",
+        " m src",
+        "?? envs/deg_edger.yaml",
+        "?? rules/utils/deg_method.py"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/RNAFlow/report",
+      "submodule": true,
+      "branch": "",
+      "head": "c4a0cae8e129918ccfbd4e031da808b85abffbb4",
+      "remote": "git@github.com:xsx123123/bioreport.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M docker/RNA/docker_build/Dockerfile",
+        " D docker/RNA/templates/scripts/ai/__pycache__/engine.cpython-313.pyc",
+        " D docker/RNA/templates/scripts/ai/__pycache__/schemas.cpython-313.pyc",
+        " D templates/RNA_Project/scripts/ai/__pycache__/engine.cpython-313.pyc",
+        " D templates/RNA_Project/scripts/ai/__pycache__/schemas.cpython-313.pyc",
+        "?? docker/RNA/docker_build/vendor/"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/RNAFlow/src",
+      "submodule": true,
+      "branch": "",
+      "head": "f973d5f86de11a0efa156b7ecd2aa6b02c7ee17f",
+      "remote": "git@github.com:xsx123123/JZ_Tools.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M src/DEG/README.md",
+        " M src/data-deliver/RNAFlow_Deliver_Tool/config/deg_config.yaml",
+        " M src/data-deliver/RNAFlow_Deliver_Tool/config/full_delivery_config.yaml",
+        " M src/data-deliver/RNAFlow_Deliver_Tool/config/report.yaml",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc",
+        "?? src/DEG/run_edger.r"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/Treasure-Seeking_Mouse",
+      "submodule": true,
+      "branch": "gitcode-sync",
+      "head": "88dae95e7294dea5004330203f56e4211776fd74",
+      "remote": "git@github.com:xsx123123/Treasure-Seeking_Mouse.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M server/local.mjs"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/scrna",
+      "submodule": true,
+      "branch": "main",
+      "head": "b5066338fba47b1ed3fbee042f1cb43859cff882",
+      "remote": "git@github.com:xsx123123/scRNAseqMulticommand.git",
+      "dirty": false,
+      "dirty_paths": [],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/OmicHub/pipelines/tools",
+      "submodule": true,
+      "branch": "main",
+      "head": "24ecb6ce75657c5ce188603b54ac7bf10ffb6d46",
+      "remote": "git@github.com:xsx123123/JZ_Tools.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M skills/SKILLS_REGISTRY.md",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc",
+        " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc",
+        "?? skills/atacflow/",
+        "?? skills/rnaflow/"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/polariseq",
+      "status": "NOT TESTED",
+      "reason": "path absent"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/EBIDownload",
+      "submodule": false,
+      "branch": "main",
+      "head": "a29971b01901242cf92f0425e59e9633caad10db",
+      "remote": "git@github.com:xsx123123/polariseq.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M crates/polariseq-cli/src/gsa_download.rs",
+        " M crates/polariseq-cli/src/main.rs"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/bioreport",
+      "submodule": false,
+      "branch": "main",
+      "head": "fff758f93c8b07217a97b3f40dd2177e2f7da26b",
+      "remote": "git@github.com:xsx123123/bioreport.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M README.md",
+        " M bioreport/cli.py",
+        " M omics/rna/analysis/distribution_plotly.py",
+        " M omics/rna/analysis/enrichment_plotly.py",
+        " M omics/rna/analysis/pca_plotly.py",
+        " M omics/rna/analysis/plot_utils.py",
+        " M omics/rna/analysis/plotly_heatmap.py",
+        " M omics/rna/qmd/_report.qmd",
+        " M omics/rna/qmd/about.qmd",
+        " M omics/rna/qmd/index.qmd",
+        " M omics/rna/qmd/modules/results/heatmap.qmd",
+        " M omics/rna/qmd/modules/results/samples.qmd",
+        " M templates/theme/Dark_New_Brutalism.scss",
+        " M templates/theme/New_Brutalism.scss",
+        " M templates/theme/bioreport.scss",
+        " M templates/theme/report-pages.html",
+        " M tests/test_integration_render.py",
+        "?? docs/info/",
+        "?? tests/report.rna.html.json"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/zj_code_libarary/Treasure-Seeking_Mouse",
+      "submodule": false,
+      "branch": "main",
+      "head": "1ea2f79cd4feb44da5bad6a916f1f3aa43ab3c28",
+      "remote": "git@github.com:xsx123123/Treasure-Seeking_Mouse.git",
+      "dirty": false,
+      "dirty_paths": [],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/pipeline/RNAFlow",
+      "submodule": false,
+      "branch": "refactor/rnaflow-flowframe-alignment",
+      "head": "b83c27d09ea04c714a608a4023e43d7bd8a1e1b3",
+      "remote": "git@github.com:xsx123123/RNAFlow.git",
+      "dirty": true,
+      "dirty_paths": [
+        "M src",
+        "?? agent/",
+        "?? rules/manifests/"
+      ],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    },
+    {
+      "path": "/home/zj/pipeline/ATACFlow",
+      "submodule": false,
+      "branch": "main",
+      "head": "8a173fbb98cf0dcaba02bfc29f11561cbcd666e2",
+      "remote": "git@github.com:xsx123123/ATACFlow.git",
+      "dirty": false,
+      "dirty_paths": [],
+      "status": "PASS",
+      "deployed_head": null,
+      "deployed_status": "BLOCKED"
+    }
+  ],
+  "services": [
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "nginx",
+      "configured_image_expression": "nginx:alpine",
+      "expected_version": null,
+      "configured_version": "nginx:alpine",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "./nginx/nginx.conf:/etc/nginx/nginx.conf:ro",
+        "../../frontend/dist:/usr/share/nginx/html:ro",
+        "../../pipelines/jbrowse2:/var/www/jbrowse2:ro",
+        "${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}:ro",
+        "${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/nginx:/var/log/nginx"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_HTTP_BIND_HOST:-0.0.0.0}:${CYGNUSX_HTTP_PORT:-8888}:80"
+      ],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "web",
+      "configured_image_expression": "${CYGNUSX_WEB_IMAGE:-cygnusx-web:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_WEB_IMAGE:-cygnusx-web:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile",
+        "args": {
+          "SNAKEMAKE_LOGGER_PLUGIN_REF": "${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}",
+          "CYGNUSX_BUILD_SHA": "${CYGNUSX_BUILD_SHA:-unknown}",
+          "CYGNUSX_BUILD_TIME": "${CYGNUSX_BUILD_TIME:-unknown}"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [
+        "../../src:/app/src:ro",
+        "../../flows:/app/flows:ro",
+        "../../tool_configs:/app/tool_configs",
+        "../../docs:/app/docs",
+        "../../wiki:/app/wiki:ro",
+        "../../data:/app/data:ro",
+        "../../alembic:/app/alembic:ro",
+        "../../scripts:/app/scripts:ro",
+        "./entrypoint.sh:/app/entrypoint.sh:ro",
+        "${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}",
+        "${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/app:/app/logs",
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_WEB_BIND_HOST:-127.0.0.1}:${CYGNUSX_WEB_PORT:-8000}:8000"
+      ],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "studio-egress-proxy",
+      "configured_image_expression": "${CYGNUSX_STUDIO_EGRESS_PROXY_IMAGE:-cygnusx-studio-egress-proxy:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_STUDIO_EGRESS_PROXY_IMAGE:-cygnusx-studio-egress-proxy:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../studio",
+        "dockerfile": "proxy.Dockerfile"
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub/deploy/studio",
+      "mount_expressions": [
+        "../../data/ai/studio.yaml:/config/studio.yaml:ro"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1',3128),2); s.close()"
+        ],
+        "interval": "10s",
+        "timeout": "3s",
+        "retries": 5
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "onlyoffice-documentserver",
+      "configured_image_expression": "${ONLYOFFICE_DOCUMENTSERVER_IMAGE:-onlyoffice/documentserver:latest}",
+      "expected_version": null,
+      "configured_version": "${ONLYOFFICE_DOCUMENTSERVER_IMAGE:-onlyoffice/documentserver:latest}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "${CYGNUSX_ONLYOFFICE_DATA_DIR:-${CYGNUSX_DATA_ROOT:-/data/cygnusx}/onlyoffice-data}:/var/www/onlyoffice/Data",
+        "${CYGNUSX_ONLYOFFICE_LOG_DIR:-${CYGNUSX_DATA_ROOT:-/data/cygnusx}/onlyoffice-logs}:/var/log/onlyoffice"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1/healthcheck || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 10
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "beat",
+      "configured_image_expression": "${CYGNUSX_BEAT_IMAGE:-cygnusx-beat:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_BEAT_IMAGE:-cygnusx-beat:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile",
+        "args": {
+          "SNAKEMAKE_LOGGER_PLUGIN_REF": "${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}",
+          "CYGNUSX_BUILD_SHA": "${CYGNUSX_BUILD_SHA:-unknown}",
+          "CYGNUSX_BUILD_TIME": "${CYGNUSX_BUILD_TIME:-unknown}"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [
+        "../../src:/app/src:ro",
+        "../../alembic:/app/alembic:ro",
+        "${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/app:/app/logs"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "python -c \"import os; os.kill(1, 0)\" || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "start_period": "30s",
+        "retries": 3
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "flower",
+      "configured_image_expression": "${CYGNUSX_FLOWER_IMAGE:-cygnusx-flower:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_FLOWER_IMAGE:-cygnusx-flower:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile",
+        "args": {
+          "SNAKEMAKE_LOGGER_PLUGIN_REF": "${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}",
+          "CYGNUSX_BUILD_SHA": "${CYGNUSX_BUILD_SHA:-unknown}",
+          "CYGNUSX_BUILD_TIME": "${CYGNUSX_BUILD_TIME:-unknown}"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_FLOWER_BIND_HOST:-127.0.0.1}:${CYGNUSX_FLOWER_PORT:-5555}:5555"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-f",
+          "-u",
+          "${FLOWER_BASIC_AUTH:-admin:flower}",
+          "http://localhost:5555/"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "start_period": "30s",
+        "retries": 3
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "db",
+      "configured_image_expression": "pgvector/pgvector:pg14",
+      "expected_version": null,
+      "configured_version": "pgvector/pgvector:pg14",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "${CYGNUSX_POSTGRES_DATA_DIR:-/data/cygnusx/cygnusx_data/_pgdata}:/var/lib/postgresql/data"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_POSTGRES_BIND_HOST:-127.0.0.1}:${CYGNUSX_POSTGRES_PORT:-5432}:5432"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-cygnusx}"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "cache",
+      "configured_image_expression": "redis:7-alpine",
+      "expected_version": null,
+      "configured_version": "redis:7-alpine",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "${CYGNUSX_REDIS_DATA_DIR:-/data/cygnusx/cygnusx_data/_redis}:/data"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_REDIS_BIND_HOST:-127.0.0.1}:${CYGNUSX_REDIS_PORT:-6379}:6379"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "minio",
+      "configured_image_expression": "minio/minio:latest",
+      "expected_version": null,
+      "configured_version": "minio/minio:latest",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "${CYGNUSX_MINIO_DATA_DIR:-/data/cygnusx/cygnusx_data/_minio}:/data"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_MINIO_BIND_HOST:-127.0.0.1}:${CYGNUSX_MINIO_PORT:-9000}:9000",
+        "${CYGNUSX_MINIO_BIND_HOST:-127.0.0.1}:${CYGNUSX_MINIO_CONSOLE_PORT:-9001}:9001"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "mc alias set local http://127.0.0.1:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD >/dev/null 2>&1 && mc ready local"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 6
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "minio-init",
+      "configured_image_expression": "quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+      "expected_version": null,
+      "configured_version": "quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [],
+      "expose": [],
+      "ports": [],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "rocketmq-namesrv",
+      "configured_image_expression": "${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}",
+      "expected_version": null,
+      "configured_version": "${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_ROCKETMQ_NAMESRV_BIND_HOST:-127.0.0.1}:${CYGNUSX_ROCKETMQ_NAMESRV_PORT:-9876}:9876"
+      ],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "rocketmq-broker",
+      "configured_image_expression": "${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}",
+      "expected_version": null,
+      "configured_version": "${ROCKETMQ_IMAGE:-apache/rocketmq:5.3.2}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "./rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro"
+      ],
+      "expose": [],
+      "ports": [
+        "${CYGNUSX_ROCKETMQ_BROKER_BIND_HOST:-127.0.0.1}:${CYGNUSX_ROCKETMQ_BROKER_VIP_PORT:-10909}:10909",
+        "${CYGNUSX_ROCKETMQ_BROKER_BIND_HOST:-127.0.0.1}:${CYGNUSX_ROCKETMQ_BROKER_PORT:-10911}:10911",
+        "${CYGNUSX_ROCKETMQ_BROKER_BIND_HOST:-127.0.0.1}:${CYGNUSX_ROCKETMQ_BROKER_FAST_PORT:-10912}:10912"
+      ],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "ollama-embed",
+      "configured_image_expression": "ollama/ollama:latest",
+      "expected_version": null,
+      "configured_version": "ollama/ollama:latest",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": null,
+      "resolved_build_context": null,
+      "mount_expressions": [
+        "cygnusx_embed:/root/.ollama"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "ollama list >/dev/null 2>&1 || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 5
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "treasure-mouse-chat",
+      "configured_image_expression": "${TREASURE_MOUSE_CHAT_IMAGE:-cygnusx-treasure-mouse-chat:1ea2f79}",
+      "expected_version": null,
+      "configured_version": "${TREASURE_MOUSE_CHAT_IMAGE:-cygnusx-treasure-mouse-chat:1ea2f79}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../../pipelines/Treasure-Seeking_Mouse",
+        "dockerfile": "deploy/Dockerfile",
+        "target": "chat"
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub/pipelines/Treasure-Seeking_Mouse",
+      "mount_expressions": [
+        "treasure_mouse_data:/app/data"
+      ],
+      "expose": [
+        "8787"
+      ],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:8787/stats >/dev/null 2>&1 || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "10s"
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.yml",
+      "service": "treasure-mouse-web",
+      "configured_image_expression": "${TREASURE_MOUSE_WEB_IMAGE:-cygnusx-treasure-mouse-web:1ea2f79}",
+      "expected_version": null,
+      "configured_version": "${TREASURE_MOUSE_WEB_IMAGE:-cygnusx-treasure-mouse-web:1ea2f79}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../../pipelines/Treasure-Seeking_Mouse",
+        "dockerfile": "deploy/Dockerfile",
+        "target": "web",
+        "args": {
+          "VITE_CHAT_API": "/treasure-mouse/chat-api",
+          "VITE_BASE_PATH": "/treasure-mouse/"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub/pipelines/Treasure-Seeking_Mouse",
+      "mount_expressions": [],
+      "expose": [
+        "80"
+      ],
+      "ports": [],
+      "healthcheck": null,
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.worker.yml",
+      "service": "rocketmq-worker",
+      "configured_image_expression": "${CYGNUSX_WORKER_IMAGE:-cygnusx-worker:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_WORKER_IMAGE:-cygnusx-worker:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile.worker",
+        "args": {
+          "SNAKEMAKE_LOGGER_PLUGIN_REF": "${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [
+        "../../src:/app/src:ro",
+        "../../tool_configs:/app/tool_configs",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:${STORAGE_PATH:-/data/cygnusx}",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/snakemake:/logs",
+        "${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/cygnusx/pipelines:ro",
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "kill -0 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "start_period": "30s",
+        "retries": 3
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.worker.yml",
+      "service": "worker",
+      "configured_image_expression": "${CYGNUSX_WORKER_IMAGE:-cygnusx-worker:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_WORKER_IMAGE:-cygnusx-worker:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile.worker",
+        "args": {
+          "SNAKEMAKE_LOGGER_PLUGIN_REF": "${SNAKEMAKE_LOGGER_PLUGIN_REF:-main}"
+        }
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [
+        "../../src:/app/src:ro",
+        "../../data:/app/data:ro",
+        "../../tool_configs:/app/tool_configs",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:${STORAGE_PATH:-/data/cygnusx}",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/snakemake:/logs",
+        "${WORKER_PIPELINE_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:/opt/cygnusx/pipelines:ro",
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "socket_gid=$$(stat -c '%g' /var/run/docker.sock) && grep '^Groups:' /proc/1/status | tr ' \\t' '\\n' | grep -qx \"$$socket_gid\" && setpriv --reuid \"$${PUID:-1000}\" --regid \"$${PGID:-1000}\" --groups \"$$socket_gid\" -- docker version >/dev/null 2>&1 && celery -A cygnusx.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "start_period": "30s",
+        "retries": 3
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    },
+    {
+      "compose": "deploy/docker/docker-compose.worker.yml",
+      "service": "phylo-worker",
+      "configured_image_expression": "${CYGNUSX_PHYLO_WORKER_IMAGE:-cygnusx-phylo-worker:v0.0.2dev}",
+      "expected_version": null,
+      "configured_version": "${CYGNUSX_PHYLO_WORKER_IMAGE:-cygnusx-phylo-worker:v0.0.2dev}",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED",
+      "build": {
+        "context": "../..",
+        "dockerfile": "deploy/docker/Dockerfile.phylo"
+      },
+      "resolved_build_context": "/home/zj/zj_code_libarary/OmicHub",
+      "mount_expressions": [
+        "../../src:/app/src:ro",
+        "../../tool_configs:/app/tool_configs:ro",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}:${STORAGE_PATH:-/data/cygnusx}",
+        "${WORKER_SHARED_DATA_DIR:?Run scripts/worker-compose.sh to load data/worker_config.yaml}/logs/app:/app/logs"
+      ],
+      "expose": [],
+      "ports": [],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "celery -A cygnusx.infrastructure.celery_app.celery inspect ping -d celery@$$HOSTNAME || exit 1"
+        ],
+        "interval": "30s",
+        "timeout": "10s",
+        "start_period": "30s",
+        "retries": 3
+      },
+      "observed_image_id": null,
+      "observed_digest": null,
+      "observed_revision_label": null,
+      "runtime_status": "BLOCKED"
+    }
+  ],
+  "image_inventory": {
+    "analysis-core": {
+      "image": "cygnusx-analysis:core-v0.0.2dev",
+      "dockerfile": "deploy/runtime-images/core.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ],
+      "tools_manifest_digest": null
+    },
+    "analysis-plot": {
+      "image": "cygnusx-analysis:plot-v0.0.2dev",
+      "dockerfile": "deploy/runtime-images/plot.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ],
+      "tools_manifest_digest": null
+    },
+    "analysis-scrna": {
+      "image": "cygnusx-analysis:scrna-v0.0.3dev",
+      "dockerfile": "deploy/runtime-images/scrna.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml",
+        ".env.example",
+        "src/cygnusx/core/config.py"
+      ],
+      "tools_manifest_digest": null
+    },
+    "analysis-rnaseq": {
+      "image": "cygnusx-analysis:rnaseq-v0.0.1dev",
+      "dockerfile": "deploy/runtime-images/rnaseq.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ],
+      "tools_manifest_digest": null
+    },
+    "analysis-atacseq": {
+      "image": "cygnusx-analysis:atacseq-v0.0.1dev",
+      "dockerfile": "deploy/runtime-images/atacseq.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ],
+      "tools_manifest_digest": null
+    },
+    "analysis-qc": {
+      "image": "cygnusx-analysis:qc-v0.0.1dev",
+      "dockerfile": "deploy/runtime-images/qc.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ],
+      "tools_manifest_digest": null
+    },
+    "sandbox-copilot": {
+      "image": "cygnusx-sandbox-copilot:v0.0.2dev",
+      "dockerfile": "deploy/sandbox/Dockerfile",
+      "config_files": [
+        "src/cygnusx/core/config.py"
+      ]
+    },
+    "sandbox-base": {
+      "image": "cygnusx-sandbox-base:v0.0.2dev",
+      "dockerfile": "deploy/studio/base.Dockerfile",
+      "config_files": [
+        "deploy/studio/base.Dockerfile"
+      ]
+    },
+    "sandbox-bio": {
+      "image": "cygnusx-sandbox-bio:v0.0.2dev",
+      "dockerfile": "deploy/studio/bio.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ]
+    },
+    "sandbox-browser-office": {
+      "image": "cygnusx-sandbox-browser-office:v0.0.2dev",
+      "dockerfile": "deploy/studio/browser-office.Dockerfile",
+      "config_files": [
+        "data/ai/runtime_images.yaml",
+        "data/ai/studio.yaml"
+      ]
+    },
+    "sandbox-terminal": {
+      "image": "cygnusx-sandbox-terminal:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-rnaseq": {
+      "image": "cygnusx-sandbox-rnaseq:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.rnaseq",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-scrna": {
+      "image": "cygnusx-sandbox-scrna:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.scrna",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-gatk": {
+      "image": "cygnusx-sandbox-gatk:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.gatk",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-ggplot2": {
+      "image": "cygnusx-sandbox-ggplot2:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.ggplot2",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-assembly": {
+      "image": "cygnusx-sandbox-assembly:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.assembly",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    },
+    "sandbox-metagenomics": {
+      "image": "cygnusx-sandbox-metagenomics:v0.0.2dev",
+      "dockerfile": "tool_configs/terminal/docker/Dockerfile.metagenomics",
+      "config_files": [
+        "tool_configs/terminal/terminal_images.yaml"
+      ]
+    }
+  },
+  "docker": {
+    "status": "BLOCKED",
+    "probe": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.51/version\": dial unix /var/run/docker.sock: connect: operation not permitted"
+    },
+    "reason": "No container attestation or execution performed"
+  },
+  "treasure": {
+    "configured_default_revision": "1ea2f79",
+    "source_head": "88dae95e7294dea5004330203f56e4211776fd74",
+    "drift_status": "FAIL",
+    "image_id": null,
+    "image_digest": null,
+    "runtime_status": "BLOCKED"
+  },
+  "download_binary": {
+    "configured_path": "/data/omichub/bin/EBIDownload",
+    "resolved_host_path": "/data/omichub/bin/EBIDownload",
+    "host_exists": true,
+    "host_sha256": "6628ad8fd489eee68b9ebd58299f32c021812b386435a82193911c4494e219c4",
+    "host_executable": true,
+    "host_version": {
+      "exit_code": 0,
+      "stdout": "ebidownload-cli 1.4.0",
+      "stderr": ""
+    },
+    "host_download_help": {
+      "exit_code": 0,
+      "stdout": "Download sequencing data from EBI ENA / NCBI SRA\n\n\u001b[1m\u001b[36mUsage:\u001b[0m \u001b[1m\u001b[34mEBIDownload download\u001b[0m \u001b[36m[OPTIONS]\u001b[0m \u001b[1m\u001b[34m--output\u001b[0m\u001b[36m \u001b[0m\u001b[36m<DIR>\u001b[0m\n\n\u001b[1m\u001b[32mOptions:\u001b[0m\n  \u001b[1m\u001b[34m-h\u001b[0m, \u001b[1m\u001b[34m--help\u001b[0m  Print help\n\n\u001b[1m\u001b[32mInput Options:\u001b[0m\n  \u001b[1m\u001b[34m-A\u001b[0m, \u001b[1m\u001b[34m--accession\u001b[0m\u001b[36m \u001b[0m\u001b[36m<ID>\u001b[0m  ENA project accession, e.g. PRJNA1251654\n  \u001b[1m\u001b[34m-T\u001b[0m, \u001b[1m\u001b[34m--tsv\u001b[0m\u001b[36m \u001b[0m\u001b[36m<FILE>\u001b[0m      Path to a TSV file with run list\n  \u001b[1m\u001b[34m-o\u001b[0m, \u001b[1m\u001b[34m--output\u001b[0m\u001b[36m \u001b[0m\u001b[36m<DIR>\u001b[0m    Output directory for downloaded data\n\n\u001b[1m\u001b[32mDownload Options:\u001b[0m\n  \u001b[1m\u001b[34m-d\u001b[0m, \u001b[1m\u001b[34m--download\u001b[0m\u001b[36m \u001b[0m\u001b[36m<DOWNLOAD>\u001b[0m           [default: aws] [possible values: ftp, prefetch, aws, auto]\n  \u001b[1m\u001b[34m-p\u001b[0m, \u001b[1m\u001b[34m--multithreads\u001b[0m\u001b[36m \u001b[0m\u001b[36m<MULTITHREADS>\u001b[0m   File-level concurrency [default: 4]\n  \u001b[1m\u001b[34m-t\u001b[0m, \u001b[1m\u001b[34m--aws-threads\u001b[0m\u001b[36m \u001b[0m\u001b[36m<AWS_THREADS>\u001b[0m     Threads per file (AWS/Prefetch) [default: 8]\n      \u001b[1m\u001b[34m--chunk-size\u001b[0m\u001b[36m \u001b[0m\u001b[36m<CHUNK_SIZE>\u001b[0m       Chunk size in MB (AWS only) [default: 20]\n      \u001b[1m\u001b[34m--max-size\u001b[0m\u001b[36m \u001b[0m\u001b[36m<PREFETCH_MAX_SIZE>\u001b[0m  Max size limit (Prefetch only) [default: 100G]\n      \u001b[1m\u001b[34m--pe-only\u001b[0m                       Only download Paired-End data\n\n\u001b[1m\u001b[32mFilters:\u001b[0m\n      \u001b[1m\u001b[34m--filter-sample\u001b[0m\u001b[36m \u001b[0m\u001b[36m<FILTER_SAMPLE>...\u001b[0m    Include samples matching regex\n      \u001b[1m\u001b[34m--filter-run\u001b[0m\u001b[36m \u001b[0m\u001b[36m<FILTER_RUN>...\u001b[0m          Include runs matching regex\n      \u001b[1m\u001b[34m--exclude-sample\u001b[0m\u001b[36m \u001b[0m\u001b[36m<EXCLUDE_SAMPLE>...\u001b[0m  Exclude samples matching regex\n      \u001b[1m\u001b[34m--exclude-run\u001b[0m\u001b[36m \u001b[0m\u001b[36m<EXCLUDE_RUN>...\u001b[0m        Exclude runs matching regex\n\n\u001b[1m\u001b[32mAdvanced Options:\u001b[0m\n      \u001b[1m\u001b[34m--cleanup-sra\u001b[0m           Remove intermediate .sra files after conversion\n      \u001b[1m\u001b[34m--dry-run\u001b[0m               Show what would be downloaded without actually downloading\n      \u001b[1m\u001b[34m--progress-port\u001b[0m\u001b[36m \u001b[0m\u001b[36m<PORT>\u001b[0m  Enable HTTP progress API on this port (AES-256-GCM encrypted)\n      \u001b[1m\u001b[34m--write-progress-key\u001b[0m    Write encryption key to progress.key file in output directory (required for external platforms to decrypt progress)\n\n\u001b[1m\u001b[32mGlobal Options:\u001b[0m\n  \u001b[1m\u001b[34m-y\u001b[0m, \u001b[1m\u001b[34m--yaml\u001b[0m\u001b[36m \u001b[0m\u001b[36m<FILE>\u001b[0m              [default: EBIDownload.yaml]\n      \u001b[1m\u001b[34m--log-level\u001b[0m\u001b[36m \u001b[0m\u001b[36m<LOG_LEVEL>\u001b[0m    Log level: trace/debug/info/warn/error [default: info]\n      \u001b[1m\u001b[34m--log-format\u001b[0m\u001b[36m \u001b[0m\u001b[36m<LOG_FORMAT>\u001b[0m  Log format: text or json [default: text] [possible values: text, json]",
+      "stderr": ""
+    },
+    "expected_version": null,
+    "configured_version": "external file: no pinned version",
+    "observed_runtime_version": "ebidownload-cli 1.4.0",
+    "verification_status": "PASS (host only); BLOCKED (Worker container)",
+    "worker_required_flags": {
+      "--accession": true,
+      "--output": true,
+      "--download": true,
+      "--multithreads": true,
+      "--aws-threads": true,
+      "--yaml": true,
+      "--log-format": true,
+      "--progress-port": true,
+      "--write-progress-key": true,
+      "--dry-run": true
+    },
+    "host_status": "PASS",
+    "yaml_path": "/data/omichub/bin/EBIDownload.yaml",
+    "yaml_exists": true,
+    "yaml_sha256": "9b47ac952580161f572a61ecff7431e40f93b122403d9540aa2f548622309ae2",
+    "yaml_contents": "NOT COLLECTED: may contain secrets",
+    "configuration_precedence": "download_config.yaml binaries, derived STORAGE_PATH, then Settings fallback",
+    "container_path": null,
+    "container_sha256": null,
+    "container_version": null,
+    "container_status": "BLOCKED",
+    "source_commit_binding": "NOT TESTED",
+    "accessions": {
+      "GSE": "NOT TESTED: no GEO expansion implementation found in either Rust source",
+      "GSM": "NOT TESTED: no GEO expansion implementation found in either Rust source",
+      "PRJNA": "Contract: ENA filereport accession forwarded; Runtime NOT TESTED",
+      "SRR": "Contract: ENA filereport accession forwarded; Runtime NOT TESTED"
+    }
+  },
+  "worker_paths": {
+    "shared_data_dir": "/data/omichub",
+    "pipeline_dir": "/home/zj/pipeline"
+  },
+  "flows": [
+    {
+      "path": "flows/atac_seq.yaml",
+      "sha256": "974710cb5899a0cff7a9dfc85fc7cfc77f98d85c99a35b820c80f6810418913e",
+      "configured_host_snakefile": "/home/zj/pipeline/ATACFlow/snakefile",
+      "host_snakefile_exists": true,
+      "host_snakefile_sha256": "5fd1206afe074309f29a7563d4f52cb61598dd6daa211f58e74de2e27e1cddb5",
+      "id": "atac_seq",
+      "version": "0.1.0",
+      "execution": {
+        "engine": "snakemake",
+        "snakefile": "/opt/cygnusx/pipelines/ATACFlow/snakefile",
+        "config_file_param": "analysisyaml",
+        "config_file_name": "analysis.yaml",
+        "conda_env": null,
+        "default_resources": {
+          "cores": 8,
+          "memory": "32G",
+          "time": "4h"
+        },
+        "sample_sheet_format": "csv",
+        "extra_args": [
+          "--use-conda",
+          "--latency-wait 60",
+          "--rerun-incomplete"
+        ]
+      },
+      "expected_version": "0.1.0",
+      "configured_version": "0.1.0",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED"
+    },
+    {
+      "path": "flows/rna_seq.yaml",
+      "sha256": "79912654cbb907bc4a18cf40e42c05cdae68f4b87e29b29b501a17f12e9d73dd",
+      "configured_host_snakefile": "/home/zj/pipeline/RNAFlow/snakefile",
+      "host_snakefile_exists": true,
+      "host_snakefile_sha256": "a907ba6697de51f4045989342a226286e95e27464770affc09d10816feef7251",
+      "id": "rna_seq",
+      "version": "2.3.0",
+      "execution": {
+        "engine": "snakemake",
+        "snakefile": "/opt/cygnusx/pipelines/RNAFlow/snakefile",
+        "config_file_param": "analysisyaml",
+        "config_file_name": "config.yaml",
+        "conda_env": null,
+        "default_resources": {
+          "cores": 8,
+          "memory": "32G",
+          "time": "4h"
+        },
+        "sample_sheet_format": "csv",
+        "extra_args": [
+          "--use-conda",
+          "--latency-wait 60",
+          "--rerun-incomplete"
+        ]
+      },
+      "expected_version": "2.3.0",
+      "configured_version": "2.3.0",
+      "observed_runtime_version": null,
+      "verification_status": "BLOCKED"
+    }
+  ],
+  "workflow_runtimes": {
+    "configured_worker_image": "cygnusx-worker:v0.0.2dev (default)",
+    "conda_prefix_expression": "${STORAGE_PATH:-/data/cygnusx}/.conda_envs",
+    "snakemake": {
+      "exit_code": 0,
+      "stdout": "9.19.0",
+      "stderr": ""
+    },
+    "host_python": {
+      "exit_code": 0,
+      "stdout": "Python 3.11.10",
+      "stderr": ""
+    },
+    "host_R": {
+      "exit_code": 0,
+      "stdout": "R version 4.5.1 (2025-06-13) -- \"Great Square Root\"\nCopyright (C) 2025 The R Foundation for Statistical Computing\nPlatform: x86_64-pc-linux-gnu\n\nR is free software and comes with ABSOLUTELY NO WARRANTY.\nYou are welcome to redistribute it under the terms of the\nGNU General Public License versions 2 or 3.\nFor more information about these matters see\nhttps://www.gnu.org/licenses/.",
+      "stderr": ""
+    },
+    "worker_python": null,
+    "worker_R": null,
+    "worker_snakemake": null,
+    "reference_mount_status": "BLOCKED",
+    "output_permission_status": "BLOCKED",
+    "verification_status": "BLOCKED: host tools do not attest Worker runtime"
+  },
+  "redis": {
+    "server_binary": null,
+    "runtime_status": "BLOCKED",
+    "reason": "No isolated Redis; configured Redis intentionally not contacted"
+  },
+  "blockers": [
+    "Treasure source/default tag drift",
+    "No image digest/revision attestation",
+    "No real Redis multiworker CAS run",
+    "MCP external transports not accepted",
+    "No live Worker binary/mount verification"
+  ],
+  "readiness": "BLOCKED",
+  "phase2_supplement": {
+    "scope": "isolated source/test observation; NOT deployment attestation",
+    "head": "c68ea9e0d6ecb63cb5678444ad3dd1e2a8a00407",
+    "implementation": "CONDITIONAL",
+    "runtime_acceptance": "BLOCKED",
+    "agent_writes_enabled": false,
+    "source_write_gate": false,
+    "real_redis": false,
+    "real_postgres": false,
+    "real_queue_worker": false,
+    "external_mcp_transports": "BLOCKED",
+    "dual_user_live_e2e": "NOT TESTED",
+    "migration_executed": false,
+    "committed_pushed_deployed": false,
+    "backend_focused_passed": 116,
+    "frontend_focused_passed": 4,
+    "node_adapter_passed": 3,
+    "report": "docs/implementation/cygnusx-phase2-shared-agent-tool-orchestration.md",
+    "retains_prior_unknowns": true,
+    "observation_date": "2026-10-15",
+    "frontend_build": "PASS: exit 0 and generated artifact inspected"
+  },
+  "phase3_dataset_inputs": {
+    "status": "CONDITIONAL_ISOLATED_BLOCKED_RUNTIME",
+    "source_head": "c68ea9e0d6ecb63cb5678444ad3dd1e2a8a00407",
+    "agent_write_enabled": false,
+    "worker_paths_verified": false,
+    "postgres_migration": "NOT_TESTED",
+    "redis_multi_consumer": "BLOCKED",
+    "counts_statistical_reference": "PASS_LOCAL_R_DESEQ2",
+    "counts_snakemake": "PASS_LOCAL_SYNTHETIC",
+    "production_deployed": false,
+    "report": "docs/implementation/cygnusx-phase3-dataset-ingestion-handoff-implementation.md",
+    "evidence": "evidence/phase3/runtime-probes.json"
+  },
+  "phase4_research_delivery": {
+    "status": "RUNTIME_BLOCKED",
+    "live_e2e": "BLOCKED",
+    "write_runtime_accepted": false,
+    "observed_worker_image_digest": null,
+    "observed_worker_software_versions": null,
+    "observed_bioreport_source_head": "fff758f93c8b07217a97b3f40dd2177e2f7da26b",
+    "bioreport_source_is_worker_attestation": false,
+    "host_bioreport_probe": "Quarto kernel PermissionError: Operation not permitted",
+    "compute_rerun_for_report": false,
+    "evidence": [
+      "evidence/phase4/runtime-probes.json",
+      "evidence/phase4/bioreport-probe.json",
+      "evidence/phase4/counts-tests.log"
+    ],
+    "limitations": [
+      "Docker socket denied",
+      "PostgreSQL and Redis isolation unavailable",
+      "MCP external transports unaccepted",
+      "Worker image/binary/mount identity unaccepted",
+      "G17 budget/data approval not requested while G0/G16 blocked"
+    ]
+  }
+}

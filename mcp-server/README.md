@@ -8,11 +8,11 @@
 | | 外部 MCP Server（本目录 `mcp-server/`） | 内部 MCP Preset（`src/cygnusx/infrastructure/mcp/`） |
 |---|---|---|
 | 消费者 | 第三方 AI 助手（QoderCN CLI、Claude Code 等，经 MCP 协议接入） | 平台内置 AI（Copilot / Studio / 协作室，经 LangGraph runtime） |
-| 实现 | FastMCP（Python），stdio / SSE 传输 | builtin transport，进程内 handler 直调 application services |
+| 实现 | FastMCP（Python），stdio / SSE / Streamable HTTP 传输 | builtin transport，进程内 handler 直调 application services |
 | 数据来源 | 平台 REST API（`X-API-Key` 认证，httpx 客户端） | 直接 import 服务层，零网络开销 |
 | Prompts | ✅ 5 个工作流引导 prompt | ❌ 无（仅 tools + 系统提示后缀） |
 | Resources | ✅ 4 个只读资源 URI | ❌ 无 |
-| Tools | ✅ 9 组共 40 个 | ✅ 平台 22 + 流水线 10 + 工具箱（动态） |
+| Tools | 默认配置实测 71 个（含 Seqout 26 个，以运行注册表为准） | ✅ 平台 22 + 流水线 10 + 工具箱（动态） |
 
 两套接口对重叠能力**同名对齐**（`list_workspace_files` / `search_workspace_files` / `rna_seq_*` / `atac_seq_*` / `check_workspace_data` / `list_available_pipelines`），保证内外双端同能力同名。
 
@@ -20,10 +20,18 @@
 
 ## 一、外部 MCP Server 能力清单
 
-### 1.1 Tools（9 组 40 个）
+### 1.1 Tools（默认配置实测 71 个）
 
 返回格式统一为 `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}`；
-破坏性操作均有 `user_confirmed: bool = False` 确认门——未确认时返回待确认摘要而不执行。
+写工具创建服务端 PENDING 记录，人类通过平台 JWT 端点批准，随后携带
+`confirmation_id` 同参重试。`user_confirmed=True` 仅为兼容参数，不能自证确认。
+
+HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（至少 32 字符），
+客户端以 Bearer Token 连接。该 Token 不等于平台 `CYGNUSX_API_KEY`，不允许用 Header
+更换平台 owner；非回环代理模式尚未实现。stdio 使用本机进程权限边界。
+确认状态依赖 Redis，故障返回可恢复 503；内存存储仅允许测试显式注入。
+服务 lifespan 在退出时关闭 REST 客户端。隔离验证可运行
+`.venv/bin/python tests/test_phase0b_runtime.py -v`；需要本机进程及回环 socket 权限。
 
 #### 📋 tasks — 任务管理（`tools/tasks.py`，6 个）
 
@@ -241,7 +249,7 @@
 | 约定 | 说明 |
 |---|---|
 | 工具命名 | `cygnusx_<group>_<action>` 全小写下划线；与内部 preset 对齐的工具沿用内部命名 |
-| 确认门 | 破坏性操作（提交/取消/删除/下载）必须有 `user_confirmed` 参数，未确认时返回待确认摘要 |
+| 确认门 | 写操作使用服务端 `confirmation_id`；人类 JWT 批准后同参一次性消费，布尔值不能放行 |
 | 返回格式 | `{"success", "summary", "data", "next_steps"?}`，错误捕获为 `{"success": false, "summary": "…"}` |
 | 输出上限 | 文件行数 / 日志条数 / 沙箱超时均 clamp 到 `limits.*`（默认 50 行 / 100 条 / 300 秒），防上下文爆炸 |
 | 幂等只读 | 所有只读工具可安全重试；轮询类（progress/status）为轻量端点 |

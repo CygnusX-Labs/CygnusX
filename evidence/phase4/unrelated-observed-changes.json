@@ -1,0 +1,34 @@
+[
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "data/CygnusX.yaml",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "frontend/src/components/OmicBackgroundAnimation.vue",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "frontend/src/types/site-content.ts",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "frontend/src/views/HomeView.vue",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/site_content.py",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "src/cygnusx/application/services/site_content_service.py",
+    "status": "baseline_changed_not_phase4"
+  },
+  {
+    "path": "tests/unit/test_site_content_service.py",
+    "status": "baseline_changed_not_phase4"
+  }
+]

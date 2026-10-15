@@ -1,0 +1,284 @@
+[
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "138309713c724f094ba097bc04da3ecfb503f04a071dfde31dac883f0b395568",
+    "current_sha256": "e9e7bbbf9052aaa80afe45976c236cdc7f5e1fac4fe14ad8276f0bd9f261c109"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_report_architecture.md",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "d9ce8e1d111c5a34812414e0b559fecbf8bacff30a69e5945110816cb0dc2ddd",
+    "current_sha256": "68b44fa68cf6f4d486246e206b7e8eb391a51eaf3843e958ec4a5881b9f002d1"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "12fcf16c2f841e8ae0a2487200a0367973b013f2a18574a42cc0a3e438ca3e19"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/README.md",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "9dc87c062b7c2c0a9e9f4cc7a34d76b29757e15c5688e23f9e2ade1bb1366b40",
+    "current_sha256": "d6cf2fc28749d76fef5bf64837794a04eb5808781b346df64f7b774b231ce38c"
+  },
+  {
+    "path": "alembic/versions/bioopsphase4_research_evidence.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "b3443f8a1630a29c65befa03da4f59d10c39bf21f55da9fd829b61d074ddf89c"
+  },
+  {
+    "path": "docs/adr/phase4-execution-evidence-report-contract.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "130cfa0966ade261ac71e305639e57cf7039e02dcba6e417b9146ba9c172f5ea"
+  },
+  {
+    "path": "docs/audits/cygnusx-runtime-provenance-manifest.json",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "da88936ea4171d1740f32c38a35ead11d80beda5d2fdb7e55374f8231a160840",
+    "current_sha256": "49137590c8d355b8bdb5b6929f39c9b13769743df72f41f10319dd99a01eaf75"
+  },
+  {
+    "path": "docs/contracts/cygnusx-provenance-v1.schema.json",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "2dd72cb572ab74dd467a3873613dcdf639100973b6bc75f7d070f8567b626ee6"
+  },
+  {
+    "path": "docs/contracts/cygnusx-research-delivery-v1.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "53ad84d11a2e418683e43298712330d4f7ebd35bf882ba29a43e8fbdf8108007"
+  },
+  {
+    "path": "docs/implementation/cygnusx-phase4-changed-files.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "233be747fda8e3403410621aa8f612236e7b0e8d42134c3d64b7a4f3382cce26"
+  },
+  {
+    "path": "docs/implementation/cygnusx-phase4-provenance-report-delivery-implementation.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "2233780a950a7c8f774b02a68c2db147c6666c0548b4c13335931880dfed2639"
+  },
+  {
+    "path": "docs/runbooks/cygnusx-delivery-reconciliation.md",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "35dda7d7f54004bfcb4cd5fafdff9c03ae04034c91012d30721b2efd133d6504"
+  },
+  {
+    "path": "frontend/src/api/researchDelivery.ts",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "9319ed525f598be2d9aff95ed68385131123549f70d10e6c89d437988ef64c48"
+  },
+  {
+    "path": "frontend/src/components/ResearchDeliveryChain.vue",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "d79e45aad37bc8cfd2563d874d040c6060b1acd931fa4d293f04c4726ceb6470"
+  },
+  {
+    "path": "frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "1e9c2e3350ed8aae5b4f1226965ad9655d0f02505a6c82ec2ad4db42bdecda22"
+  },
+  {
+    "path": "frontend/src/views/ProjectDetailView.vue",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "70627792d61fb5f2c3faab51f28cc782a31bb821737b66461df964c60f94544e",
+    "current_sha256": "38ba1a1df8a383f96fc5390213de8cf61d12a59155c5fe43b9f27b178a4b2d4b"
+  },
+  {
+    "path": "pipelines/CountsDEGFlow/report/counts.qmd",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "572c48509729a570f19ede3d3dce3137700c1de9ea9cb43453935efde09f21de"
+  },
+  {
+    "path": "pipelines/CountsDEGFlow/snakefile",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": null,
+    "current_sha256": "dfc23808dfc95f6b1ad29014e1205f80c913a5be472101dea32e765a306fdfba"
+  },
+  {
+    "path": "src/cygnusx/api/v1/research_delivery.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "6ffa30013202d562754610ad2b8f31b72fb8de4913baebcd553b4d8e64c7b2a8"
+  },
+  {
+    "path": "src/cygnusx/api/v1/router.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "667dea17511b8180466f88bf1ece1aa0fbe2b8f10b5e8f11ebe83e377baa5976",
+    "current_sha256": "aac8bf2eb9df79593a3f39231f7431c2ace525dc1c92a555d374f4a3e68941ee"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/agent_tools.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "03f687707157ddcf5c6bad0cf37159cd19d0539a126b38f1cfa29180b7cf980e",
+    "current_sha256": "55d04a5c94949535206aaf71e12baa2d8ca7ba679000e291b9abec17239d887a"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/report_snapshot.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "1ca5275f9a2f8cc8f576035fdb1634a2dbbe58b00da7e47218ebd00e320eec83",
+    "current_sha256": "6447d63728769602d4996df138923a5ed951639e18cfed47f4eebbd7f64a0592"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/research_delivery.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "1dd40dbeaf940bbb6f7d7f4c4825bd477ab500b04f09e0d142e0a88737a47f8c"
+  },
+  {
+    "path": "src/cygnusx/application/services/agent_service.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "3ad9934690714fc5fa143c445478d1178de63a7d08e1db56b3ef11c071e9b244",
+    "current_sha256": "06f63b45fe54f5d447eb05f99a4a40393b4374f3871d8f0cf599c804c5021b2b"
+  },
+  {
+    "path": "src/cygnusx/application/services/agent_tool_gateway.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "4eb7a922b2e4528a587a3e238bac598794a46d92d18faa6c59582bbe7977bd76",
+    "current_sha256": "06d8d248e1d3e3c574d5f043b8c7c837a43481597a9c384efee96ea4557f9ce2"
+  },
+  {
+    "path": "src/cygnusx/application/services/bioreport_adapter.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "0ea5439e3d10cd288d44ee59d985e7f070ba66976d293331c9e4f1ec952f875b",
+    "current_sha256": "872efd370f1c12c2185ab12a23c0c790ccbc6b93e6f2722473167ec5bbdc2f75"
+  },
+  {
+    "path": "src/cygnusx/application/services/dataset_analysis_service.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "8bab3ea2adabcf52d8312914e72e1a06cf25e843c24c4ffd24c9eb4fa8c8fab1",
+    "current_sha256": "c03c6924ff1a13b437b648c0b6ea90b931d24e3c128839f3b60e46979b8dfffd"
+  },
+  {
+    "path": "src/cygnusx/application/services/report_audit_renderer.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "35afb5dbdc6866867c2d3e0b62bbe23de241bcc69fce5f7cc59ef496b4139003",
+    "current_sha256": "b1e1d995f7ec4faa9fbb34aacd6eb0476ff0020fe723d27d04c7564a09e25c89"
+  },
+  {
+    "path": "src/cygnusx/application/services/report_service.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "7fa7ec06ecc6817e454c3d8b380be16108ded62de2bf988716add00f82d431b7",
+    "current_sha256": "b2c3e6e007a893b181c050675ca49b46606f94b5b2d19bb6fa9c7522564150e0"
+  },
+  {
+    "path": "src/cygnusx/application/services/report_snapshot_builder.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "76b30825574125168814cb03d817b9198bb42f7ffedcaa16fce4683ba2f4cbe9",
+    "current_sha256": "7b865afa0c8d91627389d137a0e59d8e06336672939f07a3a262be00b4ff3644"
+  },
+  {
+    "path": "src/cygnusx/application/services/report_snapshot_sources.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "5e4156bd864af182a7c1468384ba7cb29cfde7519f711e4195b4ef7157ede1b0",
+    "current_sha256": "8670e09d984ad26ce85055464d1c540e9cf60c46d307ed117e8cc50ca8984a51"
+  },
+  {
+    "path": "src/cygnusx/application/services/reproducible_report_service.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "83944e576a0a44328926916b08a92002b51600c56f124bf0ee31e2da511aed2a",
+    "current_sha256": "8e79da2d5e1b23d70e2b3cab6c90687a1719bd5402c512c8a9780bfdced1e92e"
+  },
+  {
+    "path": "src/cygnusx/application/services/research_execution_binding.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "2bf47bf13c90c52425e6585f4132ec325a602bc76329bc3fc6f4046ff462b9e0"
+  },
+  {
+    "path": "src/cygnusx/application/services/research_provenance_service.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "0d8ed055d84f5b7231a1e67e98186c31252678e2b9ec91a942a604cb7dcd089e"
+  },
+  {
+    "path": "src/cygnusx/application/services/scientific_report_job.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "cfd8bb62cc145b300cb5c131b8900f83862b4ae0db813a940f8acf0f367e7255"
+  },
+  {
+    "path": "src/cygnusx/application/services/task_service.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "7b07093524fec95bfe5ad5ea94d17b3e4d9d783ad8c62879e4a378abe5d462b2",
+    "current_sha256": "1004632d5c36e1badcf3e93c35cbbafdc0018690e893c69d769e83e9c4b92922"
+  },
+  {
+    "path": "src/cygnusx/core/config.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "a533183fa5af88953a5acbbc58b8bd1ea5a33dabbd87bba6d15dd6c8754c99b2",
+    "current_sha256": "35cfd8a2902a171430f3319a077c36dded57d253ab2521e710ca4082a501b426"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/celery_app/tasks/analysis.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "7c63d4a9d3d8a4778a81353b27d754faf89a5f556845574d16fecae463d73bb1",
+    "current_sha256": "4ea5b6aa2d69c6173595255866e55d90ab777d30d6417cbfe1031a0d5d0f79c3"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/celery_app/tasks/datasets.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "60a73fb328479eff5bb7f7015cd50ff2fc035265d7cab9bf63d1d61a597204ea",
+    "current_sha256": "ecd59ddb5c1feb52da26bee2a1b99b4e3aca4ad17e3641b079d7a12b9bf53da8"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/celery_app/tasks/reports.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "e667af9d82daabd8259259e5823d7d30680c3f4f8fdb986c6a6982ab8eb545cd",
+    "current_sha256": "20965391c7d37da7e2b85da539fa78cb55bf782e6cf3b0753cd9b70df5941f92"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/models/__init__.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "0d8d72c62b3b95d3ae7e357c3d000e609e1bb3474113dc19771124f9d6a3b557",
+    "current_sha256": "c66a2071e36aef000006843181ce679eb772c41387ec2deac8a8255ac4a440c0"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/models/dataset.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "e7137821b856ec74d3d18e6f4d3adba24d1a3eb9310b9cc4b58ab40faccca723",
+    "current_sha256": "ccad41eb67786515673b0a6ce21f72e1e9257f74fe3a212bed79a6ac414c1453"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/models/report.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "19fba7d1af4b938b8b2731e8e332012f067fa0d8a6c9612b1bbd0acc8b8d106e",
+    "current_sha256": "9d916675ad29597504bc3a82ecd8d20673e8a3c14dc8c95baa481f07b286ef0c"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/models/result_observation.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "bdf5ba71a86365ceed4157058adae56b4e4625d871cc391e5eaf98e71a748ae7"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/repositories/report_repository.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "5c6c5f337935bdc9e4b949bd2257da4b93ba2e826ddac8aa26366ec508e45bcc",
+    "current_sha256": "1a13f68eaf2f22e09488a9b0ddc8401612d3ca5ea61776b5082ecc4f16f92e79"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/mcp/presets.py",
+    "attribution": "phase4_increment_on_existing_worktree",
+    "baseline_sha256": "ffd3a33287a1aab3d2be5bf9b15d3fd3df843596efbd013479e049cc2d31e2d1",
+    "current_sha256": "5c7ee1b6b00549b626d323ac703e128980f85caf2d8b14c5369270cfdf6a7b8c"
+  },
+  {
+    "path": "tests/unit/test_research_delivery_phase4.py",
+    "attribution": "phase4_new",
+    "baseline_sha256": null,
+    "current_sha256": "9d2f7171028b4878ae9054f6d8581e3bcfd6fe07af9025b25ee1e469956e0e8f"
+  }
+]

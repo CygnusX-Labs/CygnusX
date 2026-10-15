@@ -1,5 +1,5 @@
 import apiClient from '@/api/client'
-import type { Report, ReportFilter, ReportListResponse, ReportStats } from '@/types/report'
+import type { Report, ReportFilter, ReportJob, ReportListResponse, ReportSnapshot, ReportStats } from '@/types/report'
 
 export const reportApi = {
   getReports: (params: ReportFilter) =>
@@ -27,4 +27,34 @@ export const reportApi = {
 
   markAsRead: (id: string) =>
     apiClient.patch<Report>(`/reports/${id}/read`, {}),
+
+  createReproducibilityReport: (taskId: string, runId?: string) =>
+    apiClient.post<ReportJob>(`/tasks/${taskId}/reproducibility-reports`, undefined, {
+      params: runId ? { run_id: runId } : undefined,
+    }),
+
+  getReportJob: (jobId: string) =>
+    apiClient.get<ReportJob>(`/reports/jobs/${jobId}`),
+
+  retryReportJob: (jobId: string) =>
+    apiClient.post<ReportJob>(`/reports/jobs/${jobId}/retry`),
+
+  getReportSnapshot: (reportId: string) =>
+    apiClient.get<ReportSnapshot>(`/reports/${reportId}/snapshot`),
+
+  buildDeliveryPackage: (reportId: string) =>
+    apiClient.post<Report>(`/reports/${reportId}/delivery`),
+}
+
+// Use the authenticated axios client; a bare anchor does not carry the Bearer token.
+export async function downloadReportFile(report: Report, fileId: string): Promise<void> {
+  const response = await reportApi.downloadReport(report.id, fileId)
+  const url = URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = report.files.find(file => file.id === fileId)?.name || 'report.html'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

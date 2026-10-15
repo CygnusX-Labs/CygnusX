@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-15",
+  "status": "CONDITIONAL_ISOLATED_RUNTIME_BLOCKED",
+  "backend_related": {
+    "passed": 172,
+    "warnings": 2,
+    "exit": 0
+  },
+  "boundary": {
+    "passed": 43,
+    "skipped": 1,
+    "exit": 0
+  },
+  "new_vue": {
+    "passed": 3
+  },
+  "frontend_types_exit": 0,
+  "frontend_build_exit": 0,
+  "full_frontend_earlier": {
+    "passed": 521,
+    "failed": 7
+  },
+  "bridge": {
+    "passed": 190,
+    "skipped": 2
+  },
+  "full_backend_exit": 124,
+  "full_ruff_errors": 295,
+  "full_mypy_errors": 1044,
+  "runtime": "BLOCKED",
+  "phase5_admission": false,
+  "agent_committed": false,
+  "baseline_head": "c68ea9e0d6ecb63cb5678444ad3dd1e2a8a00407",
+  "audit_head": "7c9b7d10a8e12d8c3139ea296795a13df35534e9",
+  "concurrent_commits": [
+    "558c4d70",
+    "7c9b7d10"
+  ]
+}

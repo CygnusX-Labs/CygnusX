@@ -14,12 +14,25 @@ import PipelineTaskCard from './PipelineTaskCard.vue'
 import { chatApi } from '@/api/chat'
 import type { ToolCall } from './types'
 import type { PipelineType } from '@/types/pipeline'
+import AgentToolProposalCard from '@/components/research/AgentToolProposalCard.vue'
+import { asToolProposal } from '@/api/agentTools'
+import { asImportProposal } from '@/api/datasets'
+import DatasetImportCard from '@/components/research/DatasetImportCard.vue'
 
 interface Props {
   tool: ToolCall
 }
 
 const props = defineProps<Props>()
+const bioopsProposal = computed(() => {
+  const envelope = props.tool.uiPayload?.bioops as { result?: unknown } | undefined
+  return asToolProposal(envelope?.result)
+})
+
+const datasetImport = computed(() => {
+  const envelope = props.tool.uiPayload?.bioops as { result?: unknown } | undefined
+  return asImportProposal(envelope?.result)
+})
 
 const emit = defineEmits<{
   confirmTool: [toolName: string, args: Record<string, unknown>]
@@ -220,6 +233,8 @@ function handleOpenToolPage() {
         </div>
 
         <!-- 二次确认卡 -->
+        <AgentToolProposalCard v-if="bioopsProposal" :proposal="bioopsProposal" />
+        <DatasetImportCard v-if="datasetImport" :proposal="datasetImport" />
         <div v-if="tool.uiPayload?.confirm_card" class="confirm-card">
           <div class="confirm-title">⚠️ 需要确认</div>
           <div class="confirm-desc">

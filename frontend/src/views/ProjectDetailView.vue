@@ -7,6 +7,7 @@ import {
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline } from '@vicons/ionicons5'
+import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { chatApi } from '@/api/chat'
 import {
@@ -529,6 +530,7 @@ onMounted(loadOverview)
       </template>
     </n-modal>
   </div>
+  <ResearchDeliveryChain v-if="overview" :project-id="projectId" />
 </template>
 
 <style scoped>

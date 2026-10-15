@@ -7,10 +7,8 @@
 
 核心不变量：APPROVED 状态只能由人类通道写入（JWT 会话的 REST approve 端点）；
 模型通道（builtin chat handler / MCP 工具参数）无法自行制造 APPROVED。
-例外：显式携带 extra["human_confirmed"]=True 的上下文（外部 REST API-Key 通道，
-其人类凭证是用户配置的 API Key 与 CLI 审批），允许一步消费 PENDING。
-
-存储优先 Redis（多 worker 共享、原生 TTL），不可用时回退进程内内存。
+task 人类端点可携带内部 human_confirmed 上下文；tool 必须先经人类批准。
+共享存储必须使用 Redis，故障时拒绝执行；内存仅允许测试显式注入。
 """
 
 from __future__ import annotations
@@ -24,17 +22,21 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from cygnusx.application.schemas.task import TaskSubmitRequest
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.task_service import TaskService
+from cygnusx.core.exceptions import DependencyUnavailableError
 
 logger = logging.getLogger(__name__)
 
 # tool 记录消费时禁止进入哈希的参数（控制面字段）
-_CONTROL_ARGUMENT_KEYS = {"_confirmation_id", "_confirmed"}
+_CONTROL_ARGUMENT_KEYS = {"_confirmation_id", "_confirmed", "confirmation_id"}
 
 _STATUS_PENDING = "PENDING"
 _STATUS_APPROVED = "APPROVED"
+_STATUS_SUBMITTING = "SUBMITTING"
 _STATUS_REJECTED = "REJECTED"
 _STATUS_SUBMITTED = "SUBMITTED"
 _STATUS_CONSUMED = "CONSUMED"
@@ -48,6 +50,7 @@ _TRANSITION_LUA = """
 local raw = redis.call('GET', KEYS[1])
 if not raw then return nil end
 local rec = cjson.decode(raw)
+if rec['expires_at'] <= ARGV[2] then return nil end
 for i = 4, #ARGV do
   if rec['status'] == ARGV[i] then
     rec['status'] = ARGV[1]
@@ -133,7 +136,7 @@ class ApprovalResult:
 
 
 class _MemoryStore:
-    """进程内存储（单 worker / 测试 / Redis 不可用时）。"""
+    """仅供显式注入的隔离测试存储，不作为 Redis 故障回退。"""
 
     name = "memory"
 
@@ -165,8 +168,8 @@ class _MemoryStore:
             if raw is None:
                 return None
             record = ConfirmationRecord.from_json(raw)
-            if record.status not in expected:
-                return record
+            if record.status not in expected or datetime.now(UTC) > record.expires_at:
+                return None
             record.status = to
             if to != _STATUS_PENDING:
                 record.consumed_at = datetime.now(UTC)
@@ -196,10 +199,16 @@ class _RedisStore:
 
     async def save(self, record: ConfirmationRecord) -> None:
         ttl = max(1, int((record.expires_at - datetime.now(UTC)).total_seconds()) + 60)
-        await self._client.set(self._KEY_PREFIX + record.confirmation_id, record.to_json(), ex=ttl)
+        try:
+            await self._client.set(self._KEY_PREFIX + record.confirmation_id, record.to_json(), ex=ttl)
+        except (RedisError, OSError, TimeoutError) as exc:
+            raise DependencyUnavailableError(code="CONFIRMATION_STORE_UNAVAILABLE") from exc
 
     async def get(self, confirmation_id: str) -> ConfirmationRecord | None:
-        raw = await self._client.get(self._KEY_PREFIX + confirmation_id)
+        try:
+            raw = await self._client.get(self._KEY_PREFIX + confirmation_id)
+        except (RedisError, OSError, TimeoutError) as exc:
+            raise DependencyUnavailableError(code="CONFIRMATION_STORE_UNAVAILABLE") from exc
         if raw is None:
             return None
         record = ConfirmationRecord.from_json(raw)
@@ -212,31 +221,36 @@ class _RedisStore:
         self, confirmation_id: str, *, expected: tuple[str, ...], to: str
     ) -> ConfirmationRecord | None:
         key = self._KEY_PREFIX + confirmation_id
-        ttl = await self._client.ttl(key)
-        raw = await self._client.eval(
-            _TRANSITION_LUA,
-            1,
-            key,
-            to,
-            datetime.now(UTC).isoformat(),
-            str(ttl if ttl > 0 else ToolConfirmationService.DEFAULT_TTL_SECONDS * 2),
-            *expected,
-        )
+        try:
+            ttl = await self._client.ttl(key)
+            raw = await self._client.eval(
+                _TRANSITION_LUA,
+                1,
+                key,
+                to,
+                datetime.now(UTC).isoformat(),
+                str(ttl if ttl > 0 else ToolConfirmationService.DEFAULT_TTL_SECONDS * 2),
+                *expected,
+            )
+        except (RedisError, OSError, TimeoutError) as exc:
+            raise DependencyUnavailableError(code="CONFIRMATION_STORE_UNAVAILABLE") from exc
         if raw is None:
             return None
         data = json.loads(raw)
-        return ConfirmationRecord.from_json(data["record"])
+        if not data["changed"]:
+            return None
+        return ConfirmationRecord.from_json(json.dumps(data["record"]))
 
 class ToolConfirmationService:
     """工具确认服务。人类凭证状态机：APPROVED 仅能由人类通道写入。"""
 
     DEFAULT_TTL_SECONDS = 1800  # 30 分钟
 
-    def __init__(self, store: Any | None = None) -> None:
+    def __init__(self, store: _MemoryStore | _RedisStore | None = None) -> None:
         self._explicit_store = store
-        self._store: Any | None = None
+        self._store: _MemoryStore | _RedisStore | None = None
 
-    async def _get_store(self) -> Any:
+    async def _get_store(self) -> _MemoryStore | _RedisStore:
         if self._store is not None:
             return self._store
         if self._explicit_store is not None:
@@ -249,9 +263,9 @@ class ToolConfirmationService:
             await store.get("connection-probe")  # 轻量 ping（key 不存在返回 None）
             self._store = store
             logger.info("ToolConfirmationService 使用 Redis 存储")
-        except Exception as e:  # noqa: BLE001
-            self._store = _MemoryStore()
-            logger.warning("ToolConfirmationService Redis 不可用，回退内存存储: %s", e)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("确认共享存储不可用；拒绝创建或消费凭证")
+            raise DependencyUnavailableError(code="CONFIRMATION_STORE_UNAVAILABLE") from exc
         return self._store
 
     # ===== 创建 =====
@@ -327,6 +341,8 @@ class ToolConfirmationService:
         record = await self._require_owned(user_id, confirmation_id)
         if record.kind != "tool":
             raise ConfirmationError("WRONG_KIND", "task 记录请使用 tool-confirmations 端点")
+        if datetime.now(UTC) > record.expires_at:
+            raise ConfirmationError("CONFIRMATION_EXPIRED", "确认已过期，请重新发起")
         if record.status == _STATUS_APPROVED:
             return record
         store = await self._get_store()
@@ -334,7 +350,7 @@ class ToolConfirmationService:
             confirmation_id, expected=(_STATUS_PENDING,), to=_STATUS_APPROVED
         )
         if updated is None:
-            raise ConfirmationError("ACCESS_DENIED", "确认记录不存在")
+            raise ConfirmationError("ALREADY_CONSUMED", "确认记录状态已改变")
         if updated.status != _STATUS_APPROVED:
             raise ConfirmationError("ALREADY_CONSUMED", f"确认记录状态为 {updated.status}")
         return updated
@@ -380,20 +396,20 @@ class ToolConfirmationService:
 
         store = await self._get_store()
         updated = await store.transition(
-            confirmation_id, expected=(_STATUS_PENDING, _STATUS_APPROVED), to=_STATUS_APPROVED
+            confirmation_id, expected=expected, to=_STATUS_SUBMITTING
         )
-        if updated is None or updated.status != _STATUS_APPROVED:
+        if updated is None or updated.status != _STATUS_SUBMITTING:
             raise ConfirmationError("ALREADY_CONSUMED", "确认记录已被消费")
 
         try:
             request = TaskSubmitRequest(**record.normalized_request)
             task_response = await task_service.submit(context.user_id, request)
         except Exception as e:  # noqa: BLE001
-            await self._transition(confirmation_id, (_STATUS_APPROVED,), _STATUS_INVALID)
+            await self._transition(confirmation_id, (_STATUS_SUBMITTING,), _STATUS_INVALID)
             raise ConfirmationError("SUBMIT_FAILED", f"任务提交失败: {e}") from e
 
         consumed = await store.transition(
-            confirmation_id, expected=(_STATUS_APPROVED,), to=_STATUS_SUBMITTED
+            confirmation_id, expected=(_STATUS_SUBMITTING,), to=_STATUS_SUBMITTED
         )
         if consumed is None or consumed.status != _STATUS_SUBMITTED:
             raise ConfirmationError("SUBMIT_FAILED", "任务已提交但确认记录消费失败，请检查任务状态")
@@ -435,7 +451,7 @@ class ToolConfirmationService:
 
         要求：kind=tool、归属当前用户、未过期、状态 APPROVED（人类点卡）、
         参数哈希与首次确认时一致。通过后原子置 CONSUMED（一次性）。
-        human_confirmed=True（外部 API-Key/JWT 通道）允许 PENDING 一步消费。
+        human_confirmed 保留调用兼容性，但不能替代服务端 APPROVED。
         """
         record = await self._require_owned(user_id, confirmation_id)
         if record.kind != "tool":
@@ -458,17 +474,17 @@ class ToolConfirmationService:
 
         if record.status == _STATUS_CONSUMED:
             raise ConfirmationError("ALREADY_CONSUMED", "该确认已被使用，不能重复执行")
-        if record.status == _STATUS_PENDING and not human_confirmed:
+        if record.status == _STATUS_PENDING:
             raise ConfirmationError(
                 "CONFIRMATION_REQUIRED",
                 "等待用户在确认卡上确认后才能执行，请提醒用户点击确认卡",
             )
 
-        expected = (_STATUS_PENDING, _STATUS_APPROVED) if human_confirmed else (_STATUS_APPROVED,)
+        expected = (_STATUS_APPROVED,)
         store = await self._get_store()
         updated = await store.transition(confirmation_id, expected=expected, to=_STATUS_CONSUMED)
         if updated is None:
-            raise ConfirmationError("ACCESS_DENIED", "确认记录不存在")
+            raise ConfirmationError("ALREADY_CONSUMED", "确认记录已被消费或过期")
         if updated.status != _STATUS_CONSUMED:
             raise ConfirmationError("ALREADY_CONSUMED", f"确认记录状态为 {updated.status}")
         return updated

@@ -14,30 +14,25 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         parameters: dict | None = None,
         sample_sheet: list[dict] | None = None,
         comparisons: list[dict] | None = None,
-        user_confirmed: bool = False,
-    ) -> dict:async def cygnusx_submit_analysis(
-        flow_id: str,
-        name: str = "",
-        parameters: dict | None = None,
-        sample_sheet: list[dict] | None = None,
-        comparisons: list[dict] | None = None,
+        confirmation_id: str = "",
         user_confirmed: bool = False,
     ) -> dict:
-"""提交分析任务到平台。需要 user_confirmed=True 确认执行。
-
-:param flow_id: Flow ID
-:param name: Task name
-:param parameters: Params
-:param sample_sheet: Sample sheet
-:param comparisons: Comparisons
-:param user_confirmed: Confirmed
-:return: JSON format result
-
-示例:
-    await cygnusx_submit_analysis("flow", "task", {}, [], [], True)
-    # Submit analysis
-"""
-        if not user_confirmed:
+        """提交分析任务到平台。需要服务端 confirmation_id。"""
+        if user_confirmed:
+            return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请使用服务端 confirmation_id。"}
+        if not confirmation_id:
+            confirmation = await api.create_tool_confirmation(
+                "cygnusx_submit_analysis",
+                {
+                    "flow_id": flow_id,
+                    "name": name or f"{flow_id} analysis",
+                    "parameters": parameters or {},
+                    "sample_sheet": sample_sheet or [],
+                    "comparisons": comparisons or [],
+                    "execution_mode": "local",
+                    "idempotency_key": None,
+                },
+            )
             return {
                 "success": True,
                 "needs_confirmation": True,
@@ -47,7 +42,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
                     f"  名称: {name or '(自动生成)'}\n"
                     f"  样本数: {len(sample_sheet) if sample_sheet else 0}\n"
                     f"  比较组: {len(comparisons) if comparisons else 0}\n"
-                    f"请确认参数无误后设置 user_confirmed=True 重新调用。"
+                    "请在平台网页批准确认记录后携带 confirmation_id 重试。"
                 ),
                 "data": {
                     "flow_id": flow_id,
@@ -55,6 +50,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
                     "parameters": parameters,
                     "sample_sheet": sample_sheet,
                     "comparisons": comparisons,
+                    "confirmation": confirmation,
                 },
             }
 
@@ -63,9 +59,11 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             "name": name or f"{flow_id} analysis",
             "parameters": parameters or {},
             "sample_sheet": sample_sheet or [],
+            "comparisons": comparisons or [],
+            "execution_mode": "local",
+            "idempotency_key": None,
         }
-        if comparisons:
-            payload["comparisons"] = comparisons
+        payload["confirmation_id"] = confirmation_id
 
         try:
             result = await api.submit_task(payload)
@@ -92,22 +90,9 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         flow_id: str,
         parameters: dict | None = None,
         sample_sheet: list[dict] | None = None,
-    ) -> dict:async def cygnusx_preview_analysis(
-        flow_id: str,
-        parameters: dict | None = None,
-        sample_sheet: list[dict] | None = None,
     ) -> dict:
-"""预览/验证分析参数（dry-run）：检查参数是否合法，不实际提交。"""
+        """预览/验证分析参数（dry-run）：检查参数是否合法，不实际提交。"""
 
-:param flow_id: Flow ID
-:param parameters: Params
-:param sample_sheet: Sample sheet
-:return: JSON format result
-
-示例:
-    await cygnusx_preview_analysis("flow", {}, [])
-    # Validate params
-"""
         try:
             flow = await api.get_flow(flow_id)
             flow_params = flow.get("parameters", [])

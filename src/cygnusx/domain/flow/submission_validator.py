@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -24,6 +25,7 @@ from cygnusx.domain.flow.value_objects import (
     ParameterTypeEnum,
     SampleSheetConfig,
 )
+from cygnusx.infrastructure.storage import get_path_factory
 
 
 class ValidationErrorItem(BaseModel):
@@ -91,8 +93,16 @@ class FlowSubmissionValidator:
             )
             raw_params = {}
 
-        if ai.allowed_parameters:
-            allowed = set(ai.allowed_parameters)
+        final_submission = bool(context.extra.get("final_submission"))
+        param_map: dict[str, Parameter] = {}
+        for parameter in flow.parameters:
+            if parameter.type == ParameterTypeEnum.SECTION and parameter.section_config:
+                param_map.update({child.name: child for child in parameter.section_config.parameters})
+            else:
+                param_map[parameter.name] = parameter
+
+        if ai.allowed_parameters or final_submission:
+            allowed = set(param_map) if final_submission else set(ai.allowed_parameters)
             for key in list(raw_params.keys()):
                 if key not in allowed:
                     errors.append(
@@ -104,7 +114,6 @@ class FlowSubmissionValidator:
                     )
 
         # 2. 收集所有顶层参数名
-        param_map = {p.name: p for p in flow.parameters}
 
         # 3. 条件参数处理 + 默认值填充
         normalized_params: dict[str, Any] = {}
@@ -197,7 +206,18 @@ class FlowSubmissionValidator:
                 )
 
             if sample_rows:
-                self._validate_sample_sheet(flow.sample_sheet, sample_rows, errors)
+                if all(isinstance(row, dict) for row in sample_rows):
+                    self._validate_sample_sheet(flow.sample_sheet, sample_rows, errors)
+                else:
+                    errors.append(ValidationErrorItem(
+                        field="sample_sheet", code="INVALID_SAMPLE_SHEET",
+                        message="样本表每行必须是对象",
+                    ))
+                    sample_rows = []
+            else:
+                errors.append(ValidationErrorItem(
+                    field="sample_sheet", code="MISSING_REQUIRED", message="样本表不能为空",
+                ))
 
             if ai.max_samples is not None and len(sample_rows) > ai.max_samples:
                 errors.append(
@@ -232,12 +252,17 @@ class FlowSubmissionValidator:
 
         # 7. 文件引用校验
         await self._validate_file_refs(context, normalized_params, param_map, errors)
+        if context.extra.get("final_submission") or context.extra.get("strict_input_paths"):
+            self._validate_final_paths(context, normalized_params, param_map, errors)
+        if flow.meta.id in {"rna_seq", "atac_seq"}:
+            self._validate_fastq_input(context, normalized_params, errors)
 
         if errors:
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
 
         # 8. 构造 TaskSubmitRequest
         clean_params = {k: v for k, v in normalized_params.items() if v is not None}
+        assert isinstance(task_name, str)
 
         request = TaskSubmitRequest(
             flow_id=flow.meta.id,
@@ -458,7 +483,9 @@ class FlowSubmissionValidator:
                 continue
 
             try:
-                await self._file_resolver.resolve(context, ref, require_content=False)
+                metadata = await self._file_resolver.resolve(context, ref, require_content=False)
+                # The worker must consume the same owner-checked path that was validated.
+                params[key] = metadata.internal_path
             except Exception as e:  # noqa: BLE001
                 errors.append(
                     ValidationErrorItem(
@@ -467,6 +494,74 @@ class FlowSubmissionValidator:
                         message=str(e),
                     )
                 )
+
+    def _validate_final_paths(
+        self,
+        context: ToolInvocationContext,
+        params: dict[str, Any],
+        param_map: dict[str, Parameter],
+        errors: list[ValidationErrorItem],
+    ) -> None:
+        """Reject unscoped paths at the final task creation boundary."""
+        root = get_path_factory().user_root(context.user_id).resolve()
+        for key, value in params.items():
+            param = param_map.get(key)
+            is_path = "path" in key.lower() or (
+                param is not None
+                and (param.type == ParameterTypeEnum.FILE or (param.ui and param.ui.widget == "path"))
+            )
+            if not value or not is_path:
+                continue
+            if not isinstance(value, str):
+                errors.append(ValidationErrorItem(
+                    field=f"parameters.{key}", code="TYPE_ERROR", message="执行路径必须是字符串"
+                ))
+                continue
+            candidate = Path(value)
+            resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                errors.append(
+                    ValidationErrorItem(
+                        field=f"parameters.{key}",
+                        code="PATH_OUTSIDE_USER_ROOT",
+                        message="执行路径必须位于当前用户的受控工作区内",
+                    )
+                )
+                continue
+            params[key] = str(resolved)
+
+    def _validate_fastq_input(
+        self, context: ToolInvocationContext, params: dict[str, Any],
+        errors: list[ValidationErrorItem],
+    ) -> None:
+        """Matrix files cannot become raw FASTQ; shared previews require real inputs.
+
+        Existing form validation remains compatible with worker-resolved directories.
+        The gateway opts into presence checking before presenting an approval card.
+        """
+        value = params.get("raw_data_path")
+        if not isinstance(value, str) or not value:
+            return
+        root = get_path_factory().user_root(context.user_id).resolve()
+        path = Path(value)
+        path = (path if path.is_absolute() else root / path).resolve()
+        if not path.is_relative_to(root):
+            return  # Already reported by final path validation.
+        fastq_suffixes = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
+        if path.is_file() and not path.name.lower().endswith(fastq_suffixes):
+            errors.append(ValidationErrorItem(field="parameters.raw_data_path",
+                code="FASTQ_INPUT_REQUIRED", message="RNA/ATAC 需要 FASTQ，不能使用 counts/TPM/FPKM 矩阵"))
+        if context.extra.get("strict_input_paths"):
+            from itertools import islice
+
+            files = list(islice(path.iterdir(), 10000)) if path.is_dir() else []
+            usable = [f for f in files if f.is_file() and f.name.lower().endswith(fastq_suffixes)
+                      and f.resolve().is_relative_to(root)]
+            if not usable:
+                errors.append(ValidationErrorItem(field="parameters.raw_data_path",
+                    code="FASTQ_INPUT_MISSING", message="请选择真实存在且归属当前用户的 FASTQ 目录"))
 
     def _parse_sample_sheet_content(self, content: str) -> list[dict[str, Any]]:
         """简单解析 CSV/TSV 样本表内容。"""
@@ -498,9 +593,9 @@ class FlowSubmissionValidator:
         expected = condition.value
 
         if op == "eq":
-            return actual == expected
+            return bool(actual == expected)
         if op == "ne":
-            return actual != expected
+            return bool(actual != expected)
         if op == "in":
             return actual in (expected if isinstance(expected, (list, tuple, set)) else [expected])
         if op == "not_in":

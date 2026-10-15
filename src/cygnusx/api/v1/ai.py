@@ -6,13 +6,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
-from cygnusx.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
+from cygnusx.api.deps import (
+    CurrentJwtUserId,
+    CurrentUserId,
+    DbSession,
+    get_active_user_from_token_payload,
+)
 from cygnusx.application.schemas.ai import (
     ConversationDetailDTO,
     ConversationDTO,
     CreateConversationDTO,
 )
-from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+from cygnusx.application.schemas.tool_invocation import (
+    ExternalToolConfirmationRequest,
+    ToolInvocationContext,
+)
 from cygnusx.application.services.ai_service import AIService
 from cygnusx.application.services.analysis_flow_tool_service import AnalysisFlowToolService
 from cygnusx.application.services.tool_confirmation_service import (
@@ -23,6 +31,27 @@ from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.database.session import get_session_factory
 
 router = APIRouter()
+
+
+@router.post("/tool-invocations", summary="创建外部工具的人类确认请求")
+async def create_external_tool_confirmation(
+    request: ExternalToolConfirmationRequest,
+    current_user_id: CurrentUserId,
+) -> dict[str, Any]:
+    """Create a PENDING record; only the JWT approval endpoint can approve it."""
+    record = await get_tool_confirmation_service().create_for_tool(
+        user_id=str(current_user_id),
+        tool_name=request.tool_name,
+        arguments=request.arguments,
+        session_id="external-mcp",
+    )
+    return {
+        "success": True,
+        "confirmation_id": record.confirmation_id,
+        "tool_name": record.tool_name,
+        "status": record.status,
+        "expires_at": record.expires_at.isoformat(),
+    }
 
 
 def get_ai_service(db: DbSession) -> AIService:
@@ -172,7 +201,7 @@ async def ai_websocket(websocket: WebSocket) -> None:
 
 @router.post("/tool-confirmations/{confirmation_id}/approve", summary="确认并提交分析任务")
 async def approve_tool_confirmation(
-    current_user_id: CurrentUserId,
+    current_user_id: CurrentJwtUserId,
     db: DbSession,
     confirmation_id: UUID,
 ) -> dict[str, Any]:
@@ -197,7 +226,7 @@ async def approve_tool_confirmation(
 
 @router.post("/tool-confirmations/{confirmation_id}/reject", summary="拒绝分析任务提交")
 async def reject_tool_confirmation(
-    current_user_id: CurrentUserId,
+    current_user_id: CurrentJwtUserId,
     confirmation_id: UUID,
     reason: str | None = None,
 ) -> dict[str, Any]:
@@ -216,7 +245,7 @@ async def reject_tool_confirmation(
 
 @router.post("/tool-invocations/{confirmation_id}/approve", summary="批准待确认的工具调用")
 async def approve_tool_invocation(
-    current_user_id: CurrentUserId,
+    current_user_id: CurrentJwtUserId,
     confirmation_id: UUID,
 ) -> dict[str, Any]:
     """人类（JWT 会话）批准 requires_confirm 工具：PENDING → APPROVED。
@@ -242,7 +271,7 @@ async def approve_tool_invocation(
 
 @router.post("/tool-invocations/{confirmation_id}/reject", summary="拒绝待确认的工具调用")
 async def reject_tool_invocation(
-    current_user_id: CurrentUserId,
+    current_user_id: CurrentJwtUserId,
     confirmation_id: UUID,
     reason: str | None = None,
 ) -> dict[str, Any]:

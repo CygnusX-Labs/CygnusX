@@ -21,7 +21,6 @@ from cygnusx.application.services.tool_confirmation_service import (
 )
 from cygnusx.domain.flow.entities import FlowConfig
 from cygnusx.domain.flow.submission_validator import FlowSubmissionValidator
-from cygnusx.domain.flow.value_objects import FlowAIConfig
 
 
 class FlowAIError(Exception):
@@ -78,20 +77,27 @@ class AnalysisFlowToolService:
         from cygnusx.tools.flow_schema_compiler import FlowToolSchemaCompiler
 
         compiler = FlowToolSchemaCompiler()
+        input_schema = compiler.compile_prepare_tool(flow)["input_schema"]
         return {
             "flow_id": flow.meta.id,
+            "version": flow.meta.version,
             "name": flow.meta.name,
             "description": flow.meta.description,
             "assistant_summary": flow.ai.assistant_summary if flow.ai else "",
-            "parameter_schema": compiler.compile_parameters(flow, flow.ai or FlowAIConfig(enabled=False)),
+            "parameter_schema": input_schema["properties"]["parameters"],
+            "input_schema": input_schema,
             "sample_sheet_schema": (
                 compiler._compile_sample_sheet(flow.sample_sheet) if flow.sample_sheet else None
             ),
-            "comparison_schema": compiler._compile_comparisons(flow) if self._has_comparisons(flow) else None,
+            "comparison_schema": compiler._compile_comparisons(flow)
+            if self._has_comparisons(flow)
+            else None,
         }
 
     # ===== 预检 =====
-    async def prepare(self, flow_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def prepare(
+        self, flow_id: str, arguments: dict[str, Any], *, create_confirmation: bool = True
+    ) -> dict[str, Any]:
         """预检参数，生成确认预览。"""
         flow = self._get_flow_config(flow_id)
         self._assert_ai_enabled(flow)
@@ -106,40 +112,47 @@ class AnalysisFlowToolService:
 
         assert validation.normalized_request is not None
 
-        # 创建确认记录
-        record = await self._confirmation_service.create(
-            context=self.context,
-            flow_id=flow_id,
-            flow_name=flow.meta.name,
-            normalized_request=validation.normalized_request,
-        )
-
         sample_count = len(validation.normalized_request.sample_sheet)
         comparison_count = len(validation.normalized_request.comparisons or [])
-        resource_hint = (
-            flow.ai.default_resource_hint if flow.ai else {}
-        ) or {
+        resource_hint = (flow.ai.default_resource_hint if flow.ai else {}) or {
             "cores": flow.execution.default_resources.cores,
             "memory": flow.execution.default_resources.memory,
             "time": flow.execution.default_resources.time,
         }
 
-        return {
+        preview = {
             "valid": True,
-            "confirmation_id": record.confirmation_id,
             "flow_id": flow_id,
             "flow_name": flow.meta.name,
             "sample_count": sample_count,
             "comparison_count": comparison_count,
             "resource_hint": resource_hint,
             "parameter_preview": validation.normalized_request.parameters,
-            "expires_at": record.expires_at.isoformat(),
             "requires_confirmation": flow.ai.requires_confirmation if flow.ai else True,
+        }
+        if not create_confirmation:
+            return {
+                **preview,
+                "normalized_request": validation.normalized_request.model_dump(mode="json"),
+            }
+        record = await self._confirmation_service.create(
+            context=self.context,
+            flow_id=flow_id,
+            flow_name=flow.meta.name,
+            normalized_request=validation.normalized_request,
+        )
+        return {
+            **preview,
+            "confirmation_id": record.confirmation_id,
+            "expires_at": record.expires_at.isoformat(),
         }
 
     # ===== 确认提交 =====
     async def confirm_and_submit(self, confirmation_id: str) -> dict[str, Any]:
         """消费确认记录，提交任务。"""
+        from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+
+        require_agent_write_gate("analysis.submit")
         task_service = TaskService(self.context.db)
         result = await self._confirmation_service.approve(
             context=self.context,

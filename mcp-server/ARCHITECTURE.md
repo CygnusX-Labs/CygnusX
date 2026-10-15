@@ -66,7 +66,7 @@
 
 | kind | 创建者 | 消费端点（人类） | 消费语义 |
 |------|--------|----------------|----------|
-| `task` | `AnalysisFlowToolService.prepare()`（流水线预检） | `/ai/tool-confirmations/{id}/approve` | JWT `human_confirmed` 一步 PENDING→SUBMITTED，**点击即提交任务**；模型端 `*_submit` 工具随后幂等拿到同一 `task_id` |
+| `task` | `AnalysisFlowToolService.prepare()`（流水线预检） | `/ai/tool-confirmations/{id}/approve` | JWT 审批原子占用 PENDING→SUBMITTING，再提交→SUBMITTED；并发失败方不得执行；已有 task_id 可幂等回放 |
 | `tool` | `ToolBridgeService` requires_confirm 门 / `platform_submit_download` 首次调用 | `/ai/tool-invocations/{id}/approve` | 仅 PENDING→APPROVED（不执行）；模型必须携带 `_confirmation_id` 以完全相同参数重试才真正执行 |
 
 ### 各通道确认路径
@@ -74,16 +74,18 @@
 | 通道 | 首次调用 | 确认 | 执行 |
 |------|---------|------|------|
 | 内部聊天（builtin preset） | 返回确认卡 `ui_payload.confirm_card + confirmation_id + actions` | 用户点卡 → JWT approve（`McpToolCallCard.vue` POST） | 模型携 `_confirmation_id` 同参重试 |
-| 外部 REST（JWT 或 API-Key） | — | `human_confirmed=True` 是请求体/端点内声明 | 允许 PENDING 一步消费（CLI 场景：终端前的人即确认人；此为文档化的残余信任假设） |
-| 外部 MCP（mcp-server） | `user_confirmed=False` → 返回 `_needs_confirmation` 摘要 | 用户在客户端确认 | `user_confirmed=True` → REST submit 带 `user_confirmed` → 服务端按人类通道一步消费 |
+| 外部 REST（API-Key） | 写工具创建 PENDING | owner 对应的人类 JWT 端点批准 | APPROVED 凭证同参一次性消费；无凭证拒绝 |
+| 外部 MCP（mcp-server） | 写工具创建 PENDING | 平台 JWT 端点批准，不接受客户端布尔值 | 携带 `confirmation_id` 同参重试 |
 | AgentTeams 协作 Case | `record_confirmation_request` | 真实用户 ChatMessage（服务端校验 marker 元数据与时间序） | `create_agentteams_case` 仅在该消息存在后放行 |
 
 ### 存储与多 worker
 
 - **首选 Redis**（`settings.redis_url`）：key 带 TTL（默认 30 分钟），状态迁移用 Lua 脚本
   原子完成（expected-status CAS），多 worker/多重启进程共享同一确认事实。
-- **回退内存 `_MemoryStore`**（asyncio.Lock + save 时惰性清除过期），仅单 worker 可用；
-  Redis 不可达时自动降级并在日志中说明。
+- **不回退内存**：Redis 初始化或读写失败返回 503 `CONFIRMATION_STORE_UNAVAILABLE`，
+  不执行业务副作用。`_MemoryStore` 仅为测试显式注入，生产默认不会选择它。
+- Redis CAS 失败返回空结果，Lua 检查 expires_at；task 占用 `SUBMITTING` 后再执行。
+  业务已执行但确认记录未能写回的窗口需要人工对账，不应自动重试创建。
 - 旧版"进程内 dict + 从不执行的 cleanup_expired"导致的跨 worker ACCESS_DENIED 与
   内存泄漏已由此消除。
 
@@ -104,13 +106,15 @@
 
 ## 4. 外部 mcp-server 要点
 
-- **传输**：stdio（默认）或 SSE；`server.host` 默认 `127.0.0.1`，SSE 绑定非回环地址时
-  启动打印安全告警（SSE 本身无鉴权，可达者即持有 API Key）。
+- **传输**：stdio（默认）、SSE 或 Streamable HTTP；只允许回环 HTTP，且强制独立
+  `CYGNUSX_HTTP_TOKEN` Bearer 鉴权。`allow_non_loopback_http` 无放行能力，网关模式未实现。
+  入站 token 不能映射任意平台 owner，REST 使用配置的 API Key 归属。
+- **生命周期**：共用 `core/runtime.py`，lifespan 退出关闭 httpx REST client。
 - **REST 客户端**：`client/api_client.py` 按 content-type 解析响应（HTML 错误页不再炸
-  JSONDecodeError）；`submit_pipeline` 请求体 `{"prepared_params":…, "user_confirmed": True}`；
+  JSONDecodeError）；`submit_pipeline` 请求体携带 `prepared_params` 和 `confirmation_id`；
   reports 资源 JSON 序列化 bug 已修。
-- **确认门**：`rna_seq_submit`/`atac_seq_submit` 缺 `user_confirmed` 时返回
-  `_needs_confirmation` 摘要卡（含样本数/比较组预览）；`cygnusx_submit_analysis`/
+- **确认门**：`rna_seq_submit`/`atac_seq_submit` 缺 `confirmation_id` 时创建服务端
+  PENDING 并返回确认摘要；`user_confirmed=True` 被拒绝；`cygnusx_submit_analysis`/
   `cygnusx_submit_download`/`cygnusx_cancel_task` 同口径。
 - **启动自校验**：`tools/__init__.py::_verify_tools_yaml_consistency` 比对
   tools.yaml 声明组 ↔ `_GROUP_REGISTRY`、声明工具名 ↔ FastMCP 实际注册集（仅告警不阻断）。
@@ -126,12 +130,9 @@
 
 ## 6. 残余风险（文档化接受）
 
-1. **外部 API-Key 通道的 `user_confirmed=True`**：服务端将其视为"终端前的人类确认"，
-   无法区分 CLI 用户本人与其驱动的模型——这是外部 CLI 可用性的有意妥协；对外发 API Key
-   前应评估该信任级别。
-2. **内存回退存储**：Redis 不可用时确认状态仅存单进程内存，多 worker 部署下会退化为
-   偶发 ACCESS_DENIED（正确但体验受损）；生产建议常备 Redis。
-3. **SSE 无内建鉴权**：依赖回环绑定 + 可信内网/反代，启动有告警。
+1. **跨存储事务窗口**：task 业务副作用和 Redis 确认状态非同一事务；执行后写回失败需人工对账。
+2. **Redis 运维门禁**：不得回退内存，真实多 Worker Lua/TTL 验收仍需隔离 Redis 环境。
+3. **外部传输门禁**：入站 token 验证实现已有，真实 STDIO/HTTP/SSE 尚须非受限环境验收。
 4. **AgentTeams `_confirmed` 提示语**：前端协作 Case 文案仍提到 `_confirmed`，真正的门是
    服务端"用户消息 marker 校验"，该参数仅剩路由提示作用。
 
@@ -319,7 +320,7 @@ async def my_endpoint(self, param: str) -> dict:
 | sandbox | `/api/v1/sandbox` | `SandboxService` |
 | platform | `/api/v1/auth/me` + `/api/v1/stats` | — |
 | pipelines | `/api/v1/pipelines` | `PipelineController`（prepare/submit/status/results，submit 过确认门） |
-| 确认门 | `/api/v1/ai/tool-confirmations/*`、`/api/v1/ai/tool-invocations/*` | `ToolConfirmationService`（Redis/内存双后端） |
+| 确认门 | `/api/v1/ai/tool-confirmations/*`、`/api/v1/ai/tool-invocations/*` | `ToolConfirmationService`（生产必须 Redis，内存仅测试注入） |
 
 ## 12. 关键测试地图
 

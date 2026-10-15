@@ -8,20 +8,34 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
 from fastapi.responses import StreamingResponse
 
-from cygnusx.api.deps import CurrentUserId, DbSession, get_active_user_from_token_payload
+from cygnusx.api.deps import (
+    CurrentUserId,
+    DbSession,
+    get_active_user_from_token_payload,
+    require_human_or_confirmation,
+)
+from cygnusx.application.schemas.report import ReportJobResponse
 from cygnusx.application.schemas.task import (
+    TaskCancelRequest,
     TaskListResponse,
     TaskResponse,
     TaskSubmitRequest,
 )
+from cygnusx.application.services.reproducible_report_service import ReproducibleReportService
 from cygnusx.application.services.task_service import TaskService
+from cygnusx.application.services.tool_confirmation_service import (
+    ConfirmationError,
+    get_tool_confirmation_service,
+)
 from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.cache.pubsub import subscribe_arq_progress, subscribe_task_logs
 from cygnusx.infrastructure.database.repositories.task_repository import (
@@ -30,6 +44,24 @@ from cygnusx.infrastructure.database.repositories.task_repository import (
 from cygnusx.infrastructure.database.session import get_session_factory
 
 router = APIRouter()
+
+
+@router.post(
+    "/{task_id}/reproducibility-reports",
+    response_model=ReportJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="生成可复核报告",
+)
+async def create_reproducibility_report(
+    task_id: UUID,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    run_id: Annotated[UUID | None, Query()] = None,
+    request_key: Annotated[UUID | None, Header(alias="Idempotency-Key")] = None,
+) -> ReportJobResponse:
+    return await ReproducibleReportService(db).enqueue(
+        current_user_id, task_id, run_id, request_key=request_key
+    )
 
 
 def get_task_service(db: DbSession) -> TaskService:
@@ -60,11 +92,26 @@ async def list_tasks(
     summary="提交分析任务",
 )
 async def submit_task(
+    request: Request,
     req: TaskSubmitRequest,
     current_user_id: CurrentUserId,
     service: TaskServiceDep,
 ) -> TaskResponse:
     """提交新的分析任务"""
+    require_human_or_confirmation(request, req.confirmation_id)
+    if req.confirmation_id:
+        confirmation = get_tool_confirmation_service()
+        try:
+            await confirmation.consume_tool_confirmation(
+                current_user_id,
+                req.confirmation_id,
+                "cygnusx_submit_analysis",
+                req.model_dump(exclude={"confirmation_id"}),
+            )
+        except ConfirmationError as exc:
+            from cygnusx.core.exceptions import ValidationError
+
+            raise ValidationError(f"确认凭证校验失败({exc.code}): {exc.message}") from exc
     return await service.submit(current_user_id, req)
 
 
@@ -94,11 +141,26 @@ async def get_task_logs(
 
 @router.post("/{task_id}/cancel", response_model=TaskResponse, summary="取消任务")
 async def cancel_task(
+    http_request: Request,
     task_id: UUID,
     current_user_id: CurrentUserId,
     service: TaskServiceDep,
+    request: TaskCancelRequest | None = None,
 ) -> TaskResponse:
     """取消未结束的任务"""
+    require_human_or_confirmation(http_request, request.confirmation_id if request else None)
+    if request and request.confirmation_id:
+        try:
+            await get_tool_confirmation_service().consume_tool_confirmation(
+                current_user_id,
+                request.confirmation_id,
+                "cygnusx_cancel_task",
+                {"task_id": str(task_id)},
+            )
+        except ConfirmationError as exc:
+            from cygnusx.core.exceptions import ValidationError
+
+            raise ValidationError(f"确认凭证校验失败({exc.code}): {exc.message}") from exc
     return await service.cancel_task(task_id, current_user_id)
 
 
@@ -164,9 +226,7 @@ async def task_logs_websocket(websocket: WebSocket, task_id: str) -> None:
 
 
 @router.get("/{task_id}/progress", summary="ARQ 任务进度 SSE")
-async def task_progress_sse(
-    task_id: str, current_user_id: CurrentUserId
-) -> StreamingResponse:
+async def task_progress_sse(task_id: str, current_user_id: CurrentUserId) -> StreamingResponse:
     """ARQ 异步任务进度 Server-Sent Events。
 
     连接示例：/api/v1/tasks/{task_id}/progress

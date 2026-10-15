@@ -1,16 +1,18 @@
 <script setup lang="ts">
+import DatasetWorkspace from '@/components/research/DatasetWorkspace.vue'
 import type { FlowDefinition } from '@/types'
 import apiClient from '@/api/client'
 import { useApi } from '@/composables/useApi'
 import AppLoading from '@/components/AppLoading.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { NButton, NIcon, useMessage } from 'naive-ui'
-import { computed, onMounted, watch } from 'vue'
+import { NButton, NIcon, NModal } from 'naive-ui'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import { PENDING_WORKFLOWS } from '@/config/workflows'
 import {
   AnalyticsOutline,
+  ArrowForwardOutline,
   BeakerOutline,
   ClipboardOutline,
   CodeSlashOutline,
@@ -18,11 +20,14 @@ import {
   FlameOutline,
   FlaskOutline,
   GlobeOutline,
+  InformationCircleOutline,
   LogoGithub,
   MagnetOutline,
   FolderOutline,
   SettingsOutline,
   StatsChartOutline,
+  LayersOutline,
+  GitBranchOutline,
 } from '@vicons/ionicons5'
 
 interface Pipeline {
@@ -30,24 +35,25 @@ interface Pipeline {
   name: string
   desc: string
   icon: Component | string
-  colorVar: string
   tags: string[]
   version: string
   githubUrl: string | null
   isReady: boolean
   status?: string
   badge?: string
+  docsUrl: string | null
 }
 
 const route = useRoute()
 const router = useRouter()
-const message = useMessage()
+const flowFrameInfoVisible = ref(false)
 
 const activeType = computed(() => (route.query.type as string) || '')
 
 const {
   data: flows,
   loading,
+  error,
   execute: fetchFlows,
 } = useApi<FlowDefinition[]>(
   async () => {
@@ -104,19 +110,6 @@ const LEGACY_ICON_MAP: Record<string, Component> = {
 }
 
 /** 按 category 动态主题色 key */
-const CATEGORY_COLOR_MAP: Record<string, string> = {
-  transcriptomics: 'chart-1',
-  epigenomics: 'chart-4',
-  genomics: 'chart-3',
-  'single-cell': 'chart-2',
-  visualization: 'chart-6',
-  proteomics: 'chart-5',
-  metabolomics: 'chart-6',
-  default: 'chart-1',
-}
-
-const COLOR_LIST = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'chart-6']
-
 function flowIcon(flow: FlowDefinition): Component | string {
   const icon = flow.icon
   if (icon && icon.trim().length > 0) {
@@ -125,11 +118,6 @@ function flowIcon(flow: FlowDefinition): Component | string {
     return FALLBACK_MAP[icon.toLowerCase()] || FALLBACK_MAP[flow.category] || FALLBACK_MAP.default
   }
   return FALLBACK_MAP[flow.category] || FALLBACK_MAP.default
-}
-
-function flowColor(flow: FlowDefinition): string {
-  if (flow.color) return flow.color
-  return CATEGORY_COLOR_MAP[flow.category] || CATEGORY_COLOR_MAP.default
 }
 
 function isGithubUrl(url?: string | null): boolean {
@@ -148,13 +136,13 @@ const pipelines = computed<Pipeline[]>(() => {
     name: f.name,
     desc: f.description,
     icon: flowIcon(f),
-    colorVar: `var(--kimi-${flowColor(f)})`,
     tags: f.tags?.length ? f.tags : [f.category],
     version: f.version,
     githubUrl: resolveGithubUrl(f),
     isReady: true,
     status: f.status,
     badge: f.badge,
+    docsUrl: f.docs_url || null,
   }))
   const apiIds = new Set(apiFlows.map((flow) => flow.id))
   const pendingFlows = PENDING_WORKFLOWS
@@ -164,13 +152,13 @@ const pipelines = computed<Pipeline[]>(() => {
       name: flow.name,
       desc: flow.description,
       icon: flowIcon({ ...flow, icon: 'default' }),
-      colorVar: `var(--kimi-${CATEGORY_COLOR_MAP.default})`,
       tags: flow.tags,
       version: flow.version,
       githubUrl: null,
       isReady: false,
       status: flow.status,
       badge: flow.badge,
+      docsUrl: null,
     }))
   return [...apiFlows, ...pendingFlows]
 })
@@ -186,9 +174,8 @@ const filteredPipelines = computed(() => {
 })
 
 const featuredPipeline = computed(() =>
-  filteredPipelines.value.find((p) => p.id === 'rna_seq') ||
-  filteredPipelines.value.find((p) => p.id.includes('rna')) ||
-  filteredPipelines.value[0],
+  filteredPipelines.value.find((p) => p.id === 'rna_seq' && p.isReady) ||
+  filteredPipelines.value.find((p) => p.id.includes('rna') && p.isReady),
 )
 
 const gridPipelines = computed(() => {
@@ -197,22 +184,20 @@ const gridPipelines = computed(() => {
 })
 
 function handleCardClick(p: Pipeline) {
-  if (p.status === 'UNDER_REVIEW' || p.badge === '专家审核中') {
-    message.warning('该流程当前正处于专家顾问委员会同行评议与基准测试（Benchmarking）阶段，即将开放，敬请期待！', {
-      duration: 5000,
-    })
-    return
-  }
+  if (!canStart(p)) return
   router.push({ name: 'flow-submit', params: { flowId: p.id } })
+}
+
+function canStart(p: Pipeline): boolean {
+  return p.isReady && p.status !== 'UNDER_REVIEW' && p.badge !== '专家审核中'
+}
+
+function flowStatus(p: Pipeline): string {
+  return canStart(p) ? '可开始' : p.badge || '暂未开放'
 }
 
 function displayVersion(version: string): string {
   return version.startsWith('v') ? version : `v${version}`
-}
-
-function openGithub(e: Event, url: string) {
-  e.stopPropagation()
-  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 watch(() => route.query.type, fetchFlows)
@@ -221,21 +206,22 @@ onMounted(fetchFlows)
 
 <template>
   <div class="flows-page" role="main" aria-label="分析流程中心">
+    <DatasetWorkspace v-if="typeof route.query.dataset === 'string'" :project-id="typeof route.query.project === 'string' ? route.query.project : null" :dataset-id="route.query.dataset" :version-id="typeof route.query.version === 'string' ? route.query.version : undefined" analysis-mode />
     <PageHeader
       class="animate-fade-in-up"
       :title="activeType ? typeLabels[activeType] || '分析流程' : '分析中心'"
-      :subtitle="activeType ? '当前筛选的分析流程，点击卡片即可提交任务' : '选择适合您研究需求的分析流程，快速启动多组学分析'"
+      :subtitle="activeType ? '查看当前分类的流程与开放状态' : '选择适合研究需求的分析流程，快速启动多组学分析'"
     >
       <template #actions>
         <div class="flows-header-actions">
         <NButton v-if="activeType" class="header-btn-secondary" @click="router.push('/flows')">
           查看全部流程
         </NButton>
-        <NButton class="header-btn-secondary" tag="a" href="https://github.com" target="_blank">
+        <NButton class="header-btn-secondary" tag="a" href="https://github.com/xsx123123/omichub" target="_blank" rel="noopener noreferrer">
           <template #icon><component :is="CodeSlashOutline" /></template>
-          Github 开源代码
+          GitHub 开源代码
         </NButton>
-        <NButton class="header-btn-secondary">
+        <NButton class="header-btn-secondary" tag="a" href="https://github.com/xsx123123/FlowFrame#readme" target="_blank" rel="noopener noreferrer">
           <template #icon><component :is="DocumentTextOutline" /></template>
           开发者文档
         </NButton>
@@ -243,9 +229,25 @@ onMounted(fetchFlows)
       </template>
     </PageHeader>
 
+    <button class="flowframe-card focus-ring" type="button" @click="flowFrameInfoVisible = true">
+      <span class="flowframe-icon" aria-hidden="true">
+        <NIcon :component="InformationCircleOutline" :size="22" />
+      </span>
+      <span class="flowframe-copy">
+        <span class="flowframe-eyebrow">流程架构说明</span>
+        <strong>所有分析流程均基于 FlowFrame 构建</strong>
+        <span class="flowframe-summary">统一的声明式配置、样本表规范与可复现执行环境，让不同组学流程拥有一致的使用体验。</span>
+      </span>
+      <NIcon class="flowframe-arrow" :component="ArrowForwardOutline" :size="20" aria-hidden="true" />
+    </button>
+
     <!-- 加载态 -->
-    <div v-if="loading && !pipelines.length" class="flows-loading">
+    <div v-if="loading && !flows?.length" class="flows-loading">
       <AppLoading text="加载分析流程..." />
+    </div>
+    <div v-else-if="error" class="flows-empty" role="alert">
+      <p>流程列表加载失败：{{ error }}</p>
+      <NButton secondary @click="fetchFlows()">重试</NButton>
     </div>
 
     <template v-else-if="pipelines.length">
@@ -255,48 +257,29 @@ onMounted(fetchFlows)
           <NIcon :component="FlameOutline" class="section-icon" aria-hidden="true" />
           推荐流程
         </h2>
-        <div
-          class="hero-card"
-          :style="{ '--hero-accent': featuredPipeline.colorVar }"
-          @click="handleCardClick(featuredPipeline)"
-        >
+        <div class="hero-card">
           <div class="hero-inner">
-            <div class="hero-icon" :style="{ background: `color-mix(in srgb, ${featuredPipeline.colorVar} 10%, transparent)` }">
+            <div class="hero-icon">
               <NIcon v-if="typeof featuredPipeline.icon !== 'string'" :component="featuredPipeline.icon" :size="22" />
               <span v-else>{{ featuredPipeline.icon }}</span>
             </div>
-
-          <div class="hero-body">
-            <div class="hero-title-row">
-              <h3 class="hero-title">{{ featuredPipeline.name }}</h3>
-              <span class="recommended-badge">
-                <NIcon :component="FlameOutline" aria-hidden="true" />
-                推荐
-              </span>
-              <span v-if="featuredPipeline.badge" class="review-badge">{{ featuredPipeline.badge }}</span>
-              <span class="version-badge">{{ displayVersion(featuredPipeline.version) }}</span>
-            </div>
-              <p class="hero-desc">{{ featuredPipeline.desc }}</p>
-              <div class="hero-tags">
-                <span
-                  v-for="tag in featuredPipeline.tags"
-                  :key="tag"
-                  class="hero-tag"
-                  :style="{ background: `color-mix(in srgb, ${featuredPipeline.colorVar} 12%, transparent)`, color: featuredPipeline.colorVar }"
-                >
-                  {{ tag }}
-                </span>
+            <div class="hero-body">
+              <div class="hero-title-row">
+                <h3 class="hero-title">{{ featuredPipeline.name }}</h3>
+                <span class="recommended-badge">推荐</span>
               </div>
+              <span class="flow-status">{{ flowStatus(featuredPipeline) }}</span>
+              <span class="flow-version">{{ displayVersion(featuredPipeline.version) }}</span>
             </div>
-
-            <button
-              v-if="featuredPipeline.githubUrl"
-              class="hero-github-link focus-ring"
-              title="查看源码"
-              @click="openGithub($event, featuredPipeline.githubUrl)"
-            >
-              <NIcon :size="20"><LogoGithub /></NIcon>
-            </button>
+            <div class="hero-description">
+              <p class="hero-desc">{{ featuredPipeline.desc }}</p>
+              <div class="flow-tags"><span v-for="tag in featuredPipeline.tags.slice(0, 3)" :key="tag" class="flow-tag">{{ tag }}</span><span v-if="featuredPipeline.tags.length > 3" class="flow-tag">+{{ featuredPipeline.tags.length - 3 }}</span></div>
+            </div>
+            <div class="hero-actions">
+              <NButton type="primary" @click="handleCardClick(featuredPipeline)">开始分析</NButton>
+              <NButton v-if="featuredPipeline.docsUrl || featuredPipeline.githubUrl" tag="a" :href="featuredPipeline.docsUrl || featuredPipeline.githubUrl || undefined" target="_blank" rel="noopener noreferrer" secondary>了解流程</NButton>
+              <NButton v-else secondary @click="handleCardClick(featuredPipeline)">查看流程配置</NButton>
+            </div>
           </div>
         </div>
       </section>
@@ -308,50 +291,32 @@ onMounted(fetchFlows)
           {{ activeType ? '筛选结果' : '全部流程' }}
         </h2>
 
-        <div v-animate-list class="flow-grid">
-          <div
-            v-for="p in gridPipelines"
-            :key="p.id"
-            class="flow-card"
-            :style="{ '--flow-accent': p.colorVar }"
-            @click="handleCardClick(p)"
-          >
-            <div class="flow-inner">
-              <div
-                class="flow-icon"
-                :style="{ background: `color-mix(in srgb, ${p.colorVar} 10%, transparent)` }"
-              >
+        <div v-if="!gridPipelines.length" class="flows-empty flows-filter-empty">
+          <p>该分类暂无匹配流程</p>
+          <NButton secondary @click="router.push('/flows')">查看全部流程</NButton>
+        </div>
+        <div v-else v-animate-list class="flow-grid">
+          <article v-for="p in gridPipelines" :key="p.id" class="flow-card">
+            <div class="flow-card-header">
+              <div class="flow-icon">
                 <NIcon v-if="typeof p.icon !== 'string'" :component="p.icon" :size="20" />
                 <span v-else>{{ p.icon }}</span>
               </div>
-              <div class="flow-body">
-                <div class="flow-title-row">
-                  <h4 class="flow-title">{{ p.name }}</h4>
-                  <span v-if="p.badge" class="review-badge">{{ p.badge }}</span>
-                  <span class="flow-version">{{ displayVersion(p.version) }}</span>
-                </div>
-                <p class="flow-desc">{{ p.desc }}</p>
-                <div class="flow-tags">
-                  <span
-                    v-for="tag in p.tags"
-                    :key="tag"
-                    class="flow-tag"
-                    :style="{ background: `color-mix(in srgb, ${p.colorVar} 10%, transparent)`, color: p.colorVar }"
-                  >
-                    {{ tag }}
-                  </span>
-                </div>
-              </div>
-              <button
-                v-if="p.githubUrl"
-                class="flow-github-link focus-ring"
-                title="查看源码"
-                @click="openGithub($event, p.githubUrl)"
-              >
-                <NIcon :size="18"><LogoGithub /></NIcon>
-              </button>
+              <h3 class="flow-title">{{ p.name }}</h3>
+              <span class="flow-status" :class="{ 'flow-status--review': !canStart(p) }">{{ flowStatus(p) }}</span>
             </div>
-          </div>
+            <p class="flow-desc" :title="p.desc">{{ p.desc }}</p>
+            <div class="flow-metadata">
+              <span class="flow-version">{{ displayVersion(p.version) }}</span>
+              <div class="flow-tags"><span v-for="tag in p.tags.slice(0, 3)" :key="tag" class="flow-tag">{{ tag }}</span><span v-if="p.tags.length > 3" class="flow-tag">+{{ p.tags.length - 3 }}</span></div>
+            </div>
+            <div class="flow-actions">
+              <NButton v-if="canStart(p)" type="primary" size="small" @click="handleCardClick(p)">开始分析</NButton>
+              <NButton v-if="p.docsUrl || p.githubUrl" tag="a" :href="p.docsUrl || p.githubUrl || undefined" target="_blank" rel="noopener noreferrer" text>了解流程</NButton>
+              <NButton v-else-if="canStart(p)" text @click="handleCardClick(p)">查看配置</NButton>
+              <span v-else class="flow-unavailable">{{ p.status === 'UNDER_REVIEW' ? '审核完成后开放' : '暂未开放' }}</span>
+            </div>
+          </article>
         </div>
       </section>
     </template>
@@ -362,6 +327,56 @@ onMounted(fetchFlows)
       <p class="text-sm font-medium text-gray-500 mb-1">暂无分析流程</p>
       <p class="text-xs text-gray-400">请联系管理员配置流程 YAML 文件</p>
     </div>
+
+    <NModal
+      v-model:show="flowFrameInfoVisible"
+      preset="card"
+      title="FlowFrame 流程框架"
+      :bordered="false"
+      :style="{ width: 'min(840px, calc(100vw - 32px))', maxHeight: '85vh', overflowY: 'auto' }"
+      aria-label="FlowFrame 流程框架说明"
+    >
+      <div class="flowframe-modal-content">
+        <div class="flowframe-modal-intro">
+          <span class="flowframe-modal-eyebrow">分析中心的流程基座</span>
+          <p class="flowframe-modal-subtitle">标准化、可复现的科研分析工作流</p>
+          <p class="flowframe-modal-lead">FlowFrame 是 CygnusX 分析中心采用的流程规范。每个流程以版本化 YAML 描述参数、样本表、比较组和执行映射，平台据此生成输入文件并提交到标准化运行环境。</p>
+        </div>
+        <div class="flowframe-points">
+          <div class="flowframe-point">
+            <span class="flowframe-point-index">01</span>
+            <NIcon :component="LayersOutline" :size="22" aria-hidden="true" />
+            <div><strong>声明式配置</strong><p>以版本化配置描述流程参数和输入契约。</p></div>
+          </div>
+          <div class="flowframe-point">
+            <span class="flowframe-point-index">02</span>
+            <NIcon :component="ClipboardOutline" :size="22" aria-hidden="true" />
+            <div><strong>统一数据规范</strong><p>样本表、比较组和运行目录遵循统一契约。</p></div>
+          </div>
+          <div class="flowframe-point">
+            <span class="flowframe-point-index">03</span>
+            <NIcon :component="GitBranchOutline" :size="22" aria-hidden="true" />
+            <div><strong>可复现执行</strong><p>流程版本随任务保存，由平台调度和监控执行。</p></div>
+          </div>
+        </div>
+        <div class="flowframe-architecture">
+          <strong>从流程定义到分析结果</strong>
+          <ol>
+            <li>流程配置</li><li>输入规范化</li><li>任务执行</li><li>结果产物</li>
+          </ol>
+        </div>
+        <div class="flowframe-modal-actions">
+          <NButton tag="a" href="https://github.com/xsx123123/FlowFrame" target="_blank" rel="noopener noreferrer" type="primary">
+            <template #icon><NIcon :component="LogoGithub" /></template>
+            查看 FlowFrame
+          </NButton>
+          <NButton tag="a" href="https://github.com/xsx123123/FlowFrame#readme" target="_blank" rel="noopener noreferrer" secondary>
+            <template #icon><NIcon :component="DocumentTextOutline" /></template>
+            阅读 README
+          </NButton>
+        </div>
+      </div>
+    </NModal>
   </div>
 </template>
 
@@ -385,6 +400,150 @@ onMounted(fetchFlows)
   display: flex;
   gap: 12px;
   flex-shrink: 0;
+}
+
+.flowframe-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 28px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--neutral-border));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--brand-primary-light) 52%, var(--neutral-card));
+  color: var(--neutral-text-1);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.flowframe-card:hover {
+  border-color: var(--brand-primary);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
+}
+
+.flowframe-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: var(--brand-primary);
+  background: var(--neutral-card);
+}
+
+.flowframe-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.flowframe-eyebrow {
+  color: var(--brand-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.flowframe-copy strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.flowframe-summary {
+  color: var(--neutral-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.flowframe-arrow {
+  flex: 0 0 auto;
+  color: var(--neutral-text-3);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.flowframe-card:hover .flowframe-arrow {
+  color: var(--brand-primary);
+  transform: translateX(3px);
+}
+
+.flowframe-modal-content {
+  color: var(--neutral-text-2);
+}
+
+.flowframe-modal-intro {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--neutral-border);
+}
+
+.flowframe-modal-eyebrow {
+  color: var(--brand-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.flowframe-modal-lead {
+  margin: 6px 0 0;
+  color: var(--neutral-text-2);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.flowframe-points {
+  display: grid;
+  gap: 16px;
+  padding: 20px 0 4px;
+}
+
+.flowframe-point {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.flowframe-point-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--neutral-border);
+  border-radius: 8px;
+  background: var(--neutral-hover);
+  color: var(--brand-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.flowframe-point strong {
+  color: var(--neutral-text-1);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.flowframe-point p {
+  margin: 4px 0 0;
+  color: var(--neutral-text-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.flowframe-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--neutral-border);
 }
 
 .header-btn-secondary {
@@ -416,321 +575,59 @@ onMounted(fetchFlows)
   margin-bottom: 32px;
 }
 
-/* ===== Hero Card ===== */
-.hero-card {
-  position: relative;
-  border: none;
-  border-radius: var(--radius-card);
-  padding: 20px;
-  background: var(--neutral-card);
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.hero-card::before {
-  content: '';
-  position: absolute;
-  top: 16px;
-  bottom: 16px;
-  left: 0;
-  width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--brand-primary);
-}
-
-.hero-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-card-hover);
-}
-
-.hero-inner {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.hero-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  flex-shrink: 0;
-}
-
-.hero-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.hero-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero-title {
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--neutral-text-1);
-  margin: 0;
-}
-
-.version-badge {
-  font-size: 12px;
-  color: var(--neutral-text-3);
-  background: var(--neutral-hover);
-  padding: 2px 8px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.recommended-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: var(--brand-primary);
-  background: var(--brand-primary-light);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.review-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border: 1px solid #fde68a;
-  border-radius: 999px;
-  color: #d97706;
-  background: rgba(255, 251, 235, 0.9);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.recommended-badge :deep(.n-icon) {
-  font-size: 14px;
-}
-
-.hero-desc {
-  font-size: 14px;
-  color: var(--neutral-text-2);
-  margin: 6px 0 12px 0;
-  line-height: 1.5;
-}
-
-.hero-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hero-tag {
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-weight: 500;
-}
-
-.hero-github-link {
-  flex-shrink: 0;
-  color: var(--neutral-text-3);
-  opacity: 0;
-  transition: opacity 0.2s ease, color 0.2s ease;
-  display: inline-flex;
-  padding: 4px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.hero-card:hover .hero-github-link {
-  opacity: 1;
-}
-
-.hero-github-link:hover {
-  color: #24292f;
-  animation: github-wiggle 0.5s ease-in-out;
-}
-
-@keyframes github-wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-10deg); }
-  75% { transform: rotate(10deg); }
-}
-
-/* ===== All Flows Grid ===== */
-.all-flows-section {
-  margin-bottom: 24px;
-}
-
+/* Workflow catalog surface */
+.hero-card, .flow-card { background: var(--neutral-card); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); box-shadow: none; padding: 20px; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.hero-card { border-color: color-mix(in srgb, var(--brand-primary) 30%, var(--neutral-border)); }
+.hero-card:hover, .flow-card:hover { border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--neutral-border)); box-shadow: var(--shadow-card); }
+.hero-inner { display: grid; grid-template-columns: 48px minmax(180px, 1fr) minmax(220px, 1.2fr) auto; align-items: center; gap: 18px; }
+.hero-body, .hero-description { min-width: 0; }
+.hero-icon, .flow-icon { background: var(--brand-primary-light); color: var(--brand-primary); border-radius: 10px; }
+.hero-icon, .flow-icon { display: grid; place-items: center; flex: none; }
+.hero-icon { width: 48px; height: 48px; }
+.flow-icon { width: 40px; height: 40px; }
+.hero-title-row { display: flex; align-items: center; gap: 8px; }
+.hero-title { margin: 0; color: var(--neutral-text-1); font-size: 17px; }
+.recommended-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; background: var(--brand-primary-light); color: var(--brand-primary); font-size: 12px; font-weight: 600; }
+.hero-title-row { flex-wrap: wrap; }
+.hero-title, .flow-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; font-weight: 600; }
+.hero-desc { margin: 0 0 10px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.hero-desc, .flow-desc { color: var(--neutral-text-2); font-size: 13px; line-height: 1.55; }
+.hero-actions { display: flex; flex-direction: column; gap: 8px; min-width: 116px; }
 .flow-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 18px;
+  row-gap: 18px;
 }
-
-.flow-card {
-  position: relative;
-  border: 1px solid var(--neutral-border);
-  border-radius: 10px;
-  padding: 16px;
-  background: var(--neutral-card);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-
-.flow-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 3px;
-  height: 100%;
-  background: var(--flow-accent);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.flow-card:hover::before {
-  opacity: 1;
-}
-
-.flow-card:hover {
-  border-color: var(--neutral-text-1);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--neutral-text-1) 6%, transparent);
-}
-
-.flow-github-link {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1;
-  color: var(--neutral-text-3);
-  opacity: 0;
-  transition: opacity 0.2s ease, color 0.2s ease;
-  display: inline-flex;
-  padding: 4px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.flow-card:hover .flow-github-link {
-  opacity: 1;
-}
-
-.flow-card:hover .flow-version {
-  opacity: 0;
-}
-
-.flow-github-link:hover {
-  color: #24292f;
-  animation: github-wiggle 0.5s ease-in-out;
-}
-
-.flow-inner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.flow-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.flow-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.flow-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  gap: 8px;
-}
-
-.flow-title {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--neutral-text-1);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.flow-version {
-  font-size: 11px;
-  color: var(--neutral-text-3);
-  flex-shrink: 0;
-  transition: opacity 0.2s ease;
-}
-
-.flow-desc {
-  font-size: 13px;
-  color: var(--neutral-text-2);
-  line-height: 1.45;
-  margin: 0 0 10px 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.flow-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.flow-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-@media (max-width: 768px) {
-  .flows-header-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  .header-btn-secondary {
-    flex: 1;
-  }
-  .flow-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-github-link:hover {
-    animation: none;
-  }
-}
+.flow-card { display: flex; flex-direction: column; min-width: 0; }
+.flow-card-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.flow-title { flex: 1; min-width: 140px; line-height: 1.45; }
+.flow-title { margin: 0; color: var(--neutral-text-1); font-size: 15px; }
+.flow-status { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: var(--neutral-hover); color: var(--neutral-text-2); font-size: 12px; white-space: nowrap; }
+.flow-status--review { color: var(--arco-warning); background: color-mix(in srgb, var(--arco-warning) 10%, var(--neutral-card)); }
+.flow-desc { margin: 16px 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.flow-metadata { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: auto; }
+.flow-version { color: var(--neutral-text-2); font-size: 12px; white-space: nowrap; }
+.flow-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.flow-tag { padding: 2px 8px; border-radius: 5px; font-size: 11px; }
+.flow-tag { background: var(--neutral-hover); color: var(--neutral-text-2); }
+.flow-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--neutral-border); }
+.flow-unavailable { color: var(--neutral-text-2); font-size: 12px; }
+.flowframe-points { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.flowframe-point { position: relative; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--neutral-border); border-radius: var(--radius-card); }
+.flowframe-point > .n-icon { color: var(--brand-primary); }
+.flowframe-point-index { position: absolute; right: 14px; top: 14px; }
+.flowframe-point strong { font-size: 14px; font-weight: 600; }
+.flowframe-architecture { margin-top: 20px; padding: 18px; border-radius: var(--radius-card); background: var(--neutral-hover); color: var(--neutral-text-1); font-size: 13px; }
+.flowframe-architecture ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 14px 0 0; list-style: none; counter-reset: stage; }
+.flowframe-architecture li { counter-increment: stage; padding: 10px; border: 1px solid var(--neutral-border); border-radius: 8px; background: var(--neutral-card); text-align: center; }
+.flowframe-architecture li::before { content: counter(stage, decimal-leading-zero) ' '; color: var(--brand-primary); font-weight: 700; }
+.flowframe-architecture li:not(:last-child)::after { content: '→'; margin-left: 8px; color: var(--brand-primary); }
+.flowframe-modal-subtitle { margin: 6px 0 0; color: var(--neutral-text-1); font-size: 16px; font-weight: 600; }
+@media (max-width: 1180px) { .flow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hero-inner { grid-template-columns: 48px minmax(0, 1fr) auto; } .hero-description { grid-column: 2; } .hero-actions { grid-column: 3; grid-row: 1 / 3; } }
+@media (max-width: 768px) { .hero-inner { grid-template-columns: 48px minmax(0, 1fr); } .hero-description, .hero-actions { grid-column: 1 / -1; grid-row: auto; } .hero-actions { flex-direction: row; flex-wrap: wrap; } .flowframe-points { grid-template-columns: 1fr; } .flowframe-architecture ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.flows-header-actions { gap: 12px; }
+@media (max-width: 768px) { .flows-header-actions { width: 100%; flex-wrap: wrap; } .header-btn-secondary { flex: 1; } .flowframe-card { align-items: flex-start; } .flowframe-arrow { margin-top: 10px; } }
+@media (max-width: 420px) { .flows-page { padding: 16px; } .flow-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .hero-card, .flow-card, .flowframe-card, .flowframe-arrow { transition: none; } .hero-card:hover, .flow-card:hover, .flowframe-card:hover { transform: none; } }
 </style>

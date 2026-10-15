@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { Task, TaskLog } from '@/types'
+import type { Report } from '@/types/report'
 import type { RunProgress } from '@/types/download'
 import DOMPurify from 'dompurify'
 import apiClient from '@/api/client'
+import { reportApi, downloadReportFile } from '@/api/report'
 import { useDownloadProgress } from '@/composables/useDownloadProgress'
 import {
   NAlert,
@@ -24,10 +26,13 @@ import { CopyOutline } from '@vicons/ionicons5'
 import { useClipboard } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
+import { useReproducibleReport } from '@/composables/useReproducibleReport'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatUserPath, redactUserHomePaths } from '@/utils/userPathDisplay'
 
 const route = useRoute()
+const router = useRouter()
 const taskId = computed(() => route.params.taskId as string)
 const message = useMessage()
 const clipboard = useClipboard()
@@ -36,9 +41,18 @@ const task = ref<Task | null>(null)
 const logs = ref<TaskLog[]>([])
 const loading = ref(false)
 const error = ref('')
+const taskReports = ref<Report[]>([])
 const socket = ref<WebSocket | null>(null)
 // 记录上次轮询到的任务状态，用于检测「运行中 → 已完成」的状态转换并触发提示
 const lastStatus = ref<string>('')
+const {
+  job: reportJob, generating: reportGenerating, error: reportError,
+  statusText: reportStatusText, generate: generateReport,
+} = useReproducibleReport(taskId, (job) => {
+  if (job.evidence_partial) message.warning('报告已归档，部分执行证据未记录，请查看报告中的限制说明。')
+  else message.success('可复现报告已归档')
+  void router.push({ name: 'reports', query: { reportId: job.report_id! } })
+})
 
 // 下载进度：逐 run 进度条
 const { progress: downloadProgress, startPolling: startProgressPolling, stopPolling: stopProgressPolling } =
@@ -97,6 +111,11 @@ const DOWNLOAD_FLOW_ID = 'ebi_download'
 
 const isDownloadTask = computed(() => task.value?.flow_id === DOWNLOAD_FLOW_ID)
 const isMasTask = computed(() => task.value?.flow_id === 'mas')
+const canGenerateReport = computed(() => ['success', 'completed', 'failed', 'cancelled'].includes(task.value?.status || '') && task.value?.flow_id === 'rna_seq')
+const scientificReport = computed(() => taskReports.value.find(report => report.report_kind === 'scientific'))
+const reproducibilityReport = computed(() => taskReports.value.find(report => report.report_kind === 'reproducibility'))
+const deliveryReport = computed(() => taskReports.value.find(report => report.report_kind === 'delivery'))
+const reportFile = (report: Report | undefined, type: string) => report?.files.find(file => file.type === type)
 
 // 阶段标签映射
 function stageLabel(stage: string): string {
@@ -183,6 +202,7 @@ async function fetchTask(silent = false) {
   try {
     const res = await apiClient.get<Task>(`/tasks/${taskId.value}`)
     task.value = res.data
+    if (canGenerateReport.value) void fetchTaskReports()
     // 状态转换检测：仅当上次状态存在且非 success、当前为 success 时提示，
     // 避免首次打开历史已完成任务时重复弹窗
     if (res.data.status === 'success' && lastStatus.value && lastStatus.value !== 'success') {
@@ -200,6 +220,40 @@ async function fetchTask(silent = false) {
     if (!silent) error.value = e.response?.data?.detail || '获取任务详情失败'
   } finally {
     if (!silent) loading.value = false
+  }
+}
+
+async function fetchTaskReports() {
+  try {
+    const res = await reportApi.getReports({ task_id: taskId.value, page: 1, page_size: 50 })
+    taskReports.value = res.data.items
+  } catch {
+    taskReports.value = []
+  }
+}
+
+async function createDeliveryPackage() {
+  const source = scientificReport.value || reproducibilityReport.value
+  if (!source) {
+    message.warning('请先生成科学报告或可复现性报告。')
+    return
+  }
+  try {
+    const res = await reportApi.buildDeliveryPackage(source.id)
+    taskReports.value = [res.data, ...taskReports.value.filter(report => report.id !== res.data.id)]
+    message.success('科研交付包已生成。')
+  } catch {
+    message.error('科研交付包生成失败，请检查执行证据和文件完整性。')
+  }
+}
+
+async function downloadReportFormat(report: Report | undefined, type: string) {
+  const file = reportFile(report, type)
+  if (!report || !file) return
+  try {
+    await downloadReportFile(report, file.id)
+  } catch {
+    message.error('文件下载失败，文件可能已不可用。')
   }
 }
 
@@ -318,6 +372,48 @@ watch(taskId, async () => {
           :status="task.status === 'failed' ? 'error' : 'success'"
           :indicator-text-color="task.status === 'failed' ? 'var(--arco-danger)' : 'var(--arco-success)'"
         />
+        <NAlert v-if="reportError" type="warning" :show-icon="true" style="margin-top: 16px">
+          {{ reportError }}
+        </NAlert>
+        <NSpace v-if="canGenerateReport" justify="end" align="center" style="margin-top: 16px">
+          <NTag v-if="reportJob" :type="reportJob.status === 'failed' ? 'error' : 'info'">
+            {{ reportStatusText }}
+          </NTag>
+          <NButton type="primary" :loading="reportGenerating" @click="generateReport">
+            生成可复现报告
+          </NButton>
+        </NSpace>
+        <div v-if="canGenerateReport" class="report-delivery-panel">
+          <div class="report-delivery-heading">
+            <strong>科研报告与交付</strong>
+            <NButton text size="small" @click="fetchTaskReports">刷新</NButton>
+          </div>
+          <div class="report-delivery-row">
+            <span>Scientific Report</span>
+            <NTag v-if="scientificReport" type="success" size="small">已登记 · v{{ scientificReport.version || 1 }}</NTag>
+            <NTag v-else size="small">未登记</NTag>
+            <NButton v-if="reportFile(scientificReport, 'html')" text size="small" @click="downloadReportFormat(scientificReport, 'html')">HTML</NButton>
+            <NButton v-if="reportFile(scientificReport, 'pdf')" text size="small" @click="downloadReportFormat(scientificReport, 'pdf')">PDF</NButton>
+          </div>
+          <div class="report-delivery-row">
+            <span>Reproducibility Record</span>
+            <NTag v-if="reproducibilityReport" :type="reproducibilityReport.evidence_partial ? 'warning' : 'success'" size="small">
+              {{ reproducibilityReport.evidence_partial ? '证据不完整' : '已登记' }}
+            </NTag>
+            <NTag v-else size="small">未生成</NTag>
+            <NButton v-if="reportFile(reproducibilityReport, 'html')" text size="small" @click="downloadReportFormat(reproducibilityReport, 'html')">HTML</NButton>
+            <NButton v-if="reportFile(reproducibilityReport, 'pdf')" text size="small" @click="downloadReportFormat(reproducibilityReport, 'pdf')">PDF</NButton>
+          </div>
+          <div class="report-delivery-row">
+            <span>Research Delivery Package</span>
+            <NTag v-if="deliveryReport" :type="deliveryReport.evidence_partial ? 'warning' : 'success'" size="small">
+              {{ deliveryReport.evidence_partial ? '部分交付' : '完整交付' }}
+            </NTag>
+            <NButton v-if="deliveryReport" text size="small" @click="downloadReportFormat(deliveryReport, 'zip')">下载 ZIP</NButton>
+            <NButton v-else type="primary" secondary size="small" @click="createDeliveryPackage">生成交付包</NButton>
+          </div>
+          <small class="report-delivery-note">文件生成成功、证据完整性和科研复现结果是三个不同状态。</small>
+        </div>
 
         <!-- 逐 Run 进度（仅下载任务且 progress API 有数据时显示） -->
         <div v-if="isDownloadTask && runList.length > 0" class="run-progress-section">
@@ -400,6 +496,40 @@ watch(taskId, async () => {
 
 .overview-card {
   margin-bottom: 24px;
+}
+
+.report-delivery-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--neutral-divider, #e5e6eb);
+}
+
+.report-delivery-heading,
+.report-delivery-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-delivery-heading {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.report-delivery-row {
+  min-height: 34px;
+  flex-wrap: wrap;
+}
+
+.report-delivery-row > span:first-child {
+  min-width: 190px;
+  color: var(--neutral-text-1, #1d2129);
+}
+
+.report-delivery-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--neutral-text-3, #86909c);
 }
 
 /* 数据路径：等宽字体便于辨识，长路径可折行不撑破布局 */

@@ -1,0 +1,9 @@
+input_type: raw_integer_counts
+source_reviewed: false
+count_matrix: null
+sample_metadata: null
+design: '~ group'
+reference: null
+treatment: null
+alpha: 0.05
+fit_type: parametric

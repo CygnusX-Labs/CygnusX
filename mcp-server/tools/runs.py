@@ -43,12 +43,24 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"查询产物失败: {exc.detail}"}
 
     @mcp.tool()
-    async def cygnusx_confirm_run_plan(run_id: str, user_confirmed: bool = False) -> dict:
-        """确认 Run 计划；必须由用户明确确认，Agent 不得自行确认。"""
-        if not user_confirmed:
-            return {"success": True, "needs_confirmation": True, "summary": "请在用户明确同意后再次调用。"}
+    async def cygnusx_confirm_run_plan(
+        run_id: str, confirmation_id: str = "", user_confirmed: bool = False
+    ) -> dict:
+        """Confirm a Run only with a server-issued, human-approved confirmation ID."""
+        if user_confirmed:
+            return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请使用服务端 confirmation_id。"}
+        if not confirmation_id:
+            confirmation = await api.create_tool_confirmation(
+                "cygnusx_confirm_run_plan", {"run_id": run_id}
+            )
+            return {
+                "success": True,
+                "needs_confirmation": True,
+                "summary": "请在平台网页批准 Run 确认记录后携带 confirmation_id 重试。",
+                "data": {"run_id": run_id, "confirmation": confirmation},
+            }
         try:
-            data = await api.confirm_run(run_id, True)
+            data = await api.confirm_run(run_id, confirmation_id)
             return {"success": True, "summary": "Run 已确认并进入任务队列", "data": data}
         except CygnusXAPIError as exc:
             return {"success": False, "summary": f"确认 Run 失败: {exc.detail}"}

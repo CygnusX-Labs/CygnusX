@@ -8,6 +8,16 @@
 
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
 
+> **外部通道当前安全契约**：`main.py` 与 `pipelines_main.py` 共用 `core/runtime.py`。
+> HTTP/SSE 仅允许回环监听且强制独立 `CYGNUSX_HTTP_TOKEN`（至少 32 字符）；旧的
+> 非回环开关不能绕过限制，尚无可信网关模式。平台 API Key 只代表其绑定 owner，入站
+> Token/Header 不能指定平台用户。写工具只接受 JWT 人工批准后的 `confirmation_id`，
+> 布尔值不是凭证。确认服务必须使用 Redis，故障返回 503，不再自动回退内存。
+> task 审批先原子占用 `SUBMITTING` 再调用 TaskService；执行后记录失败需要人工对账，
+> 不保证跨 Redis/数据库/队列事务的 exactly-once。验收证据见
+> `docs/implementation/cygnusx-phase0b-runtime-integration-implementation.md`，未完成的
+> 外部传输和多进程验收不能用进程内测试替代。
+
 > **合并说明（2026-09-18）**：本文档与 `mcp_builder_agent.md`（as-built 实现文档）合一——后者全部内容并入为 §5"MCP 构建师 agent-mcp-builder（as-built）"，原文件已删除；本文档原 §4–§5"Agent 自生成 MCP 可行性分析与三阶段提案"压缩为历史注记（新 §4），保留能力复用度结论要点，删除被最终实现取代的重复设计稿（双份 AST 规则表、schema 扩展 SQL、`/mcp/*` 端点提案、五阶段部署流水线图）。最终实现见 §5。
 
 ## 这个 MCP 模块如何发挥作用

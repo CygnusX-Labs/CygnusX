@@ -53,6 +53,9 @@ class CygnusXAPIClient:
     async def get(self, path: str, **kwargs: Any) -> Any:
         return await self._request("GET", path, **kwargs)
 
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
     async def post(self, path: str, **kwargs: Any) -> Any:
         return await self._request("POST", path, **kwargs)
 
@@ -69,8 +72,14 @@ class CygnusXAPIClient:
     async def get_task(self, task_id: str) -> dict:
         return await self.get(f"/tasks/{task_id}")
 
-    async def cancel_task(self, task_id: str) -> dict:
-        return await self.post(f"/tasks/{task_id}/cancel")
+    async def create_tool_confirmation(self, tool_name: str, arguments: dict) -> dict:
+        return await self.post(
+            "/ai/tool-invocations", json={"tool_name": tool_name, "arguments": arguments}
+        )
+
+    async def cancel_task(self, task_id: str, confirmation_id: str = "") -> dict:
+        payload = {"confirmation_id": confirmation_id} if confirmation_id else None
+        return await self.post(f"/tasks/{task_id}/cancel", json=payload)
 
     async def get_task_dag(self, task_id: str) -> dict:
         return await self.get(f"/tasks/{task_id}/dag")
@@ -109,8 +118,10 @@ class CygnusXAPIClient:
     async def submit_snakemake_plan(self, payload: dict) -> dict:
         return await self.post("/runs/snakemake/plan", json=payload)
 
-    async def confirm_run(self, run_id: str, user_confirmed: bool) -> dict:
-        return await self.post(f"/runs/{run_id}/confirm", json={"user_confirmed": user_confirmed})
+    async def confirm_run(self, run_id: str, confirmation_id: str) -> dict:
+        return await self.post(
+            f"/runs/{run_id}/confirm", json={"confirmation_id": confirmation_id}
+        )
 
     # ===== Pipelines =====
     async def list_available_pipelines(self) -> list[dict[str, Any]]:
@@ -126,11 +137,9 @@ class CygnusXAPIClient:
         return await self.post(f"/pipelines/{pipeline_type}/prepare", json=payload)
 
     async def submit_pipeline(self, pipeline_type: str, prepared_params: dict[str, Any]) -> dict:
-        # 确认门在 MCP 工具层（user_confirmed=True 才会走到这里），
-        # 平台侧据此字段放行提交。
         return await self.post(
             f"/pipelines/{pipeline_type}/submit",
-            json={"prepared_params": prepared_params, "user_confirmed": True},
+            json={"prepared_params": prepared_params},
         )
 
     async def get_pipeline_status(self, pipeline_type: str, task_id: str) -> dict:

@@ -16,7 +16,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 2. 调用 cygnusx_list_files() 查看我已有的数据文件
 3. 根据我的数据配置参数和样本表
 4. 调用 cygnusx_preview_analysis(flow_id="{flow_id}") 验证参数
-5. 调用 cygnusx_submit_analysis(user_confirmed=True) 提交分析
+5. 调用 cygnusx_submit_analysis，按返回的 confirmation_id 等待平台网页确认后重试
 6. 使用 cygnusx_get_task_progress() 轮询监控进度直到完成
 7. 完成后调用 cygnusx_get_task_outputs() 查看结果
 
@@ -71,11 +71,11 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         """引导完成从数据下载到分析的完整流程"""
         return f"""请帮我完成从数据下载到分析的完整流程：
 
-1. 提交下载: cygnusx_submit_download(source="ebi", accession="{accession}", user_confirmed=True)
+1. 提交下载: cygnusx_submit_download(source="ebi", accession="{accession}")，按返回的 confirmation_id 等待平台网页确认
 2. 监控下载进度: cygnusx_get_download_progress() 直到完成
 3. 查看下载的数据: cygnusx_list_files(directory="raw_data")
 4. 配置 {flow_id} 分析参数（根据下载的样本信息）
-5. 提交分析: cygnusx_submit_analysis(flow_id="{flow_id}", ..., user_confirmed=True)
+5. 提交分析: cygnusx_submit_analysis(flow_id="{flow_id}", ...)，按返回的 confirmation_id 等待平台网页确认
 6. 监控分析进度直到完成
 7. 解读分析结果
 

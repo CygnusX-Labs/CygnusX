@@ -8,6 +8,11 @@ from pydantic import BaseModel
 
 from cygnusx.api.deps import CurrentUserId, DbSession
 from cygnusx.application.schemas.run_plan import SnakemakePlanSubmit, SnakemakePlanView
+from cygnusx.application.services.tool_confirmation_service import (
+    ConfirmationError,
+    get_tool_confirmation_service,
+)
+from cygnusx.core.exceptions import ValidationError
 from cygnusx.application.services.run_plan_service import RunPlanService
 
 router = APIRouter()
@@ -21,7 +26,8 @@ ServiceDep = Annotated[RunPlanService, Depends(get_service)]
 
 
 class RunConfirmRequest(BaseModel):
-    user_confirmed: bool
+    user_confirmed: bool = False
+    confirmation_id: str | None = None
 
 
 @router.post("/snakemake/plan", response_model=SnakemakePlanView, status_code=201)
@@ -48,7 +54,18 @@ async def confirm_run(
     current_user_id: CurrentUserId,
     service: ServiceDep,
 ) -> SnakemakePlanView:
-    return await service.confirm(UUID(current_user_id), run_id, req.user_confirmed)
+    if not req.confirmation_id:
+        raise ValidationError("确认 Run 必须携带服务端 confirmation_id")
+    try:
+        await get_tool_confirmation_service().consume_tool_confirmation(
+            current_user_id,
+            req.confirmation_id,
+            "cygnusx_confirm_run_plan",
+            {"run_id": str(run_id)},
+        )
+    except ConfirmationError as exc:
+        raise ValidationError(f"确认凭证校验失败({exc.code}): {exc.message}") from exc
+    return await service.confirm(UUID(current_user_id), run_id, True)
 
 
 @router.get("/{run_id}/events")

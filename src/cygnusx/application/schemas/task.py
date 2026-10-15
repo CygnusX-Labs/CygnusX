@@ -22,6 +22,13 @@ class TaskSubmitRequest(CygnusXBaseSchema):
     comparisons: list[dict[str, Any]] | None = None
     execution_mode: ExecutionMode = ExecutionMode.LOCAL
     idempotency_key: str | None = Field(default=None, max_length=128)
+    confirmation_id: str | None = Field(default=None, max_length=128, exclude=True)
+
+
+class TaskCancelRequest(CygnusXBaseSchema):
+    """Optional external-MCP confirmation for task cancellation."""
+
+    confirmation_id: str | None = Field(default=None, max_length=128)
 
 
 class TaskLogResponse(CygnusXBaseSchema):

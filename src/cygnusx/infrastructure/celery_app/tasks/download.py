@@ -13,13 +13,14 @@ import glob
 import os
 import re
 from datetime import datetime
-from uuid import UUID
 from ftplib import FTP
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from uuid import UUID
 
 from celery import shared_task
 
 from cygnusx.core.config import get_settings
+from cygnusx.core.exceptions import ValidationError
 from cygnusx.domain.task.value_objects import LogLevel, TaskStatus
 from cygnusx.infrastructure.cache.pubsub import publish_task_log
 from cygnusx.infrastructure.execution.base import ExecutionContext
@@ -772,8 +773,11 @@ async def _register_downloaded_files(
         SqlAlchemyUserRepository,
     )
 
-    work_path = Path(work_dir)
-    root_path = Path(storage_root)
+    work_path = await asyncio.to_thread(Path(work_dir).resolve)
+    root_path = await asyncio.to_thread(Path(storage_root).resolve)
+    owner_root = root_path / "users" / str(user_id)
+    if not work_path.is_relative_to(owner_root):
+        raise ValidationError("下载产物目录不属于当前用户")
     if not await asyncio.to_thread(work_path.exists):
         return
 
@@ -796,7 +800,12 @@ async def _register_downloaded_files(
             return FileType.BAM
         return FileType.OTHER
 
-    files = await asyncio.to_thread(lambda: [f for f in work_path.rglob("*") if f.is_file()])
+    files = await asyncio.to_thread(
+        lambda: [
+            f for f in work_path.rglob("*")
+            if f.is_file() and not f.is_symlink() and f.resolve().is_relative_to(owner_root)
+        ]
+    )
 
     new_size = 0
     for f in files:

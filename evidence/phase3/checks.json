@@ -1,0 +1,83 @@
+[
+  {
+    "name": "ruff-all",
+    "command": [
+      ".venv/bin/ruff",
+      "check",
+      "src/",
+      "tests/"
+    ],
+    "exit": 1,
+    "seconds": 0.03
+  },
+  {
+    "name": "mypy-all",
+    "command": [
+      ".venv/bin/mypy",
+      "src/cygnusx/"
+    ],
+    "exit": 1,
+    "seconds": 5.18
+  },
+  {
+    "name": "migration-chain",
+    "command": [
+      ".venv/bin/python",
+      "scripts/check_migrations.py"
+    ],
+    "exit": 0,
+    "seconds": 0.42
+  },
+  {
+    "name": "backend-regression",
+    "command": [
+      ".venv/bin/pytest",
+      "tests/unit",
+      "tests/e2e",
+      "-q",
+      "-m",
+      "not quarantine"
+    ],
+    "exit": "TIMEOUT",
+    "seconds": 180.04
+  },
+  {
+    "name": "bridge",
+    "command": [
+      "/home/zj/zj_code_libarary/OmicHub/.venv/bin/pytest",
+      "-q"
+    ],
+    "exit": 0,
+    "seconds": 7.28
+  },
+  {
+    "name": "frontend-all",
+    "command": [
+      "npx",
+      "vitest",
+      "run"
+    ],
+    "exit": 1,
+    "seconds": 9.95
+  },
+  {
+    "name": "frontend-types",
+    "command": [
+      "npx",
+      "vue-tsc",
+      "--noEmit"
+    ],
+    "exit": 0,
+    "seconds": 15.15
+  },
+  {
+    "name": "frontend-build",
+    "command": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "exit": 0,
+    "seconds": 58.11
+  }
+]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from cygnusx.application.schemas.base import CygnusXBaseSchema, PaginationParams
@@ -19,6 +20,7 @@ class ReportFileResponse(CygnusXBaseSchema):
     path: str
     is_primary: bool
     created_at: datetime
+    sha256: str | None = None
 
 
 class ReportResponse(CygnusXBaseSchema):
@@ -44,6 +46,10 @@ class ReportResponse(CygnusXBaseSchema):
     parent_id: UUID | None = None
     version: int = 1
     files: list[ReportFileResponse] = []
+    report_kind: str = "scientific"
+    snapshot_id: UUID | None = None
+    template_version: str | None = None
+    evidence_partial: bool | None = None
 
 
 class ReportVersionTreeResponse(CygnusXBaseSchema):
@@ -64,6 +70,7 @@ class ReportListResponse(CygnusXBaseSchema):
 class ReportFilterParams(PaginationParams):
     """报告列表过滤参数"""
 
+    task_id: UUID | None = None
     keyword: str | None = None
     flow_id: str | None = None
     status: str | None = None
@@ -75,3 +82,30 @@ class ToggleStarRequest(CygnusXBaseSchema):
     """收藏请求"""
 
     is_starred: bool
+
+
+class ReportJobResponse(CygnusXBaseSchema):
+    id: UUID
+    task_id: UUID
+    status: str
+    template_version: str
+    snapshot_id: UUID | None = None
+    report_id: UUID | None = None
+    error_message: str = ""
+    error_code: str | None = None
+    retryable: bool = False
+    evidence_partial: bool = True
+    finished_at: datetime | None = None
+    attempt_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReportSnapshotResponse(CygnusXBaseSchema):
+    id: UUID
+    task_id: UUID
+    run_id: UUID | None = None
+    schema_version: str
+    snapshot_digest: str
+    captured_at: datetime
+    payload: dict[str, Any]

@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Report, ReportFilter } from '@/types/report'
-import { reportApi } from '@/api/report'
+import { reportApi, downloadReportFile } from '@/api/report'
 import { studioApi } from '@/api/studio'
 import { useApi } from '@/composables/useApi'
 import {
@@ -98,13 +98,9 @@ function handlePreview(report: Report) {
   }
 }
 
-function handleDownload(report: Report, fileId: string) {
-  const link = document.createElement('a')
-  link.href = `/api/v1/reports/${report.id}/files/${fileId}/download`
-  link.download = report.title
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+async function handleDownload(report: Report, fileId: string) {
+  try { await downloadReportFile(report, fileId) }
+  catch { message.error('报告下载失败，文件可能已不可用。') }
 }
 
 function handleViewTask(report: Report) {
@@ -148,7 +144,7 @@ watch(
   (taskId) => {
     if (taskId) {
       highlightedReportId.value = null
-      filter.value.keyword = String(taskId)
+      filter.value.task_id = String(taskId)
       filter.value.page = 1
       loadData().then(() => {
         const matched = reports.value.find(r => r.task_id === taskId)
@@ -158,10 +154,20 @@ watch(
       })
     } else {
       highlightedReportId.value = null
+      filter.value.task_id = undefined
     }
   },
   { immediate: true },
 )
+
+watch(() => route.query.reportId, async (id) => {
+  if (typeof id !== 'string') return
+  try {
+    const response = await reportApi.getReportDetail(id)
+    highlightedReportId.value = id
+    handlePreview(response.data)
+  } catch { message.error('报告不存在或无权查看。') }
+}, { immediate: true })
 
 onMounted(() => {
   if (!taskIdFromQuery.value) {

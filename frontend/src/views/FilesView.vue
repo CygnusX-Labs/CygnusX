@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DatasetWorkspace from '@/components/research/DatasetWorkspace.vue'
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { DataFile, Directory, QuotaInfo } from '@/types'
 import apiClient from '@/api/client'
@@ -487,6 +488,7 @@ onUnmounted(() => {
 
 <template>
   <main class="finder-page" aria-label="数据管理">
+    <DatasetWorkspace />
     <!-- 顶部统计大盘（首载完成前显示骨架，防闪零 A5） -->
     <OverviewStats
       :samples="samplesCount"

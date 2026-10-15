@@ -1,0 +1,1437 @@
+--- baseline/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
++++ phase4/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+@@ -59,3 +59,7 @@
+ FASTQ 走现有 RNAFlow，显式参考/物种/链特异性、样本前缀和配对一致，不自动重命名。counts 走独立 `pipelines/CountsDEGFlow`；本地 R/DESeq2 与 Snakemake 合成验证通过，Worker/镜像/FlowFrame 日志监控认证未通过，默认不注册为可用能力。当前 Handoff `worker_paths_verified=false` 是固定未验收事实，绝非 READY。
+ 
+ 数据服务由 REST、共享 Gateway、MCP preset 投影和 Vue 组件复用；没有新建第二个 Agent 执行系统。GET 不做对账写入。输出结果与报告状态独立，不从输入 manifest 推断已完成报告。
++
++## 受保护的科研交付关联
++
++Phase4 为 AnalysisLink 增加 prepare 时的执行绑定，最终 TaskService 与 Worker 复核输入/Flow 摘要；Task/link 在队列可见前提交。结果采集、FileRegistry、双报告与项目只读投影见 [科研交付架构](CygnusX_research_delivery_architecture.md)。该扩展没有解除 Phase3 的运行/写门禁；实际 Worker 与公开案例仍 BLOCKED，旧版本、文件和任务不补造历史。
+--- baseline/ARCHITECTURE_DESIGN/CygnusX_report_architecture.md
++++ phase4/ARCHITECTURE_DESIGN/CygnusX_report_architecture.md
+@@ -116,3 +116,7 @@
+ 本地 BioReport 核验版本为 `2.0.0`，源码提交 `cb2911a`；当前未核验 CygnusX 生产 BioReport 镜像 digest。`BioReportAdapter` 接受受控 JSON/YAML 配置，固定 single layout，禁用 AI module，不注入平台凭据。HTML 可复用已登记科学报告；交付构建仅在存在 owner 配置且渲染器可用时尝试科学 PDF，失败则保留 HTML 并标记 partial。审计 PDF 使用冻结 HTML 的 Pandoc/Typst 转换，不重新采集事实。
+ 
+ `POST /api/v1/reports/{report_id}/delivery` 可以从科学报告或执行证据报告发起；科学报告入口会查找同一 owner/Task 的最新执行证据报告，并用其冻结快照绑定交付包。重复请求复用同一 delivery 记录。未发现 Phase 1.5 live-validation 审计记录；真实 RNA Task、PostgreSQL、Celery、对象存储、BioReport PDF、ZIP 下载和浏览器闭环仍需授权环境验收。
++
++## 受保护的 Dataset 科研交付扩展
++
++Phase4 增加可选 ResultObservation 关联和 Snapshot.research_delivery；无扩展字段的历史快照保持原 digest。Counts 可在受保护路径排独立科学 BioReport job 和执行证据 job，继续复用本报告中心与队列；科学模板只展示完成结果，渲染失败不重跑计算。Report 读取/发布在开关启用时复核当前项目权限。默认主路径与旧 API 保留，新增运行能力仍 BLOCKED，详见 [科研交付架构](CygnusX_research_delivery_architecture.md)。
+--- baseline/ARCHITECTURE_DESIGN/README.md
++++ phase4/ARCHITECTURE_DESIGN/README.md
+@@ -1,6 +1,8 @@
+ # 架构与设计文档索引
+ 
+ 本目录集中存放 CygnusX 的项目级架构、设计规范和实施方案。修改相关功能前，请先阅读对应文档，确保实现与既有约束保持一致。
++
++> 科研交付链现状入口：[CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)（Phase4 受保护代码；运行准入 BLOCKED）。
+ 
+ ## 0. 这个架构文档目录如何发挥作用
+ 
+--- baseline/frontend/src/views/ProjectDetailView.vue
++++ phase4/frontend/src/views/ProjectDetailView.vue
+@@ -7,6 +7,7 @@
+ } from 'naive-ui'
+ import type { DataTableColumns } from 'naive-ui'
+ import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline } from '@vicons/ionicons5'
++import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
+ import PageHeader from '@/components/PageHeader.vue'
+ import { chatApi } from '@/api/chat'
+ import {
+@@ -529,6 +530,7 @@
+       </template>
+     </n-modal>
+   </div>
++  <ResearchDeliveryChain v-if="overview" :project-id="projectId" />
+ </template>
+ 
+ <style scoped>
+--- baseline/src/cygnusx/api/v1/router.py
++++ phase4/src/cygnusx/api/v1/router.py
+@@ -33,6 +33,7 @@
+     reminders,
+     reports,
+     research_agent,
++    research_delivery,
+     runs,
+     sandbox,
+     schedules,
+@@ -165,3 +166,5 @@
+ register_tool_routers(api_router)
+ 
+ api_router.include_router(datasets.router, tags=["datasets"])
++
++api_router.include_router(research_delivery.router, tags=["research-delivery"])
+--- baseline/src/cygnusx/application/schemas/agent_tools.py
++++ phase4/src/cygnusx/application/schemas/agent_tools.py
+@@ -117,6 +117,10 @@
+ 
+ 
+ # Single schema authority; MCP and REST views are projections of these models.
++class ReportEvidenceArgs(ToolArgs):
++    report_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
++
++
+ CAPABILITY_MODELS: dict[str, type[ToolArgs]] = {
+     "downloads.describe_capabilities": EmptyArgs,
+     "downloads.prepare": DownloadPrepareArgs,
+@@ -124,6 +128,10 @@
+     "analysis.get_workflow_schema": WorkflowArgs,
+     "analysis.prepare": AnalysisPrepareArgs,
+     "tasks.get_status": TaskArgs,
++    "research.task_provenance": TaskArgs,
++    "research.report_provenance": ReportEvidenceArgs,
++    "research.dataset_provenance": DatasetVersionArgs,
++    "research.project_delivery": EmptyArgs,
+     "tasks.list_related": EmptyArgs,
+     "dataset.discover": DatasetDiscoverArgs,
+     "dataset.inspect": DatasetVersionArgs,
+@@ -139,10 +147,17 @@
+ }
+ 
+ 
+-def capability_catalog(*, include_write: bool = False, include_dataset: bool = False) -> list[ToolCapability]:
++def capability_catalog(
++    *, include_write: bool = False, include_dataset: bool = False, include_research: bool = False
++) -> list[ToolCapability]:
+     catalog: list[ToolCapability] = []
+     for name, model in CAPABILITY_MODELS.items():
+-        if not include_dataset and (name.startswith("dataset.") or name in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}):
++        if name.startswith("research.") and not include_research:
++            continue
++        if not include_dataset and (
++            name.startswith("dataset.")
++            or name in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}
++        ):
+             continue
+         write = name.endswith(".submit") or name in {"tasks.cancel", "dataset.execute_import"}
+         if write and not include_write:
+@@ -152,7 +167,9 @@
+             "analysis.prepare_from_dataset",
+         }
+         scope = (
+-            "execute:cancel"
++            "read:research"
++            if name.startswith("research.")
++            else "execute:cancel"
+             if name == "tasks.cancel"
+             else "execute:download"
+             if name in {"downloads.submit", "dataset.execute_import"}
+--- baseline/src/cygnusx/application/schemas/report_snapshot.py
++++ phase4/src/cygnusx/application/schemas/report_snapshot.py
+@@ -10,6 +10,8 @@
+ from uuid import UUID
+ 
+ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
++
++from cygnusx.application.schemas.research_delivery import ResearchProvenance
+ 
+ 
+ class EvidenceStatus(StrEnum):
+@@ -157,8 +159,11 @@
+ class ReportSnapshot(FrozenEvidenceModel):
+     schema_version: Literal["cygnusx.report_snapshot.v1"] = "cygnusx.report_snapshot.v1"
+     digest_policy_version: Literal["stable_facts.v1"] = "stable_facts.v1"
+-    redaction_policy_version: Literal["owner_allowlist.v1", "owner_allowlist.v2"] = "owner_allowlist.v1"
++    redaction_policy_version: Literal["owner_allowlist.v1", "owner_allowlist.v2"] = (
++        "owner_allowlist.v1"
++    )
+     immutable_version: int = Field(default=1, ge=1)
++    research_delivery: ResearchProvenance | None = None
+     report_id: UUID | None = None
+     generated_at: AwareDatetime
+     source_execution: SourceExecution
+@@ -228,7 +233,7 @@
+                 key: scrub(item)
+                 for key, item in value.items()
+                 if key not in {"captured_at", "verified_at"}
+-                and not (key == "display_name" and item is None)
++                and not (key in {"display_name", "research_delivery"} and item is None)
+             }
+         if isinstance(value, list):
+             return [scrub(item) for item in value]
+--- baseline/src/cygnusx/application/services/agent_service.py
++++ phase4/src/cygnusx/application/services/agent_service.py
+@@ -1012,7 +1012,7 @@
+                 user = await self._db.get(UserModel, uuid.UUID(user_id))
+                 if user and user.status == "active":
+                     denied = set(user.disabled_modules or []) if user.role != "admin" else set()
+-                    for capability in capability_catalog(include_dataset=get_settings().dataset_discovery_readonly):
++                    for capability in capability_catalog(include_dataset=get_settings().dataset_discovery_readonly, include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
+                         module = ("flows" if capability.capability_id.startswith("analysis.") else
+                                   "tasks" if capability.capability_id.startswith("tasks.") else
+                                   "files" if capability.capability_id.startswith("dataset.") else "downloads")
+--- baseline/src/cygnusx/application/services/agent_tool_gateway.py
++++ phase4/src/cygnusx/application/services/agent_tool_gateway.py
+@@ -115,6 +115,7 @@
+             "read:discovery",
+             "read:tasks",
+             "read:datasets",
++            "read:research",
+             "read:workflows",
+             "prepare:download",
+             "prepare:analysis",
+@@ -125,6 +126,8 @@
+             scopes.discard("read:tasks")
+         if "files" in denied:
+             scopes -= {"prepare:download", "prepare:analysis", "read:datasets"}
++        if denied & {"reports", "files", "tasks"}:
++            scopes.discard("read:research")
+         if "downloads" in denied:
+             scopes -= {"read:discovery", "prepare:download"}
+         return ToolInvocationContext(
+@@ -145,7 +148,10 @@
+         dataset_enabled = getattr(get_settings(), "dataset_discovery_readonly", False)
+         return [
+             c.model_dump()
+-            for c in capability_catalog(include_dataset=dataset_enabled)
++            for c in capability_catalog(
++                include_dataset=dataset_enabled,
++                include_research=getattr(get_settings(), "research_delivery_read_enabled", False),
++            )
+             if c.scope in context.extra["scopes"]
+             and (
+                 dataset_enabled
+@@ -231,6 +237,8 @@
+             "analysis.prepare_from_dataset",
+         }:
+             result = await self._dataset_tool(context, invocation, capability_id, args)
++        elif capability_id.startswith("research."):
++            result = await self._research_tool(context, capability_id, args)
+         elif capability_id == "tasks.get_status":
+             result = await self.task_status(context, args["task_id"])
+         else:
+@@ -238,6 +246,37 @@
+         self.db.add(invocation)
+         await self.db.flush()
+         return GatewayResult(invocation_id=str(invocation.id), result=result).model_dump()
++
++    async def _research_tool(
++        self, context: ToolInvocationContext, capability: str, args: dict[str, Any]
++    ) -> dict[str, Any]:
++        from cygnusx.application.services.research_provenance_service import (
++            ResearchProvenanceService,
++            require_research_read,
++        )
++
++        require_research_read()
++        if not context.extra["project_id"]:
++            raise AuthorizationError("Select an authorized project")
++        owner, project = uuid.UUID(context.user_id), uuid.UUID(context.extra["project_id"])
++        service = ResearchProvenanceService(self.db)
++        if capability == "research.project_delivery":
++            return await service.project(owner, project)
++        if capability == "research.dataset_provenance":
++            return await service.dataset(
++                owner,
++                project,
++                uuid.UUID(str(args["dataset_id"])),
++                uuid.UUID(str(args["version_id"])),
++            )
++        graph = (
++            await service.report(owner, uuid.UUID(str(args["report_id"])))
++            if capability == "research.report_provenance"
++            else await service.task(owner, uuid.UUID(str(args["task_id"])))
++        )
++        if graph.project_id != project:
++            raise AuthorizationError("Evidence project mismatch")
++        return graph.model_dump(mode="json")
+ 
+     async def _dataset_tool(
+         self,
+--- baseline/src/cygnusx/application/services/bioreport_adapter.py
++++ phase4/src/cygnusx/application/services/bioreport_adapter.py
+@@ -20,6 +20,10 @@
+ from cygnusx.application.schemas.report_delivery import BioReportRenderRequest
+ 
+ 
++class BioReportRenderError(RuntimeError):
++    """Renderer unavailable/failed; safe to retry without repeating analysis."""
++
++
+ @dataclass(frozen=True)
+ class BioReportRenderResult:
+     output: Path
+@@ -38,7 +42,9 @@
+         renderer_version: str = "unknown",
+         template_version: str = "unknown",
+         timeout_seconds: int = 600,
++        python_executable: str | None = None,
+     ) -> None:
++        self.python_executable = python_executable
+         self.executable = executable
+         self.renderer_version = renderer_version
+         self.template_version = template_version
+@@ -126,6 +132,8 @@
+                 "NO_PROXY": "*",
+                 "BIOREPORT_AI_ENABLED": "false",
+             }
++            if self.python_executable is not None:
++                env["QUARTO_PYTHON"] = self.python_executable
+             command = [
+                 self.executable,
+                 "run",
+@@ -144,12 +152,12 @@
+                     env=env,
+                 )
+             except (OSError, subprocess.TimeoutExpired) as exc:
+-                raise RuntimeError("BioReport 渲染工具不可用或超时") from exc
++                raise BioReportRenderError("BioReport 渲染工具不可用或超时") from exc
+             if completed.returncode != 0:
+-                raise RuntimeError("BioReport 渲染失败")
++                raise BioReportRenderError("BioReport 渲染失败")
+         output = output_dir / f"report.{request.output_format}"
+         if not output.is_file() or output.is_symlink() or output.stat().st_size == 0:
+-            raise RuntimeError("BioReport 未生成有效报告文件")
++            raise BioReportRenderError("BioReport 未生成有效报告文件")
+         return BioReportRenderResult(
+             output=output,
+             renderer_version=request.renderer_version,
+--- baseline/src/cygnusx/application/services/dataset_analysis_service.py
++++ phase4/src/cygnusx/application/services/dataset_analysis_service.py
+@@ -251,7 +251,12 @@
+         confirmation = await self.confirmations.create_for_tool(
+             str(owner), "dataset.analysis.submit", bound, session_id=self.session_id or ""
+         )
++        from cygnusx.application.services.research_execution_binding import execution_binding
++
+         row = DatasetAnalysisLinkModel(
++            execution_binding=execution_binding(
++                flow_id, normalized, version.handoff["manifest_hash"]
++            ),
+             id=pid,
+             version_id=version_id,
+             flow_id=flow_id,
+@@ -525,7 +530,12 @@
+     except ValueError as exc:
+         raise AuthorizationError("无效 Dataset 预案引用", code="HANDOFF_REQUIRED") from exc
+     row = await db.get(DatasetAnalysisLinkModel, proposal_id)
+-    if row is None or row.state != "SUBMITTING" or row.flow_id != "counts_deg":
++    if (
++        row is None
++        or row.state not in {"SUBMITTING", "QUEUED"}
++        or (row.state == "QUEUED" and row.task_id is None)
++        or row.flow_id != "counts_deg"
++    ):
+         raise AuthorizationError("缺少正在消费的人工批准", code="CONFIRMATION_REQUIRED")
+     bound = row.normalized_request
+     if bound.get("owner_id") != str(owner) or bound.get("request") != request.model_dump(
+--- baseline/src/cygnusx/application/services/report_audit_renderer.py
++++ phase4/src/cygnusx/application/services/report_audit_renderer.py
+@@ -55,6 +55,12 @@
+     snapshot: ReportSnapshot, *, title: str = "RNA-seq 可复现执行证据报告"
+ ) -> str:
+     """Consume only a frozen snapshot. All user text is escaped, no filesystem reads."""
++    if (
++        snapshot.research_delivery
++        and snapshot.research_delivery.flow.get("id") == "counts_deg"
++        and title == "RNA-seq 可复现执行证据报告"
++    ):
++        title = "Counts DEG 可复现执行证据报告"
+     execution = snapshot.source_execution
+     task_step = next((step for step in snapshot.execution_steps if step.phase == "task"), None)
+     complete = not snapshot.missing_evidence
+@@ -93,6 +99,45 @@
+         )
+         for item in snapshot.artifacts
+     )
++    research = snapshot.research_delivery
++    research_table = (
++        ""
++        if research is None
++        else "<h3>科研交付关联（独立于科学结论）</h3>"
++        + _table(
++            ("对象", "标识 / 状态"),
++            (
++                (_value(key), _value(value))
++                for key, value in {
++                    "DatasetVersion": research.dataset_version_id,
++                    "Frozen Handoff SHA-256": research.handoff_hash,
++                    "Result observation": research.result_observation_id,
++                    "输入": research.input_integrity,
++                    "产物": research.result_integrity,
++                    "证据": research.evidence_state,
++                    "交付": research.delivery_state,
++                    "证据缺口": ", ".join(research.gaps),
++                }.items()
++            ),
++        )
++    )
++    research_artifacts = (
++        ""
++        if research is None
++        else "<h3>科研产物指纹</h3>"
++        + _table(
++            ("引用", "FileRecord", "SHA-256", "完整性"),
++            (
++                (
++                    _value(a.logical_name),
++                    _value(a.file_record_id),
++                    _value(a.sha256),
++                    _value(a.integrity),
++                )
++                for a in research.artifacts
++            ),
++        )
++    )
+     sections = (
+         (
+             "m1",
+@@ -166,12 +211,14 @@
+                 ("文件引用", "类型", "字节数", "校验值与范围", "可用性", "来源"),
+                 artifacts,
+             )
++            + research_artifacts
+             + "<p>哈希核验仅证明采集时字节；不证明执行时字节或科学结果正确。</p>",
+         ),
+         (
+             "m7",
+             "M7 · 证据来源关系",
+-            _table(
++            research_table
++            + _table(
+                 ("主体", "关系", "对象", "证据"),
+                 (
+                     (
+--- baseline/src/cygnusx/application/services/report_service.py
++++ phase4/src/cygnusx/application/services/report_service.py
+@@ -25,6 +25,7 @@
+ )
+ from cygnusx.application.schemas.report_delivery import BioReportRenderRequest
+ from cygnusx.application.schemas.report_snapshot import ReportSnapshot
++from cygnusx.application.schemas.research_delivery import ResearchArtifact
+ from cygnusx.application.services.bioreport_adapter import BioReportAdapter
+ from cygnusx.application.services.flow_service import FlowService
+ from cygnusx.application.services.report_archive import read_archive
+@@ -34,13 +35,20 @@
+     ResearchDeliveryBuilder,
+ )
+ from cygnusx.core.config import get_settings
+-from cygnusx.core.exceptions import AuthorizationError, ConflictError, NotFoundError
++from cygnusx.core.exceptions import (
++    AuthorizationError,
++    ConflictError,
++    NotFoundError,
++    ValidationError,
++)
+ from cygnusx.domain.file.value_objects import FileSource
+ from cygnusx.infrastructure.database.models.report import (
+     ReportFileModel,
+     ReportModel,
+     ReportSnapshotModel,
+ )
++from cygnusx.infrastructure.database.models.result_observation import ResultObservationModel
++from cygnusx.infrastructure.database.models.task import TaskModel
+ from cygnusx.infrastructure.database.repositories.report_repository import (
+     ReportRepositoryImpl,
+ )
+@@ -63,6 +71,133 @@
+         self._settings = get_settings()
+         self._factory = get_path_factory()
+         self._backend = backend or get_storage_backend()
++
++    async def _require_research_scope(self, model: ReportModel) -> None:
++        if getattr(self._settings, "research_delivery_read_enabled", False):
++            from cygnusx.application.services.research_provenance_service import (
++                ResearchProvenanceService,
++            )
++
++            service = ResearchProvenanceService(self._db)
++            await service.repo.require_module(model.user_id, "reports")
++            task = await self._db.get(TaskModel, model.task_id)
++            if task is not None:
++                await service.task_scope(model.user_id, task.id)
++
++    async def register_verified_scientific_result(
++        self,
++        owner: UUID,
++        task: TaskModel,
++        observation: ResultObservationModel,
++        artifacts: list[tuple[Path, ResearchArtifact]],
++    ) -> ReportModel | None:
++        """Register an existing verified scientific HTML; never generate analysis or invent HTML."""
++        if task.user_id != owner or observation.user_id != owner or observation.task_id != task.id:
++            raise AuthorizationError("Scientific report scope mismatch")
++        existing = (
++            await self._db.execute(
++                select(ReportModel)
++                .where(
++                    ReportModel.user_id == owner,
++                    ReportModel.task_id == task.id,
++                    ReportModel.result_observation_id == observation.id,
++                    ReportModel.report_kind == "scientific",
++                )
++                .order_by(ReportModel.version.desc())
++                .limit(1)
++            )
++        ).scalar_one_or_none()
++        if existing is not None:
++            from cygnusx.domain.dataset.validation import (
++                ValidationLimits,
++                checksum,
++                open_owned_file,
++            )
++
++            files = (
++                (
++                    await self._db.execute(
++                        select(ReportFileModel).where(
++                            ReportFileModel.report_id == existing.id,
++                            ReportFileModel.is_primary.is_(True),
++                        )
++                    )
++                )
++                .scalars()
++                .all()
++            )
++            if len(files) == 1:
++                try:
++                    with open_owned_file(
++                        Path(files[0].path), self._factory.user_root(str(owner))
++                    ) as stream:
++                        sha, size = checksum(
++                            stream,
++                            ValidationLimits(max_bytes=self._settings.research_artifact_max_bytes),
++                        )
++                    if files[0].sha256 == sha and files[0].size == size:
++                        return existing
++                except (OSError, ValueError, ValidationError):
++                    pass
++            # Repair creates a new version and fresh archive, preserving the missing/failed version.
++        candidates = [
++            (path, asset)
++            for path, asset in artifacts
++            if asset.category == "report"
++            and path.suffix.lower() == ".html"
++            and asset.integrity == "VERIFIED"
++            and asset.file_record_id is not None
++            and asset.sha256
++            and asset.size
++        ]
++        if len(candidates) != 1:
++            return None
++        path, asset = candidates[0]
++        previous = (
++            await self._db.execute(
++                select(ReportModel)
++                .where(
++                    ReportModel.user_id == owner,
++                    ReportModel.task_id == task.id,
++                    ReportModel.report_kind == "scientific",
++                )
++                .order_by(ReportModel.version.desc())
++                .limit(1)
++            )
++        ).scalar_one_or_none()
++        now = datetime.now(UTC)
++        report = ReportModel(
++            id=uuid.uuid4(),
++            user_id=owner,
++            task_id=task.id,
++            flow_id=task.flow_id,
++            flow_name=task.flow_id,
++            flow_version=str(observation.payload.get("flow", {}).get("version") or ""),
++            title="Scientific analysis report",
++            status="completed",
++            report_kind="scientific",
++            result_observation_id=observation.id,
++            created_at=now,
++            completed_at=now,
++            parent_id=previous.id if previous else None,
++            version=previous.version + 1 if previous else 1,
++        )
++        self._db.add(report)
++        await self._db.flush()
++        self._db.add(
++            ReportFileModel(
++                report_id=report.id,
++                name="Scientific report.html",
++                type="html",
++                size=asset.size,
++                path=str(path),
++                is_primary=True,
++                sha256=asset.sha256,
++                file_record_id=asset.file_record_id,
++            )
++        )
++        await self._db.flush()
++        return report
+ 
+     def _resolve_report_path(self, path: str) -> Path:
+         """校验报告文件路径必须位于 storage_root 内，防止路径穿越。
+@@ -223,6 +358,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+         return _model_to_response(model)
+ 
+     async def list_versions(self, report_id: UUID, user_id: str) -> ReportVersionTreeResponse:
+@@ -230,6 +366,7 @@
+         target = await self._repo.get_by_id(report_id)
+         if target is None or str(target.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(target)
+ 
+         candidates = await self._repo.list_version_candidates(UUID(user_id))
+         by_id = {item.id: item for item in candidates}
+@@ -270,6 +407,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+ 
+         primary = next((f for f in model.files if f.is_primary and f.type == "html"), None)
+         if primary is None:
+@@ -312,6 +450,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+ 
+         file_model = await self._repo.get_file_by_id(file_id)
+         if file_model is None or file_model.report_id != report_id:
+@@ -333,6 +472,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+         await self._repo.delete(report_id)
+ 
+     async def toggle_star(self, report_id: UUID, user_id: str, is_starred: bool) -> ReportResponse:
+@@ -340,6 +480,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+         model.is_starred = is_starred
+         await self._repo.save(model)
+         return _model_to_response(model)
+@@ -349,6 +490,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+         model.is_read = True
+         await self._repo.save(model)
+         return _model_to_response(model)
+@@ -533,11 +675,16 @@
+             id=uuid.uuid4(),
+             task_id=task_id,
+             user_id=owner,
+-            flow_id="rna_seq",
+-            flow_name="RNA-seq",
++            flow_id=str(
++                next((f.value for f in snapshot.inputs if f.field == "flow_id"), "rna_seq")
++            ),
++            flow_name="Counts DEG"
++            if snapshot.research_delivery
++            and snapshot.research_delivery.flow.get("id") == "counts_deg"
++            else "RNA-seq",
+             flow_version="",
+             flow_icon="📋",
+-            title="RNA-seq 可复现执行证据报告",
++            title="科研可复现执行证据报告",
+             description=f"Snapshot {snapshot.snapshot_digest}",
+             status="completed",
+             sample_count=next(
+@@ -552,6 +699,9 @@
+             created_at=now,
+             completed_at=now,
+             report_kind="reproducibility",
++            result_observation_id=snapshot.research_delivery.result_observation_id
++            if snapshot.research_delivery
++            else None,
+             snapshot_id=snapshot_id,
+             template_version=template_version,
+             evidence_partial=evidence_partial,
+@@ -563,6 +713,7 @@
+             ReportFileModel(
+                 id=uuid.uuid4(),
+                 report_id=report.id,
++                file_record_id=record.id,
+                 name="index.html",
+                 type="html",
+                 size=size,
+@@ -590,9 +741,7 @@
+         await self._db.flush()
+         return report
+ 
+-    async def build_delivery_package(
+-        self, report_id: UUID, user_id: str
+-    ) -> ReportModel:
++    async def build_delivery_package(self, report_id: UUID, user_id: str) -> ReportModel:
+         """Package an existing owner-scoped report and its frozen snapshot.
+ 
+         This only organizes already published bytes. It never runs RNAFlow and
+@@ -601,6 +750,7 @@
+         source = await self._repo.get_by_id(report_id)
+         if source is None or str(source.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(source)
+         if source.report_kind == "delivery":
+             raise ConflictError("科研交付包不能再次打包")
+         evidence: ReportModel | None
+@@ -711,9 +861,7 @@
+                 config=bioreport_config,
+             )
+             if rendered_pdf is not None:
+-                inputs = [
+-                    item for item in inputs if item.logical_name != "Scientific_Report.pdf"
+-                ]
++                inputs = [item for item in inputs if item.logical_name != "Scientific_Report.pdf"]
+                 inputs.append(
+                     DeliveryInput(
+                         logical_name="Scientific_Report.pdf",
+@@ -766,7 +914,9 @@
+             flow_icon="📦",
+             title="科研交付包",
+             description=(
+-                "完整交付" if build.manifest.evidence_status == "complete" else "部分交付，详见缺失文件"
++                "完整交付"
++                if build.manifest.evidence_status == "complete"
++                else "部分交付，详见缺失文件"
+             ),
+             status="completed",
+             sample_count=source.sample_count,
+@@ -846,7 +996,9 @@
+                 )
+                 return result.output.read_bytes()
+         except (OSError, RuntimeError, ValueError):
+-            logger.warning("BioReport scientific PDF rendering unavailable; retaining partial delivery")
++            logger.warning(
++                "BioReport scientific PDF rendering unavailable; retaining partial delivery"
++            )
+             return None
+ 
+     async def object_download(
+@@ -856,6 +1008,7 @@
+         model = await self._repo.get_by_id(report_id)
+         if model is None or str(model.user_id) != user_id:
+             raise NotFoundError("报告不存在")
++        await self._require_research_scope(model)
+         file = await self._repo.get_file_by_id(file_id)
+         if file is None or file.report_id != report_id:
+             raise NotFoundError("文件不存在")
+--- baseline/src/cygnusx/application/services/report_snapshot_builder.py
++++ phase4/src/cygnusx/application/services/report_snapshot_builder.py
+@@ -318,12 +318,16 @@
+         finished = self._clock()
+         return freeze_snapshot(
+             ReportSnapshot(
++                research_delivery=records.research_delivery,
+                 redaction_policy_version="owner_allowlist.v2",
+                 report_id=report_id,
+                 immutable_version=immutable_version,
+                 generated_at=finished,
+                 source_execution=SourceExecution(
+                     task_id=task.id,
++                    project_id=records.research_delivery.project_id
++                    if records.research_delivery
++                    else None,
+                     run_id=run.id if run else None,
+                     project_slug=safe_display_label(run.project_slug) if run else None,
+                     owner_id=owner_id,
+--- baseline/src/cygnusx/application/services/report_snapshot_sources.py
++++ phase4/src/cygnusx/application/services/report_snapshot_sources.py
+@@ -7,6 +7,7 @@
+ from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
++from cygnusx.application.schemas.research_delivery import ResearchProvenance
+ from cygnusx.core.exceptions import (
+     AuthorizationError,
+     ConflictError,
+@@ -30,6 +31,7 @@
+     events: tuple[RunEventModel, ...]
+     events_truncated: bool = False
+     files_truncated: bool = False
++    research_delivery: ResearchProvenance | None = None
+ 
+ 
+ class TaskEvidenceSource(Protocol):
+@@ -50,7 +52,7 @@
+         raise AuthorizationError("Execution owner mismatch", code="snapshot_owner_mismatch")
+     if task.id != task_id:
+         raise ConflictError("Task identity mismatch", code="snapshot_identity_conflict")
+-    if task.flow_id != "rna_seq":
++    if task.flow_id != "rna_seq" and not (task.flow_id == "counts_deg" and records.research_delivery is not None):
+         raise ValidationError("Phase 0 supports RNA-seq Tasks only")
+     run = records.run
+     if run_id is not None and (run is None or run.id != run_id):
+@@ -135,6 +137,17 @@
+                 if run
+                 else ()
+             )
++        research = None
++        from cygnusx.core.config import get_settings
++
++        if getattr(get_settings(), "research_delivery_read_enabled", False):
++            from cygnusx.application.services.research_provenance_service import (
++                ResearchProvenanceService,
++            )
++
++            research = await ResearchProvenanceService(self._db).task(
++                owner_id, task_id, include_reports=False
++            )
+         records = TaskEvidenceRecords(
+             task,
+             run,
+@@ -142,6 +155,7 @@
+             events[:EVENT_CAPTURE_LIMIT],
+             len(events) > EVENT_CAPTURE_LIMIT,
+             len(files) > FILE_CAPTURE_LIMIT,
++            research_delivery=research,
+         )
+         validate_records(records, owner_id, task_id, run_id)
+         return records
+--- baseline/src/cygnusx/application/services/reproducible_report_service.py
++++ phase4/src/cygnusx/application/services/reproducible_report_service.py
+@@ -24,6 +24,7 @@
+ from cygnusx.core.config import get_settings
+ from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
+ from cygnusx.infrastructure.database.models.report import (
++    ReportFileModel,
+     ReportGenerationJobModel,
+     ReportModel,
+     ReportSnapshotModel,
+@@ -31,6 +32,8 @@
+ from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.models.task import TaskModel
+ from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
++
++SCIENTIFIC_TEMPLATE = "scientific-counts-v1"
+ 
+ ACTIVE_STATUSES = ("queued", "collecting", "rendering", "publishing")
+ 
+@@ -81,17 +84,42 @@
+         run_id: UUID | None = None,
+         *,
+         request_key: UUID | None = None,
++        scientific: bool = False,
+     ) -> ReportJobResponse:
+         owner = owner_uuid(user_id)
++        template = SCIENTIFIC_TEMPLATE if scientific else TEMPLATE_VERSION
++        if scientific:
++            from cygnusx.application.services.research_provenance_service import (
++                require_research_write,
++            )
++
++            require_research_write()
+         # Serialize requests for the same source; also protected by a partial unique index.
+         task = await self.db.scalar(
+             select(TaskModel)
+             .where(TaskModel.id == task_id, TaskModel.user_id == owner)
+             .with_for_update()
+         )
++        if task is not None and scientific and task.flow_id != "counts_deg":
++            raise ValidationError("Independent scientific rendering currently supports counts_deg")
+         if task is None:
+             raise NotFoundError("Task not found")
+-        if task.flow_id != "rna_seq":
++        if task.flow_id == "counts_deg":
++            from cygnusx.application.services.research_provenance_service import (
++                require_research_write,
++            )
++
++            require_research_write()
++        if getattr(get_settings(), "research_delivery_read_enabled", False):
++            from cygnusx.application.services.research_provenance_service import (
++                ResearchProvenanceService,
++            )
++
++            await ResearchProvenanceService(self.db).task_scope(owner, task_id)
++        if task.flow_id != "rna_seq" and not (
++            task.flow_id == "counts_deg"
++            and getattr(get_settings(), "research_delivery_read_enabled", False)
++        ):
+             raise ValidationError("可复现报告当前仅支持 RNA-seq 任务")
+         if task.status not in {"success", "completed", "failed", "cancelled"}:
+             raise ConflictError("分析尚未结束，请在任务结束后生成报告")
+@@ -108,12 +136,12 @@
+             if run is None:
+                 raise NotFoundError("Run not found")
+         key = hashlib.sha256(
+-            f"{owner}:{task_id}:{run_id}:{TEMPLATE_VERSION}:{request_key or uuid4()}".encode()
++            f"{owner}:{task_id}:{run_id}:{template}:{request_key or uuid4()}".encode()
+         ).hexdigest()
+         query = select(ReportGenerationJobModel).where(
+             ReportGenerationJobModel.user_id == owner,
+             ReportGenerationJobModel.task_id == task_id,
+-            ReportGenerationJobModel.template_version == TEMPLATE_VERSION,
++            ReportGenerationJobModel.template_version == template,
+         )
+         existing = (
+             await self.db.scalar(query.where(ReportGenerationJobModel.idempotency_key == key))
+@@ -134,7 +162,7 @@
+             user_id=owner,
+             run_id=run_id,
+             idempotency_key=key,
+-            template_version=TEMPLATE_VERSION,
++            template_version=template,
+             status="queued",
+             error_message="",
+             evidence_partial=True,
+@@ -173,10 +201,22 @@
+         )
+         if job is None:
+             raise NotFoundError("Report job not found")
++        if getattr(get_settings(), "research_delivery_read_enabled", False):
++            from cygnusx.application.services.research_provenance_service import (
++                ResearchProvenanceService,
++            )
++
++            await ResearchProvenanceService(self.db).task_scope(job.user_id, job.task_id)
+         return job
+ 
+     async def retry(self, user_id: str | UUID, job_id: UUID) -> ReportJobResponse:
+         job = await self._owned_job(user_id, job_id)
++        if getattr(job, "template_version", None) == SCIENTIFIC_TEMPLATE:
++            from cygnusx.application.services.research_provenance_service import (
++                require_research_write,
++            )
++
++            require_research_write()
+         # Same lock order as enqueue: Task, then job. Never lock another owner's Task.
+         await self.db.scalar(
+             select(TaskModel)
+@@ -244,6 +284,11 @@
+     job = await db.get(ReportGenerationJobModel, job_id)
+     if job is None or job.status == "ready" or (job.status == "failed" and not job.retryable):
+         return
++    if getattr(job, "template_version", None) == SCIENTIFIC_TEMPLATE:
++        from cygnusx.application.services.scientific_report_job import run_scientific_report
++
++        await run_scientific_report(db, job)
++        return
+     authorized_task = await db.scalar(
+         select(TaskModel.id).where(
+             TaskModel.id == job.task_id,
+@@ -252,6 +297,12 @@
+     )
+     if authorized_task is None:
+         raise NotFoundError("Task not found")
++    if getattr(get_settings(), "research_delivery_read_enabled", False):
++        from cygnusx.application.services.research_provenance_service import (
++            ResearchProvenanceService,
++        )
++
++        await ResearchProvenanceService(db).task_scope(job.user_id, job.task_id)
+     if job.attempt_count >= get_settings().report_generation_max_attempts:
+         job.status = "failed"
+         job.retryable = False
+@@ -325,6 +376,43 @@
+         # Existing files are never silently rewritten, including deleted/modified files.
+         from cygnusx.application.services.report_service import ReportService
+ 
++        if snapshot.research_delivery is not None:
++            from cygnusx.application.services.research_provenance_service import (
++                require_research_write,
++            )
++
++            require_research_write()
++            files = (
++                (
++                    await db.execute(
++                        select(ReportFileModel).where(
++                            ReportFileModel.report_id == existing.id,
++                            ReportFileModel.is_primary.is_(True),
++                            ReportFileModel.type == "html",
++                        )
++                    )
++                )
++                .scalars()
++                .all()
++            )
++            if len(files) == 1:
++                file = files[0]
++                factory = get_path_factory()
++                target = Path(file.path)
++                if not target.is_absolute():
++                    target = factory.data_root / target
++                restore_relative = factory.relative_to_root(target)
++                if not target.resolve().is_relative_to(
++                    factory.user_root(str(job.user_id)).resolve()
++                ):
++                    raise ConflictError("Report archive owner mismatch")
++                if not await get_storage_backend().exists(restore_relative):
++                    content = render_audit_report(snapshot).encode("utf-8")
++                    if file.sha256 != hashlib.sha256(content).hexdigest() or file.size != len(
++                        content
++                    ):
++                        raise ConflictError("Frozen report bytes cannot be reconstructed exactly")
++                    await publish_archive(get_storage_backend(), factory, restore_relative, content)
+         await ReportService(db).preview_html(existing.id, str(job.user_id))
+         job.report_id = existing.id
+         job.finished_at = datetime.now(UTC)
+@@ -377,10 +465,19 @@
+     if pdf_bytes is not None and pdf_sha256 is not None:
+         await publish_archive(storage, factory, pdf_archive_path, pdf_bytes)
+         published_pdf = await read_archive(storage, factory, pdf_archive_path)
+-        if len(published_pdf) != len(pdf_bytes) or hashlib.sha256(published_pdf).hexdigest() != pdf_sha256:
++        if (
++            len(published_pdf) != len(pdf_bytes)
++            or hashlib.sha256(published_pdf).hexdigest() != pdf_sha256
++        ):
+             raise OSError("Audit PDF publication integrity check failed")
+     from cygnusx.application.services.report_service import ReportService
+ 
++    if getattr(get_settings(), "research_delivery_read_enabled", False):
++        from cygnusx.application.services.research_provenance_service import (
++            ResearchProvenanceService,
++        )
++
++        await ResearchProvenanceService(db).task_scope(job.user_id, job.task_id)
+     report = await ReportService(db).register_reproducibility_report(
+         snapshot=snapshot,
+         snapshot_id=snapshot_model.id,
+--- baseline/src/cygnusx/application/services/task_service.py
++++ phase4/src/cygnusx/application/services/task_service.py
+@@ -72,7 +72,14 @@
+             from cygnusx.application.services.dataset_analysis_service import (
+                 validate_counts_task_request,
+             )
++
+             await validate_counts_task_request(self._db, UUID(user_id), req)
++
++        from cygnusx.application.services.research_execution_binding import (
++            validate_dataset_submission,
++        )
++
++        dataset_link = await validate_dataset_submission(self._db, UUID(user_id), req)
+ 
+         if req.idempotency_key:
+             existing = await self._repo.get_by_idempotency_key(req.idempotency_key)
+@@ -102,7 +109,9 @@
+         if not validation.valid or validation.normalized_request is None:
+             detail = "; ".join(error.message for error in validation.errors)
+             raise ValidationError(detail or "任务参数校验失败")
+-        req = validation.normalized_request.model_copy(update={"idempotency_key": req.idempotency_key})
++        req = validation.normalized_request.model_copy(
++            update={"idempotency_key": req.idempotency_key}
++        )
+ 
+         flow_config = self._flow_service.get_flow_config(req.flow_id)
+         flow_detail = self._flow_service.get_flow(req.flow_id)
+@@ -113,9 +122,9 @@
+         from cygnusx.application.services.file_service import ensure_directory_chain
+         from cygnusx.infrastructure.storage import get_path_factory
+ 
+-        project_relative = Path(work_dir).parent.relative_to(
+-            get_path_factory().user_root(user_id)
+-        ).as_posix()
++        project_relative = (
++            Path(work_dir).parent.relative_to(get_path_factory().user_root(user_id)).as_posix()
++        )
+         await ensure_directory_chain(self._db, UUID(user_id), project_relative)
+ 
+         # 参数快照：复制一份不可变的提交时参数
+@@ -131,6 +140,21 @@
+             work_dir=work_dir,
+         )
+         config_file = str(files["config"])
++        if dataset_link is not None:
++            import yaml
++
++            config_path = Path(config_file)
++            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))  # noqa: ASYNC240
++            config["platform"] = {
++                "task_id": str(task_id),
++                "user_id": user_id,
++                "flow_id": req.flow_id,
++            }
++            config["cygnusx"] = {
++                **(dataset_link.execution_binding or {}),
++                "dataset_version_id": str(dataset_link.version_id),
++            }
++            config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")  # noqa: ASYNC240
+         self._write_monitor_config(
+             work_dir=work_dir,
+             task_id=str(task_id),
+@@ -154,6 +178,11 @@
+         # 写入工作目录等运行信息
+         task.work_dir = work_dir
+         await self._repo.save(task)
++
++        if dataset_link is not None:
++            dataset_link.task_id = task.id
++            # Persist the actual Task + binding before queue visibility. Ambiguous delivery is not replayed.
++            await self._db.commit()
+ 
+         enqueue_task(
+             run_snakemake,
+--- baseline/src/cygnusx/core/config.py
++++ phase4/src/cygnusx/core/config.py
+@@ -71,6 +71,13 @@
+     treasure_agent_write_tools_enabled: bool = False
+     tool_gateway_read_enabled: bool = False
+     # Phase3 data assets: all external execution remains subject to Phase0B/2 gates.
++    research_report_python_executable: str | None = None
++    research_delivery_read_enabled: bool = False
++    research_delivery_write_enabled: bool = False
++    research_manifest_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
++    research_artifact_max_files: int = Field(default=2000, ge=1, le=10000)
++    research_artifact_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
++    research_capture_timeout_seconds: int = Field(default=60, ge=1, le=540)
+     dataset_discovery_readonly: bool = False
+     dataset_import_write: bool = False
+     analysis_submit_from_dataset: bool = False
+--- baseline/src/cygnusx/infrastructure/celery_app/tasks/analysis.py
++++ phase4/src/cygnusx/infrastructure/celery_app/tasks/analysis.py
+@@ -20,17 +20,23 @@
+ from cygnusx.infrastructure.storage.file_registry import FileRegistry
+ 
+ 
+-async def _archive_pipeline_run(session: AsyncSession, task: Any, status: str, summary: str = "") -> None:
++async def _archive_pipeline_run(
++    session: AsyncSession, task: Any, status: str, summary: str = ""
++) -> None:
+     """Write the standard project evidence capsule after a pipeline terminal state."""
++    if (getattr(task, "idempotency_key", None) or "").startswith("dataset:"):
++        # Dataset evidence uses verified manifests/snapshots, not the legacy directory scan.
++        return
++    from sqlalchemy import select
++
++    from cygnusx.application.services.artifact_manifest import sha256_stream
+     from cygnusx.application.services.project_archive_service import (
+         ArchivedFile,
+         ProjectInfo,
+         archive_run,
+         md5_stream,
+     )
+-    from cygnusx.application.services.artifact_manifest import sha256_stream
+     from cygnusx.infrastructure.database.models.run import RunModel
+-    from sqlalchemy import select
+     from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
+ 
+     run = await session.scalar(select(RunModel).where(RunModel.task_id == task.id))
+@@ -75,12 +81,10 @@
+ 
+     返回注册的文件数量；未找到 output 目录时返回 0。异常由调用方捕获并记录日志。
+     """
++    if (getattr(task, "idempotency_key", None) or "").startswith("dataset:"):
++        return 0  # The gated ResearchProvenanceService registers only verified declared outputs.
+     work_path = Path(task.work_dir)
+-    output_dir = (
+-        work_path.parent / "output"
+-        if work_path.name == "work"
+-        else work_path / "output"
+-    )
++    output_dir = work_path.parent / "output" if work_path.name == "work" else work_path / "output"
+     if not output_dir.is_dir():
+         return 0
+     registry = FileRegistry(session)
+@@ -146,9 +150,10 @@
+         if task is None:
+             return {"status": "failed", "message": f"任务 {task_id} 不存在"}
+ 
++        from sqlalchemy import select
++
+         from cygnusx.application.services.run_event_service import RunEventService
+         from cygnusx.infrastructure.database.models.run import RunModel
+-        from sqlalchemy import select
+ 
+         run = await session.scalar(select(RunModel).where(RunModel.task_id == task_uuid))
+         run_events = RunEventService(session) if run is not None else None
+@@ -161,6 +166,10 @@
+                 message=message,
+                 source=source,
+             )
++
++        from cygnusx.application.services.research_execution_binding import worker_preflight
++
++        await worker_preflight(session, task)
+ 
+         # 推送开始日志
+         await _add_and_publish_log(LogLevel.INFO, "开始执行 Snakemake 分析任务", source="celery")
+@@ -215,7 +224,9 @@
+             if result.get("status") == "success":
+                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
+                 if run_events and run is not None:
+-                    await run_events.emit(run.id, task_id=task_uuid, status="completed", progress=1.0)
++                    await run_events.emit(
++                        run.id, task_id=task_uuid, status="completed", progress=1.0
++                    )
+                 await _add_and_publish_log(LogLevel.INFO, "Snakemake 执行完成", source="snakemake")
+ 
+                 # 任务成功后自动生成报告记录
+@@ -226,19 +237,50 @@
+                     duration_seconds = 0
+                     if task.started_at and task.finished_at:
+                         duration_seconds = int((task.finished_at - task.started_at).total_seconds())
+-                    await report_service.create_report_from_task(
+-                        task_id=str(task.id),
+-                        user_id=str(task.user_id),
+-                        flow_id=task.flow_id,
+-                        work_dir=task.work_dir,
+-                        sample_count=task.sample_count,
+-                        duration=duration_seconds,
+-                    )
++                    if task.idempotency_key and task.idempotency_key.startswith("dataset:"):
++                        from cygnusx.application.services.reproducible_report_service import (
++                            ReproducibleReportService,
++                        )
++                        from cygnusx.application.services.research_provenance_service import (
++                            ResearchProvenanceService,
++                        )
++
++                        graph = await ResearchProvenanceService(session).reconcile(
++                            task.user_id, task.id
++                        )
++                        await session.commit()
++                        if graph.result_observation_id:
++                            await ReproducibleReportService(session).enqueue(
++                                task.user_id, task.id, request_key=graph.result_observation_id
++                            )
++                            if task.flow_id == "counts_deg" and graph.compute_state in {
++                                "success",
++                                "completed",
++                            }:
++                                await ReproducibleReportService(session).enqueue(
++                                    task.user_id,
++                                    task.id,
++                                    request_key=graph.result_observation_id,
++                                    scientific=True,
++                                )
++                    else:
++                        await report_service.create_report_from_task(
++                            task_id=str(task.id),
++                            user_id=str(task.user_id),
++                            flow_id=task.flow_id,
++                            work_dir=task.work_dir,
++                            sample_count=task.sample_count,
++                            duration=duration_seconds,
++                        )
+                     await _add_and_publish_log(LogLevel.INFO, "分析报告记录已生成", source="report")
+                 except Exception as report_exc:  # noqa: BLE001
+                     await _add_and_publish_log(
+                         LogLevel.WARNING,
+-                        f"生成报告记录失败（非阻塞）: {report_exc}",
++                        (
++                            "科研交付登记失败（非阻塞，需独立对账）"
++                            if (getattr(task, "idempotency_key", None) or "").startswith("dataset:")
++                            else f"生成报告记录失败（非阻塞）: {report_exc}"
++                        ),
+                         source="report",
+                     )
+ 
+@@ -262,7 +304,9 @@
+                     await _archive_pipeline_run(session, task, "completed", "Snakemake 执行完成")
+                 except Exception as archive_exc:  # noqa: BLE001
+                     await _add_and_publish_log(
+-                        LogLevel.WARNING, f"生成项目归档失败（非阻塞）: {archive_exc}", source="archive"
++                        LogLevel.WARNING,
++                        f"生成项目归档失败（非阻塞）: {archive_exc}",
++                        source="archive",
+                     )
+ 
+                 return_status = "success"
+@@ -287,7 +331,9 @@
+                     await _archive_pipeline_run(session, task, "failed", task.error_message)
+                 except Exception as archive_exc:  # noqa: BLE001
+                     await _add_and_publish_log(
+-                        LogLevel.WARNING, f"生成失败归档失败（非阻塞）: {archive_exc}", source="archive"
++                        LogLevel.WARNING,
++                        f"生成失败归档失败（非阻塞）: {archive_exc}",
++                        source="archive",
+                     )
+                 return_status = "failed"
+ 
+--- baseline/src/cygnusx/infrastructure/celery_app/tasks/datasets.py
++++ phase4/src/cygnusx/infrastructure/celery_app/tasks/datasets.py
+@@ -26,14 +26,26 @@
+     try:
+         require_import_write()
+     except AuthorizationError:
+-        return {"status": "BLOCKED", "reconciled": 0}
++        from cygnusx.application.services.research_provenance_service import require_research_write
++
++        try:
++            require_research_write()
++        except AuthorizationError:
++            return {"status": "BLOCKED", "reconciled": 0}
+     return asyncio.run(_reconcile())
+ 
+ 
+ async def _reconcile() -> dict[str, int | str]:
+     from cygnusx.infrastructure.database.session import create_unpooled_engine
+ 
+-    require_import_write()
++    imports_enabled = True
++    try:
++        require_import_write()
++    except AuthorizationError:
++        imports_enabled = False
++        from cygnusx.application.services.research_provenance_service import require_research_write
++
++        require_research_write()
+     engine = create_unpooled_engine()
+     count = 0
+     try:
+@@ -43,7 +55,10 @@
+                 (
+                     await db.execute(
+                         select(DatasetIngestionModel)
+-                        .where(DatasetIngestionModel.state.in_(["QUEUED", "RUNNING", "VERIFYING"]))
++                        .where(
++                            DatasetIngestionModel.state.in_(["QUEUED", "RUNNING", "VERIFYING"]),
++                            imports_enabled,
++                        )
+                         .order_by(DatasetIngestionModel.created_at)
+                         .limit(20)
+                     )
+@@ -72,6 +87,70 @@
+                         row.state = "RECONCILIATION_REQUIRED"
+                         row.errors = [*row.errors, {"code": "RECONCILE_FAILED"}]
+                         await db.commit()
++            from cygnusx.application.services.research_provenance_service import (
++                ResearchProvenanceService,
++                require_research_write,
++            )
++            from cygnusx.infrastructure.database.models.dataset import DatasetAnalysisLinkModel
++            from cygnusx.infrastructure.database.models.task import TaskModel
++
++            try:
++                require_research_write()
++            except AuthorizationError:
++                return {"status": "OK_RESEARCH_BLOCKED", "reconciled": count}
++            links = (
++                (
++                    await db.execute(
++                        select(DatasetAnalysisLinkModel)
++                        .join(TaskModel, TaskModel.id == DatasetAnalysisLinkModel.task_id)
++                        .where(
++                            TaskModel.status.in_(["success", "completed", "failed", "cancelled"])
++                        )
++                        .order_by(DatasetAnalysisLinkModel.updated_at)
++                        .limit(20)
++                    )
++                )
++                .scalars()
++                .all()
++            )
++            task_ids = [(row.normalized_request.get("owner_id"), row.task_id) for row in links]
++            await db.rollback()
++            from uuid import UUID
++
++            from cygnusx.application.services.reproducible_report_service import (
++                ReproducibleReportService,
++            )
++
++            for owner_string, task_id in task_ids:
++                if task_id is None or owner_string is None:
++                    continue
++                try:
++                    graph = await ResearchProvenanceService(db).reconcile(
++                        UUID(owner_string), task_id
++                    )
++                    await db.commit()
++                    if graph.result_observation_id is not None:
++                        await ReproducibleReportService(db).enqueue(
++                            UUID(owner_string), task_id, request_key=graph.result_observation_id
++                        )
++                        if graph.flow.get("id") == "counts_deg" and graph.compute_state in {
++                            "success",
++                            "completed",
++                        }:
++                            await ReproducibleReportService(db).enqueue(
++                                UUID(owner_string),
++                                task_id,
++                                request_key=graph.result_observation_id,
++                                scientific=True,
++                            )
++                    count += 1
++                except Exception as exc:
++                    await db.rollback()
++                    logging.getLogger(__name__).warning(
++                        "Research reconciliation deferred: task=%s type=%s",
++                        task_id,
++                        type(exc).__name__,
++                    )
+     finally:
+         await engine.dispose()
+     return {"status": "OK", "reconciled": count}
+--- baseline/src/cygnusx/infrastructure/celery_app/tasks/reports.py
++++ phase4/src/cygnusx/infrastructure/celery_app/tasks/reports.py
+@@ -37,6 +37,10 @@
+         return "evidence_conflict", "证据关联或完整性校验失败，请检查来源记录。", False
+     if isinstance(exc, (ValidationError, ValueError)):
+         return "invalid_evidence", "证据或快照格式无效，请联系管理员。", False
++    from cygnusx.application.services.bioreport_adapter import BioReportRenderError
++
++    if isinstance(exc, BioReportRenderError):
++        return "scientific_render_failed", "科学报告渲染失败，可独立重试。", True
+     if isinstance(exc, (OSError, TimeoutError)):
+         return "storage_or_timeout", "文件读写失败或证据采集超时，可安全重试。", True
+     from sqlalchemy.exc import DBAPIError
+--- baseline/src/cygnusx/infrastructure/database/models/__init__.py
++++ phase4/src/cygnusx/infrastructure/database/models/__init__.py
+@@ -117,6 +117,7 @@
+     ReportModel,
+     ReportSnapshotModel,
+ )
++from cygnusx.infrastructure.database.models.result_observation import ResultObservationModel
+ from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.models.run_event import RunEventModel
+ from cygnusx.infrastructure.database.models.sandbox import SandboxSessionModel
+@@ -139,6 +140,7 @@
+ from cygnusx.infrastructure.database.models.workspace_archive import WorkspaceArchiveModel
+ 
+ __all__ = [
++    "ResultObservationModel",
+     "DatasetModel",
+     "DatasetVersionModel",
+     "DatasetSourceModel",
+--- baseline/src/cygnusx/infrastructure/database/models/dataset.py
++++ phase4/src/cygnusx/infrastructure/database/models/dataset.py
+@@ -186,4 +186,5 @@
+     confirmation_id: Mapped[str | None] = mapped_column(String(128))
+     parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+     normalized_request: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
++    execution_binding: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+     state: Mapped[str] = mapped_column(String(32), default="PREPARED", nullable=False)
+--- baseline/src/cygnusx/infrastructure/database/models/report.py
++++ phase4/src/cygnusx/infrastructure/database/models/report.py
+@@ -68,6 +68,9 @@
+     )
+     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+ 
++    result_observation_id: Mapped[uuid.UUID | None] = mapped_column(
++        UUID(as_uuid=True), ForeignKey("result_manifest_observations.id", ondelete="RESTRICT"), nullable=True, index=True
++    )
+     report_kind: Mapped[str] = mapped_column(
+         String(32), default="scientific", server_default="scientific", nullable=False
+     )
+@@ -97,6 +100,9 @@
+     path: Mapped[str] = mapped_column(String(500), default="")
+     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+ 
++    file_record_id: Mapped[uuid.UUID | None] = mapped_column(
++        UUID(as_uuid=True), ForeignKey("file_records.id", ondelete="RESTRICT"), nullable=True
++    )
+     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+ 
+     report: Mapped["ReportModel"] = relationship("ReportModel", back_populates="files")
+--- baseline/src/cygnusx/infrastructure/database/repositories/report_repository.py
++++ phase4/src/cygnusx/infrastructure/database/repositories/report_repository.py
+@@ -106,7 +106,7 @@
+         result = await self._session.execute(
+             self._report_query().where(
+                 ReportModel.task_id == task_id, ReportModel.report_kind == "scientific"
+-            )
++            ).order_by(ReportModel.version.desc(), ReportModel.created_at.desc()).limit(1)
+         )
+         return result.scalar_one_or_none()
+ 
+--- baseline/src/cygnusx/infrastructure/mcp/presets.py
++++ phase4/src/cygnusx/infrastructure/mcp/presets.py
+@@ -2474,7 +2474,7 @@
+     from cygnusx.core.config import get_settings
+ 
+     if get_settings().tool_gateway_read_enabled:
+-        for capability in capability_catalog(include_dataset=getattr(get_settings(), "dataset_discovery_readonly", False)):
++        for capability in capability_catalog(include_dataset=getattr(get_settings(), "dataset_discovery_readonly", False), include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
+             if capability.tool_name in tools_by_name:
+                 raise ValueError(f"共享工具注册冲突: {capability.tool_name}")
+             tools_by_name[capability.tool_name] = {

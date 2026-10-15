@@ -45,6 +45,22 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
+def require_human_or_confirmation(request: Request, confirmation_id: str | None) -> None:
+    """API-key callers cannot bypass the human gate by omitting a credential."""
+    api_key_channel = (
+        request.headers.get("X-API-Key")
+        or getattr(request.state, "auth_type", "") == "api_key"
+    )
+    if api_key_channel:
+        from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+
+        operation = ("downloads.submit" if "/downloads" in request.url.path else
+                     "tasks.cancel" if request.url.path.endswith("/cancel") else "analysis.submit")
+        require_agent_write_gate(operation)
+    if api_key_channel and not confirmation_id:
+        raise AuthorizationError("API Key 写操作需要人工批准的确认凭证", code="CONFIRMATION_REQUIRED")
+
+
 async def get_current_user_id(
     request: Request,
     token: Annotated[str | None, Depends(oauth2_scheme)] = None,
@@ -97,6 +113,18 @@ async def _authenticate_jwt(token: str) -> str:
 
 
 CurrentUserId = Annotated[str, Depends(get_current_user_id)]
+
+
+async def get_current_jwt_user_id(
+    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+) -> str:
+    """Require a live JWT; API keys cannot write human approval state."""
+    if not token:
+        raise AuthenticationError("确认批准必须使用登录用户 JWT")
+    return await _authenticate_jwt(token)
+
+
+CurrentJwtUserId = Annotated[str, Depends(get_current_jwt_user_id)]
 
 
 async def require_admin_totp(

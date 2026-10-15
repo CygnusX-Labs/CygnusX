@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "DataType": {
+      "enum": [
+        "RAW_FASTQ",
+        "RAW_INTEGER_COUNTS",
+        "NORMALIZED_EXPRESSION_TPM",
+        "NORMALIZED_EXPRESSION_FPKM",
+        "NORMALIZED_EXPRESSION_CPM",
+        "TRANSFORMED_EXPRESSION",
+        "MICROARRAY_EXPRESSION",
+        "SINGLE_CELL_COUNT_MATRIX",
+        "SAMPLE_METADATA",
+        "UNKNOWN"
+      ],
+      "title": "DataType",
+      "type": "string"
+    },
+    "HandoffAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "format": "uuid",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "file_record_id": {
+          "format": "uuid",
+          "title": "File Record Id",
+          "type": "string"
+        },
+        "asset_role": {
+          "title": "Asset Role",
+          "type": "string"
+        },
+        "data_type": {
+          "$ref": "#/$defs/DataType"
+        },
+        "format": {
+          "title": "Format",
+          "type": "string"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sha256"
+        },
+        "checksum_status": {
+          "title": "Checksum Status",
+          "type": "string"
+        },
+        "availability": {
+          "title": "Availability",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "file_record_id",
+        "asset_role",
+        "data_type",
+        "format",
+        "size",
+        "sha256",
+        "checksum_status",
+        "availability"
+      ],
+      "title": "HandoffAsset",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "handoff_schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Handoff Schema Version",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "format": "uuid",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "dataset_version_id": {
+      "format": "uuid",
+      "title": "Dataset Version Id",
+      "type": "string"
+    },
+    "source": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Source",
+      "type": "array"
+    },
+    "ingestion": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Ingestion",
+      "type": "array"
+    },
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/HandoffAsset"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "samples": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Samples",
+      "type": "array"
+    },
+    "validation": {
+      "additionalProperties": true,
+      "title": "Validation",
+      "type": "object"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "manifest_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Hash"
+    }
+  },
+  "required": [
+    "project_id",
+    "dataset_id",
+    "dataset_version_id",
+    "source",
+    "ingestion",
+    "assets",
+    "samples",
+    "validation",
+    "provenance"
+  ],
+  "title": "DataHandoff",
+  "type": "object"
+}

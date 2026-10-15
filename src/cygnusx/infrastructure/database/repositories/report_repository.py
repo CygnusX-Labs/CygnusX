@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,7 +17,7 @@ class ReportRepositoryImpl:
         self._session = session
 
     @staticmethod
-    def _report_query():
+    def _report_query() -> Select[tuple[ReportModel]]:
         """构建包含报告文件的查询，避免异步会话中触发延迟加载。"""
         return select(ReportModel).options(selectinload(ReportModel.files))
 
@@ -32,6 +32,7 @@ class ReportRepositoryImpl:
         self,
         user_id: UUID,
         *,
+        task_id: UUID | None = None,
         keyword: str | None = None,
         flow_id: str | None = None,
         status: str | None = None,
@@ -49,6 +50,10 @@ class ReportRepositoryImpl:
             ReportModel.user_id == user_id,
             ReportModel.flow_id != "studio",
         )
+
+        if task_id is not None:
+            query = query.where(ReportModel.task_id == task_id)
+            count_query = count_query.where(ReportModel.task_id == task_id)
 
         if keyword:
             like = f"%{keyword}%"
@@ -99,7 +104,9 @@ class ReportRepositoryImpl:
     async def get_by_task_id(self, task_id: UUID) -> ReportModel | None:
         """根据任务 ID 获取报告"""
         result = await self._session.execute(
-            self._report_query().where(ReportModel.task_id == task_id)
+            self._report_query().where(
+                ReportModel.task_id == task_id, ReportModel.report_kind == "scientific"
+            ).order_by(ReportModel.version.desc(), ReportModel.created_at.desc()).limit(1)
         )
         return result.scalar_one_or_none()
 

@@ -1,0 +1,449 @@
+{
+  "$defs": {
+    "ResearchArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "file_record_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Record Id"
+        },
+        "logical_name": {
+          "title": "Logical Name",
+          "type": "string"
+        },
+        "category": {
+          "default": "other",
+          "title": "Category",
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "integrity": {
+          "default": "UNKNOWN",
+          "enum": [
+            "VERIFIED",
+            "PARTIAL",
+            "UNKNOWN",
+            "MISSING",
+            "FAILED",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Integrity",
+          "type": "string"
+        },
+        "declared_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Declared Sha256"
+        },
+        "file_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Url"
+        }
+      },
+      "required": [
+        "logical_name"
+      ],
+      "title": "ResearchArtifact",
+      "type": "object"
+    },
+    "ResearchReportLink": {
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "format": "uuid",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "scientific",
+            "reproducibility",
+            "delivery"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "integrity": {
+          "default": "UNKNOWN",
+          "enum": [
+            "VERIFIED",
+            "PARTIAL",
+            "UNKNOWN",
+            "MISSING",
+            "FAILED",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Integrity",
+          "type": "string"
+        },
+        "result_observation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Observation Id"
+        },
+        "report_url": {
+          "title": "Report Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_id",
+        "kind",
+        "state",
+        "report_url"
+      ],
+      "title": "ResearchReportLink",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.research_provenance.v1",
+      "default": "cygnusx.research_provenance.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Id"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "dataset_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Version Id"
+    },
+    "analysis_link_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Analysis Link Id"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "handoff_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Handoff Hash"
+    },
+    "flow": {
+      "additionalProperties": true,
+      "title": "Flow",
+      "type": "object"
+    },
+    "parameters_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parameters Sha256"
+    },
+    "analysis_parameters": {
+      "additionalProperties": true,
+      "title": "Analysis Parameters",
+      "type": "object"
+    },
+    "source": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Source",
+      "type": "array"
+    },
+    "samples": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Samples",
+      "type": "array"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/ResearchArtifact"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "compute_state": {
+      "default": "UNKNOWN",
+      "title": "Compute State",
+      "type": "string"
+    },
+    "input_integrity": {
+      "default": "UNKNOWN",
+      "enum": [
+        "VERIFIED",
+        "PARTIAL",
+        "UNKNOWN",
+        "MISSING",
+        "FAILED",
+        "NOT_APPLICABLE"
+      ],
+      "title": "Input Integrity",
+      "type": "string"
+    },
+    "result_integrity": {
+      "default": "UNKNOWN",
+      "enum": [
+        "VERIFIED",
+        "PARTIAL",
+        "UNKNOWN",
+        "MISSING",
+        "FAILED",
+        "NOT_APPLICABLE"
+      ],
+      "title": "Result Integrity",
+      "type": "string"
+    },
+    "evidence_state": {
+      "default": "UNKNOWN",
+      "enum": [
+        "VERIFIED",
+        "PARTIAL",
+        "UNKNOWN",
+        "MISSING",
+        "FAILED",
+        "NOT_APPLICABLE"
+      ],
+      "title": "Evidence State",
+      "type": "string"
+    },
+    "delivery_state": {
+      "default": "UNKNOWN",
+      "enum": [
+        "READY",
+        "PARTIAL",
+        "BLOCKED",
+        "UNKNOWN"
+      ],
+      "title": "Delivery State",
+      "type": "string"
+    },
+    "result_observation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Observation Id"
+    },
+    "manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Sha256"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ResearchArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "reports": {
+      "items": {
+        "$ref": "#/$defs/ResearchReportLink"
+      },
+      "title": "Reports",
+      "type": "array"
+    },
+    "report_jobs": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Report Jobs",
+      "type": "array"
+    },
+    "gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "runtime": {
+      "additionalProperties": true,
+      "title": "Runtime",
+      "type": "object"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "finished_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Finished At"
+    },
+    "observation_scope": {
+      "const": "capture_time_bytes_not_execution_attestation",
+      "default": "capture_time_bytes_not_execution_attestation",
+      "title": "Observation Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "owner_id",
+    "task_id"
+  ],
+  "title": "ResearchProvenance",
+  "type": "object"
+}

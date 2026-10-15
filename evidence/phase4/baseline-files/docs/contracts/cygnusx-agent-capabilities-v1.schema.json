@@ -1,0 +1,1542 @@
+{
+  "generated_from": "cygnusx.application.schemas.agent_tools",
+  "schema_version": "1.0",
+  "capabilities": [
+    {
+      "schema_version": "1.0",
+      "capability_id": "downloads.describe_capabilities",
+      "tool_name": "bioops_downloads_describe_capabilities",
+      "description": "downloads.describe_capabilities (platform controlled; never self-approve)",
+      "scope": "read:discovery",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "downloads.prepare",
+      "tool_name": "bioops_downloads_prepare",
+      "description": "downloads.prepare (platform controlled; never self-approve)",
+      "scope": "prepare:download",
+      "side_effect": "confirmation",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "accession": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Accession",
+            "type": "string"
+          },
+          "download_method": {
+            "default": "ftp",
+            "enum": [
+              "ftp",
+              "aws"
+            ],
+            "title": "Download Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accession"
+        ],
+        "title": "DownloadPrepareArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.list_workflows",
+      "tool_name": "bioops_analysis_list_workflows",
+      "description": "analysis.list_workflows (platform controlled; never self-approve)",
+      "scope": "read:workflows",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.get_workflow_schema",
+      "tool_name": "bioops_analysis_get_workflow_schema",
+      "description": "analysis.get_workflow_schema (platform controlled; never self-approve)",
+      "scope": "read:workflows",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "flow_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Flow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_id"
+        ],
+        "title": "WorkflowArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.prepare",
+      "tool_name": "bioops_analysis_prepare",
+      "description": "analysis.prepare (platform controlled; never self-approve)",
+      "scope": "prepare:analysis",
+      "side_effect": "confirmation",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "flow_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Flow Id",
+            "type": "string"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          }
+        },
+        "required": [
+          "flow_id",
+          "arguments"
+        ],
+        "title": "AnalysisPrepareArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "tasks.get_status",
+      "tool_name": "bioops_tasks_get_status",
+      "description": "tasks.get_status (platform controlled; never self-approve)",
+      "scope": "read:tasks",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "TaskArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "tasks.list_related",
+      "tool_name": "bioops_tasks_list_related",
+      "description": "tasks.list_related (platform controlled; never self-approve)",
+      "scope": "read:tasks",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.discover",
+      "tool_name": "bioops_dataset_discover",
+      "description": "dataset.discover (platform controlled; never self-approve)",
+      "scope": "read:datasets",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "accession": {
+            "maxLength": 40,
+            "minLength": 4,
+            "title": "Accession",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accession"
+        ],
+        "title": "DatasetDiscoverArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.inspect",
+      "tool_name": "bioops_dataset_inspect",
+      "description": "dataset.inspect (platform controlled; never self-approve)",
+      "scope": "read:datasets",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "version_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "version_id"
+        ],
+        "title": "DatasetVersionArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.list_files",
+      "tool_name": "bioops_dataset_list_files",
+      "description": "dataset.list_files (platform controlled; never self-approve)",
+      "scope": "read:datasets",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "version_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "version_id"
+        ],
+        "title": "DatasetVersionArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.list_project_assets",
+      "tool_name": "bioops_dataset_list_project_assets",
+      "description": "dataset.list_project_assets (platform controlled; never self-approve)",
+      "scope": "read:datasets",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.prepare_import",
+      "tool_name": "bioops_dataset_prepare_import",
+      "description": "dataset.prepare_import (platform controlled; never self-approve)",
+      "scope": "prepare:download",
+      "side_effect": "confirmation",
+      "input_schema": {
+        "$defs": {
+          "ImportPrepare": {
+            "additionalProperties": false,
+            "properties": {
+              "dataset_id": {
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Dataset Id"
+              },
+              "accession": {
+                "maxLength": 40,
+                "minLength": 4,
+                "title": "Accession",
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "raw",
+                  "processed"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "selected_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "title": "Selected Ids",
+                "type": "array"
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Name",
+                "type": "string"
+              },
+              "request_key": {
+                "format": "uuid",
+                "title": "Request Key",
+                "type": "string"
+              },
+              "max_bytes": {
+                "exclusiveMinimum": 0,
+                "title": "Max Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "accession",
+              "mode",
+              "selected_ids",
+              "name",
+              "request_key",
+              "max_bytes"
+            ],
+            "title": "ImportPrepare",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/$defs/ImportPrepare"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "DatasetImportArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.list_compatible_workflows",
+      "tool_name": "bioops_analysis_list_compatible_workflows",
+      "description": "analysis.list_compatible_workflows (platform controlled; never self-approve)",
+      "scope": "read:datasets",
+      "side_effect": "none",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "version_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "version_id"
+        ],
+        "title": "DatasetVersionArgs",
+        "type": "object"
+      },
+      "approval": "none",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.prepare_from_dataset",
+      "tool_name": "bioops_analysis_prepare_from_dataset",
+      "description": "analysis.prepare_from_dataset (platform controlled; never self-approve)",
+      "scope": "prepare:analysis",
+      "side_effect": "confirmation",
+      "input_schema": {
+        "$defs": {
+          "DatasetAnalysisPrepare": {
+            "additionalProperties": false,
+            "properties": {
+              "flow_id": {
+                "maxLength": 80,
+                "minLength": 1,
+                "title": "Flow Id",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": true,
+                "title": "Options",
+                "type": "object"
+              }
+            },
+            "required": [
+              "flow_id"
+            ],
+            "title": "DatasetAnalysisPrepare",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "dataset_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "version_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Version Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/$defs/DatasetAnalysisPrepare"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "version_id",
+          "request"
+        ],
+        "title": "DatasetAnalysisArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "no_business_task",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "dataset.execute_import",
+      "tool_name": "bioops_dataset_execute_import",
+      "description": "dataset.execute_import (platform controlled; never self-approve)",
+      "scope": "execute:download",
+      "side_effect": "task",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "ExecuteArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "proposal_once_or_reconciliation",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "downloads.submit",
+      "tool_name": "bioops_downloads_submit",
+      "description": "downloads.submit (platform controlled; never self-approve)",
+      "scope": "execute:download",
+      "side_effect": "task",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "ExecuteArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "proposal_once_or_reconciliation",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "analysis.submit",
+      "tool_name": "bioops_analysis_submit",
+      "description": "analysis.submit (platform controlled; never self-approve)",
+      "scope": "execute:analysis",
+      "side_effect": "task",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "ExecuteArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "proposal_once_or_reconciliation",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "capability_id": "tasks.cancel",
+      "tool_name": "bioops_tasks_cancel",
+      "description": "tasks.cancel (platform controlled; never self-approve)",
+      "scope": "execute:cancel",
+      "side_effect": "task",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "ExecuteArgs",
+        "type": "object"
+      },
+      "approval": "human_jwt",
+      "idempotency": "proposal_once_or_reconciliation",
+      "owner_source": "authenticated_principal_and_owned_session",
+      "result_schema": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "invocation_id": {
+            "title": "Invocation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "required": [
+          "invocation_id",
+          "result"
+        ],
+        "title": "GatewayResult",
+        "type": "object"
+      },
+      "errors": [
+        "FEATURE_DISABLED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "CONFIRMATION_STORE_UNAVAILABLE",
+        "WRITE_GATE_BLOCKED"
+      ],
+      "agents": [
+        "research_treasure_mouse",
+        "platform_ai"
+      ]
+    }
+  ],
+  "results": {
+    "envelope": {
+      "properties": {
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "invocation_id": {
+          "title": "Invocation Id",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "items": {},
+              "type": "array"
+            }
+          ],
+          "title": "Result"
+        }
+      },
+      "required": [
+        "invocation_id",
+        "result"
+      ],
+      "title": "GatewayResult",
+      "type": "object"
+    },
+    "proposal": {
+      "properties": {
+        "proposal_id": {
+          "title": "Proposal Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "downloads.submit",
+            "analysis.submit"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Id"
+        },
+        "parameters_hash": {
+          "title": "Parameters Hash",
+          "type": "string"
+        },
+        "normalized_parameters": {
+          "additionalProperties": true,
+          "title": "Normalized Parameters",
+          "type": "object"
+        },
+        "preview": {
+          "additionalProperties": true,
+          "title": "Preview",
+          "type": "object"
+        },
+        "confirmation_id": {
+          "title": "Confirmation Id",
+          "type": "string"
+        },
+        "expires_at": {
+          "title": "Expires At",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "write_enabled": {
+          "const": false,
+          "default": false,
+          "title": "Write Enabled",
+          "type": "boolean"
+        },
+        "gate": {
+          "const": "WRITE_GATE_BLOCKED",
+          "default": "WRITE_GATE_BLOCKED",
+          "title": "Gate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "conversation_id",
+        "operation",
+        "project_id",
+        "parameters_hash",
+        "normalized_parameters",
+        "preview",
+        "confirmation_id",
+        "expires_at",
+        "state"
+      ],
+      "title": "ToolProposal",
+      "type": "object"
+    },
+    "task_status": {
+      "properties": {
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "progress": {
+          "default": null,
+          "title": "Progress",
+          "type": "null"
+        },
+        "progress_status": {
+          "const": "unavailable",
+          "default": "unavailable",
+          "title": "Progress Status",
+          "type": "string"
+        },
+        "error_summary": {
+          "title": "Error Summary",
+          "type": "string"
+        },
+        "task_url": {
+          "title": "Task Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "status",
+        "error_summary",
+        "task_url"
+      ],
+      "title": "TaskStatusView",
+      "type": "object"
+    }
+  }
+}

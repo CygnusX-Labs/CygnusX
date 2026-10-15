@@ -16,6 +16,15 @@ from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
 from cygnusx.tools.schema_loader import ToolSchema, ToolsSchemaLoader
 
 
+@pytest.fixture(autouse=True)
+def isolated_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cygnusx.application.services import tool_confirmation_service as module
+
+    monkeypatch.setattr(module, "_confirmation_service", module.ToolConfirmationService(
+        module._MemoryStore()
+    ))
+
+
 class _FakeAsyncSession(AsyncSession):
     def __init__(self):
         pass

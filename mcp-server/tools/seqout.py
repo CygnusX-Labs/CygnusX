@@ -1,12 +1,10 @@
 """Seqout 公共数据库检索工具 — 完整覆盖 seqout.org API 所有主要接口"""
 
-import httpx
 import json
-from typing import Any
 
-from fastmcp import FastMCP
-
+import httpx
 from core.logger import logger
+from fastmcp import FastMCP
 
 BASE_URL = "https://seqout.org/api"
 
@@ -85,7 +83,6 @@ async def _seqout_request(endpoint: str, params: dict | None = None) -> dict:
 
 # ==================== Search Tools ====================
 
-@mcp.tool()
 async def seqout_search(query: str, limit: int = 5) -> str:
     """在 GEO/SRA/ENA/GSA 等公共数据库中搜索匹配的组学/转录组/单细胞项目。
     
@@ -120,7 +117,6 @@ async def seqout_search(query: str, limit: int = 5) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_search_geo(query: str, limit: int = 5) -> str:
     """仅搜索 GEO 数据库中的微阵列和单细胞数据集。
     
@@ -146,7 +142,6 @@ async def seqout_search_geo(query: str, limit: int = 5) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_search_sra(query: str, limit: int = 5) -> str:
     """仅搜索 SRA 数据库中的测序运行记录。
     
@@ -172,7 +167,6 @@ async def seqout_search_sra(query: str, limit: int = 5) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_search_structured(organism: str, assay: str, limit: int = 5) -> str:
     """使用元数据过滤器进行结构化搜索，精确匹配物种和实验类型。
     
@@ -204,7 +198,6 @@ async def seqout_search_structured(organism: str, assay: str, limit: int = 5) ->
 
 # ==================== Project Tools ====================
 
-@mcp.tool()
 async def seqout_get_project_detail(accession: str) -> str:
     """获取指定项目 (如 GSE151530, PRJNA12345) 的详细实验设计、测序技术平台及文献引用。
     
@@ -224,7 +217,6 @@ async def seqout_get_project_detail(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_project_metadata(accession: str) -> str:
     """获取项目的标题和描述信息。
     
@@ -244,7 +236,6 @@ async def seqout_get_project_metadata(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_project_citation(accession: str) -> str:
     """获取项目的 BibTeX 引用文献。
     
@@ -264,7 +255,6 @@ async def seqout_get_project_citation(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_project_enriched(accession: str) -> str:
     """获取 AI 增强的样本元数据（包含本体论注释）。
     
@@ -286,7 +276,6 @@ async def seqout_get_project_enriched(accession: str) -> str:
 
 # ==================== Experiment & Sample Tools ====================
 
-@mcp.tool()
 async def seqout_get_experiments(study_accession: str) -> str:
     """列出研究中的所有实验。
     
@@ -306,7 +295,6 @@ async def seqout_get_experiments(study_accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_runs(study_accession: str) -> str:
     """列出 FASTQ 下载链接。
     
@@ -326,7 +314,6 @@ async def seqout_get_runs(study_accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_run_download(run_accession: str) -> str:
     """获取单个运行的下载链接。
     
@@ -346,7 +333,6 @@ async def seqout_get_run_download(run_accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_sample_metadata(accession: str) -> str:
     """获取样本元数据。
     
@@ -366,7 +352,6 @@ async def seqout_get_sample_metadata(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_sample_detail(accession: str) -> str:
     """获取完整的样本详细信息。
     
@@ -386,7 +371,6 @@ async def seqout_get_sample_detail(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_sample_manifest(accession: str, max_samples: int = 30) -> str:
     """获取数据集的样本清单（Sample Manifest），包含样本组织来源、实验处理组 (Treatment) 与对照组 (Control) 标记。
     
@@ -414,7 +398,6 @@ async def seqout_get_sample_manifest(accession: str, max_samples: int = 30) -> s
 
 # ==================== Resolution Tools ====================
 
-@mcp.tool()
 async def seqout_resolve_accession(accession: str) -> str:
     """当科研人员仅提供单个样本编号 (GSM...) 或测序 Run (SRR...) 时，反查其归属的项目编号 (GSE/PRJNA)。
     
@@ -434,7 +417,6 @@ async def seqout_resolve_accession(accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_resolve_prj(prj_accession: str) -> str:
     """将 BioProject 解析到研究级别。
     
@@ -456,7 +438,6 @@ async def seqout_resolve_prj(prj_accession: str) -> str:
 
 # ==================== Ontology & Statistics Tools ====================
 
-@mcp.tool()
 async def seqout_get_ontology_term(term: str) -> str:
     """查询本体论图中某个术语的所有相关信息。
     
@@ -476,7 +457,6 @@ async def seqout_get_ontology_term(term: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_organisms() -> str:
     """列出所有支持的生物物种。
     
@@ -495,7 +475,6 @@ async def seqout_get_organisms() -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_common_name(organism: str) -> str:
     """获取物种的常用名称。
     
@@ -517,7 +496,6 @@ async def seqout_get_common_name(organism: str) -> str:
 
 # ==================== Beacon Tools ====================
 
-@mcp.tool()
 async def seqout_beacon_info() -> str:
     """获取 Beacon 身份和元数据。
     
@@ -536,7 +514,6 @@ async def seqout_beacon_info() -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_beacon_runs(run_accession: str | None = None, skip: int = 0, limit: int = 10) -> str:
     """浏览或获取测序运行（使用自定义 seqoutRun schema）。
     
@@ -572,7 +549,6 @@ async def seqout_beacon_runs(run_accession: str | None = None, skip: int = 0, li
 
 # ==================== Statistics Tools ====================
 
-@mcp.tool()
 async def seqout_get_stats_growth() -> str:
     """获取数据库随时间的增长情况。
     
@@ -591,7 +567,6 @@ async def seqout_get_stats_growth() -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_organism_totals() -> str:
     """获取每个物种的实验总数。
     
@@ -610,7 +585,6 @@ async def seqout_get_organism_totals() -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_platform_totals(platform: str | None = None) -> str:
     """获取每个平台的实验总数，或特定平台的过滤选项。
     
@@ -637,7 +611,6 @@ async def seqout_get_platform_totals(platform: str | None = None) -> str:
 
 # ==================== Download Tools ====================
 
-@mcp.tool()
 async def seqout_get_download_links(study_accession: str) -> str:
     """以 TSV 格式获取运行下载链接。
     
@@ -657,7 +630,6 @@ async def seqout_get_download_links(study_accession: str) -> str:
         return json.dumps({"success": False, "summary": f"未知错误：{str(e)}"}, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 async def seqout_get_metadata_csv(study_accession: str) -> str:
     """下载合并的元数据 CSV。
     

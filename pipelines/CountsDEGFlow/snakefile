@@ -1,0 +1,77 @@
+"""Matrix-only specialization; never executes RNAFlow FASTQ stages."""
+from pathlib import Path
+import hashlib
+import json
+import yaml
+
+analysis = yaml.safe_load(Path(config["analysisyaml"]).read_text())
+work = Path(analysis["workflow"])
+counts = Path(analysis["count_matrix"])
+metadata = Path(analysis["sample_metadata"])
+script = Path(workflow.basedir) / "scripts" / "counts_deg.R"
+parameters = work / "counts_parameters.json"
+work.mkdir(parents=True, exist_ok=True)
+parameters.write_text(json.dumps({key: analysis[key] for key in (
+    "input_type", "source_reviewed", "design", "reference", "treatment", "alpha", "fit_type"
+)}))
+
+rule all:
+    input:
+        str(work / "results" / "result_manifest.json"),
+        str(work / "input_manifest.json"),
+        str(work / "results" / "result_manifest.delivery.json")
+
+rule verify_inputs:
+    input:
+        count_matrix=str(counts), sample_metadata=str(metadata)
+    output:
+        str(work / "input_manifest.json")
+    run:
+        manifest = {"schema_version": "1.0", "input_type": analysis["input_type"], "assets": []}
+        for path in input:
+            digest = hashlib.sha256()
+            with open(path, "rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest["assets"].append({"name": Path(path).name, "sha256": digest.hexdigest()})
+        Path(output[0]).write_text(json.dumps(manifest, indent=2))
+
+rule differential_expression:
+    input:
+        counts=str(counts), metadata=str(metadata), verified=str(work / "input_manifest.json")
+    output:
+        manifest=str(work / "results" / "result_manifest.json")
+    params:
+        script=str(script), parameters=str(parameters), result=str(work / "results")
+    threads: 1
+    resources:
+        mem_mb=4096
+    log:
+        str(work / "counts_deg.log")
+    shell:
+        "Rscript --vanilla {params.script:q} {input.counts:q} {input.metadata:q} {params.parameters:q} {params.result:q} > {log:q} 2>&1"
+
+
+rule delivery_manifest:
+    input:
+        str(work / "results" / "result_manifest.json")
+    output:
+        str(work / "results" / "result_manifest.delivery.json")
+    run:
+        original = json.loads(Path(input[0]).read_text())
+        files = []
+        for name in original["outputs"]:
+            path = Path(input[0]).parent / name
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            files.append({"path": name, "size_bytes": path.stat().st_size,
+                          "sha256": digest.hexdigest(),
+                          "category": "deg" if name == "deg.tsv" else "qc" if name.startswith("qc") else "other"})
+        Path(output[0]).write_text(json.dumps({
+            "manifest_version": "1.0", "kind": "omichub.analysis.result",
+            "platform": analysis.get("platform", {}),
+            "cygnusx": analysis.get("cygnusx", {}),
+            "run": {"status": "completed_no_report"}, "files": files,
+        }, sort_keys=True, indent=2))

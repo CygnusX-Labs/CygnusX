@@ -19,6 +19,15 @@ from cygnusx.domain.task.value_objects import ExecutionMode
 from cygnusx.tools.schema_loader import ToolSchema, ToolsSchemaLoader
 
 
+@pytest.fixture(autouse=True)
+def isolated_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cygnusx.application.services import tool_confirmation_service as module
+
+    monkeypatch.setattr(module, "_confirmation_service", module.ToolConfirmationService(
+        module._MemoryStore()
+    ))
+
+
 class _FakeAsyncSession(AsyncSession):
     def __init__(self):
         pass
@@ -150,7 +159,13 @@ async def test_analysis_flow_requires_context(bridge: ToolBridgeService) -> None
 
 
 @pytest.mark.asyncio
-async def test_analysis_flow_confirm_and_submit(bridge: ToolBridgeService) -> None:
+async def test_analysis_flow_confirm_and_submit(
+    bridge: ToolBridgeService, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Isolated pre-existing confirmation semantics, not runtime gate acceptance.
+    from cygnusx.application.services import agent_tool_gateway
+
+    monkeypatch.setattr(agent_tool_gateway, "require_agent_write_gate", lambda operation: None)
     context = _make_context()
     arguments = {
         "name": "Test",

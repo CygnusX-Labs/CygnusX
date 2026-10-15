@@ -1,0 +1,88 @@
+"""AI Provider 配置实体"""
+
+from datetime import datetime
+from typing import Any
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
+
+from cygnusx.domain.ai_provider.value_objects import ProviderType
+
+
+class AIProviderConfig(BaseModel):
+    """AI Provider 配置聚合根
+
+    管理员可运行时增删改，用于决定 AI Copilot 调用哪个模型/API。
+    """
+
+    id: UUID
+    name: str
+    provider_type: ProviderType = ProviderType.OPENAI_COMPATIBLE
+    model: str
+    base_url: str = ""
+    api_key: str = ""  # 存储时加密
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    context_window: int = Field(default=262144, ge=1)
+    top_p: float = 1.0
+    timeout: int = 120
+    # 输入/输出/输入缓存/输出缓存单价（元 / M tokens），供工作台会话费用估算；None = 未配置
+    input_price: float | None = None
+    output_price: float | None = None
+    input_cache_price: float | None = None
+    output_cache_price: float | None = None
+    is_active: bool = True
+    is_default: bool = False
+    tier: str = "light"
+    cost_per_1m_in: float | None = None
+    cost_per_1m_out: float | None = None
+    latency_budget_ms: int | None = None
+    vendor: str | None = None
+    weight: int = 100
+    extra_params: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    def mark_updated(self) -> None:
+        self.updated_at = datetime.now()
+
+    def set_default(self, value: bool = True) -> None:
+        self.is_default = value
+        self.mark_updated()
+
+    @staticmethod
+    def create(
+        name: str,
+        model: str,
+        provider_type: ProviderType = ProviderType.OPENAI_COMPATIBLE,
+        base_url: str = "",
+        api_key: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+        top_p: float = 1.0,
+        timeout: int = 120,
+        input_price: float | None = None,
+        output_price: float | None = None,
+        input_cache_price: float | None = None,
+        output_cache_price: float | None = None,
+        extra_params: dict[str, Any] | None = None,
+        context_window: int = 262144,
+    ) -> "AIProviderConfig":
+        return AIProviderConfig(
+            id=uuid4(),
+            name=name,
+            provider_type=provider_type,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            context_window=context_window,
+            top_p=top_p,
+            timeout=timeout,
+            input_price=input_price,
+            output_price=output_price,
+            input_cache_price=input_cache_price,
+            output_cache_price=output_cache_price,
+            extra_params=extra_params or {},
+        )

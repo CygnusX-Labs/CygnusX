@@ -1,0 +1,42 @@
+meta:
+  id: counts_deg
+  name: 原始计数矩阵差异表达（隔离验收中）
+  category: transcriptomics
+  version: '0.1.0'
+  description: 独立 gene×sample 原始整数计数 DESeq2；默认隐藏，未经 Worker 验收不可提交。
+  tags: [counts, DESeq2, experimental]
+ai:
+  enabled: true
+  requires_confirmation: true
+  assistant_summary: 仅人工审查后的 raw integer counts，与 FASTQ RNAFlow 分离。
+  allowed_parameters: [project_name, count_matrix, sample_metadata, input_type, source_reviewed, design, reference, treatment, alpha, fit_type]
+  allowed_execution_modes: [local]
+  default_resource_hint: {cores: 1, memory: 4G, time: 1h}
+parameters:
+  - {name: project_name, label: 项目名称, type: string, required: true}
+  - name: count_matrix
+    label: 基因计数矩阵
+    type: file
+    required: true
+    file_config: {accept: '.tsv,.txt', multiple: false}
+  - name: sample_metadata
+    label: 样本元数据
+    type: file
+    required: true
+    file_config: {accept: '.tsv,.txt', multiple: false}
+  - {name: input_type, label: 数据类型, type: select, required: true, select_config: {options: [{label: 原始整数计数, value: raw_integer_counts}]}}
+  - {name: source_reviewed, label: 来源与分组已由人类审查, type: boolean, required: true, default: false}
+  - {name: design, label: 设计, type: select, required: true, select_config: {options: [{label: 分组, value: '~ group'}, {label: 批次与分组, value: '~ batch + group'}]}}
+  - {name: reference, label: 对照组, type: string, required: true}
+  - {name: treatment, label: 处理组, type: string, required: true}
+  - {name: alpha, label: FDR 阈值, type: float, required: true, default: 0.05, number_config: {min: 0.001, max: 0.2}}
+  - {name: fit_type, label: dispersion fit, type: select, required: true, default: parametric, select_config: {options: [{label: parametric, value: parametric}, {label: local, value: local}, {label: mean, value: mean}]}}
+execution:
+  engine: snakemake
+  snakefile: /opt/cygnusx/pipelines/CountsDEGFlow/snakefile
+  config_file_param: analysisyaml
+  config_file_name: config.yaml
+  default_resources: {cores: 1, memory: 4G, time: 1h}
+pipeline_mapping:
+  config_fields: [project_name, count_matrix, sample_metadata, input_type, source_reviewed, design, reference, treatment, alpha, fit_type]
+  computed_fields: {workflow: __work_dir__}

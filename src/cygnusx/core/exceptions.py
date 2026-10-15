@@ -60,6 +60,13 @@ class MCPConnectionError(CygnusXError):
     detail = "MCP server connection failed"
 
 
+class DependencyUnavailableError(CygnusXError):
+    """A required shared dependency is unavailable; callers may retry."""
+
+    status_code = 503
+    detail = "Required dependency unavailable"
+
+
 class BusinessError(CygnusXError):
     status_code = 400
     detail = "Business rule violation"

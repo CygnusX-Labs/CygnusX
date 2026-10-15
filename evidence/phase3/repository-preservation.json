@@ -1,0 +1,11 @@
+{
+  "git rev-parse HEAD": {
+    "unchanged": true
+  },
+  "git branch --show-current": {
+    "unchanged": true
+  },
+  "git submodule status --recursive": {
+    "unchanged": true
+  }
+}

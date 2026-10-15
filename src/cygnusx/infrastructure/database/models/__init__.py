@@ -14,6 +14,7 @@ from cygnusx.infrastructure.database.models.agent_memory import (
     MemoryFactModel,
     MemorySettlementModel,
 )
+from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
 from cygnusx.infrastructure.database.models.agentteams_bridge import AgentTeamsBridgeSettingsModel
 from cygnusx.infrastructure.database.models.ai import ConversationModel, MessageModel
 from cygnusx.infrastructure.database.models.ai_metric import (
@@ -50,6 +51,15 @@ from cygnusx.infrastructure.database.models.cookie import (
     CookiePricingModel,
     CookieTransactionModel,
     LedgerEntryModel,
+)
+from cygnusx.infrastructure.database.models.dataset import (
+    DatasetAnalysisLinkModel,
+    DatasetAssetModel,
+    DatasetIngestionModel,
+    DatasetModel,
+    DatasetSampleModel,
+    DatasetSourceModel,
+    DatasetVersionModel,
 )
 from cygnusx.infrastructure.database.models.festival import FestivalClaimModel
 from cygnusx.infrastructure.database.models.file import (
@@ -101,7 +111,13 @@ from cygnusx.infrastructure.database.models.overdrive import (
     OverdriveTaskResultModel,
 )
 from cygnusx.infrastructure.database.models.project import ProjectModel
-from cygnusx.infrastructure.database.models.report import ReportFileModel, ReportModel
+from cygnusx.infrastructure.database.models.report import (
+    ReportFileModel,
+    ReportGenerationJobModel,
+    ReportModel,
+    ReportSnapshotModel,
+)
+from cygnusx.infrastructure.database.models.result_observation import ResultObservationModel
 from cygnusx.infrastructure.database.models.run import RunModel
 from cygnusx.infrastructure.database.models.run_event import RunEventModel
 from cygnusx.infrastructure.database.models.sandbox import SandboxSessionModel
@@ -124,6 +140,16 @@ from cygnusx.infrastructure.database.models.user import UserModel, WorkspaceMode
 from cygnusx.infrastructure.database.models.workspace_archive import WorkspaceArchiveModel
 
 __all__ = [
+    "ResultObservationModel",
+    "DatasetModel",
+    "DatasetVersionModel",
+    "DatasetSourceModel",
+    "DatasetAssetModel",
+    "DatasetSampleModel",
+    "DatasetIngestionModel",
+    "DatasetAnalysisLinkModel",
+
+    "AgentToolInvocationModel",
     "AgentTemplateModel",
     "UserAgentCapabilityModel",
     "AgentTeamsBridgeSettingsModel",
@@ -198,6 +224,8 @@ __all__ = [
     "MASRoomEventModel",
     "ReportModel",
     "ReportFileModel",
+    "ReportSnapshotModel",
+    "ReportGenerationJobModel",
     "SandboxSessionModel",
     "SearchProviderConfigModel",
     "TerminalSessionModel",

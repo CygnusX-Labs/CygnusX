@@ -274,6 +274,20 @@ class MCPClient:
         fallback_servers: list[MCPServer] | None = None,
     ) -> dict[str, Any]:
         """调用某 MCP Server 的指定工具（带 Trace/Log/Metrics 埋点）"""
+        # Apply the BioOps runtime gate before all transports, retries or fallbacks.
+        # Human form submissions are a separate existing REST surface.
+        if ("submit" in tool_name or "cancel" in tool_name) and any(
+            part in tool_name for part in ("download", "analysis", "rna_seq", "atac_seq", "task")
+        ):
+            from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+            from cygnusx.core.exceptions import AuthorizationError
+
+            operation = ("downloads.submit" if "download" in tool_name else
+                         "tasks.cancel" if "cancel" in tool_name else "analysis.submit")
+            try:
+                require_agent_write_gate(operation)
+            except AuthorizationError as exc:
+                return {"success": False, "error": exc.detail, "code": exc.code}
         tracer = get_tracer("cygnusx.mcp")
         with tracer.start_as_current_span(
             "mcp.call_tool",

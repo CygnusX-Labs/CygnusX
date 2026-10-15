@@ -1,8 +1,7 @@
 """数据下载工具 — 公共数据库（SRA/GEO）高速下载 + 多云存储下载 + 直链下载"""
 
-from fastmcp import FastMCP
-
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
+from fastmcp import FastMCP
 
 
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
@@ -20,6 +19,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         links: list[str] | None = None,
         target_directory: str = "",
         dry_run: bool = False,
+        confirmation_id: str = "",
         user_confirmed: bool = False,
     ) -> dict:
         """提交数据下载任务，产物落到用户工作区 raw_data 目录（可选子目录）。
@@ -52,10 +52,14 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         :return: JSON 格式结果，含 success、summary、data、next_steps
 
         示例:
-            await cygnusx_submit_download("sra", "GSE12345", "aws", aws_threads=16, user_confirmed=True)
+            await cygnusx_submit_download("sra", "GSE12345", "aws", aws_threads=16)
             # 提交 GSE12345 的 AWS 高速下载任务
         """
-        if not user_confirmed:
+        if user_confirmed:
+            return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请使用服务端 confirmation_id。"}
+        normalized_links = [link.strip() for link in (links or []) if link and link.strip()]
+        normalized_object_uri = object_uri.strip()
+        if not confirmation_id:
             if source == "sra":
                 desc = f"{accession}（{download_method} 高速下载）"
             elif source == "cloud_storage":
@@ -63,17 +67,47 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             else:
                 desc = f"{len(links or [])} 个直链"
             target = f" -> raw_data/{target_directory}" if target_directory else " -> raw_data"
+            confirmation_payload = {
+                "source": source,
+                "links": normalized_links,
+                "download_threads": 4,
+                "overwrite_policy": "auto_rename",
+                "accession": accession,
+                "download_method": download_method,
+                "multithreads": multithreads,
+                "aws_threads": aws_threads,
+                "cloud_provider": cloud_provider or None,
+                "object_uri": normalized_object_uri,
+                "recursive": recursive,
+                "target_directory": target_directory,
+                "dry_run": dry_run,
+            }
             return {
                 "success": True,
                 "needs_confirmation": True,
                 "summary": (
                     f"即将提交下载任务: [{source}] {desc}{target}\n"
-                    "请向用户确认后，再以 user_confirmed=True 重新调用。"
+                    "请在平台网页批准服务端确认记录后携带 confirmation_id 重试。"
                 ),
-                "data": {"source": source, "accession": accession, "object_uri": object_uri},
+                "data": {
+                    "source": source,
+                    "accession": accession,
+                    "object_uri": object_uri,
+                    "confirmation": await api.create_tool_confirmation(
+                        "cygnusx_submit_download",
+                        confirmation_payload,
+                    ),
+                },
             }
 
-        payload: dict = {"source": source}
+        payload: dict = {
+            "source": source,
+            "accession": accession,
+            "download_method": download_method,
+            "multithreads": multithreads,
+            "aws_threads": aws_threads,
+            "dry_run": dry_run,
+        }
         if source == "sra":
             payload["accession"] = accession
             payload["download_method"] = download_method
@@ -82,12 +116,22 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             payload["dry_run"] = dry_run
         elif source == "cloud_storage":
             payload["cloud_provider"] = cloud_provider
-            payload["object_uri"] = object_uri
+            payload["object_uri"] = normalized_object_uri
             payload["recursive"] = recursive
         else:
-            payload["links"] = links or []
-        if target_directory:
-            payload["target_directory"] = target_directory
+            payload["links"] = normalized_links
+        payload.update(
+            {
+                "links": normalized_links,
+                "download_threads": 4,
+                "overwrite_policy": "auto_rename",
+                "cloud_provider": cloud_provider or None,
+                "object_uri": normalized_object_uri,
+                "recursive": recursive,
+                "target_directory": target_directory,
+            }
+        )
+        payload["confirmation_id"] = confirmation_id
 
         try:
             result = await api.submit_download(payload)

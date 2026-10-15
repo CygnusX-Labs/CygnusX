@@ -53,6 +53,23 @@ class ToolBridgeService:
         context: ToolInvocationContext | None = None,
     ) -> dict[str, Any]:
         """执行工具调用，返回统一格式。"""
+        if tool_name.startswith("bioops_"):
+            from cygnusx.application.schemas.agent_tools import capability_catalog
+            from cygnusx.application.services.agent_tool_gateway import AgentToolGateway
+
+            if context is None or context.user_id != user_id:
+                return self._error("共享工具需要可信上下文")
+            capability = next((c for c in capability_catalog(include_write=True)
+                               if c.tool_name == tool_name), None)
+            if capability is None:
+                return self._error("未知共享工具")
+            try:
+                gateway = AgentToolGateway(context.db)
+                result = await gateway.invoke(context, capability.capability_id, arguments)
+                return {"success": True, "is_error": False,
+                        "llm_payload": result, "ui_payload": {"bioops": result}}
+            except Exception as exc:
+                return self._error(str(exc), code=code_from_exception(exc))
         schema = self._loader.get_tool(tool_name)
         if schema is None:
             return self._error(f"未知工具: {tool_name}", code=ToolErrorCode.VALIDATION_ERROR)

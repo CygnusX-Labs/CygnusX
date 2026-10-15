@@ -4,9 +4,9 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from cygnusx.api.deps import CurrentUserId, DbSession
+from cygnusx.api.deps import CurrentUserId, DbSession, require_human_or_confirmation
 from cygnusx.application.schemas.download import DownloadRequest
 from cygnusx.application.schemas.download_progress import (
     DownloadProgressResponse,
@@ -15,6 +15,10 @@ from cygnusx.application.schemas.download_progress import (
 )
 from cygnusx.application.schemas.task import TaskListResponse, TaskResponse
 from cygnusx.application.services.download_service import DownloadService
+from cygnusx.application.services.tool_confirmation_service import (
+    ConfirmationError,
+    get_tool_confirmation_service,
+)
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import ValidationError
 from cygnusx.infrastructure.cache.redis_client import get_redis
@@ -53,12 +57,25 @@ def _ensure_enabled(req: DownloadRequest) -> None:
 
 @router.post("", response_model=TaskResponse, summary="提交数据下载任务")
 async def submit_download(
+    request: Request,
     current_user_id: CurrentUserId,
     req: DownloadRequest,
     service: DownloadServiceDep,
 ) -> TaskResponse:
     """提交一个 EBI/NCBI 数据下载任务，返回任务对象（可经 /tasks/{id} 查进度/日志）。"""
+    require_human_or_confirmation(request, req.confirmation_id)
     _ensure_enabled(req)
+    if req.confirmation_id:
+        confirmation = get_tool_confirmation_service()
+        try:
+            await confirmation.consume_tool_confirmation(
+                current_user_id,
+                req.confirmation_id,
+                "cygnusx_submit_download",
+                req.model_dump(exclude={"confirmation_id"}),
+            )
+        except ConfirmationError as exc:
+            raise ValidationError(f"确认凭证校验失败({exc.code}): {exc.message}") from exc
     return await service.submit(current_user_id, req)
 
 

@@ -1003,6 +1003,30 @@ class AgentService:
                 ]
             tools.extend(builtin_tools)
 
+            # Shared capability schemas are generated from the gateway contract,
+            # and filtered here as well as rechecked by the final service.
+            from cygnusx.application.schemas.agent_tools import capability_catalog
+            from cygnusx.infrastructure.database.models.user import UserModel
+
+            if get_settings().tool_gateway_read_enabled and user_id:
+                user = await self._db.get(UserModel, uuid.UUID(user_id))
+                if user and user.status == "active":
+                    denied = set(user.disabled_modules or []) if user.role != "admin" else set()
+                    for capability in capability_catalog(include_dataset=get_settings().dataset_discovery_readonly, include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
+                        module = ("flows" if capability.capability_id.startswith("analysis.") else
+                                  "tasks" if capability.capability_id.startswith("tasks.") else
+                                  "files" if capability.capability_id.startswith("dataset.") else "downloads")
+                        if module in denied or "ai-assistant" in denied:
+                            continue
+                        if capability.side_effect == "confirmation" and "files" in denied:
+                            continue
+                        if allowed_builtin_names and capability.tool_name not in allowed_builtin_names:
+                            continue
+                        tools.append({"type": "function", "function": {
+                            "name": capability.tool_name, "description": capability.description,
+                            "parameters": capability.input_schema,
+                        }})
+
         # 3. 系统提示词 = Agent 设定 + 技能 L1 索引 + cygnusx-tools 清单。
         # 技能采用三层渐进式披露：L1 仅注入 name+description 索引（每技能约 100 tokens）；
         # L2 正文由模型命中后调用 use_skill 工具按需加载；L3 references/assets 用

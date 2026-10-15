@@ -2,6 +2,8 @@
 
 本目录集中存放 CygnusX 的项目级架构、设计规范和实施方案。修改相关功能前，请先阅读对应文档，确保实现与既有约束保持一致。
 
+> 科研交付链现状入口：[CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)（Phase4 受保护代码；运行准入 BLOCKED）。
+
 ## 0. 这个架构文档目录如何发挥作用
 
 `ARCHITECTURE_DESIGN` 是代码现状、修改规范和历史方案的文档索引层。开发者先依据本 README 按领域定位文档，再阅读对应的 as-built 基线或规范；修改代码时以代码、配置和迁移为事实来源，用架构文档解释模块边界、数据流、权限和验证门禁。`as-built` 文档描述当前实现，规范文档约束应该如何修改，提案/快照记录目标态或某一时点，`deprecated/` 只保留历史参考，不能覆盖活动基线。
@@ -74,6 +76,10 @@ sequenceDiagram
 
 ---
 
+
+### `CygnusX_dataset_architecture.md` — Dataset 与 Flow 输入资产（as-built，运行准入 BLOCKED）
+新增版本化 Dataset/Source/Asset/Sample、GEO/ENA 只读证据、导入预案和原服务对账、受控 Handoff；统计本地验收与 Worker/写门禁分开，详见该活动基线。
+
 ## 1. 平台总览与总体规范
 
 ### `CygnusX_platform_architecture_maps.md` — 当前平台架构图汇总（简练版 + 详细版，2026-09-26）
@@ -94,6 +100,11 @@ sequenceDiagram
 ---
 
 ## 2. Agent 执行架构
+
+### `CygnusX_agent_tool_gateway.md` — BioOps 共享 Agent 工具层（as-built）
+记录 Phase 2 主进程 Gateway、Node 有限委托、MCPClient/ToolBridge 复用、prepare/人工审批、
+最小调用关联及恢复边界。当前 IMPLEMENTED / WRITE BLOCKED，运行 Gate 未通过，所有
+Agent 下载/分析/取消保持后端禁用；不代表部署验收。
 
 ### `CygnusX_agent_architecture.md` — 单 Agent 技术架构备忘录（as-built，2026-09-20）
 回答"一个 Agent 在 CygnusX 里到底怎么定义、怎么调用、怎么维持状态、怎么调工具、怎么跑起来、依赖什么、怎么和别的 Agent 协作"的实现细节层快照。Agent 是**数据驱动**（20 个 `data/ai/*.yaml` → `agent_templates` 表）而非基类继承；入口为 `POST /api/v1/chat/stream` SSE，出入参是 OpenAI 消息 dict 列表 → `AsyncIterator[ChatChunk>`；辨析两个同名 `AgentContext` 的职责边界；对话历史由**前端显式传入**、后端 per-request 无会话状态机，三层上下文裁剪；`AgentState` TypedDict 刻意不引入 LangChain 消息封装（reducer 用 `operator.add`）；checkpoint 仅编排图启用、单 Agent ReAct 图不用；工具调用的 OpenAI Function Calling 规范、tool_packs 请求级裁剪、MCP 三传输与 circuit breaker、双通道 `llm_payload`/`ui_payload`；轻量 Docker 沙箱（warm pool + Docker SDK exec）与 Studio 沙箱（一会话一容器 + Unix Socket）两种执行环境、MAS 执行准入策略、supervised 审批闸五步链路；全异步全流式与并发治理参数；依赖生态实测版本（langgraph 1.2.10 / langchain-core 仅间接依赖 / mcp 2.0.0 / 自研 httpx Provider，**无 Anthropic SDK、LlamaIndex、mem0**）；四种多 Agent 协同模式（Supervisor / Handoff / Map-Reduce / Group Chat）的落地位置。附关键实现位置索引（26 项）与 9 条改造约束。另记录一处配置漂移：`.env.example` 仍有 `MEM0_ENGINE_ENABLED=true` 但代码已无 mem0 引擎（实际为自研 Postgres FactStore + fastembed）。
@@ -210,6 +221,11 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 | `deprecated/CygnusX_tools_update.md` | AI 助手与工具联动架构设计(原 `tool_configs/tools_update.md`,2026-10-03 移入):2026-07-12 可行性评审 + 分阶段落地计划;方案已全部落地,现状见 `CygnusX_mcp_architecture.md` |
 
 ---
+
+## 报告中心
+
+### `CygnusX_report_architecture.md` — 科学报告与可复现执行证据报告（as-built）
+记录 Phase 1 Task-first RNA 证据采集、不可变快照、独立 Celery Job、幂等与恢复、原子归档、ReportService 登记、同一报告中心、安全预览与下载。实现与真实部署验收分开描述；真实 RNA / PostgreSQL / Celery / S3 验收仍未完成。
 
 ## 合并记录（2026-09-18）
 

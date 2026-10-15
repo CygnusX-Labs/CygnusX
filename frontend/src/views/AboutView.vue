@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { NIcon, NButton, useMessage } from 'naive-ui'
-import { RocketOutline, FlaskOutline, ShieldCheckmarkOutline, TelescopeOutline, LogoGithub, SparklesOutline, ChatbubbleEllipsesOutline } from '@vicons/ionicons5'
-import { useRouter } from 'vue-router'
+import { RocketOutline, ShieldCheckmarkOutline, TelescopeOutline, LogoGithub, SparklesOutline, ChevronDownOutline } from '@vicons/ionicons5'
+import { useRouter, RouterLink } from 'vue-router'
 import { useSiteConfigStore } from '@/stores/site-config'
 // 彩蛋图片：猫猫踩地球插画
 import catEarthLogo from '@/assets/ChatGPT_logo.png'
+// 生态组件图标（docs/logo 优化产物：256px webp）
+import logoTreasureMouse from '@/assets/ecosystem/treasure-mouse.webp'
+import logoPolariseq from '@/assets/ecosystem/polariseq.webp'
+import logoFlowFrame from '@/assets/ecosystem/flowframe.webp'
+import logoBioReport from '@/assets/ecosystem/bioreport.webp'
 
 const router = useRouter()
 const siteConfig = useSiteConfigStore()
@@ -13,6 +18,7 @@ const message = useMessage()
 
 onMounted(() => {
   siteConfig.fetchSiteConfig()
+  observeReveals()
 })
 
 // 彩蛋：点击蓝色星球触发隐藏弹窗
@@ -45,6 +51,8 @@ function summonCat() {
 
 onBeforeUnmount(() => {
   if (pawTimer) clearTimeout(pawTimer)
+  revealObserver?.disconnect()
+  revealObserver = null
 })
 
 // 负相位延迟：让每颗星"开局即处于自己呼吸周期的随机中段"。
@@ -107,17 +115,62 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
 })
 
 const valueStreams = [
-  { number: '01', title: 'Discovery · 科研发现', text: '从公共数据库、文献资源或已有数据出发，整理科研问题与研究素材。', icon: TelescopeOutline },
-  { number: '02', title: 'Execution · 受控计算', text: '将科研任务转化为可管理、可复现的分析执行过程。', icon: ShieldCheckmarkOutline },
-  { number: '03', title: 'Evidence · 证据交付', text: '关联数据、流程、运行记录与结果，支持核验和科研报告交付。', icon: SparklesOutline },
+  { number: '01', title: 'Discovery · 科研发现', input: '公共数据库、文献资源或已有数据', output: '科研问题与研究素材', icon: TelescopeOutline },
+  { number: '02', title: 'Execution · 受控计算', input: '科研任务与分析意图', output: '可管理、可复现的分析执行过程', icon: ShieldCheckmarkOutline },
+  { number: '03', title: 'Evidence · 证据交付', input: '数据、流程、运行记录与结果', output: '支持核验的科研报告交付', icon: SparklesOutline },
 ]
+const heroChips = ['公共数据发现', '受控分析计算', '可复现流程', '可信证据交付']
+
+// 数值为暂填，随实际更新
+const stats = [
+  { value: '3', label: '公共数据源' },
+  { value: '4', label: '可复现流程模板' },
+  { value: '8', label: '已交付报告' },
+  { value: '1', label: 'GitHub Stars' },
+]
+
+// 里程碑按最新在上排列；首节点以品牌强调色点亮
+const milestones = [
+  { time: '2026.10.10', title: '正式开源', text: 'CygnusX v0.0.1 于 GitHub 公开发布' },
+  { time: '2026.09', title: '赛事初验', text: '演示视频投递 8 项赛事，余姚 OPC 组、杭州 GTIC 晋级' },
+  // 时间为暂填，待确认后修改
+  { time: '2025.12', title: '平台立项', text: '确立"受控科研 Agent 与可信计算交付"方向' },
+]
+
+// TODO: 用户填写真实数据：联系邮箱 / ICP 备案号（有站点配置时邮箱自动用真实值）。
+const footerPlaceholders = { email: '待填写', version: 'v0.0.1', icp: '待备案' }
+
 const ecosystemModules = [
-  { name: '科研寻宝鼠', text: '公共组学数据发现、文献检索与证据探索。', status: '生态组件' },
-  { name: 'Polariseq', text: '面向公共测序数据的数据传输与下载工具。', status: '生态组件' },
-  { name: 'FlowFrame', text: '标准化、可复用的分析流程框架。', status: '流程协议' },
-  { name: 'BioReport', text: '组织分析结果并生成标准化科研报告。', status: '流程产物' },
+  { name: '科研寻宝鼠', text: '公共组学数据发现、文献检索与证据探索。', status: '生态组件', logo: logoTreasureMouse },
+  { name: 'Polariseq', text: '面向公共测序数据的数据传输与下载工具。', status: '生态组件', logo: logoPolariseq },
+  { name: 'FlowFrame', text: '标准化、可复用的分析流程框架。', status: '流程协议', logo: logoFlowFrame },
+  { name: 'BioReport', text: '组织分析结果并生成标准化科研报告。', status: '流程产物', logo: logoBioReport },
 ]
 function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+
+// ===== 进入视口一次性进场动效（指标格 / 里程碑节点） =====
+// 仅 opacity + transform；prefers-reduced-motion 下由 CSS 直接呈现终态。
+let revealObserver: IntersectionObserver | null = null
+
+if (typeof IntersectionObserver !== 'undefined') {
+  revealObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible')
+          revealObserver?.unobserve(entry.target)
+        }
+      }
+    },
+    { threshold: 0.3 },
+  )
+}
+
+function observeReveals() {
+  document
+    .querySelectorAll('.stats-cell, .milestone-item')
+    .forEach((el) => revealObserver?.observe(el))
+}
 </script>
 
 <template>
@@ -188,53 +241,94 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
 
     <!-- 内容 -->
     <div class="about-content">
-      <!-- 旋转行星（点击触发隐藏彩蛋） -->
-      <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="openEasterEgg">
-        <div class="planet" />
-        <div class="planet-ring" />
-        <div class="planet-orbit" aria-hidden="true"><span class="planet-moon" /></div>
-      </div>
+      <header class="about-hero">
+        <!-- 旋转行星（点击触发隐藏彩蛋） -->
+        <div class="planet-wrap" style="cursor: pointer" title="点我看看？" @click="openEasterEgg">
+          <div class="planet" />
+          <div class="planet-ring" />
+          <div class="planet-orbit" aria-hidden="true"><span class="planet-moon" /></div>
+        </div>
 
-      <h1 class="about-title">CygnusX</h1>
-      <p class="about-slogan">FROM STARDUST, TO DISCOVERY</p>
-      <p class="about-subtitle">面向生命科学的受控科研 Agent 与可信计算交付平台</p>
-      <p class="about-lead">连接科研数据发现、受控计算与可追溯证据交付，让科研探索从问题出发，以可信结果落地。</p>
+        <h1 class="about-title">CygnusX</h1>
+        <p class="about-slogan">FROM STARDUST, TO DISCOVERY</p>
+        <p class="about-subtitle">面向生命科学的受控科研 Agent 与可信计算交付平台</p>
+        <p class="about-lead">连接科研数据发现、受控计算与可追溯证据交付，让科研探索从问题出发，以可信结果落地。</p>
 
-      <div class="about-actions">
-        <NButton class="about-btn-primary" size="large" @click="router.push('/flows')">
-          <template #icon>
-            <NIcon><RocketOutline /></NIcon>
-          </template>
-          开始分析
-        </NButton>
-        <NButton class="about-btn-ghost" size="large" @click="router.push('/dashboard')">
-          进入控制台
-        </NButton>
-        <NButton class="about-btn-ghost" size="large" @click="scrollToSection('ecosystem')">了解技术架构</NButton>
-        <NButton
-          v-if="siteConfig.platformGithub"
-          class="about-btn-ghost"
-          size="large"
-          tag="a"
-          :href="siteConfig.platformGithub"
-          target="_blank"
-        >
-          <template #icon>
-            <NIcon><LogoGithub /></NIcon>
-          </template>
-          GitHub
-        </NButton>
-      </div>
+        <ul class="hero-chips" aria-label="平台能力">
+          <li v-for="chip in heroChips" :key="chip">{{ chip }}</li>
+        </ul>
+
+        <div class="about-actions">
+          <NButton class="about-btn-primary" size="large" @click="router.push('/flows')">
+            <template #icon>
+              <NIcon><RocketOutline /></NIcon>
+            </template>
+            开始分析
+          </NButton>
+          <NButton
+            v-if="siteConfig.platformGithub"
+            class="about-btn-ghost"
+            size="large"
+            tag="a"
+            :href="siteConfig.platformGithub"
+            target="_blank"
+          >
+            <template #icon>
+              <NIcon><LogoGithub /></NIcon>
+            </template>
+            GitHub
+          </NButton>
+        </div>
+
+        <button class="scroll-hint" aria-label="向下了解详情" @click="scrollToSection('values')">
+          <NIcon :size="20"><ChevronDownOutline /></NIcon>
+        </button>
+      </header>
+
+      <!-- 指标条：真实数字一排（数值为暂填，随实际更新） -->
+      <section class="stats-section" aria-label="平台指标">
+        <ul class="stats-band">
+          <li
+            v-for="(stat, i) in stats"
+            :key="stat.label"
+            class="stats-cell"
+            :style="{ transitionDelay: `${i * 80}ms` }"
+          >
+            <span class="stats-value">{{ stat.value }}</span>
+            <span class="stats-label">{{ stat.label }}</span>
+          </li>
+        </ul>
+      </section>
 
       <section id="values" class="about-section" aria-labelledby="values-title">
         <p class="section-kicker">FROM QUESTION TO EVIDENCE</p>
         <h2 id="values-title">从科研问题到可信发现</h2>
         <p class="section-intro">通过科研发现、受控计算与证据交付，构建可追溯、可复现的科研工作流。</p>
         <div class="value-grid">
-          <article v-for="stream in valueStreams" :key="stream.number" class="value-card">
-            <div class="value-card__top"><span>{{ stream.number }}</span><NIcon :size="22"><component :is="stream.icon" /></NIcon></div>
-            <h3>{{ stream.title }}</h3><p>{{ stream.text }}</p>
-          </article>
+          <template v-for="(stream, i) in valueStreams" :key="stream.number">
+            <article class="value-card">
+              <div class="value-card__top">
+                <span class="value-card__num">{{ stream.number }}</span>
+                <span class="value-card__icon"><NIcon :size="20"><component :is="stream.icon" /></NIcon></span>
+              </div>
+              <h3>{{ stream.title }}</h3>
+              <dl class="value-io">
+                <div class="value-io__row">
+                  <dt>输入</dt>
+                  <dd>{{ stream.input }}</dd>
+                </div>
+                <div class="value-io__row">
+                  <dt>产出</dt>
+                  <dd>{{ stream.output }}</dd>
+                </div>
+              </dl>
+            </article>
+            <span v-if="i < valueStreams.length - 1" class="value-connector" aria-hidden="true">
+              <svg width="28" height="12" viewBox="0 0 28 12" fill="none">
+                <path d="M0 6h24m0 0-5-5m5 5-5 5" stroke="rgba(255,255,255,0.2)" stroke-width="1" />
+              </svg>
+            </span>
+          </template>
         </div>
       </section>
 
@@ -242,29 +336,87 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
         <p class="section-kicker">AI4S ECOSYSTEM</p>
         <h2 id="ecosystem-title">CygnusX AI4S Ecosystem</h2>
         <p class="section-intro">从数据发现、数据获取，到标准分析与科研证据交付。</p>
-        <div class="ecosystem-platform"><span>CygnusX BioOps</span><small>平台集成与科研任务编排层</small></div>
-        <div class="ecosystem-grid"><article v-for="item in ecosystemModules" :key="item.name" class="ecosystem-card"><span class="status-label">{{ item.status }}</span><h3>{{ item.name }}</h3><p>{{ item.text }}</p></article></div>
+        <div class="ecosystem-band">
+          <div class="ecosystem-grid">
+            <article class="ecosystem-card ecosystem-card--platform">
+              <span class="status-label">平台底座</span>
+              <h3>CygnusX BioOps</h3>
+              <p>平台集成与科研任务编排层，统一编排下列组件、协议与产物。</p>
+            </article>
+            <article v-for="item in ecosystemModules" :key="item.name" class="ecosystem-card">
+              <div class="ecosystem-card__toprow">
+                <img class="ecosystem-card__logo" :src="item.logo" :alt="`${item.name} 图标`" width="48" height="48" />
+                <span class="status-label">{{ item.status }}</span>
+              </div>
+              <h3>{{ item.name }}</h3>
+              <p>{{ item.text }}</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 版本历程：里程碑数据见组件顶部常量（最新在上） -->
+      <section class="about-section milestones-section" aria-labelledby="milestones-title">
+        <p class="section-kicker">MILESTONES</p>
+        <h2 id="milestones-title">版本历程</h2>
+        <ol class="milestone-list">
+          <li
+            v-for="(milestone, i) in milestones"
+            :key="i"
+            class="milestone-item"
+            :class="{ 'milestone-item--latest': i === 0 }"
+          >
+            <span class="milestone-dot" aria-hidden="true" />
+            <div class="milestone-body">
+              <span class="milestone-time">{{ milestone.time }}</span>
+              <h3>{{ milestone.title }}</h3>
+              <p>{{ milestone.text }}</p>
+            </div>
+          </li>
+        </ol>
       </section>
 
       <section class="about-section vision-section" aria-labelledby="vision-title">
-        <p class="section-kicker">OUR VISION</p><h2 id="vision-title">We are made of star-stuff.</h2>
-        <p class="about-quote">我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。</p>
-        <p class="vision-signoff">从星辰中来，向发现而去。</p>
+        <p class="section-kicker">OUR VISION</p>
+        <div class="about-quote-box vision-panel">
+          <h2 id="vision-title" class="about-quote-title">We are made of star-stuff.</h2>
+          <p class="about-quote">我们只是借用了宇宙中的这些碳、氢、氧原子几十年，用它们去短暂地体验了一次这个世界。组成我们大脑和身体的每一个原子，都来自几十亿年前远古恒星内部的核聚变爆炸。当生命结束时，我们并没有化为虚无，我们只是回到了那个浩瀚的宇宙中，换了一种方式继续存在。</p>
+          <p class="vision-signoff">从星辰中来，向发现而去。</p>
+        </div>
       </section>
 
-      <!-- 底部 -->
-      <div class="about-footer">
-        <span class="about-brand">CygnusX</span>
-        <span class="about-divider">·</span>
-        <span>华中农业大学园艺林学学院 · 多组学分析平台</span>
-        <div v-if="siteConfig.platformAuthor" class="about-credit">
-          Designed by {{ siteConfig.platformAuthor }}
-          <template v-if="siteConfig.platformEmail">
-            <span class="about-divider">|</span>
-            Contact: <a :href="`mailto:${siteConfig.platformEmail}`" class="about-credit-link">{{ siteConfig.platformEmail }}</a>
-          </template>
+      <!-- 底部：三列页脚 + 底行（占位文案见 footerPlaceholders，TODO: 用户填写真实数据） -->
+      <footer class="about-footer-v2">
+        <div class="footer-cols">
+          <div class="footer-brand">
+            <span class="footer-logo">CygnusX</span>
+            <p>面向生命科学的受控科研 Agent 与可信计算交付平台</p>
+          </div>
+          <nav class="footer-links" aria-label="页脚导航">
+            <RouterLink to="/dashboard">控制台</RouterLink>
+            <RouterLink to="/flows">分析中心</RouterLink>
+            <RouterLink to="/knowledge">实验室知识库</RouterLink>
+            <a v-if="siteConfig.platformGithub" :href="siteConfig.platformGithub" target="_blank" rel="noopener">GitHub</a>
+          </nav>
+          <div class="footer-contact">
+            <p>
+              Contact:
+              <a
+                v-if="siteConfig.platformEmail"
+                :href="`mailto:${siteConfig.platformEmail}`"
+                class="footer-contact-link"
+              >{{ siteConfig.platformEmail }}</a>
+              <span v-else>{{ footerPlaceholders.email }}</span>
+            </p>
+            <p>Version {{ footerPlaceholders.version }}</p>
+          </div>
         </div>
-      </div>
+        <div class="footer-bottom">
+          <span>© 2026 CygnusX · 华中农业大学园艺林学学院 · 多组学分析平台</span>
+          <span class="footer-icp">{{ footerPlaceholders.icp }}</span>
+          <span v-if="siteConfig.platformAuthor" class="footer-credit">Designed by {{ siteConfig.platformAuthor }}</span>
+        </div>
+      </footer>
     </div>
 
     <!-- 隐藏彩蛋弹窗：点击蓝色星球触发 -->
@@ -401,8 +553,12 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   display: flex;
   align-items: center;
   justify-content: center;
+  /* overflow:clip 不创建滚动容器：.milky-way 旋转放大后的包围盒超出底部时
+     不会被算成内层滚动区（旧值 auto 曾制造 ~350px 幽灵滚动，滚轮要先滚完
+     内层空白区才轮到外层 naive 滚动条）。不支持 clip 的浏览器回退为 hidden/auto。 */
   overflow-x: hidden;
   overflow-y: auto;
+  overflow: clip;
   background: #11193c;
 }
 
@@ -620,9 +776,9 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
    wrap 内部这套 3D 遮挡在压平前已算好，故不受影响。 */
 .planet-wrap {
   position: relative;
-  width: 92px;
-  height: 92px;
-  margin: 0 auto 26px;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto 34px;
   transform-style: preserve-3d;
   perspective: 520px;
 }
@@ -643,7 +799,7 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
    与球体同处 3D 上下文：环平面被球体圆盘沿水平中线切开，自动呈现土星式前后遮挡。 */
 .planet-ring {
   position: absolute;
-  inset: -12px;
+  inset: -18px;
   border-radius: 50%;
   transform: rotateX(66deg);
   padding: 2.5px;
@@ -667,7 +823,7 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
    穿过球缘时由平面相交几何裁剪，呈现平滑"钻到球后/探出球前"的掠过感。 */
 .planet-orbit {
   position: absolute;
-  inset: -12px;
+  inset: -18px;
   border-radius: 50%;
   transform: rotateX(66deg);
   pointer-events: none;
@@ -675,11 +831,11 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
 }
 .planet-moon {
   position: absolute;
-  top: -3px;
+  top: -4px;
   left: 50%;
-  width: 7px;
-  height: 7px;
-  margin-left: -3.5px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #ffffff, #c2d4ff 55%, #7f9bf0 100%);
   box-shadow: 0 0 8px 2px rgba(184, 206, 255, 0.7);
@@ -687,9 +843,9 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
 
 /* 标题 */
 .about-title {
-  font-size: 42px;
+  font-size: 56px;
   font-weight: 700;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   letter-spacing: 1px;
   background: linear-gradient(90deg, #d9e2ff, #a8bbff, #d9e2ff);
   -webkit-background-clip: text;
@@ -697,16 +853,10 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   background-clip: text;
 }
 .about-subtitle {
-  font-size: 18px;
+  font-size: 22px;
   color: #d6def8;
-  margin: 0 0 24px;
+  margin: 0 0 28px;
   font-weight: 500;
-}
-.subtitle-llm {
-  margin-left: 8px;
-  font-weight: 600;
-  color: #aebfff;
-  text-shadow: 0 0 10px rgba(117, 143, 255, 0.22);
 }
 
 /* 引言：无边框磨砂"题记"块——去掉整圈亮描边/白内高光/hover 白闪（旧版像被框选），
@@ -782,6 +932,12 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   background: linear-gradient(90deg, transparent, rgba(150, 185, 255, 0.7), transparent);
 }
 
+/* gilded 流光：与 StardustQuote 同源（scoped 样式不跨组件，此处本地定义） */
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 .about-quote {
   font-size: 14px;
   line-height: 1.95;
@@ -793,95 +949,6 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   text-shadow:
     0 1px 2px rgba(4, 8, 24, 0.55),
     0 2px 10px rgba(4, 8, 24, 0.4);
-}
-
-/* 特性：玻璃面板 */
-.features {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 28px;
-}
-/* 特性卡片：与引言框同一套磨砂配方（同半透渐变 + 同模糊/饱和 + 去硬边 + 同柔投影 + 同渐隐光痕），
-   仅圆角保留 12px（卡片级，对引言面板 16px 形成 §3.3 圆角层级，避免"全场一个值"）。 */
-.feature-item {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(26, 36, 80, 0.46) 0%, rgba(17, 25, 60, 0.32) 100%);
-  backdrop-filter: saturate(140%) blur(14px);
-  -webkit-backdrop-filter: saturate(140%) blur(14px);
-  border: 0;
-  box-shadow: 0 12px 36px rgba(6, 10, 34, 0.40);
-  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
-  text-align: left;
-}
-/* 与引言框一致的顶/底渐隐光痕 */
-.feature-item::before,
-.feature-item::after {
-  content: '';
-  position: absolute;
-  left: 14%;
-  right: 14%;
-  height: 1px;
-  pointer-events: none;
-}
-.feature-item::before {
-  top: 0;
-  background: linear-gradient(90deg, transparent, rgba(178, 204, 255, 0.5), transparent);
-}
-.feature-item::after {
-  bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(150, 178, 255, 0.22), transparent);
-}
-/* 悬停：无描边闪烁，改为整体微提亮 + 上浮 + 加深投影的"点亮"反馈 */
-.feature-item:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.08);
-  box-shadow: 0 16px 40px rgba(6, 10, 34, 0.5);
-}
-/* 主推卡片：AI 智能分析——材质与其余卡片完全相同，仅以品牌色光痕 + 柔品牌辉光区分主次 */
-.feature-item--primary {
-  box-shadow:
-    0 12px 36px rgba(6, 10, 34, 0.40),
-    0 0 24px rgba(99, 130, 255, 0.20);
-}
-.feature-item--primary::before {
-  background: linear-gradient(90deg, transparent, rgba(150, 182, 255, 0.9), transparent);
-}
-.feature-item--primary:hover {
-  box-shadow:
-    0 16px 40px rgba(6, 10, 34, 0.5),
-    0 0 30px rgba(99, 130, 255, 0.30);
-}
-.feature-icon {
-  color: #aebfff;
-  flex-shrink: 0;
-}
-.feature-icon--accent {
-  color: #c3d0ff;
-}
-/* 功能标题：青蓝渐变（非斜体，与卡片标题层级一致） */
-.feature-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  background: linear-gradient(90deg, #dbe4ff, #aac0ff, #dbe4ff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 2px rgba(4, 8, 24, 0.45));
-}
-.feature-desc {
-  font-size: 12px;
-  color: #c6d2ef;
-  margin-top: 2px;
-  /* 更通透的磨砂底上保护小字对比 */
-  text-shadow: 0 1px 2px rgba(4, 8, 24, 0.55);
 }
 
 /* 操作按钮 */
@@ -940,9 +1007,13 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
 
 /* 减少透明度：毛玻璃回退为实色（规范 §4.2） */
 @media (prefers-reduced-transparency: reduce) {
-  .about-quote-box,
-  .feature-item {
+  .about-quote-box {
     background: #1b2552;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .ecosystem-card {
+    background: #1e2550;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -953,42 +1024,64 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   }
 }
 
-/* 底部 */
-.about-footer {
+/* ===== 页脚 v2：三列 + 底行（P1-5） ===== */
+.about-footer-v2 {
+  margin-top: calc(var(--section-gap-loose) - var(--section-gap));
+  margin-left: -24px;
+  margin-right: -24px;
+  padding: 44px 24px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  text-align: left;
+}
+.footer-cols {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 32px;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.footer-logo { font-size: 18px; font-weight: 700; color: #ffffff; }
+.footer-brand p { margin: 10px 0 0; font-size: 13px; line-height: 1.7; color: rgba(255, 255, 255, 0.55); }
+.footer-links { display: flex; flex-direction: column; gap: 10px; }
+.footer-links a {
+  width: fit-content;
   font-size: 13px;
-  color: #dcebfb;
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
-  padding-top: 20px;
-}
-.about-brand {
-  font-weight: 700;
-  color: #ffffff;
-}
-.about-divider {
-  margin: 0 8px;
-}
-.about-credit {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #c4dcf5;
-}
-.about-credit-link {
-  color: #a5f3fc;
+  color: rgba(255, 255, 255, 0.55);
   text-decoration: none;
   transition: color 0.2s ease;
 }
-.about-credit-link:hover {
-  color: #ffffff;
+.footer-links a:hover { color: rgba(255, 255, 255, 0.85); }
+.footer-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.footer-contact-link { color: inherit; text-decoration: none; transition: color 0.2s ease; }
+.footer-contact-link:hover { color: rgba(255, 255, 255, 0.85); }
+.footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  justify-content: space-between;
+  max-width: 1320px;
+  margin: 32px auto 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: left;
 }
 
 @media (max-width: 640px) {
   .about-content { padding: 24px 20px; }
-  .about-title { font-size: 32px; }
-  .about-subtitle { font-size: 16px; }
+  .about-title { font-size: 36px; }
+  .about-subtitle { font-size: 18px; }
   .about-quote { font-size: 13px; }
   .about-quote-title { font-size: 14px; margin-bottom: 10px; }
   .about-quote-box { padding: 16px 20px; }
-  .features { grid-template-columns: 1fr; }
   .about-actions {
     flex-direction: column;
     align-items: center;
@@ -1067,27 +1160,362 @@ function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoVi
   .star.has-cross { opacity: var(--star-opacity, 0.7); }
   .nebula-band { opacity: var(--base-opacity, 0.85); }
 }
-.about-content { max-width: 1120px; padding: 48px 32px 64px; }
-.about-hero { min-height: min(680px, calc(100vh - 100px)); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 0 56px; }
-.about-slogan { margin: 0 0 16px; color: #b9c9ff; font-size: 13px; letter-spacing: .2em; font-weight: 600; }
-.about-lead { max-width: 680px; margin: 0 auto 28px; color: #d6def8; font-size: 15px; line-height: 1.8; }
-.about-section { scroll-margin-top: 24px; max-width: 1040px; margin: 0 auto; padding: 80px 0; text-align: left; }
-.about-section h2 { margin: 0 0 12px; color: #f2f5ff; font-size: 30px; text-align: center; }
-.section-kicker { margin: 0 0 12px; color: #9db4ff; font-size: 12px; letter-spacing: .16em; text-align: center; }
-.section-intro { max-width: 680px; margin: 0 auto 32px; color: #c4cee8; font-size: 15px; line-height: 1.7; text-align: center; }
-.value-grid, .ecosystem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.value-card, .ecosystem-card { padding: 24px; border: 1px solid rgba(190, 205, 255, .16); border-radius: 12px; background: rgba(18, 24, 56, .64); backdrop-filter: blur(12px); transition: transform 220ms ease, border-color 220ms ease; }
-.value-card:hover, .ecosystem-card:hover { transform: translateY(-2px); border-color: rgba(160, 184, 255, .4); }
-.value-card__top { display: flex; justify-content: space-between; color: #9db4ff; font-size: 12px; letter-spacing: .12em; }
-.value-card h3, .ecosystem-card h3 { margin: 22px 0 10px; color: #f2f5ff; font-size: 17px; }
+/* ===== 布局骨架（P0）：1320 容器 + 间距两档 token ===== */
+.about-content {
+  --section-gap: 96px;
+  --section-gap-loose: 140px;
+  max-width: 1320px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 48px 24px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+  text-align: center;
+}
+
+/* Hero：整屏首屏区，垂直居中 + 底部下滑提示 */
+.about-hero {
+  position: relative;
+  min-height: min(680px, calc(100vh - 100px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0 56px;
+}
+/* 入场：轻微上浮浮现，逐个错开 */
+.about-hero > * {
+  animation: hero-rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.about-hero > *:nth-child(2) { animation-delay: 0.06s; }
+.about-hero > *:nth-child(3) { animation-delay: 0.12s; }
+.about-hero > *:nth-child(4) { animation-delay: 0.18s; }
+.about-hero > *:nth-child(5) { animation-delay: 0.24s; }
+.about-hero > *:nth-child(6) { animation-delay: 0.3s; }
+.about-hero > *:nth-child(7) { animation-delay: 0.36s; }
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hero 能力标签：胶囊毛玻璃 */
+.hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 0 30px;
+  padding: 0;
+  list-style: none;
+}
+.hero-chips li {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: #dbe4ff;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(178, 204, 255, 0.24);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* 下滑提示：呼吸浮动的小圆钮，引导用户向下滚动 */
+.scroll-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #cdd9ff;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(178, 204, 255, 0.28);
+  transition: background 0.2s ease, color 0.2s ease;
+  animation: hint-bounce 2.2s ease-in-out infinite;
+}
+.scroll-hint:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+@keyframes hint-bounce {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(6px); }
+}
+
+.about-slogan { margin: 0 0 20px; color: #b9c9ff; font-size: 15px; letter-spacing: .2em; font-weight: 600; }
+.about-lead { max-width: 820px; margin: 0 auto 30px; color: #d6def8; font-size: 17px; line-height: 1.8; }
+
+/* ===== 章节骨架：统一字阶（P0-3 / P2-2） ===== */
+.about-section { scroll-margin-top: 24px; width: 100%; max-width: 1320px; margin: 0 auto; text-align: left; }
+.about-section h2 { margin: 0 0 12px; color: #f2f5ff; font-size: 36px; font-weight: 700; text-align: center; }
+.section-kicker { margin: 0 0 12px; color: rgba(255, 255, 255, 0.55); font-size: 13px; letter-spacing: .2em; text-align: center; }
+.section-intro { max-width: 680px; margin: 0 auto 36px; color: #c4cee8; font-size: 16px; line-height: 1.7; text-align: center; }
+/* 生态区标题三件套常压在漂移亮星云上：叠文字阴影保证可读（与 .about-quote 同款） */
+#ecosystem .section-kicker,
+#ecosystem h2,
+#ecosystem .section-intro {
+  text-shadow:
+    0 1px 2px rgba(4, 8, 24, 0.55),
+    0 2px 10px rgba(4, 8, 24, 0.4);
+}
+
+/* ===== 指标条（P1-1）：1100 居中容器 + 4 格等分 + 竖分隔线 ===== */
+.stats-section { width: 100%; padding: 64px 0; }
+.stats-band {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 1100px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.stats-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+}
+.stats-cell + .stats-cell { border-left: 1px solid rgba(255, 255, 255, 0.08); }
+.stats-value { font-size: 28px; font-weight: 700; line-height: 1.2; color: #f2f5ff; }
+.stats-label { font-size: 13px; color: rgba(255, 255, 255, 0.55); }
+
+/* ===== 三步流程时间线（P1-2）：桌面横排 + 连接线，移动竖排 + 左竖线 ===== */
+.value-grid {
+  display: grid;
+  grid-template-columns: 1fr 36px 1fr 36px 1fr;
+  align-items: stretch;
+  gap: 0;
+}
+.value-connector { display: flex; align-items: center; justify-content: center; }
+
+/* 价值/生态卡片四件套（P0-2）：加大体量 + 白系磨砂底 + hover 上浮提亮 */
+.value-card, .ecosystem-card {
+  padding: 30px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+  transition: transform 250ms ease, border-color 250ms ease, box-shadow 250ms ease;
+}
+.value-card:hover, .ecosystem-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.value-card__top { display: flex; justify-content: space-between; align-items: center; }
+/* 序号：大号"幽灵数字"，自上而下渐隐 */
+.value-card__num {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1;
+  background: linear-gradient(180deg, rgba(157, 180, 255, 0.9) 0%, rgba(157, 180, 255, 0.08) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* 图标：品牌色渐变圆角芯片 */
+.value-card__icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #cdd9ff;
+  background: linear-gradient(135deg, rgba(99, 130, 255, 0.30) 0%, rgba(139, 107, 232, 0.30) 100%);
+  box-shadow: inset 0 0 0 1px rgba(178, 204, 255, 0.28);
+}
+.value-card h3, .ecosystem-card h3 { margin: 22px 0 10px; color: #f2f5ff; font-size: 18px; font-weight: 600; }
 .value-card p, .ecosystem-card p { margin: 0; color: #c4cee8; font-size: 14px; line-height: 1.7; }
-.ecosystem-platform { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, 100%); margin: 0 auto 24px; padding: 18px 24px; border: 1px solid rgba(160, 184, 255, .34); border-radius: 12px; background: rgba(53, 70, 140, .46); color: #fff; font-size: 19px; font-weight: 650; }
-.ecosystem-platform small { color: #c4d0ff; font-size: 13px; font-weight: 400; }
-.ecosystem-grid { grid-template-columns: repeat(4, 1fr); }
-.status-label { color: #9db4ff; font-size: 11px; letter-spacing: .08em; }
-.vision-section { max-width: 780px; text-align: center; }
-.vision-section .about-quote { margin: 24px 0; color: #e8edff; font-size: 15px; line-height: 2; text-align: left; text-indent: 2em; }
-.vision-signoff { color: #b9c9ff; font-size: 14px; }
-@media (max-width: 760px) { .about-content { padding: 24px 20px 48px; } .about-hero { min-height: auto; padding: 40px 0 56px; } .about-section { padding: 56px 0; } .value-grid, .ecosystem-grid { grid-template-columns: 1fr; } .about-section h2 { font-size: 26px; } .about-actions { flex-direction: column; width: min(320px, 100%); margin: 0 auto; gap: 12px; } .about-actions .n-button { width: 100%; } }
-@media (prefers-reduced-motion: reduce) { .value-card, .ecosystem-card { transition: none; } }
+/* 输入 → 产出 两行结构 */
+.value-io { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.value-io__row { display: flex; gap: 10px; font-size: 14px; line-height: 1.7; }
+.value-io dt {
+  flex-shrink: 0;
+  height: fit-content;
+  margin-top: 2px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #9db4ff;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.value-io dd { margin: 0; color: #c4cee8; text-align: left; }
+
+/* ===== 生态区 Bento（第四轮）：去掉带的暗色底板，卡片直接浮在星空上 =====
+   卡片自带深色毛玻璃底，亮星云处文字对比仍 ~8:1，无需再垫大板；
+   带只保留上下 1px 细分隔线作为章节节奏提示。 */
+.ecosystem-band {
+  padding: 48px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ecosystem-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+/* 深色实底 + 毛玻璃：压住亮星云背景，白字对比度稳定（正文 #E6E9F2）。
+   底色提亮一档：面板带已是深色，卡片需比带亮才能撑起"带托卡"的层级 */
+.ecosystem-card {
+  min-height: 200px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(30, 37, 80, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.ecosystem-card h3 { font-weight: 700; margin-top: 16px; }
+.ecosystem-card p { font-size: 15px; color: #E6E9F2; }
+/* 图标行：logo 与状态 pill 两端对齐；logo 圆角贴图、微投影提层次 */
+.ecosystem-card__toprow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ecosystem-card__logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 14px rgba(4, 8, 24, 0.35);
+}
+/* BioOps 底座块：通宽、加高、大卡留白 36px */
+.ecosystem-card--platform {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 220px;
+  padding: 36px;
+  border-radius: 16px;
+}
+/* 状态标签：胶囊徽章（提亮文字 + 白色系底） */
+.status-label {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(150, 182, 255, 0.30);
+}
+
+/* ===== 里程碑时间线（第二轮）：760 居中容器 + 40px 节点间距 + tabular-nums ===== */
+.milestones-section { max-width: 760px; }
+.milestone-list {
+  list-style: none;
+  position: relative;
+  margin: 8px auto 0;
+  padding: 0;
+  max-width: 760px;
+  text-align: left;
+}
+.milestone-list::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.milestone-item { position: relative; padding: 0 0 40px 32px; }
+.milestone-item:last-child { padding-bottom: 0; }
+.milestone-dot {
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(0);
+  transition: transform 300ms ease;
+}
+.milestone-item.is-visible .milestone-dot { transform: scale(1); }
+.milestone-item--latest .milestone-dot {
+  background: #7d9bff;
+  box-shadow: 0 0 10px rgba(125, 155, 255, 0.8);
+}
+.milestone-time { font-size: 13px; letter-spacing: .06em; color: #9db4ff; font-variant-numeric: tabular-nums; }
+.milestone-body h3 { margin: 6px 0; color: #f2f5ff; font-size: 17px; font-weight: 600; }
+.milestone-body p { margin: 0; color: #c4cee8; font-size: 14px; line-height: 1.7; }
+
+/* ===== 愿景题记（排版加宽加大，保持玻璃面板） ===== */
+/* 与里程碑间距用宽松档 140px（flex gap 96 + 44，与页脚同款补差） */
+.vision-section { max-width: 840px; margin-top: calc(var(--section-gap-loose) - var(--section-gap)); text-align: center; }
+.vision-section .about-quote-box { margin: 0 auto; text-align: center; }
+.vision-section .about-quote-title { font-size: 24px; margin: 0 0 20px; }
+.vision-section .about-quote { margin: 0; color: #e8edff; font-size: 15px; line-height: 2; }
+.vision-signoff { margin: 22px 0 2px; color: #b9c9ff; font-size: 14px; letter-spacing: .06em; }
+
+/* ===== 进场动效初始态：仅 opacity + transform，进入视口一次性播放 ===== */
+.stats-cell, .milestone-item {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+.stats-cell.is-visible, .milestone-item.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* ===== 响应式（P0 / P1 / P2 五档走查底线：≤760px） ===== */
+@media (max-width: 760px) {
+  .about-content { --section-gap: 64px; padding: 32px 16px 56px; }
+  .about-hero { min-height: auto; padding: 32px 0 64px; }
+  .about-section h2 { font-size: 26px; }
+  .stats-band { grid-template-columns: repeat(2, 1fr); row-gap: 24px; }
+  .stats-cell + .stats-cell { border-left: 0; }
+  .stats-cell:nth-child(even) { border-left: 1px solid rgba(255, 255, 255, 0.08); }
+  .stats-cell:nth-child(-n + 2) { border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 20px; }
+  /* 三步流程：连接线隐藏，改竖排 + 左侧竖线 */
+  .value-grid { grid-template-columns: 1fr; gap: 16px; position: relative; padding-left: 24px; }
+  .value-grid::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 16px;
+    bottom: 16px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.15);
+  }
+  .value-connector { display: none; }
+  /* Bento 单列，BioOps 不再强制加高 */
+  .ecosystem-grid { grid-template-columns: 1fr; }
+  .ecosystem-card--platform { grid-column: auto; min-height: 0; }
+  .ecosystem-band { padding: 32px 16px; }
+  .about-footer-v2 { margin-left: -16px; margin-right: -16px; padding: 32px 16px 12px; }
+  .footer-cols { grid-template-columns: 1fr; gap: 24px; }
+  .footer-bottom { flex-direction: column; gap: 6px; }
+  .about-actions { flex-direction: column; width: min(320px, 100%); margin: 0 auto; gap: 12px; }
+  .about-actions .n-button { width: 100%; }
+}
+
+/* ===== 减少动画（P0-4 / P2）：冻结背景与进场动效，hover 去位移保留颜色 ===== */
+@media (prefers-reduced-motion: reduce) {
+  .about-hero > *, .scroll-hint { animation: none; }
+  .about-quote-title { animation: none; }
+  .stats-cell, .milestone-item { opacity: 1; transform: none; transition: none; }
+  .milestone-dot { transform: none; }
+  .value-card:hover, .ecosystem-card:hover { transform: none; }
+}
 </style>

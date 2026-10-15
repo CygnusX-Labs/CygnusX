@@ -38,6 +38,9 @@ SELF_AUTHENTICATED_PREFIXES = (
 SELF_AUTHENTICATED_PATHS = frozenset(
     {
         "/api/v1/agent-teams/capabilities",
+        # Verified by the exact endpoint: exp/audience/scopes, live principal,
+        # owned session/project and Redis replay guard; never a public prefix.
+        "/api/v1/agent-tools/delegated/invoke",
     }
 )
 

@@ -67,6 +67,14 @@ services:
       - SKILLS_DIR=${STORAGE_PATH:-/data/cygnusx}/skills  # SKILL.md 技能库落可写共享卷（/app/data 只读；Settings 无 env_prefix）
       - PDF_INSPECTOR_ENABLED=${PDF_INSPECTOR_ENABLED:-true}   # 启用 pdf-inspector 主路径解析 PDF；可在 .env 中覆盖
       - PDF_INSPECTOR_ROLLOUT=${PDF_INSPECTOR_ROLLOUT:-100}    # 灰度比例；生产环境建议在 .env 中先设 10/50
+      - TREASURE_NATIVE_UI_ENABLED=${TREASURE_NATIVE_UI_ENABLED:-false}
+      - TREASURE_AGENT_URL=${TREASURE_AGENT_URL:-http://treasure-mouse-chat:8787}
+      - TREASURE_AGENT_INTERNAL_TOKEN=${TREASURE_MOUSE_INTERNAL_TOKEN:?TREASURE_MOUSE_INTERNAL_TOKEN is required}
+      - TREASURE_AGENT_WRITE_TOOLS_ENABLED=false
+      - TOOL_GATEWAY_READ_ENABLED=${TOOL_GATEWAY_READ_ENABLED:-false}
+      - AGENT_DOWNLOAD_WRITE_ENABLED=false
+      - AGENT_ANALYSIS_WRITE_ENABLED=false
+      - AGENT_TASK_CANCEL_ENABLED=false
     depends_on:
       db:
         condition: service_healthy
@@ -415,6 +423,9 @@ services:
         required: false
     environment:
       CHAT_API_PORT: "8787"
+      TREASURE_MOUSE_PLATFORM_ONLY: "true"
+      CYGNUSX_TOOL_CALLBACK_URL: ${CYGNUSX_TOOL_CALLBACK_URL:-}
+      TREASURE_MOUSE_INTERNAL_TOKEN: ${TREASURE_MOUSE_INTERNAL_TOKEN:?TREASURE_MOUSE_INTERNAL_TOKEN is required}
       CHAT_API_HOST: "0.0.0.0"
       NODE_ENV: production
       STATS_FILE: /app/data/stats.json

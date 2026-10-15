@@ -68,6 +68,14 @@ def _verify_tools_yaml_consistency(mcp: FastMCP, registered_groups: set[str]) ->
         )
 
     try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("[自校验] 当前已有事件循环，跳过导入阶段工具级校验")
+        return
+
+    try:
         registered_tools = {t.name for t in asyncio.run(mcp.list_tools())}
     except Exception as e:
         logger.warning(f"[自校验] 收集已注册工具失败，跳过工具级校验: {e}")

@@ -20,6 +20,7 @@ from cygnusx.infrastructure.config.storage_config import get_user_chat_upload_di
 from cygnusx.infrastructure.database.repositories.file_repository import (
     FileRepositoryImpl,
 )
+from cygnusx.infrastructure.storage import get_path_factory
 
 
 class FileResolutionError(Exception):
@@ -53,7 +54,6 @@ class ManagedFileResolver:
     FORBIDDEN_PATTERNS = [
         re.compile(r"\.\."),  # 父目录引用
         re.compile(r"^/"),  # 绝对路径
-        re.compile(r"^file://[^/]"),  # 非受控 file:// 格式
         re.compile(r"^/proc"),
         re.compile(r"^/sys"),
         re.compile(r"^/dev"),
@@ -152,8 +152,15 @@ class ManagedFileResolver:
 
         repo = self._file_repo or FileRepositoryImpl(context.db)
         data_file = await repo.get_by_id(UUID(context.user_id), file_uuid)
-        if data_file is None:
+        if data_file is None or data_file.status != "active" or data_file.owner_scope != "personal":
             raise FileResolutionError(f"文件不存在或无权限: {file_id}", "FILE_NOT_FOUND")
+        stored = Path(data_file.path)
+        factory = get_path_factory()
+        resolved_path = (stored if stored.is_absolute() else factory.data_root / stored).resolve()
+        try:
+            resolved_path.relative_to(factory.user_root(context.user_id).resolve())
+        except ValueError as exc:
+            raise FileResolutionError("文件路径越权", "PATH_TRAVERSAL") from exc
 
         return FileMetadata(
             ref=ref,
@@ -162,7 +169,7 @@ class ManagedFileResolver:
             file_name=data_file.original_name,
             file_size=data_file.size,
             mime_type=data_file.file_type.value if data_file.file_type else None,
-            internal_path=data_file.path,
+            internal_path=str(resolved_path),
             content=None,
         )
 
@@ -177,13 +184,19 @@ class ManagedFileResolver:
         if ".." in dir_path or Path(dir_path).is_absolute():
             raise FileResolutionError(f"目录路径非法: {dir_path}", "FORBIDDEN_PATTERN")
 
+        resolved_path = (get_path_factory().user_root(context.user_id) / dir_path).resolve()
+        try:
+            resolved_path.relative_to(get_path_factory().user_root(context.user_id).resolve())
+        except ValueError as e:
+            raise FileResolutionError(f"目录路径越权: {dir_path}", "PATH_TRAVERSAL") from e
+
         return FileMetadata(
             ref=ref,
             resolved_type="directory",
             file_id=dir_path,
             file_name=Path(dir_path).name,
             file_size=0,
-            internal_path=dir_path,
+            internal_path=str(resolved_path),
             content=None,
         )
 

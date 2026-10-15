@@ -1,0 +1,157 @@
+ M .env.example
+ M ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+ M ARCHITECTURE_DESIGN/README.md
+ m Protocol/FlowFrame
+ M deploy/docker/docker-compose.yml
+ M deploy/docker/nginx/nginx.conf
+ M deploy/docker/nginx/nginx.prod.conf
+ M frontend/src/api/report.ts
+ M frontend/src/components/ai-chat/McpToolCallCard.vue
+ M frontend/src/components/report/ReportCardMinimal.vue
+ M frontend/src/components/report/ReportPreviewModal.vue
+ M frontend/src/types/report.ts
+ M frontend/src/views/AboutView.vue
+ M frontend/src/views/FilesView.vue
+ M frontend/src/views/FlowsView.vue
+ M frontend/src/views/ReportsView.vue
+ M frontend/src/views/TaskDetailView.vue
+ M frontend/src/views/TreasureMouseView.vue
+ M mcp-server/ARCHITECTURE.md
+ M mcp-server/README.md
+ M mcp-server/client/api_client.py
+ M mcp-server/core/config.py
+ M mcp-server/main.py
+ M mcp-server/pipelines_main.py
+ M mcp-server/prompts/workflows.py
+ M mcp-server/tools/__init__.py
+ M mcp-server/tools/analysis.py
+ M mcp-server/tools/downloads.py
+ M mcp-server/tools/files.py
+ M mcp-server/tools/pipelines.py
+ M mcp-server/tools/runs.py
+ M mcp-server/tools/seqout.py
+ M mcp-server/tools/tasks.py
+ m pipelines/ATACFlow
+ m pipelines/RNAFlow
+ m pipelines/Treasure-Seeking_Mouse
+ m pipelines/tools
+ M src/cygnusx/api/deps.py
+ M src/cygnusx/api/v1/ai.py
+ M src/cygnusx/api/v1/downloads.py
+ M src/cygnusx/api/v1/pipelines.py
+ M src/cygnusx/api/v1/reports.py
+ M src/cygnusx/api/v1/router.py
+ M src/cygnusx/api/v1/runs.py
+ M src/cygnusx/api/v1/tasks.py
+ M src/cygnusx/application/schemas/download.py
+ M src/cygnusx/application/schemas/pipeline.py
+ M src/cygnusx/application/schemas/report.py
+ M src/cygnusx/application/schemas/task.py
+ M src/cygnusx/application/schemas/tool_invocation.py
+ M src/cygnusx/application/services/agent_service.py
+ M src/cygnusx/application/services/analysis_flow_tool_service.py
+ M src/cygnusx/application/services/download_service.py
+ M src/cygnusx/application/services/flow_service.py
+ M src/cygnusx/application/services/managed_file_resolver.py
+ M src/cygnusx/application/services/report_service.py
+ M src/cygnusx/application/services/task_service.py
+ M src/cygnusx/application/services/tool_bridge_service.py
+ M src/cygnusx/application/services/tool_confirmation_service.py
+ M src/cygnusx/core/config.py
+ M src/cygnusx/core/exceptions.py
+ M src/cygnusx/domain/flow/submission_validator.py
+ M src/cygnusx/infrastructure/celery_app/celery.py
+ M src/cygnusx/infrastructure/celery_app/tasks/download.py
+ M src/cygnusx/infrastructure/database/models/__init__.py
+ M src/cygnusx/infrastructure/database/models/report.py
+ M src/cygnusx/infrastructure/database/repositories/report_repository.py
+ M src/cygnusx/infrastructure/mcp/client.py
+ M src/cygnusx/infrastructure/mcp/presets.py
+ M src/cygnusx/infrastructure/storage/path_factory.py
+ M src/cygnusx/middleware/auth.py
+ M tests/unit/domain/test_flow_submission_validator.py
+ M tests/unit/tools/test_analysis_flow_tool.py
+ M tests/unit/tools/test_tool_bridge.py
+?? ARCHITECTURE_DESIGN/CygnusX_agent_tool_gateway.md
+?? ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_report_architecture.md
+?? alembic/versions/bioopsphase2_agent_tool_invocations.py
+?? alembic/versions/bioopsphase3_dataset_inputs.py
+?? alembic/versions/reportauditphase1_add_reproducible_report_tables.py
+?? docs/adr/phase3-dataset-provenance-and-handoff.md
+?? docs/architecture/cygnusx-phase2-shared-tool-gateway-adr.md
+?? docs/architecture/cygnusx-treasure-agent-integration-adr.md
+?? docs/audits/
+?? docs/contracts/
+?? docs/design/
+?? docs/implementation/
+?? docs/info/26.10.12/
+?? docs/logo/
+?? evidence/phase2/
+?? evidence/phase3/
+?? flows/counts_deg.yaml
+?? frontend/src/api/agentTools.ts
+?? frontend/src/api/datasets.ts
+?? frontend/src/api/researchAgent.ts
+?? frontend/src/assets/ecosystem/
+?? frontend/src/components/report/__tests__/
+?? frontend/src/components/research/
+?? frontend/src/composables/__tests__/reproducible-report.test.ts
+?? frontend/src/composables/useReproducibleReport.ts
+?? mcp-server/core/runtime.py
+?? mcp-server/tests/test_phase0b_runtime.py
+?? pipelines/CountsDEGFlow/
+?? scripts/audit_runtime_provenance.py
+?? scripts/export_agent_tool_contracts.py
+?? src/cygnusx/api/v1/agent_tools.py
+?? src/cygnusx/api/v1/datasets.py
+?? src/cygnusx/api/v1/research_agent.py
+?? src/cygnusx/application/schemas/agent_tools.py
+?? src/cygnusx/application/schemas/dataset.py
+?? src/cygnusx/application/schemas/report_delivery.py
+?? src/cygnusx/application/schemas/report_snapshot.py
+?? src/cygnusx/application/schemas/research_agent.py
+?? src/cygnusx/application/services/agent_tool_delegation.py
+?? src/cygnusx/application/services/agent_tool_gateway.py
+?? src/cygnusx/application/services/bioreport_adapter.py
+?? src/cygnusx/application/services/dataset_analysis_service.py
+?? src/cygnusx/application/services/dataset_handoff_service.py
+?? src/cygnusx/application/services/dataset_import_service.py
+?? src/cygnusx/application/services/dataset_service.py
+?? src/cygnusx/application/services/geo_processed_data_service.py
+?? src/cygnusx/application/services/report_archive.py
+?? src/cygnusx/application/services/report_audit_pdf_renderer.py
+?? src/cygnusx/application/services/report_audit_renderer.py
+?? src/cygnusx/application/services/report_snapshot_builder.py
+?? src/cygnusx/application/services/report_snapshot_manifest.py
+?? src/cygnusx/application/services/report_snapshot_sources.py
+?? src/cygnusx/application/services/reproducible_report_service.py
+?? src/cygnusx/application/services/research_delivery_service.py
+?? src/cygnusx/application/services/research_treasure_service.py
+?? src/cygnusx/domain/dataset/
+?? src/cygnusx/infrastructure/celery_app/tasks/datasets.py
+?? src/cygnusx/infrastructure/celery_app/tasks/reports.py
+?? src/cygnusx/infrastructure/database/models/agent_tool_invocation.py
+?? src/cygnusx/infrastructure/database/models/dataset.py
+?? src/cygnusx/infrastructure/database/repositories/dataset_repository.py
+?? src/cygnusx/infrastructure/geo/
+?? tests/integration/test_phase0b_http.py
+?? tests/integration/test_phase0b_redis.py
+?? tests/integration/test_phase0b_services.py
+?? tests/integration/test_reproducible_report_isolated.py
+?? tests/integration/test_reproducible_report_postgres.py
+?? tests/unit/test_agent_tools_phase2.py
+?? tests/unit/test_counts_deg_phase3.py
+?? tests/unit/test_dataset_gateway_phase3.py
+?? tests/unit/test_dataset_geo_validation.py
+?? tests/unit/test_dataset_import_handoff.py
+?? tests/unit/test_dataset_phase3.py
+?? tests/unit/test_dataset_phase3_review.py
+?? tests/unit/test_phase0a_security.py
+?? tests/unit/test_phase0b_confirmation.py
+?? tests/unit/test_report_delivery_phase2.py
+?? tests/unit/test_report_pdf_and_bioreport_phase2.py
+?? tests/unit/test_report_snapshot.py
+?? tests/unit/test_reproducible_report_phase1.py
+?? tests/unit/test_research_treasure_phase1.py

@@ -65,6 +65,41 @@ class Settings(BaseSettings):
     # 事件顺序异常默认仅告警，避免 SSE 已开始后因观测校验中断用户回复；
     # 需要严格阻断时显式设置 CHAT_EVENT_SEQUENCE_ENFORCEMENT=raise。
     chat_event_sequence_enforcement: Literal["off", "warn", "raise"] = "warn"
+    # Phase 1 native research discovery is opt-in until Phase 0B runtime gates are closed.
+    treasure_native_ui_enabled: bool = False
+    # Reserved for a later phase. Keeping this false in backend configuration is mandatory.
+    treasure_agent_write_tools_enabled: bool = False
+    tool_gateway_read_enabled: bool = False
+    # Phase3 data assets: all external execution remains subject to Phase0B/2 gates.
+    research_report_python_executable: str | None = None
+    research_delivery_read_enabled: bool = False
+    research_delivery_write_enabled: bool = False
+    research_manifest_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
+    research_artifact_max_files: int = Field(default=2000, ge=1, le=10000)
+    research_artifact_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
+    research_capture_timeout_seconds: int = Field(default=60, ge=1, le=540)
+    dataset_discovery_readonly: bool = False
+    dataset_import_write: bool = False
+    analysis_submit_from_dataset: bool = False
+    counts_deg_flow_enabled: bool = False
+    dataset_archive_max_files: int = Field(default=100, ge=1, le=1000)
+    dataset_archive_max_file_bytes: int = Field(default=16 * 1024 * 1024, ge=1)
+    dataset_archive_max_ratio: int = Field(default=100, ge=1, le=1000)
+    dataset_import_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+    dataset_geo_max_response_bytes: int = Field(default=2 * 1024 * 1024, ge=1)
+    dataset_geo_max_samples: int = Field(default=24, ge=1, le=100)
+    dataset_geo_max_runs: int = Field(default=100, ge=1, le=1000)
+    dataset_geo_request_interval: float = Field(default=0.5, ge=0.4)
+    dataset_validation_max_rows: int = Field(default=200000, ge=1)
+    dataset_validation_max_columns: int = Field(default=1000, ge=1)
+    dataset_validation_max_line_bytes: int = Field(default=1048576, ge=1)
+    agent_download_write_enabled: bool = False
+    agent_analysis_write_enabled: bool = False
+    agent_task_cancel_enabled: bool = False
+    agent_tool_delegation_ttl_seconds: int = Field(default=300, ge=30, le=900)
+    treasure_agent_url: str = ""
+    treasure_agent_internal_token: str = ""
+    treasure_agent_timeout_seconds: float = Field(default=900.0, ge=30.0, le=3600.0)
     agent_context_cache_ttl_seconds: int = 60
     # Use a factory so each Settings() construction re-reads the nested
     # CONTEXT_COMPACTION_* environment variables instead of freezing values at
@@ -93,6 +128,11 @@ class Settings(BaseSettings):
     redis_db: int = 0
     celery_broker_url: str = ""
     celery_result_backend: str = ""
+    # Audit-report collection has an independent bounded lifecycle; no analysis reruns.
+    report_generation_timeout_seconds: int = Field(default=600, ge=30, le=1800)
+    report_capture_max_bytes: int = Field(default=16 * 1024**3, ge=1)
+    report_generation_max_attempts: int = Field(default=3, ge=1, le=10)
+    report_generation_reconcile_seconds: int = Field(default=60, ge=10, le=300)
     schedule_scan_batch_size: int = 100
     schedule_max_delivery_attempts: int = 5
     # ===== 任务队列传输 =====

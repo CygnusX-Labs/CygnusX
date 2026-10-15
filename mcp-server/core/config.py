@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 _CONFIG_DIR = Path(__file__).resolve().parent.parent
@@ -43,6 +44,8 @@ class MCPServerConfig(BaseSettings):
     transport: str = _server.get("transport", "stdio")
     host: str = _server.get("host", "127.0.0.1")
     port: int = _server.get("port", 8900)
+    allow_non_loopback_http: bool = False
+    http_token: SecretStr = SecretStr("")
 
     # connection
     base_url: str = _connection.get("base_url", "http://localhost:8000")
@@ -59,3 +62,19 @@ class MCPServerConfig(BaseSettings):
 
 
 settings = MCPServerConfig()
+
+
+def validate_transport_security(transport: str, host: str) -> None:
+    """A configuration flag alone cannot establish trusted gateway authentication."""
+    if transport not in {"stdio", "sse", "streamable-http", "http"}:
+        raise ValueError("Unsupported MCP transport")
+    if transport == "stdio":
+        return
+    if host not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        raise RuntimeError("MCP HTTP transport must bind to loopback; gateway mode is not implemented")
+    if len(settings.http_token.get_secret_value()) < 32:
+        raise RuntimeError("MCP HTTP requires a separate CYGNUSX_HTTP_TOKEN of at least 32 characters")

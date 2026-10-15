@@ -62,9 +62,9 @@ async def submit_pipeline(
     current_user_id: CurrentUserId,
     db: DbSession,
 ):
-    return await _controller(
-        current_user_id, db, human_confirmed=request.user_confirmed
-    ).submit(pipeline_type, request.prepared_params)
+    return await _controller(current_user_id, db).submit(
+        pipeline_type, request.prepared_params
+    )
 
 
 @router.get("/{pipeline_type}/{task_id}/status", summary="查询分析流程任务状态")

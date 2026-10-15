@@ -8,6 +8,7 @@ BlastService._result_dir、EnrichmentService._work_dir 等），确保全平台�
 == 调用点清单（截至 存储层优化 Phase 3；新增调用方请同步维护）==
 
 用户区（storage_root/users/{uid}/）：
+- application/services/reproducible_report_service.py 审计报告 → projects/runs/audit-report-*
 - application/services/task_service.py          Flow 任务 → projects/{project}/runs/
 - application/services/download_service.py      数据下载 → {directory}/{label}/（默认 downloads/）
 - application/services/file_service.py          上传 → inbox/、chunk 暂存 → system/.tmp/

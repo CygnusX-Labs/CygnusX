@@ -1,20 +1,24 @@
 """报告中心路由"""
 
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from cygnusx.api.deps import CurrentUserId, DbSession
 from cygnusx.application.schemas.report import (
     ReportFilterParams,
+    ReportJobResponse,
     ReportListResponse,
     ReportResponse,
+    ReportSnapshotResponse,
     ReportVersionTreeResponse,
     ToggleStarRequest,
 )
 from cygnusx.application.services.report_service import ReportService
+from cygnusx.application.services.reproducible_report_service import ReproducibleReportService
 
 router = APIRouter()
 
@@ -27,10 +31,56 @@ def get_report_service(db: DbSession) -> ReportService:
 ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]
 
 
+@router.get("/jobs/{job_id}", response_model=ReportJobResponse, summary="获取报告生成状态")
+async def get_report_job(
+    job_id: UUID, current_user_id: CurrentUserId, db: DbSession
+) -> ReportJobResponse:
+    return await ReproducibleReportService(db).get_job(current_user_id, job_id)
+
+
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=ReportJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="安全重试报告生成",
+)
+async def retry_report_job(
+    job_id: UUID, current_user_id: CurrentUserId, db: DbSession
+) -> ReportJobResponse:
+    return await ReproducibleReportService(db).retry(current_user_id, job_id)
+
+
+@router.get(
+    "/{report_id}/snapshot",
+    response_model=ReportSnapshotResponse,
+    summary="获取报告证据快照",
+)
+async def get_report_snapshot(
+    report_id: UUID, current_user_id: CurrentUserId, db: DbSession
+) -> ReportSnapshotResponse:
+    return await ReproducibleReportService(db).get_snapshot_for_report(current_user_id, report_id)
+
+
+@router.post(
+    "/{report_id}/delivery",
+    response_model=ReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="生成科研交付包",
+)
+async def build_delivery_package(
+    report_id: UUID,
+    current_user_id: CurrentUserId,
+    service: ReportServiceDep,
+) -> ReportResponse:
+    report = await service.build_delivery_package(report_id, current_user_id)
+    return await service.get_report(report.id, current_user_id)
+
+
 @router.get("", response_model=ReportListResponse, summary="获取报告列表")
 async def list_reports(
     current_user_id: CurrentUserId,
     service: ReportServiceDep,
+    task_id: Annotated[UUID | None, Query(description="任务 ID")] = None,
     keyword: Annotated[str | None, Query(description="关键词搜索")] = None,
     flow_id: Annotated[str | None, Query(description="流程 ID")] = None,
     status: Annotated[str | None, Query(description="状态")] = None,
@@ -41,6 +91,7 @@ async def list_reports(
 ) -> ReportListResponse:
     """获取当前用户的报告列表"""
     params = ReportFilterParams(
+        task_id=task_id,
         keyword=keyword,
         flow_id=flow_id,
         status=status,
@@ -56,7 +107,7 @@ async def list_reports(
 async def get_report_stats(
     current_user_id: CurrentUserId,
     service: ReportServiceDep,
-) -> dict:
+) -> dict[str, int]:
     """获取当前用户的报告统计概览"""
     return await service.stats(current_user_id)
 
@@ -108,8 +159,19 @@ async def download_report_file(
     file_id: UUID,
     current_user_id: CurrentUserId,
     service: ReportServiceDep,
-) -> FileResponse:
+) -> Response:
     """下载报告关联文件"""
+    detail = await service.get_report(report_id, current_user_id)
+    if detail.report_kind in {"reproducibility", "delivery"} or service._backend.name != "local":
+        content, name = await service.object_download(report_id, file_id, current_user_id)
+        return Response(
+            content,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name, safe='')}",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     path = await service.download_file(report_id, file_id, current_user_id)
     return FileResponse(
         path=path,

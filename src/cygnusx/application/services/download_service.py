@@ -143,7 +143,9 @@ class DownloadService:
     def _normalize_directory(directory: str | None) -> str:
         if not directory:
             return ""
-        d = directory.strip().strip("/")
+        d = directory.strip()
+        if d.startswith("/") or ".." in d.split("/") or "\\" in d:
+            raise ValidationError("下载目录必须位于当前用户根目录内")
         parts = [p for p in d.split("/") if p not in ("", ".", "..")]
         return "/".join(parts)
 
@@ -167,8 +169,11 @@ class DownloadService:
 
         默认 directory="downloads"，即顶层 downloads/；用户显式指定其它目录时按原样使用。
         """
-        base = get_path_factory().user_root(user_id) / directory
+        user_root = get_path_factory().user_root(user_id).resolve()
+        base = user_root / directory
         work_dir = base / label
+        if not work_dir.resolve().is_relative_to(user_root):
+            raise ValidationError("下载目录不能逃逸当前用户根目录")
         await self._backend.ensure_dir(
             get_path_factory().relative_to_root(work_dir)
         )
