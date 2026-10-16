@@ -68,7 +68,8 @@ function handleClick() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 150px;
+  width: 100%;
+  min-width: 0;
   height: 48px;
   padding: 0 28px;
   border: none;
@@ -92,7 +93,7 @@ function handleClick() {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--brand-primary);
+  background: linear-gradient(135deg, #3578f6, #536dfe);
   opacity: 1;
   transition:
     opacity 250ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -101,16 +102,16 @@ function handleClick() {
 }
 
 .login-button:hover:not(:disabled):not(.login-button--disabled) {
-  transform: scale(1.02);
+  transform: translateY(-1px);
   box-shadow: 0 12px 30px rgba(76, 111, 255, 0.34);
 }
 
 .login-button:hover:not(:disabled):not(.login-button--disabled) .login-button__bg {
-  background: var(--brand-primary-hover);
+  background: linear-gradient(135deg, #2f6fe5, #4b62e8);
 }
 
 .login-button:active:not(:disabled):not(.login-button--disabled) {
-  transform: scale(0.98);
+  transform: translateY(0);
   box-shadow: 0 4px 14px rgba(76, 111, 255, 0.2);
 }
 

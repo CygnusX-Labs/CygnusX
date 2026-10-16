@@ -40,7 +40,7 @@ onUnmounted(() => {
         :animation-link="globeUrl"
         :loop="true"
         :auto-play="true"
-        :height="115"
+        :height="105"
         @on-error="globeFailed = true"
       />
       <div v-else class="globe-fallback" />
@@ -53,7 +53,7 @@ onUnmounted(() => {
         :animation-link="blackCatUrl"
         :loop="true"
         :auto-play="true"
-        :height="155"
+        :height="140"
         @on-error="catFailed = true"
       />
       <span v-else class="cat-emoji">🐱</span>
@@ -64,12 +64,12 @@ onUnmounted(() => {
 <style scoped>
 .logo-container {
   position: relative;
-  width: 180px;
-  height: 215px;
+  width: 160px;
+  height: 178px;
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  margin: 0 auto 12px;
+  margin: 0 auto 8px;
   animation: float 4s ease-in-out infinite;
 }
 
@@ -78,8 +78,8 @@ onUnmounted(() => {
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 125px;
-  height: 125px;
+  width: 112px;
+  height: 112px;
   z-index: 1;
 }
 
@@ -89,8 +89,8 @@ onUnmounted(() => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 175px;
-  height: 175px;
+  width: 155px;
+  height: 155px;
   background: radial-gradient(circle, rgba(139, 92, 246, 0.22) 0%, transparent 70%);
   border-radius: 50%;
   z-index: -1;
@@ -103,8 +103,8 @@ onUnmounted(() => {
 }
 
 .globe-fallback {
-  width: 125px;
-  height: 125px;
+  width: 112px;
+  height: 112px;
   border-radius: 50%;
   background: conic-gradient(from 0deg, #4f8dff, #3366ff, #7c3aed, #4f8dff);
   opacity: 0.8;
@@ -112,11 +112,11 @@ onUnmounted(() => {
 
 .cat-wrapper {
   position: absolute;
-  bottom: 53px;
+  bottom: 42px;
   left: calc(50% - 7px);
   transform: translateX(-50%);
-  width: 155px;
-  height: 155px;
+  width: 140px;
+  height: 140px;
   z-index: 2;
   pointer-events: none;
 }

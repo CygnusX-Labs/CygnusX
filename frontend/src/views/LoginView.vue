@@ -9,6 +9,7 @@
             <LogoAnimation />
             <h2 class="login-title">CygnusX</h2>
             <p class="login-subtitle">欢迎登录多组学分析平台</p>
+            <p class="login-supporting-text">面向生命科学的智能科研平台</p>
           </div>
           <n-form ref="formRef" :model="formData" :rules="rules" class="login-form">
             <!-- 第一步：账号密码 -->
@@ -18,6 +19,7 @@
                   v-model:value="formData.username"
                   placeholder="请输入用户名"
                   size="large"
+                  autocomplete="username"
                   @keyup.enter="handleLogin"
                 >
                   <template #prefix>
@@ -33,6 +35,7 @@
                   show-password-on="click"
                   placeholder="请输入密码"
                   size="large"
+                  autocomplete="current-password"
                   @keyup.enter="handleLogin"
                 >
                   <template #prefix>
@@ -61,7 +64,7 @@
               {{ errorMessage }}
             </div>
 
-            <div class="login-actions">
+            <div class="login-actions" :class="{ 'login-actions--totp': step === 'totp' }">
               <LoginButton
                 v-if="step === 'credentials'"
                 :disabled="isLoginButtonDisabled"
@@ -77,12 +80,27 @@
                   返回
                 </n-button>
               </template>
-              <n-button v-if="step === 'credentials'" size="large" @click="handleRegister">
+              <n-button v-if="step === 'credentials'" class="register-button" text @click="handleRegister">
                 还没有账号？立即注册
               </n-button>
             </div>
           </n-form>
         </div>
+      </div>
+      <div
+        v-if="step === 'credentials'"
+        class="demo-credentials"
+        :class="{ 'demo-credentials--dimmed': demoCredentialsDimmed }"
+        aria-label="演示账号信息"
+      >
+        <div class="demo-credentials-copy">
+          <strong><span class="demo-badge">Demo</span>公开演示账号</strong>
+          <span>用户名：demo</span>
+          <span>密码：demo_omichub</span>
+        </div>
+        <n-button size="small" secondary @click="fillDemoCredentials">
+          一键填入
+        </n-button>
       </div>
     </div>
     <StardustQuote />
@@ -120,12 +138,17 @@ const formRef = ref()
 const loading = ref(false)
 const errorMessage = ref('')
 const showRegModal = ref(false)
+const demoCredentialsDimmed = ref(false)
+let demoCredentialsDimTimer: ReturnType<typeof setTimeout> | null = null
 // 账户未激活时弹模态框（带管理员联系方式），比纯 toast 更友好
 const showInactiveModal = ref(false)
 
 // 拉取注册开关（site-settings，DB）+ 提示文案（site-content，YAML）
 onMounted(() => {
   siteConfig.fetchSiteConfig()
+  demoCredentialsDimTimer = setTimeout(() => {
+    demoCredentialsDimmed.value = true
+  }, 10_000)
 })
 
 // 点击“注册”：开关关闭时拦截并弹自定义模态框提示，不跳转；开启时正常跳转注册页
@@ -169,6 +192,15 @@ let loginSuccessTimer: ReturnType<typeof setTimeout> | null = null
 const isLoginButtonDisabled = computed(() => {
   return !formData.value.username || !formData.value.password
 })
+
+function fillDemoCredentials() {
+  step.value = 'credentials'
+  formData.value.username = 'demo'
+  formData.value.password = 'demo_omichub'
+  formData.value.totpCode = ''
+  challengeToken.value = ''
+  errorMessage.value = ''
+}
 
 function resetToCredentials() {
   step.value = 'credentials'
@@ -281,6 +313,7 @@ const handleVerify2FA = async () => {
 onUnmounted(() => {
   if (redirectTimer) clearTimeout(redirectTimer)
   if (loginSuccessTimer) clearTimeout(loginSuccessTimer)
+  if (demoCredentialsDimTimer) clearTimeout(demoCredentialsDimTimer)
 })
 </script>
 
@@ -291,23 +324,23 @@ onUnmounted(() => {
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 426px;
+  max-width: 440px;
   padding: 3px;
-  border-radius: 19px;
+  border-radius: 20px;
 }
 
 .login-card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 420px;
-  padding: 28px 32px 32px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 16px;
-  box-shadow: 0 25px 60px rgba(7, 34, 82, 0.2), inset 0 1px rgba(255, 255, 255, 0.45);
+  max-width: 440px;
+  padding: 28px 36px 30px;
+  background: rgba(248, 251, 255, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(12, 37, 85, 0.18), inset 0 1px rgba(255, 255, 255, 0.64);
   transition: transform 220ms ease-out, box-shadow 220ms ease-out, background-color 220ms ease-out;
 }
 
@@ -363,11 +396,9 @@ onUnmounted(() => {
 }
 
 :root[data-theme='dark'] .login-card {
-  /* 暗色玻璃：对齐 §3.3.1 Surface Glass 语义（--surface-glass 为白 6% 叠加层，认证卡在此基础
-     上提亮以保证星空背景上的可读性），边框对应 --border-subtle 层级 */
-  background: var(--surface-glass);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 24px 80px rgba(0, 9, 30, 0.4), inset 0 1px rgba(196, 216, 255, 0.08);
+  background: rgba(248, 251, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 20px 60px rgba(0, 9, 30, 0.4), inset 0 1px rgba(255, 255, 255, 0.72);
 }
 
 /* §4.2-5：减少透明度时玻璃表面回退实色并移除模糊 */
@@ -380,8 +411,8 @@ onUnmounted(() => {
   }
 
   :root[data-theme='dark'] .login-card {
-    background: var(--surface-card);
-    border: 1px solid var(--border-subtle);
+    background: #f8fbff;
+    border: 1px solid rgba(255, 255, 255, 0.8);
   }
 
   /* 蓝靛边框层与光晕依赖透明叠加，一并回退 */
@@ -395,7 +426,8 @@ onUnmounted(() => {
   position: relative;
   width: 100vw;
   min-height: 100dvh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -412,6 +444,60 @@ onUnmounted(() => {
   padding: 0 16px;
 }
 
+.demo-credentials {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + 252px);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 224px;
+  min-height: 92px;
+  padding: 12px 13px;
+  gap: 12px;
+  border: 1px solid rgba(77, 124, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(248, 251, 255, 0.9);
+  box-shadow: 0 12px 30px rgba(12, 37, 85, 0.12);
+  color: var(--neutral-text-2);
+  font-size: 12px;
+  transform: translateY(-50%);
+  transition: opacity 800ms ease;
+}
+.demo-credentials--dimmed {
+  opacity: 0.2;
+}
+.demo-credentials-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.demo-credentials-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #24344d;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.demo-badge {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(53, 120, 246, 0.1);
+  color: #3578f6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.demo-credentials-copy span {
+  overflow-wrap: anywhere;
+}
+.demo-credentials :deep(.n-button) {
+  flex: 0 0 auto;
+}
+
 .login-card:focus-within {
   transform: translateY(-1px);
   box-shadow: 0 30px 72px rgba(7, 34, 82, 0.28), inset 0 1px rgba(255, 255, 255, 0.58);
@@ -419,7 +505,7 @@ onUnmounted(() => {
 
 .login-header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   position: relative;
   z-index: 2;
 }
@@ -428,14 +514,20 @@ onUnmounted(() => {
   /* §3.4 Display 级：28px / 36px / 600 */
   font-size: 28px;
   line-height: 36px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
-  filter: drop-shadow(0 4px 18px rgba(64, 120, 255, 0.25));
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
 }
 .login-subtitle {
   font-size: 14px;
-  color: var(--neutral-text-2);
+  color: #52647d;
+  line-height: 20px;
+}
+.login-supporting-text {
+  margin: 3px 0 0;
+  color: #8290a4;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .login-form {
@@ -455,16 +547,33 @@ onUnmounted(() => {
 }
 .login-actions {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
   margin-top: 0;
-  gap: 16px;
+  gap: 12px;
+}
+.login-actions--totp {
+  align-items: stretch;
+}
+.login-actions--totp :deep(.n-button) {
+  width: 100%;
+}
+.register-button {
+  min-height: 20px;
+  padding: 0 !important;
+  color: #64748b !important;
+  font-size: 13px;
+  line-height: 20px;
+}
+.register-button:hover {
+  color: #3578f6 !important;
 }
 
 .login-actions :deep(.n-button:not(.n-button--primary-type)) {
-  --n-text-color: var(--neutral-text-2) !important;
-  --n-text-color-hover: var(--arco-primary) !important;
-  --n-text-color-pressed: var(--arco-primary-active) !important;
+  --n-text-color: #64748b !important;
+  --n-text-color-hover: #3578f6 !important;
+  --n-text-color-pressed: #2865de !important;
   --n-border: none !important;
   --n-border-hover: none !important;
   --n-border-pressed: none !important;
@@ -494,28 +603,30 @@ onUnmounted(() => {
 
 /* 暗色模式：提升表单标签、输入框、按钮对比度 */
 :root[data-theme='dark'] .login-form :deep(.n-form-item .n-form-item-label) {
-  color: var(--neutral-text-1) !important;
+  color: #334155 !important;
 }
 
 :root[data-theme='dark'] .login-form :deep(.n-input) {
-  --n-border-color: rgba(255, 255, 255, 0.18) !important;
-  --n-border-hover: rgba(255, 255, 255, 0.28) !important;
-  --n-border-focus: var(--arco-primary) !important;
-  --n-color: rgba(255, 255, 255, 0.07) !important;
-  --n-color-focus: rgba(255, 255, 255, 0.1) !important;
-  --n-text-color: var(--neutral-text-1) !important;
-  --n-placeholder-color: var(--neutral-text-3) !important;
-  --n-box-shadow-focus: 0 0 0 3px rgba(118, 145, 255, 0.24) !important;
-  --n-icon-color: var(--neutral-text-3) !important;
+  --n-border-color: #dce5f2 !important;
+  --n-border-hover: #b8c9e0 !important;
+  --n-border-focus: #4b7cf3 !important;
+  --n-color: #ffffff !important;
+  --n-color-focus: #ffffff !important;
+  --n-text-color: #24344d !important;
+  --n-placeholder-color: #8290a4 !important;
+  --n-box-shadow-focus: 0 0 0 3px rgba(75, 124, 243, 0.12) !important;
+  --n-icon-color: #8290a4 !important;
 }
 
 :root[data-theme='dark'] .login-actions :deep(.n-button:not(.n-button--primary-type)) {
-  --n-text-color: var(--neutral-text-2) !important;
-  --n-text-color-hover: var(--arco-primary-hover) !important;
-  --n-text-color-pressed: var(--arco-primary-active) !important;
-  --n-border: 1px solid rgba(192, 200, 255, 0.45) !important;
-  --n-border-hover: 1px solid rgba(192, 200, 255, 0.6) !important;
-  --n-border-pressed: 1px solid rgba(192, 200, 255, 0.5) !important;
+  --n-text-color: #64748b !important;
+  --n-text-color-hover: #3578f6 !important;
+  --n-text-color-pressed: #2865de !important;
+}
+
+:root[data-theme='dark'] .demo-credentials {
+  border-color: rgba(155, 184, 255, 0.24);
+  background: rgba(248, 251, 255, 0.94);
 }
 
 /* 登录主按钮在暗色下使用更亮的渐变 */
@@ -527,14 +638,14 @@ onUnmounted(() => {
 
 /* 亮色模式：优化输入框边框与 placeholder 可读性 */
 .login-form :deep(.n-input) {
-  --n-border-color: rgba(60, 60, 100, 0.16);
-  --n-border-hover: rgba(60, 60, 100, 0.28);
-  --n-border-focus: var(--arco-primary);
-  --n-color: rgba(255, 255, 255, 0.55);
-  --n-color-focus: rgba(255, 255, 255, 0.72);
-  --n-placeholder-color: var(--neutral-text-3);
-  --n-box-shadow-focus: 0 0 0 4px rgba(77, 124, 255, 0.15);
-  --n-icon-color: var(--neutral-text-3);
+  --n-border-color: #dce5f2;
+  --n-border-hover: #b8c9e0;
+  --n-border-focus: #4b7cf3;
+  --n-color: #ffffff;
+  --n-color-focus: #ffffff;
+  --n-placeholder-color: #8290a4;
+  --n-box-shadow-focus: 0 0 0 3px rgba(75, 124, 243, 0.12);
+  --n-icon-color: #8290a4;
 }
 
 .login-form :deep(.n-input--focus) {
@@ -549,7 +660,7 @@ onUnmounted(() => {
   color: var(--n-placeholder-color);
 }
 .login-form :deep(.n-form-item .n-form-item-label) {
-  color: var(--neutral-text-2);
+  color: #52647d;
 }
 
 /* 表单校验提示精致化 */
@@ -566,6 +677,30 @@ onUnmounted(() => {
   .login-card,
   .login-actions :deep(.n-button) {
     transition-duration: 1ms;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 24px 20px 22px;
+  }
+
+}
+
+@media (max-width: 1100px) {
+  .demo-credentials {
+    position: static;
+    width: min(440px, 100%);
+    min-height: 0;
+    margin-top: 14px;
+    transform: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .demo-credentials {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

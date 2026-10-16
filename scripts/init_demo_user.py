@@ -8,7 +8,7 @@
 环境变量:
   CYGNUSX_INIT_DEMO_USERNAME   演示用户名 (默认: demo)
   CYGNUSX_INIT_DEMO_EMAIL      演示邮箱 (默认: demo@example.com)
-  CYGNUSX_INIT_DEMO_PASSWORD   演示密码 (默认: demo_cygnusx)
+  CYGNUSX_INIT_DEMO_PASSWORD   演示密码 (默认: demo_omichub)
 
 说明:
   - 仅供 demo 模式使用；生产环境请勿运行（账号密码公开在登录页）。
@@ -39,7 +39,7 @@ async def main() -> None:
 
     username = os.getenv("CYGNUSX_INIT_DEMO_USERNAME", "demo").strip()
     email = os.getenv("CYGNUSX_INIT_DEMO_EMAIL", "demo@example.com").strip()
-    password = os.getenv("CYGNUSX_INIT_DEMO_PASSWORD", "demo_cygnusx").strip()
+    password = os.getenv("CYGNUSX_INIT_DEMO_PASSWORD", "demo_omichub").strip()
 
     factory = get_session_factory()
     async with factory() as session:
