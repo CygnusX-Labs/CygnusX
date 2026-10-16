@@ -3,8 +3,9 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NIcon } from 'naive-ui'
 import {
-  RocketOutline, BarChartOutline, InformationCircleOutline,
-  CheckmarkCircleOutline, SparklesOutline,
+  ArrowForwardOutline, BarChartOutline, CheckmarkCircleOutline,
+  CloudUploadOutline, DocumentTextOutline, FlaskOutline,
+  SearchOutline, SparklesOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
 import { festivalApi } from '@/api/festival'
@@ -12,6 +13,7 @@ import { useAuthStore } from '@/stores/auth'
 import OmicBackgroundAnimation from '@/components/OmicBackgroundAnimation.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import FestivalPopup from '@/components/FestivalPopup.vue'
+import ResearchWorkbenchPanel from '@/components/home/ResearchWorkbenchPanel.vue'
 import type { SiteContent } from '@/types/site-content'
 import type { HomeQuickEntry, SiteSettings } from '@/types'
 import type { FestivalConfig } from '@/types/festival'
@@ -28,10 +30,10 @@ import { displayName as getDisplayName } from '@/utils/displayName'
 const DEFAULT_CONTENT: SiteContent = {
   hero: {
     title: 'CygnusX BioOps · 天鹅座智能科研平台',
-    slogan: '让科学问题连接数据，让计算结果留下依据。',
+    slogan: '让科学问题，抵达可验证的发现。',
     description:
-      '从公共数据发现或已有数据导入出发，连接科研 Agent、标准化分析与报告交付，'
-      + '在统一项目中组织数据、计算过程与证据，让科研人员把时间留给科学问题。',
+      '从公共数据发现或已有数据导入出发，以科研 Agent 组织研究任务，以标准化 Flow 承载计算分析，'
+      + '以可信证据连接科研过程与成果交付。',
     tags: ['数据与文献发现', '受控计算分析', '可追溯交付', '科研资产积累'],
     vision: {
       title_en: 'FROM STARDUST, TO DISCOVERY',
@@ -40,11 +42,12 @@ const DEFAULT_CONTENT: SiteContent = {
     },
   },
   quick_entries: [
-    { key: 'rna-seq', title: 'RNA-seq 分析', desc: '转录组差异表达分析' },
-    { key: 'atac-seq', title: 'ATAC-seq 分析', desc: '染色质开放性分析' },
-    { key: 'files', title: '数据管理', desc: '上传与管理样本数据' },
-    { key: 'ai', title: '星尘AI', desc: '对话式生信分析与结果解读' },
-    { key: 'tasks', title: '任务中心', desc: '查看分析任务进度' },
+    { key: 'treasure-mouse', title: '科研寻宝鼠', desc: '公共组学数据与文献探索' },
+    { key: 'files', title: '科研数据管理', desc: '数据导入与科研资产组织' },
+    { key: 'flows', title: '多组学分析', desc: '标准化、版本化分析流程' },
+    { key: 'ai', title: '星尘 AI 助手', desc: '科研需求理解与智能协作' },
+    { key: 'tasks', title: '计算任务中心', desc: '执行状态、日志与质量检查' },
+    { key: 'reports', title: '报告与证据', desc: '分析报告、产物和来源记录' },
   ],
   guide_steps: [
     { title: '上传样本数据', desc: '将 FASTQ / BAM 等原始数据上传至数据管理' },
@@ -74,6 +77,61 @@ interface QuickEntry extends HomeQuickEntry {
   iconComponent: ReturnType<typeof resolveHomeQuickEntryIcon>
 }
 
+interface LifecycleStep {
+  label: string
+  icon: ReturnType<typeof resolveHomeQuickEntryIcon>
+}
+
+const lifecycleSteps: LifecycleStep[] = [
+  { label: '科研问题', icon: SearchOutline },
+  { label: '数据发现或导入', icon: CloudUploadOutline },
+  { label: 'Agent 任务规划', icon: SparklesOutline },
+  { label: 'Skill 契约与质量检查', icon: CheckmarkCircleOutline },
+  { label: '标准化 Flow 受控执行', icon: FlaskOutline },
+  { label: '证据与报告交付', icon: DocumentTextOutline },
+  { label: '后续科研探索', icon: ArrowForwardOutline },
+]
+
+const researchQuickEntries: HomeQuickEntry[] = [
+  { key: 'treasure-mouse', title: '科研寻宝鼠', desc: '公共组学数据与文献探索', to: '/treasure-mouse', icon: 'SearchOutline', icon_bg: 'blue' },
+  { key: 'files', title: '科研数据管理', desc: '数据导入与科研资产组织', to: '/files', icon: 'CloudUploadOutline', icon_bg: 'cyan' },
+  { key: 'flows', title: '多组学分析', desc: '标准化、版本化分析流程', to: '/flows', icon: 'FlaskOutline', icon_bg: 'purple' },
+  { key: 'ai', title: '星尘 AI 助手', desc: '科研需求理解与智能协作', to: '/ai', icon: 'SparklesOutline', icon_bg: 'violet' },
+  { key: 'tasks', title: '计算任务中心', desc: '执行状态、日志与质量检查', to: '/tasks', icon: 'DocumentTextOutline', icon_bg: 'orange' },
+  { key: 'reports', title: '报告与证据', desc: '分析报告、产物和来源记录', to: '/reports', icon: 'DocumentTextOutline', icon_bg: 'green' },
+]
+
+const mechanismCards = [
+  { key: 'agent', name: 'Agent', title: '任务理解与规划', desc: '把科研问题整理为可检查的研究任务。', icon: SparklesOutline, color: 'violet' },
+  { key: 'skill', name: 'Skill', title: '专业动作约束', desc: '声明输入、输出、前置条件与质量要求。', icon: CheckmarkCircleOutline, color: 'blue' },
+  { key: 'flow', name: 'Flow', title: '确定性计算执行', desc: '用版本化流程承载可复现的标准分析。', icon: FlaskOutline, color: 'purple' },
+]
+
+const pillars = [
+  { key: 'agents', en: 'Research Agents', zh: '科研智能体', desc: '理解需求，组织任务与能力匹配。', icon: SparklesOutline, color: 'violet', status: '需要配置' },
+  { key: 'workflows', en: 'Reproducible Workflows', zh: '可复现计算流程', desc: '版本化 Flow 与环境记录承载标准分析。', icon: FlaskOutline, color: 'blue', status: '当前可用' },
+  { key: 'governed', en: 'Governed Execution', zh: '受控执行', desc: '以权限边界、隔离策略和质量校验约束执行路径。', icon: CheckmarkCircleOutline, color: 'purple', status: '需要配置' },
+  { key: 'evidence', en: 'Verifiable Evidence', zh: '可验证科学证据', desc: '沉淀任务记录、质量检查、产物与报告来源。', icon: DocumentTextOutline, color: 'cyan', status: '当前可用' },
+]
+
+const ecosystem = [
+  { name: 'CygnusX BioOps', role: '平台核心能力', status: '当前可用', text: '统一组织项目、Agent、任务、数据与交付。', href: '/about' },
+  { name: 'Treasure-Seeking Mouse', role: '独立生态组件', status: '实验性 / 预览', text: '公共组学数据、文献发现与来源核验；执行受运行门禁约束。', href: 'https://github.com/xsx123123/Treasure-Seeking_Mouse' },
+  { name: 'Polariseq', role: '独立生态组件', status: '需要配置', text: '测序数据传输、断点续传与完整性校验。', href: 'https://github.com/xsx123123/polariseq' },
+  { name: 'FlowFrame', role: '独立生态组件', status: '当前可用', text: '多组学流程规范与标准化接入底座。', href: 'https://github.com/xsx123123/FlowFrame' },
+  { name: 'RNAFlow', role: '标准计算管线', status: '当前可用', text: 'Bulk RNA-seq 标准分析流程。', href: 'https://github.com/xsx123123/RNAFlow' },
+  { name: 'ATACFlow', role: '标准计算管线', status: '当前可用', text: 'ATAC-seq 染色质可及性分析流程。', href: 'https://github.com/xsx123123/ATACFlow' },
+  { name: 'AnnoFlow', role: '功能注释管线', status: '需要配置', text: '按任务配置提供基因功能注释与参考产物。', href: 'https://github.com/xsx123123/kegg_annotation' },
+  { name: 'BioReport', role: '独立生态组件', status: '需要配置', text: '组织分析结果与方法说明，形成科研报告。', href: 'https://github.com/xsx123123/bioreport' },
+]
+
+const capabilityMaturity = [
+  { label: '当前可用', color: 'available', text: '标准流程表单、参数校验、项目任务与报告交付是当前主线；具体范围按流程版本和验收结果确定。' },
+  { label: '需要配置', color: 'config', text: '模型、工具、数据源、存储和执行资源需结合部署配置与权限检查。' },
+  { label: '实验性 / 预览', color: 'preview', text: 'AgentTeams 高级多角色协同默认关闭，需要单独部署和验收。' },
+  { label: '规划中', color: 'roadmap', text: '独立证据凭证导出、专用流程治理 Agent 与自动数据回流不属于当前完整可用能力。' },
+]
+
 const content = ref<SiteContent>(DEFAULT_CONTENT)
 const configuredQuickEntries = ref<HomeQuickEntry[] | null>(null)
 const todayFestival = ref<FestivalConfig | null>(null)
@@ -87,22 +145,30 @@ const showFestivalPopup = computed(() => {
 })
 
 const quickEntries = computed<QuickEntry[]>(() => {
-  const source = configuredQuickEntries.value?.length
-    ? configuredQuickEntries.value
-    : content.value.quick_entries
-  return normalizeHomeQuickEntries(source).map((entry) => ({
-    ...entry,
-    iconComponent: resolveHomeQuickEntryIcon(entry.icon),
-  }))
+  const configuredByKey = new Map(
+    normalizeHomeQuickEntries(configuredQuickEntries.value || content.value.quick_entries)
+      .map((entry) => [entry.key, entry]),
+  )
+  return researchQuickEntries.map((entry) => {
+    const configured = configuredByKey.get(entry.key)
+    const resolved = {
+      ...entry,
+      icon: configured?.icon || entry.icon,
+      icon_bg: configured?.icon_bg || entry.icon_bg,
+    }
+    return { ...resolved, iconComponent: resolveHomeQuickEntryIcon(resolved.icon) }
+  })
 })
-
-const guideSteps = computed(() => content.value.guide_steps)
-
-// 三步引导卡对应的站内页面：数据管理 → 分析中心 → 结果报告中心
-const guideStepLinks = ['/files', '/flows', '/reports']
 
 function goTo(path: string) {
   router.push(path)
+}
+
+function handleEcosystemClick(event: MouseEvent, href: string) {
+  if (href.startsWith('/')) {
+    event.preventDefault()
+    goTo(href)
+  }
 }
 
 onMounted(async () => {
@@ -139,699 +205,456 @@ onMounted(async () => {
 
 <template>
   <div class="home-page" role="main" aria-label="CygnusX 首页">
-    <!-- Hero 欢迎区 -->
     <section class="hero animate-fade-in-up">
       <OmicBackgroundAnimation context="hero" />
       <div class="hero-inner">
         <div class="hero-main">
-          <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }} 👋</p>
-          <h1 class="hero-title">{{ content.hero.title }}</h1>
-          <p v-if="content.hero.slogan" class="hero-slogan">{{ content.hero.slogan }}</p>
+          <p class="hero-kicker">{{ content.hero.title }}</p>
+          <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }}</p>
+          <h1 class="hero-title">{{ content.hero.slogan || '让科学问题，抵达可验证的发现。' }}</h1>
+          <p class="hero-positioning">AI for Science Infrastructure for Life Sciences</p>
           <p class="hero-desc">{{ content.hero.description }}</p>
           <ul v-if="content.hero.tags?.length" class="hero-tags" aria-label="平台能力">
             <li v-for="tag in content.hero.tags" :key="tag" class="hero-tag">{{ tag }}</li>
           </ul>
           <div class="hero-actions">
             <NButton size="large" class="hero-btn-primary" @click="goTo('/flows')">
-              <template #icon>
-                <NIcon><RocketOutline /></NIcon>
-              </template>
-              开始分析
+              <template #icon><NIcon><FlaskOutline /></NIcon></template>
+              开始一项研究
             </NButton>
             <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
-              <template #icon>
-                <NIcon><SparklesOutline /></NIcon>
-              </template>
-              问问星尘AI
-            </NButton>
-            <NButton size="large" class="hero-btn-secondary" @click="goTo('/about')">
-              <template #icon>
-                <NIcon><InformationCircleOutline /></NIcon>
-              </template>
-              了解平台
+              <template #icon><NIcon><SparklesOutline /></NIcon></template>
+              让 Agent 帮我规划
             </NButton>
           </div>
+          <p class="hero-vision-line">{{ content.hero.vision?.title_en }} · {{ content.hero.vision?.text }}</p>
         </div>
-        <div v-if="content.hero.vision" class="hero-vision">
-          <p class="hero-vision-en">{{ content.hero.vision?.title_en }}</p>
-          <p class="hero-vision-text">{{ content.hero.vision?.text }}</p>
-          <p class="hero-vision-label">{{ content.hero.vision?.label }}</p>
+        <div class="hero-lifecycle" aria-labelledby="lifecycle-title">
+          <div class="hero-lifecycle__header">
+            <span class="hero-lifecycle__line" />
+            <div>
+              <p class="hero-lifecycle__eyebrow">RESEARCH LIFECYCLE</p>
+              <h2 id="lifecycle-title">从问题到可验证的发现</h2>
+            </div>
+          </div>
+          <ol class="lifecycle-list">
+            <li v-for="(step, index) in lifecycleSteps" :key="step.label" class="lifecycle-step">
+              <span class="lifecycle-step__node"><NIcon :size="14"><component :is="step.icon" /></NIcon></span>
+              <span class="lifecycle-step__label">{{ step.label }}</span>
+              <span v-if="index < lifecycleSteps.length - 1" class="lifecycle-step__connector" aria-hidden="true" />
+            </li>
+          </ol>
+          <p class="hero-lifecycle__note hero-lifecycle__note--desktop">每个阶段都保留清晰的项目上下文与运行依据。</p>
+          <p class="hero-lifecycle__note hero-lifecycle__note--mobile">后续：标准化 Flow 受控执行 → 证据交付 → 后续科研探索。</p>
         </div>
       </div>
     </section>
 
-    <!-- 条幅通知（管理员后台配置，按优先级取最高一条） -->
     <AnnouncementBanner />
+    <ResearchWorkbenchPanel />
 
-    <!-- 快捷入口 -->
-    <section class="section animate-fade-in-up delay-100">
-      <h2 class="section-label">快捷入口</h2>
+    <section class="section quick-entry-section animate-fade-in-up delay-100" aria-labelledby="quick-entry-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">RESEARCH SHORTCUTS</p>
+          <h2 id="quick-entry-title">科研快捷入口</h2>
+          <p class="section-subtitle">从发现、数据、分析到交付，选择你现在要继续的环节。</p>
+        </div>
+      </div>
       <div class="entry-grid">
-        <div
-          v-for="entry in quickEntries"
-          :key="entry.key"
-          class="entry-card arco-card arco-card-hover"
-          @click="goTo(entry.to)"
-        >
-          <div
-            class="entry-icon"
-            :style="{ background: quickEntryBgColors[entry.icon_bg], color: quickEntryIconColors[entry.icon_bg] }"
-          >
-            <NIcon :size="24">
-              <component :is="entry.iconComponent" />
-            </NIcon>
+        <button v-for="entry in quickEntries" :key="entry.key" type="button" class="entry-card arco-card arco-card-hover" @click="goTo(entry.to)">
+          <span class="entry-icon" :style="{ background: quickEntryBgColors[entry.icon_bg], color: quickEntryIconColors[entry.icon_bg] }">
+            <NIcon :size="22"><component :is="entry.iconComponent" /></NIcon>
+          </span>
+          <span class="entry-text">
+            <strong class="entry-title">{{ entry.title }}</strong>
+            <span class="entry-desc">{{ entry.desc }}</span>
+          </span>
+          <NIcon :size="16" class="entry-arrow"><ArrowForwardOutline /></NIcon>
+        </button>
+      </div>
+    </section>
+
+    <section class="section mechanism-section animate-fade-in-up delay-200" aria-labelledby="mechanism-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">CONTROLLED RESEARCH LOOP</p>
+          <h2 id="mechanism-title">Agent × Skill × Flow</h2>
+          <p class="section-subtitle">Agent 组织任务，Skill 约束专业动作，Flow 承载标准计算；Evidence 记录运行与交付结果。</p>
+        </div>
+      </div>
+      <div class="mechanism-layout">
+        <div class="mechanism-flow" aria-label="核心协作机制">
+          <div v-for="(card, index) in mechanismCards" :key="card.key" class="mechanism-card" :class="`mechanism-card--${card.color}`">
+            <span class="mechanism-card__icon"><NIcon :size="19"><component :is="card.icon" /></NIcon></span>
+            <div>
+              <p class="mechanism-card__name">{{ card.name }}</p>
+              <h3>{{ card.title }}</h3>
+              <p>{{ card.desc }}</p>
+            </div>
+            <span v-if="index < 2" class="mechanism-card__arrow" aria-hidden="true"><ArrowForwardOutline /></span>
           </div>
-          <div class="entry-text">
-            <h4 class="entry-title">{{ entry.title }}</h4>
-            <p class="entry-desc">{{ entry.desc }}</p>
+        </div>
+        <div class="evidence-note">
+          <span class="evidence-note__icon"><NIcon :size="20"><DocumentTextOutline /></NIcon></span>
+          <div>
+            <p class="mechanism-card__name">Evidence</p>
+            <h3>让结果可以被核对</h3>
+            <p>Evidence 不承担执行；它沉淀运行记录、质量检查、产物与报告来源，支撑交付核验。</p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 使用引导 -->
-    <section class="section animate-fade-in-up delay-200">
-      <h2 class="section-label">三步开始你的分析</h2>
-      <div class="guide-grid">
-        <div
-          v-for="(step, index) in guideSteps"
-          :key="step.title"
-          class="guide-card arco-card arco-card-hover"
-          @click="goTo(guideStepLinks[index] || '/flows')"
-        >
-          <div class="guide-step">
-            <span class="guide-number">{{ index + 1 }}</span>
-            <NIcon v-if="index < guideSteps.length - 1" :size="16" class="guide-arrow">
-              <CheckmarkCircleOutline />
-            </NIcon>
-          </div>
-          <h4 class="guide-title">{{ step.title }}</h4>
-          <p class="guide-desc">{{ step.desc }}</p>
-        </div>
-      </div>
-      <!-- Agent 路径：与手动三步并列的替代路径，跳星尘AI 对话页 -->
-      <div class="agent-banner" @click="goTo('/ai')">
-        <div
-          class="agent-icon"
-          :style="{ background: quickEntryBgColors.violet, color: quickEntryIconColors.violet }"
-        >
-          <NIcon :size="22"><SparklesOutline /></NIcon>
-        </div>
-        <div class="agent-text">
-          <h4 class="agent-title">交给星尘AI</h4>
-          <p class="agent-desc">一句话描述需求，星尘AI 自动完成数据上传、流程执行与结果解读</p>
-        </div>
-        <NButton class="agent-cta" @click.stop="goTo('/ai')">开始对话</NButton>
+    <section class="section pillars-section animate-fade-in-up delay-200" aria-labelledby="pillars-title">
+      <div class="section-heading"><div><p class="section-eyebrow">PLATFORM FOUNDATIONS</p><h2 id="pillars-title">四大技术支柱</h2></div></div>
+      <div class="pillars-grid">
+        <article v-for="pillar in pillars" :key="pillar.key" class="pillar-card" :class="`pillar-card--${pillar.color}`">
+          <span class="pillar-icon"><NIcon :size="20"><component :is="pillar.icon" /></NIcon></span>
+          <div class="pillar-copy"><p class="pillar-en">{{ pillar.en }}</p><h3>{{ pillar.zh }}</h3><p>{{ pillar.desc }}</p></div>
+          <span class="maturity-badge">{{ pillar.status }}</span>
+        </article>
       </div>
     </section>
 
-    <!-- 管理员入口 -->
+    <section class="section ecosystem-section animate-fade-in-up delay-200" aria-labelledby="ecosystem-title">
+      <div class="section-heading">
+        <div><p class="section-eyebrow">CONNECTED ECOSYSTEM</p><h2 id="ecosystem-title">科研生态</h2><p class="section-subtitle">平台核心能力与独立生态组件通过清晰的接口协作。</p></div>
+        <NButton quaternary size="small" @click="goTo('/about')">查看完整生态介绍<template #icon><NIcon><ArrowForwardOutline /></NIcon></template></NButton>
+      </div>
+      <div class="ecosystem-grid">
+        <a v-for="item in ecosystem" :key="item.name" class="ecosystem-card" :href="item.href" :target="item.href.startsWith('/') ? undefined : '_blank'" rel="noreferrer" @click="handleEcosystemClick($event, item.href)">
+          <span class="ecosystem-card__mark"><NIcon :size="17"><component :is="item.name === 'CygnusX BioOps' ? FlaskOutline : item.name === 'Treasure-Seeking Mouse' ? SearchOutline : item.name === 'BioReport' ? DocumentTextOutline : ArrowForwardOutline" /></NIcon></span>
+          <span class="ecosystem-card__copy"><strong>{{ item.name }}</strong><small>{{ item.role }} · {{ item.status }}</small><span>{{ item.text }}</span></span>
+          <NIcon :size="14" class="ecosystem-card__arrow"><ArrowForwardOutline /></NIcon>
+        </a>
+      </div>
+    </section>
+
+    <section class="capability-boundary" aria-label="能力状态说明">
+      <div><p class="section-eyebrow">CAPABILITY MATURITY</p><h2>能力范围随部署配置与验收结果而定</h2></div>
+      <div class="capability-legend">
+        <span v-for="item in capabilityMaturity" :key="item.label" class="capability-item" :class="`capability-item--${item.color}`">
+          <i class="legend-dot" />
+          <span><strong>{{ item.label }}</strong><small>{{ item.text }}</small></span>
+        </span>
+      </div>
+    </section>
+
     <section v-if="isAdmin" class="section animate-fade-in-up delay-200">
       <div class="admin-banner" @click="goTo('/admin/users')">
-        <div class="admin-icon">
-          <NIcon :size="20"><BarChartOutline /></NIcon>
-        </div>
-        <div class="admin-text">
-          <h4 class="admin-title">系统管理</h4>
-          <p class="admin-desc">用户、AI 模型、饼干账户与资源中心管理</p>
-        </div>
+        <div class="admin-icon"><NIcon :size="20"><BarChartOutline /></NIcon></div>
+        <div class="admin-text"><h4 class="admin-title">系统管理</h4><p class="admin-desc">用户、AI 模型、饼干账户与资源中心管理</p></div>
         <NButton class="admin-cta">进入管理</NButton>
       </div>
     </section>
-    <!-- 节日彩蛋弹窗 -->
-    <FestivalPopup
-      v-if="todayFestival && showFestivalPopup"
-      :festival="todayFestival"
-      :already-claimed="festivalClaimed"
-      @claimed="festivalClaimed = true"
-      @close="todayFestival = null"
-    />
+
+    <FestivalPopup v-if="todayFestival && showFestivalPopup" :festival="todayFestival" :already-claimed="festivalClaimed" @claimed="festivalClaimed = true" @close="todayFestival = null" />
   </div>
 </template>
 
 <style scoped>
 .home-page {
-  padding: 24px;
   min-height: 100%;
+  padding: 24px;
+  overflow-x: hidden;
   background: var(--neutral-bg);
 }
 
-/* ===== Hero ===== */
 .hero {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
-  padding: 32px 36px;
   margin-bottom: 20px;
+  padding: 34px 36px;
+  border-radius: 16px;
   background: linear-gradient(135deg, #165DFF 0%, #6B8DD6 50%, #8E54E9 100%);
   color: #fff;
 }
 
-.hero-bg-icon {
-  display: none;
-}
-
-/* 背景动画压暗：随机命中的流星/星尘模式只作氛围，不抢文字（仅作用于首页 Hero） */
-.hero :deep(.omic-canvas) {
-  opacity: 0.4;
-}
+.hero :deep(.omic-canvas) { opacity: 0.4; }
 
 .hero-inner {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 65fr) minmax(0, 35fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   gap: 40px;
   align-items: center;
 }
 
-.hero-main {
-  min-width: 0;
+.hero-main { min-width: 0; }
+.hero-kicker {
+  margin: 0 0 7px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+  opacity: 0.94;
 }
-
 .hero-greeting {
-  font-size: 14px;
-  opacity: 0.9;
-  margin: 0 0 8px;
+  margin: 0 0 9px;
+  font-size: 13px;
+  opacity: 0.74;
 }
-
 .hero-title {
-  font-size: 27px;
-  font-weight: 700;
-  line-height: 36px;
-  margin: 0 0 6px;
+  max-width: 14em;
+  margin: 0 0 9px;
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.4px;
 }
-
-/* 核心标语：次于 H1 的次级层级，保持清晰可读 */
-.hero-slogan {
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-  margin: 0 0 10px;
-  opacity: 0.95;
+.hero-positioning {
+  margin: 0 0 13px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  opacity: 0.76;
 }
-
 .hero-desc {
-  font-size: 14px;
-  line-height: 23px;
-  opacity: 0.92;
-  margin: 0 0 16px;
   max-width: 58ch;
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  opacity: 0.9;
 }
-
-/* 能力标签：轻量半透明小标签，自然换行，不做抢眼按钮 */
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  list-style: none;
-  padding: 0;
+  gap: 7px;
   margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
 }
-
 .hero-tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 3px 12px;
+  padding: 3px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.11);
+  font-size: 11px;
+  line-height: 18px;
   white-space: nowrap;
 }
-
-/* 右侧愿景区：与左栏留足空白，弱化标注置于底部 */
-.hero-vision {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-left: 24px;
-  border-left: 1px solid rgba(255, 255, 255, 0.18);
-  min-width: 0;
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.hero-vision-line {
+  margin: 20px 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
-.hero-vision-en {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 2px;
-  line-height: 20px;
-  margin: 0;
-  opacity: 0.75;
-}
-
-.hero-vision-text {
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 26px;
-  margin: 0;
-  opacity: 0.92;
-}
-
-.hero-vision-label {
-  font-size: 12px;
-  line-height: 18px;
-  margin: 6px 0 0;
-  opacity: 0.6;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* Hero 渐变背景上的按钮：毛玻璃 + 高亮边框方案（规范见 ARCHITECTURE_DESIGN/CygnusX_frontend.md §5.7）。
-   注意：Naive 将 --n-* 变量内联在元素上，class 级变量覆盖无效；
-   这里直接用 CSS 属性 + 双类选择器提高特异性覆盖。 */
-.n-button.hero-btn-primary {
-  background-color: rgba(255, 255, 255, 0.95);
-  color: #4f46e5;
+.n-button.hero-btn-primary,
+.n-button.hero-btn-secondary {
   height: auto;
-  padding: 8px 20px;
-  font-size: 14px;
-  border: none;
-  border-radius: 12px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 4px 20px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.n-button.hero-btn-primary {
+  border: 0;
+  background-color: rgba(255, 255, 255, 0.96);
+  color: #4f46e5;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
 }
 .n-button.hero-btn-primary:hover,
-.n-button.hero-btn-primary:focus {
-  background-color: #ffffff;
+.n-button.hero-btn-primary:focus-visible {
+  background-color: #fff;
   color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.45), 0 6px 24px rgba(0, 0, 0, 0.22);
   transform: translateY(-1px);
+  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.22);
 }
-/* Naive 的描边由 __border / __state-border 两个元素绘制，需一并隐藏，否则与外发光环叠成"两圈" */
-.n-button.hero-btn-primary :deep(.n-button__border),
-.n-button.hero-btn-primary :deep(.n-button__state-border) {
-  display: none;
-}
-.n-button.hero-btn-primary :deep(.n-button__icon) {
-  color: #4f46e5;
-}
-
 .n-button.hero-btn-secondary {
-  background-color: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  background-color: rgba(255, 255, 255, 0.12);
   color: #fff;
-  height: auto;
-  padding: 8px 20px;
-  font-size: 14px;
-  border: 1.5px solid rgba(255, 255, 255, 0.6);
-  border-radius: 12px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  /* 内高光制造玻璃厚度 */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
 }
 .n-button.hero-btn-secondary:hover,
-.n-button.hero-btn-secondary:focus {
-  background-color: rgba(255, 255, 255, 0.25);
+.n-button.hero-btn-secondary:focus-visible {
+  border-color: rgba(255, 255, 255, 0.82);
+  background-color: rgba(255, 255, 255, 0.22);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.8);
-}
-.n-button.hero-btn-secondary :deep(.n-button__border),
-.n-button.hero-btn-secondary :deep(.n-button__state-border) {
-  display: none;
-}
-.n-button.hero-btn-secondary :deep(.n-button__icon) {
-  color: #fff;
-}
-
-/* 图标与文字间距统一 8px */
-.hero-actions :deep(.n-button__icon) {
-  margin-right: 8px;
-}
-
-/* ===== 通用 section ===== */
-.section {
-  margin-bottom: 24px;
-}
-
-.section-label {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 26px;
-  color: var(--neutral-text-1);
-  margin: 0 0 16px;
-}
-
-/* ===== 快捷入口 ===== */
-.entry-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.entry-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.entry-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: transform 0.3s ease;
-}
-
-.entry-card:hover .entry-icon {
-  transform: scale(1.06);
-}
-
-.entry-text {
-  min-width: 0;
-}
-
-.entry-title {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
-  color: var(--neutral-text-1);
-  margin: 0 0 4px;
-}
-
-.entry-desc {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--neutral-text-3);
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ===== 使用引导 ===== */
-.guide-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.guide-card {
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.guide-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.guide-number {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--arco-primary-light);
-  color: var(--arco-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.guide-arrow {
-  color: var(--neutral-text-4);
-}
-
-.guide-title {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
-  color: var(--neutral-text-1);
-  margin: 0 0 6px;
-}
-
-.guide-desc {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--neutral-text-3);
-  margin: 0;
-}
-
-/* ===== Agent 路径卡（白卡 + 左侧渐变竖条的次级高亮，避免大色块压过步骤卡） ===== */
-.agent-banner {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 20px;
-  padding: 20px;
-  border-radius: var(--radius-card);
-  background: var(--neutral-card);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-/* 左侧渐变竖条：与星尘AI hero 同源的品牌点缀 */
-.agent-banner::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--agent-hero-gradient);
-}
-
-.agent-banner:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card-hover);
-}
-
-.agent-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.agent-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-title {
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 24px;
-  color: var(--neutral-text-1);
-  margin: 0 0 4px;
-}
-
-.agent-desc {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--neutral-text-3);
-  margin: 0;
-}
-
-/* 通栏卡渐变 CTA：Agent 卡与系统管理卡同尺寸同样式，仅渐变色相不同；
-   覆盖方式同 hero 按钮（见上方注释） */
-.n-button.agent-cta,
-.n-button.admin-cta {
-  color: #ffffff;
-  height: auto;
-  padding: 8px 20px;
-  font-size: 14px;
-  border: none;
-  border-radius: 12px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
-}
-.n-button.agent-cta {
-  background: var(--agent-hero-gradient);
-}
-.n-button.admin-cta {
-  background: var(--admin-hero-gradient);
-}
-.n-button.agent-cta:hover,
-.n-button.agent-cta:focus,
-.n-button.admin-cta:hover,
-.n-button.admin-cta:focus {
-  color: #ffffff;
-  opacity: 0.92;
   transform: translateY(-1px);
 }
-.n-button.agent-cta:hover,
-.n-button.agent-cta:focus {
-  background: var(--agent-hero-gradient);
-}
-.n-button.admin-cta:hover,
-.n-button.admin-cta:focus {
-  background: var(--admin-hero-gradient);
-}
-.n-button.agent-cta :deep(.n-button__border),
-.n-button.agent-cta :deep(.n-button__state-border),
-.n-button.admin-cta :deep(.n-button__border),
-.n-button.admin-cta :deep(.n-button__state-border) {
-  display: none;
-}
+.n-button.hero-btn-primary :deep(.n-button__border),
+.n-button.hero-btn-primary :deep(.n-button__state-border),
+.n-button.hero-btn-secondary :deep(.n-button__border),
+.n-button.hero-btn-secondary :deep(.n-button__state-border) { display: none; }
+.hero-actions :deep(.n-button__icon) { margin-right: 7px; }
+.n-button.hero-btn-primary :deep(.n-button__icon) { color: #4f46e5; }
+.n-button.hero-btn-secondary :deep(.n-button__icon) { color: #fff; }
 
-/* ===== 管理员入口 ===== */
-/* 不挂 arco-card 类：全局 .arco-card::before 是 opacity:0 的 hover 装饰条，会顶掉渐变竖条 */
-.admin-banner {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border-radius: var(--radius-card);
-  background: var(--neutral-card);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-/* 左侧渐变竖条：与 Agent 卡同构、蓝青色相区分 */
-.admin-banner::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--admin-hero-gradient);
-}
-
-.admin-banner:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card-hover);
-}
-
-.admin-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--arco-primary-light);
-  color: var(--arco-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.admin-text {
-  flex: 1;
+.hero-lifecycle {
   min-width: 0;
+  padding: 19px 20px 17px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: rgba(14, 25, 88, 0.18);
+  backdrop-filter: blur(10px);
+}
+.hero-lifecycle__header { display: flex; gap: 11px; align-items: flex-start; }
+.hero-lifecycle__line { width: 3px; height: 36px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
+.hero-lifecycle__eyebrow {
+  margin: 0 0 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.25px;
+  opacity: 0.7;
+}
+.hero-lifecycle h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
+.lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 20px 0 0; padding: 0; list-style: none; }
+.lifecycle-step { position: relative; display: flex; min-width: 0; align-items: center; gap: 7px; min-height: 37px; }
+.lifecycle-step__node { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
+.lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: 11px; line-height: 1.35; }
+.lifecycle-step__connector { display: none; }
+.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.62); font-size: 11px; line-height: 1.5; }
+.hero-lifecycle__note--mobile { display: none; }
+
+.section { margin-bottom: 31px; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 15px; }
+.section-eyebrow { margin: 0 0 4px; color: var(--neutral-text-3); font-size: 10px; font-weight: 700; letter-spacing: 1.25px; }
+.section-heading h2 { margin: 0; color: var(--neutral-text-1); font-size: 21px; font-weight: 650; line-height: 1.35; }
+.section-subtitle { margin: 5px 0 0; color: var(--neutral-text-3); font-size: 13px; line-height: 1.5; }
+
+.entry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.entry-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 13px;
+  padding: 17px;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.entry-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 11px; transition: transform 0.2s ease; }
+.entry-card:hover .entry-icon { transform: scale(1.05); }
+.entry-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.entry-title { overflow: hidden; color: var(--neutral-text-1); font-size: 14px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.entry-desc { overflow: hidden; color: var(--neutral-text-3); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.entry-arrow { flex: 0 0 auto; color: var(--neutral-text-4); transition: color 0.2s ease, transform 0.2s ease; }
+.entry-card:hover .entry-arrow { color: var(--brand-primary); transform: translateX(2px); }
+
+.mechanism-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 0.8fr); gap: 14px; }
+.mechanism-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.mechanism-card,
+.evidence-note,
+.pillar-card,
+.ecosystem-card { border: 1px solid var(--neutral-border); background: var(--neutral-card); box-shadow: var(--shadow-card); }
+.mechanism-card { position: relative; display: flex; min-width: 0; gap: 11px; padding: 17px 16px; border-radius: var(--radius-card); }
+.mechanism-card__icon,
+.evidence-note__icon,
+.pillar-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; }
+.mechanism-card__name { margin: 0 0 3px; color: var(--neutral-text-3); font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
+.mechanism-card h3,
+.evidence-note h3 { margin: 0 0 5px; color: var(--neutral-text-1); font-size: 14px; font-weight: 650; line-height: 1.35; }
+.mechanism-card > div > p:last-child,
+.evidence-note > div > p:last-child { margin: 0; color: var(--neutral-text-3); font-size: 12px; line-height: 1.55; }
+.mechanism-card__arrow { position: absolute; top: 50%; right: -17px; z-index: 1; display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid var(--neutral-border); border-radius: 50%; background: var(--neutral-card); color: var(--neutral-text-4); transform: translateY(-50%); }
+.mechanism-card--violet .mechanism-card__icon { color: #8059d8; background: color-mix(in srgb, #8059d8 11%, var(--neutral-card)); }
+.mechanism-card--blue .mechanism-card__icon { color: var(--brand-primary); background: var(--brand-primary-light); }
+.mechanism-card--purple .mechanism-card__icon { color: #722ed1; background: color-mix(in srgb, #722ed1 10%, var(--neutral-card)); }
+.evidence-note { display: flex; min-width: 0; gap: 12px; align-items: flex-start; padding: 19px; border-radius: var(--radius-card); background: color-mix(in srgb, var(--brand-primary) 4%, var(--neutral-card)); }
+.evidence-note__icon { color: #0b9d9a; background: color-mix(in srgb, #0b9d9a 11%, var(--neutral-card)); }
+
+.pillars-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+.pillar-card { display: flex; min-width: 0; flex-direction: column; gap: 13px; padding: 17px; border-radius: var(--radius-card); }
+.pillar-icon { width: 37px; height: 37px; }
+.pillar-copy { min-width: 0; }
+.pillar-en { margin: 0 0 3px; color: var(--neutral-text-3); font-size: 10px; font-weight: 700; letter-spacing: 0.45px; }
+.pillar-copy h3 { margin: 0 0 6px; color: var(--neutral-text-1); font-size: 14px; font-weight: 650; }
+.pillar-copy p:last-child { margin: 0; color: var(--neutral-text-3); font-size: 12px; line-height: 1.55; }
+.pillar-card--violet .pillar-icon { color: #8059d8; background: color-mix(in srgb, #8059d8 11%, var(--neutral-card)); }
+.pillar-card--blue .pillar-icon { color: var(--brand-primary); background: var(--brand-primary-light); }
+.pillar-card--purple .pillar-icon { color: #722ed1; background: color-mix(in srgb, #722ed1 10%, var(--neutral-card)); }
+.pillar-card--cyan .pillar-icon { color: #0b9d9a; background: color-mix(in srgb, #0b9d9a 11%, var(--neutral-card)); }
+.maturity-badge { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--neutral-border); border-radius: 999px; color: var(--neutral-text-3); font-size: 10px; line-height: 1.3; }
+
+.ecosystem-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ecosystem-card { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--radius-card); color: inherit; text-decoration: none; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+.ecosystem-card:hover { border-color: color-mix(in srgb, var(--brand-primary) 35%, var(--neutral-border)); box-shadow: var(--shadow-card-hover); transform: translateY(-1px); }
+.ecosystem-card__mark { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--brand-primary-light); color: var(--brand-primary); }
+.ecosystem-card__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.ecosystem-card__copy strong { overflow: hidden; color: var(--neutral-text-1); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.ecosystem-card__copy small { color: var(--neutral-text-3); font-size: 10px; }
+.ecosystem-card__copy > span { color: var(--neutral-text-3); font-size: 11px; line-height: 1.45; }
+.ecosystem-card__arrow { flex: 0 0 auto; margin-top: 2px; color: var(--neutral-text-4); }
+
+.capability-boundary { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 28px; padding: 16px 18px; border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-fill-2); }
+.capability-boundary h2 { margin: 0; color: var(--neutral-text-2); font-size: 13px; font-weight: 600; }
+.capability-legend { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 8px; color: var(--neutral-text-3); font-size: 11px; }
+.capability-item { display: flex; min-width: 0; align-items: flex-start; gap: 7px; }
+.capability-item > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.capability-item strong { color: var(--neutral-text-2); font-size: 10px; font-weight: 650; white-space: nowrap; }
+.capability-item small { color: var(--neutral-text-3); font-size: 9px; line-height: 1.35; }
+.legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+.capability-item--available .legend-dot { background: #2a9d68; }
+.capability-item--config .legend-dot { background: #d58a24; }
+.capability-item--preview .legend-dot { background: #8059d8; }
+.capability-item--roadmap .legend-dot { background: var(--neutral-text-4); }
+
+.admin-banner { position: relative; display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 20px; border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.admin-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--admin-hero-gradient); }
+.admin-banner:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+.admin-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--arco-primary-light); color: var(--arco-primary); }
+.admin-text { min-width: 0; flex: 1; }
+.admin-title { margin: 0 0 4px; color: var(--neutral-text-1); font-size: 15px; font-weight: 600; }
+.admin-desc { margin: 0; color: var(--neutral-text-3); font-size: 13px; line-height: 1.5; }
+.n-button.admin-cta { flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 10px; background: var(--admin-hero-gradient); color: #fff; font-size: 13px; font-weight: 650; }
+.n-button.admin-cta :deep(.n-button__border),
+.n-button.admin-cta :deep(.n-button__state-border) { display: none; }
+
+@media (max-width: 1100px) {
+  .hero-inner { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .hero-lifecycle { max-width: none; }
+  .pillars-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ecosystem-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.admin-title {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
-  color: var(--neutral-text-1);
-  margin: 0 0 4px;
+@media (max-width: 820px) {
+  .entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mechanism-layout { grid-template-columns: minmax(0, 1fr); }
+  .mechanism-flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .evidence-note { min-height: 0; }
+  .capability-boundary { align-items: flex-start; flex-direction: column; }
+  .capability-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.admin-desc {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--neutral-text-3);
-  margin: 0;
-}
-
-/* ===== 响应式 ===== */
-@media (max-width: 1024px) {
+@media (max-width: 640px) {
+  .home-page { padding: 16px; }
+  .hero { padding: 25px 20px; }
+  .hero-title { max-width: none; font-size: 26px; }
+  .hero-positioning { font-size: 10px; letter-spacing: 1px; }
+  .hero :deep(.omic-canvas) { opacity: 0.24; }
+  .hero-lifecycle { padding: 16px; }
+  .lifecycle-list { grid-template-columns: minmax(0, 1fr); margin-top: 15px; }
+  .lifecycle-step { min-height: 31px; }
+  .lifecycle-step:nth-child(n + 6) { display: none; }
+  .hero-lifecycle__note--desktop { display: none; }
+  .hero-lifecycle__note--mobile { display: block; }
+  .hero-vision-line { margin-top: 16px; }
+  .section-heading { align-items: flex-start; }
+  .section-heading h2 { font-size: 19px; }
   .entry-grid,
-  .guide-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  /* 平板：双栏改上下布局，愿景区横排精简展示 */
-  .hero-inner {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
-
-  .hero-vision {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px 16px;
-    padding-left: 16px;
-  }
-
-  .hero-vision-label {
-    margin: 0;
-  }
+  .pillars-grid,
+  .ecosystem-grid,
+  .mechanism-flow { grid-template-columns: minmax(0, 1fr); }
+  .mechanism-card__arrow { display: none; }
+  .entry-card { padding: 14px; }
+  .capability-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-banner { align-items: flex-start; flex-wrap: wrap; }
+  .admin-cta { margin-left: 60px; }
 }
 
-@media (max-width: 768px) {
-  .home-page {
-    padding: 16px;
-  }
-
-  .hero {
-    padding: 24px 20px;
-  }
-
-  .hero-title {
-    font-size: 21px;
-    line-height: 30px;
-  }
-
-  .hero-slogan {
-    font-size: 15px;
-  }
-
-  .hero-desc {
-    max-width: none;
-  }
-
-  /* 手机：背景动画进一步压暗，减少视觉噪声 */
-  .hero :deep(.omic-canvas) {
-    opacity: 0.25;
-  }
-
-  /* 愿景区精简：英文标语与中文愿景同行，标注靠右 */
-  .hero-vision {
-    gap: 4px 12px;
-    padding-left: 12px;
-  }
-
-  .hero-vision-en {
-    font-size: 11px;
-    letter-spacing: 1.5px;
-  }
-
-  .hero-vision-text {
-    font-size: 14px;
-    line-height: 22px;
-  }
-
-  .entry-grid,
-  .guide-grid {
-    grid-template-columns: 1fr;
-  }
-
+@media (prefers-reduced-motion: reduce) {
+  .entry-icon,
+  .entry-arrow,
+  .ecosystem-card,
   .admin-banner,
-  .agent-banner {
-    flex-wrap: wrap;
-  }
+  .n-button.hero-btn-primary,
+  .n-button.hero-btn-secondary { transition: none; }
 }
 </style>

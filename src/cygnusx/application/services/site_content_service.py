@@ -19,10 +19,10 @@ DEFAULT_CONTENT: dict[str, Any] = {
     "hero": {
         "title": "CygnusX BioOps · 天鹅座智能科研平台",
         "description": (
-            "从公共数据发现或已有数据导入出发，连接科研 Agent、标准化分析与报告交付，"
-            "在统一项目中组织数据、计算过程与证据，让科研人员把时间留给科学问题。"
+            "从公共数据发现或已有数据导入出发，以科研 Agent 组织研究任务，以标准化 Flow "
+            "承载计算分析，以可信证据连接科研过程与成果交付。"
         ),
-        "slogan": "让科学问题连接数据，让计算结果留下依据。",
+        "slogan": "让科学问题，抵达可验证的发现。",
         "tags": ["数据与文献发现", "受控计算分析", "可追溯交付", "科研资产积累"],
         "vision": {
             "title_en": "FROM STARDUST, TO DISCOVERY",
@@ -31,12 +31,12 @@ DEFAULT_CONTENT: dict[str, Any] = {
         },
     },
     "quick_entries": [
-        {"key": "rna-seq", "title": "RNA-seq 分析", "desc": "转录组差异表达分析"},
-        {"key": "atac-seq", "title": "ATAC-seq 分析", "desc": "染色质开放性分析"},
-        {"key": "files", "title": "数据管理", "desc": "上传与管理样本数据"},
-        {"key": "ai", "title": "星尘AI", "desc": "对话式生信分析与结果解读"},
-        {"key": "tasks", "title": "任务中心", "desc": "查看分析任务进度"},
-        {"key": "sandbox", "title": "代码沙盒", "desc": "在线编写分析脚本"},
+        {"key": "treasure-mouse", "title": "科研寻宝鼠", "desc": "公共组学数据与文献探索"},
+        {"key": "files", "title": "科研数据管理", "desc": "数据导入与科研资产组织"},
+        {"key": "flows", "title": "多组学分析", "desc": "标准化、版本化分析流程"},
+        {"key": "ai", "title": "星尘 AI 助手", "desc": "科研需求理解与智能协作"},
+        {"key": "tasks", "title": "计算任务中心", "desc": "执行状态、日志与质量检查"},
+        {"key": "reports", "title": "报告与证据", "desc": "分析报告、产物和来源记录"},
     ],
     "guide_steps": [
         {"title": "上传样本数据", "desc": "将 FASTQ / BAM 等原始数据上传至数据管理"},

@@ -9,7 +9,6 @@ import {
   DocumentTextOutline,
   DownloadOutline,
   FitnessOutline,
-  GitNetworkOutline,
   FlaskOutline,
   GridOutline,
   HomeOutline,
@@ -18,6 +17,7 @@ import {
   LibraryOutline,
   ListOutline,
   MapOutline,
+  SearchOutline,
   SettingsOutline,
   SparklesOutline,
   StatsChartOutline,
@@ -76,6 +76,7 @@ export const homeQuickEntryIconMap: Record<string, Component> = {
   LibraryOutline,
   ListOutline,
   MapOutline,
+  SearchOutline,
   SettingsOutline,
   SparklesOutline,
   StatsChartOutline,
@@ -98,10 +99,18 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
   },
   {
     key: 'flows',
-    title: '分析中心',
-    desc: '选择并提交分析流程',
+    title: '多组学分析',
+    desc: '标准化、版本化分析流程',
     to: '/flows',
     icon: 'FlaskOutline',
+    icon_bg: 'blue',
+  },
+  {
+    key: 'treasure-mouse',
+    title: '科研寻宝鼠',
+    desc: '公共组学数据与文献探索',
+    to: '/treasure-mouse',
+    icon: 'SearchOutline',
     icon_bg: 'blue',
   },
   {
@@ -122,8 +131,8 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
   },
   {
     key: 'files',
-    title: '数据管理',
-    desc: '上传与管理样本数据',
+    title: '科研数据管理',
+    desc: '数据导入与科研资产组织',
     to: '/files',
     icon: 'CloudUploadOutline',
     icon_bg: 'cyan',
@@ -146,24 +155,24 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
   },
   {
     key: 'tasks',
-    title: '任务中心',
-    desc: '查看分析任务进度',
+    title: '计算任务中心',
+    desc: '执行状态、日志与质量检查',
     to: '/tasks',
     icon: 'DocumentTextOutline',
     icon_bg: 'orange',
   },
   {
     key: 'reports',
-    title: '结果报告中心',
-    desc: '查看与交付分析报告',
+    title: '报告与证据',
+    desc: '分析报告、产物和来源记录',
     to: '/reports',
     icon: 'StatsChartOutline',
     icon_bg: 'purple',
   },
   {
     key: 'ai',
-    title: '星尘AI',
-    desc: '对话式生信分析与结果解读',
+    title: '星尘 AI 助手',
+    desc: '科研需求理解与智能协作',
     to: '/ai',
     icon: 'SparklesOutline',
     icon_bg: 'violet',
@@ -275,11 +284,12 @@ export const homeQuickRouteCatalog: HomeQuickEntry[] = [
 ]
 
 export const defaultHomeQuickEntries: HomeQuickEntry[] = [
-  createHomeQuickEntry('/flows?type=rna-seq'),
-  createHomeQuickEntry('/flows?type=atac-seq'),
+  createHomeQuickEntry('/treasure-mouse'),
   createHomeQuickEntry('/files'),
+  createHomeQuickEntry('/flows'),
   createHomeQuickEntry('/ai'),
   createHomeQuickEntry('/tasks'),
+  createHomeQuickEntry('/reports'),
 ]
 
 export function resolveHomeQuickEntryIcon(icon?: string): Component {
