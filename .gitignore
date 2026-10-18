@@ -107,3 +107,6 @@ rna-seq/
 .github
 # 本地 AI Provider 审计/路由配置（可能携带密钥，禁止入库）
 sandbox-audit-report.json
+
+# Generated original research display (rebuilt by frontend prebuild/predev)
+frontend/public/treasure-island/
