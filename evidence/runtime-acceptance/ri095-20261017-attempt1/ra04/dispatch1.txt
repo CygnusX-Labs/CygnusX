@@ -1,0 +1,3 @@
+dispatched task_id: acec9765-4dfc-48f2-9cf5-42498dc35204
+[92m04:52:42 - LiteLLM:DEBUG[0m: logging_worker.py:434 - [LoggingWorker] atexit: No queue initialized
+[32m2026-10-17 04:52:42.539[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m[LoggingWorker] atexit: No queue initialized[0m

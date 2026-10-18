@@ -1,0 +1,13 @@
+{
+  "src/cygnusx/application/schemas/download.py": "a764a8de75d70715f076fa1ddecb9d1caea5a24090ae705afbf271a26fa2a944",
+  "src/cygnusx/application/services/download_service.py": "0bde13828fff339e1af33a3f46c2bed1ed29d3d3fed80331c1ee95f7130bf0d7",
+  "src/cygnusx/api/v1/downloads.py": "15b182747c6c809c5fcc839d513dc17036dc7e85b32d4048d6ab7f82f6e09029",
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "530ecf2e94bfc872af4ecc81c1f6b49a80c567959767a03e81c6d64db710a530",
+  "src/cygnusx/tools/download/config.py": "32135d902b2d0d92baaf4e2b4ea12be666128f88ade18c675329e800065f92c1",
+  "frontend/src/views/DownloadsView.vue": "1c448c59fc18f43827f674f81fa952d4594d7cef9ebf59726a94b09ce932b8cb",
+  "frontend/src/types/download.ts": "cc36482abd6dc99cc42601b2ad715be8ee4941270be4e5ac9d853873dd454d02",
+  "src/cygnusx/infrastructure/mcp/presets.py": "3fda2e7796da4021e8265f9b3bd13b3120d2191347bb0fe3bc3273298f04c242",
+  "mcp-server/tools/downloads.py": "a2dbd06e99b7422f96650805cb41e4fcf31dd9d0f632ac8e52179d021ef50cdd",
+  "mcp-server/tools.yaml": "1993c1b4ee1d4cb9322571e8a38eb474ffad38d1138612a76d02b37a3dd98d3e",
+  "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md": "92f21ecba08bb10f37201d481615ba1b9f692e42645985ab2ce06d931f4c3980"
+}

@@ -1,0 +1,115 @@
+# Isolated topology; reuse existing images without shared .env/network/socket.
+name: cygnusx-ri095-acceptance
+x-app: &app
+  image: ${ACCEPTANCE_APP_IMAGE:?required}
+  user: "10001:10001"
+  working_dir: /app
+  entrypoint: [python, /acceptance/runtime.py]
+  environment: &environment
+    ACCEPTANCE_DISPOSABLE: RI095_DISPOSABLE_ONLY
+    ACCEPTANCE_QUEUE: ri095_acceptance
+    APP_ENV: acceptance
+    APP_SECRET_KEY: ${ACCEPTANCE_APP_SECRET:?required}
+    JWT_SECRET_KEY: ${ACCEPTANCE_JWT_SECRET:?required}
+    POSTGRES_HOST: postgres
+    POSTGRES_USER: ri095_acceptance
+    POSTGRES_PASSWORD: ${ACCEPTANCE_DB_PASSWORD:?required}
+    POSTGRES_DB: project_export_test_ri095
+    DATABASE_URL: postgresql+asyncpg://ri095_acceptance:${ACCEPTANCE_DB_PASSWORD}@postgres:5432/project_export_test_ri095
+    REDIS_HOST: redis
+    REDIS_PASSWORD: ${ACCEPTANCE_REDIS_PASSWORD:?required}
+    CELERY_BROKER_URL: redis://:${ACCEPTANCE_REDIS_PASSWORD}@redis:6379/1
+    CELERY_RESULT_BACKEND: redis://:${ACCEPTANCE_REDIS_PASSWORD}@redis:6379/2
+    STORAGE_TYPE: local
+    STORAGE_PATH: /acceptance-storage
+    DEPLOYMENT_MODE: local
+    STORAGE_S3_BUCKET: ri095-acceptance-unused
+    SITE_CONTENT_YAML: /tmp/acceptance-site.yaml
+    PROJECT_REPORT_WRITE_ENABLED: ${ACCEPTANCE_WRITES:-false}
+    PROJECT_REPORT_PDF_ENABLED: ${ACCEPTANCE_PDF:-false}
+    PROJECT_EXPORT_ENABLED: ${ACCEPTANCE_WRITES:-false}
+    RESEARCH_DELIVERY_READ_ENABLED: ${ACCEPTANCE_READS:-false}
+    RESEARCH_PLAN_ENABLED: ${ACCEPTANCE_READS:-false}
+    TOOL_GATEWAY_READ_ENABLED: ${ACCEPTANCE_READS:-false}
+    DATASET_DISCOVERY_READONLY: ${ACCEPTANCE_READS:-false}
+    RESEARCH_DELIVERY_WRITE_ENABLED: "false"
+    AGENT_DOWNLOAD_WRITE_ENABLED: "false"
+    AGENT_ANALYSIS_WRITE_ENABLED: "false"
+    KNOWLEDGE_AUTO_REINDEX_ENABLED: "false"
+    DYNAMIC_MODEL_ROUTING_ENABLED: "false"
+    TASK_QUEUE_BACKEND: celery
+    CYGNUSX_LOG_DIR: /tmp/logs
+    PYTHONDONTWRITEBYTECODE: "1"
+  volumes: [./:/acceptance:ro, private-storage:/acceptance-storage]
+  networks: [isolated]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:uid=10001,gid=10001,mode=1777"]
+  restart: "no"
+services:
+  postgres:
+    image: ${ACCEPTANCE_POSTGRES_IMAGE:?required}
+    environment:
+      POSTGRES_USER: ri095_acceptance
+      POSTGRES_PASSWORD: ${ACCEPTANCE_DB_PASSWORD}
+      POSTGRES_DB: project_export_test_ri095
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U ri095_acceptance -d project_export_test_ri095]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: ${ACCEPTANCE_REDIS_IMAGE:?required}
+    environment:
+      ACCEPTANCE_REDIS_PASSWORD: ${ACCEPTANCE_REDIS_PASSWORD}
+    command: [/bin/sh, -ec, 'exec redis-server --requirepass "$$ACCEPTANCE_REDIS_PASSWORD" --appendonly yes']
+    volumes: [redis-data:/data]
+    networks: [isolated]
+  migrate:
+    <<: *app
+    command: [migrate]
+  api:
+    <<: *app
+    command: [api]
+  worker:
+    <<: *app
+    command: [worker]
+  beat:
+    <<: *app
+    command: [beat]
+  frontend:
+    image: ${ACCEPTANCE_FRONTEND_IMAGE:?required}
+    user: "10001:10001"
+    entrypoint: [nginx, -g, "daemon off;", -c, /acceptance/nginx.conf]
+    volumes: [./:/acceptance:ro]
+    networks: [isolated]
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  browser:
+    profiles: [browser]
+    image: ${ACCEPTANCE_BROWSER_IMAGE:?required}
+    user: "10001:10001"
+    working_dir: /tmp
+    entrypoint: [node, /acceptance/browser-preflight.cjs]
+    volumes: [./:/acceptance:ro]
+    networks: [isolated]
+    shm_size: 1gb
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=1777"]
+    cap_drop: [ALL]
+    # Chromium's real user-namespace sandbox cannot initialize under Docker's default
+    # seccomp profile (which gates the userns syscalls behind CAP_SYS_ADMIN). This
+    # narrow profile re-allows exactly those syscalls so the sandbox ENABLES; no
+    # capability is granted (cap_drop ALL is preserved) and --no-sandbox is never used.
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${ACCEPTANCE_BROWSER_SECCOMP:?required}
+networks:
+  isolated:
+    internal: true
+volumes:
+  postgres-data:
+  redis-data:
+  private-storage:

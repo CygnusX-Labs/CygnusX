@@ -1,0 +1,12 @@
+{"case": "1_XOR_both_null", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"report_files\" violates check constraint \"ck_report_files_source\""}
+{"case": "2_XOR_both_set", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"report_files\" violates check constraint \"ck_report_files_source\""}
+{"case": "3_FK_bad_file_record", "expected": "23503", "actual": "23503", "match": true, "detail": "insert or update on table \"report_files\" violates foreign key constraint \"fk_report_files_file_record\""}
+{"case": "4_XOR_single_legal", "expected": "00000", "actual": "00000", "match": true, "detail": ""}
+{"case": "7_ready_requires_html", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"project_report_jobs\" violates check constraint \"ck_project_report_ready_file\""}
+{"case": "9_report_status_enum", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"project_report_jobs\" violates check constraint \"ck_project_report_status\""}
+{"case": "10_attempt_count_negative", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"project_report_jobs\" violates check constraint \"ck_project_report_counters\""}
+{"case": "8_export_status_enum", "expected": "23514", "actual": "23514", "match": true, "detail": "new row for relation \"project_export_jobs\" violates check constraint \"ck_project_export_status\""}
+{"case": "5_frozen_export_manifest", "expected": "P0001", "actual": "P0001", "match": true, "detail": "Frozen project export scope cannot change"}
+{"case": "6_frozen_report_identity", "expected": "P0001", "actual": "P0001", "match": true, "detail": "Frozen project report identity cannot change"}
+{"case": "11_duplicate_source_digest", "expected": "23505", "actual": "23505", "match": true, "detail": "duplicate key value violates unique constraint \"uq_project_report_source\""}
+{"summary": {"total": 11, "failures": 0}}

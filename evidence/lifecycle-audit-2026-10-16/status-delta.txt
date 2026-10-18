@@ -1,0 +1,7 @@
+ M src/cygnusx/api/v1/flows.py
+ M src/cygnusx/application/services/mcp_builder_service.py
+?? docs/audits/cygnusx-research-lifecycle-and-reproducibility-architecture-audit-2026-10-16.md
+?? docs/implementation/cygnusx-research-lifecycle-integration-implementation-roadmap-2026-10-16.md
+?? evidence/lifecycle-audit-2026-10-16/
+?? tests/unit/test_mcp_budget_and_pagination.py
+?? tests/unit/test_mcp_builder_invoke_gate.py

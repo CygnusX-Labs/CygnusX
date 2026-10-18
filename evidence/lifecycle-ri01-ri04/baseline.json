@@ -1,0 +1,50 @@
+{
+  "branch": "feat/research-agent-phase5",
+  "head": "51011118535f782f5282f638b4a54649c79bf6d6",
+  "protected_files_sha256": {
+    "src/cygnusx/infrastructure/celery_app/tasks/download.py": "13716de51ab1af13a425ada3937db89ff6cbcdf315c6caca2d3581ee068e525a",
+    "src/cygnusx/application/services/download_service.py": "1680a5bb81c1a4e46a4a3aa31e6379f29a7149924de05d171e0aa4d80d4a8554",
+    "src/cygnusx/application/services/dataset_import_service.py": "afcbaddf4ad6ff94016af026f6e56d67b994b55f753c321a437e24cb4437046e",
+    "src/cygnusx/application/services/report_service.py": "b2c3e6e007a893b181c050675ca49b46606f94b5b2d19bb6fa9c7522564150e0",
+    "src/cygnusx/application/services/research_delivery_service.py": "50bcc2deeb0542b3273f230175e5923191838a7b26e67efa8f144b5988d97f7e",
+    "src/cygnusx/application/schemas/download.py": "128e1a55f5fba9d10280180b801350dab94674eb12a88ddc29ad92c48b89c388",
+    "src/cygnusx/domain/file/entities.py": "26fee890e8cb3a0ed48c7ce3c7860e4430daa95fc2e51e83f53917c91d846156",
+    "src/cygnusx/infrastructure/database/repositories/file_repository.py": "c45734e6c72123756009a8999c25348df81cd81bee004f7d0d6e99f0aa3491d2",
+    "frontend/src/views/DownloadsView.vue": "06804637c8bb7aad39ceca47cfeac049a48d7124f66ee39f6d225221de4da7be",
+    "tests/unit/test_download_service.py": "d2bdc869dc96c92fdc814698f1f5196554598f229eb7719377f8d92330931960",
+    "tests/unit/test_agent_tools_phase2.py": "0a017484f4b0e89463f8ba03f1f8f16c86eacfd541974d2a4bb23cded20e28bc",
+    "pipelines/Treasure-Seeking_Mouse/functions/seqout-chat/tests/validateSearchQuery.test.ts": "b7f459e59985fe77cde234b7f4aa46a8a82065ed338c0bef004bc45c44455c06"
+  },
+  "submodules": [
+    {
+      "path": "Protocol/FlowFrame",
+      "head": "977ad657bbe7d49f2200a5f3f550b70f25234f3d",
+      "status": " M flow-framework/assets/templates/envs/fastqc.yaml\n"
+    },
+    {
+      "path": "pipelines/RNAFlow",
+      "head": "19f5068c4f9370ea27cb6fe554a3f061a1b62a51",
+      "status": " M config/run_parameter.yaml\n M envs/circexplorer2.yaml\n M envs/fastqc.yaml\n M envs/python3.yaml\n m report\n M rules/10.DEG_Enrichments.smk\n M rules/utils/common.py\n M rules/utils/datadeliver.py\n M rules/utils/result_manifest.py\n M snakefile\n m src\n?? envs/deg_edger.yaml\n?? rules/utils/deg_method.py\n"
+    },
+    {
+      "path": "pipelines/ATACFlow",
+      "head": "4a68b347ba3b9497a86eed2603b6577afc3c2f27",
+      "status": " m container_env\n M envs/fastqc.yaml\n M envs/python3.yaml\n m report\n D rules/utils/__pycache__/common.cpython-313.pyc\n D rules/utils/__pycache__/datadeliver.cpython-313.pyc\n D rules/utils/__pycache__/id_convert.cpython-313.pyc\n D rules/utils/__pycache__/reference_update.cpython-313.pyc\n D rules/utils/__pycache__/resource_manager.cpython-313.pyc\n D rules/utils/__pycache__/validate.cpython-313.pyc\n m src\n"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse",
+      "head": "88dae95e7294dea5004330203f56e4211776fd74",
+      "status": " M docs/ARC/architecture-2026-10-06.md\n M functions/seqout-chat/index.ts\n M server/.env.example\n M server/local.mjs\n M src/components/chat/Composer.tsx\n M src/components/chat/DatasetCard.tsx\n M src/components/chat/EmptyState.tsx\n M src/components/chat/IdLink.tsx\n M src/components/chat/Leaderboard.tsx\n M src/components/chat/LiteratureCard.tsx\n M src/components/chat/SessionSidebar.tsx\n M src/components/chat/UsageStatsDialog.tsx\n M src/components/pet/PetSettingsPanel.tsx\n M src/components/pet/TreasureMouse.tsx\n M src/components/ui/dialog.tsx\n M src/components/ui/popover.tsx\n M src/i18n/locales/en.ts\n M src/i18n/locales/zh.ts\n M src/i18n/provider.tsx\n M src/lib/treasureBurst.ts\n?? functions/seqout-chat/platform-tools.ts\n?? functions/seqout-chat/tests/platform-tools.test.ts\n?? island-reference.html\n?? src/island/\n?? src/presentation-context.tsx\n?? tsconfig.island.json\n?? vite.island-reference.config.ts\n?? vite.island.config.ts\n"
+    },
+    {
+      "path": "pipelines/EBIDownload",
+      "head": "b351e03dfc845d229102d90f9bd88d6ca731f0de",
+      "status": ""
+    },
+    {
+      "path": "pipelines/tools",
+      "head": "24ecb6ce75657c5ce188603b54ac7bf10ffb6d46",
+      "status": " M skills/SKILLS_REGISTRY.md\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc\n?? skills/atacflow/\n?? skills/rnaflow/\n"
+    }
+  ]
+}

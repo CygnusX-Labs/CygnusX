@@ -138,6 +138,20 @@ class ReportSnapshotBuilder:
             FactEvidence(field="flow_id", value=task.flow_id, source=task_source),
             FactEvidence(field="sample_count", value=task.sample_count, source=task_source),
         ]
+        from cygnusx.application.services.execution_evidence_service import evidence_projection
+
+        execution_evidence = evidence_projection(task)
+        if execution_evidence is not None:
+            for key in ("definition_digest", "execution_binding_digest"):
+                inputs.append(
+                    FactEvidence(
+                        field=f"execution_evidence.{key}",
+                        value=execution_evidence[key],
+                        source=task_source,
+                    )
+                )
+            warnings.append("execution_definition_is_not_runtime_attestation")
+            gap("execution_environment", "Release/image/tools/references NOT_OBSERVED")
         for key in sorted(SAFE_PARAMETER_KEYS):
             value = task.parameters.get(key)
             if isinstance(value, (bool, int, float)) and (

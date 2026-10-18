@@ -1,0 +1,19 @@
+{
+  "related_tests": 24,
+  "full_tests": {
+    "passed": 541,
+    "failed": 7
+  },
+  "type_check": "PASS",
+  "production_build": "PASS",
+  "final_vite": "PASS",
+  "dist": {
+    "contains_conversation_shell": true,
+    "contains_pet_mode": true,
+    "contains_small_screen_rule": true,
+    "island_exists": true,
+    "inventory_not_published": true
+  },
+  "visual_acceptance": "PENDING actual browser screenshots",
+  "container_restart": "not performed: Docker permission unavailable"
+}

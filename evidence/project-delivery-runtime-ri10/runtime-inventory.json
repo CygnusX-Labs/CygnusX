@@ -1,0 +1,45 @@
+{
+  "explicit_test_dsn_present": false,
+  "test_database_prefix_valid": false,
+  "production_dsn_accessed": false,
+  "broker_test_authorization": "NOT_PROVIDED",
+  "worker_test_authorization": "NOT_PROVIDED",
+  "storage_test_authorization": "NOT_PROVIDED",
+  "database_runtime": "BLOCKED",
+  "installed_packages_not_runtime_attestation": {
+    "celery": "5.6.3",
+    "redis": "5.3.1",
+    "asyncpg": "0.31.0",
+    "SQLAlchemy": "2.0.51"
+  },
+  "local_executables": {
+    "postgres": false,
+    "redis-server": false,
+    "celery": true,
+    "chromium": true,
+    "google-chrome": false,
+    "quarto": true,
+    "bioreport": true,
+    "pandoc": true
+  },
+  "browser_status": "BLOCKED",
+  "postgres_version": "UNKNOWN_NO_AUTHORIZED_CONNECTION",
+  "celery_worker_version": "UNKNOWN_NO_AUTHORIZED_WORKER",
+  "storage_type": "UNKNOWN_NO_AUTHORIZED_TEST_STORAGE",
+  "project_export_tables_actual_state": "NOT_QUERIED_NO_AUTHORIZED_DSN",
+  "migration_file": "alembic/versions/projectdelivery01_project_exports.py",
+  "flags": {
+    "project_export_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "research_plan_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "agent_download_write_enabled": false
+  },
+  "bioreport_local_source": {
+    "head": "2d5ea98",
+    "dirty": true,
+    "declared_version": "2.0.0",
+    "runtime_attestation": false
+  }
+}

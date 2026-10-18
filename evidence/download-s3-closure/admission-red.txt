@@ -1,0 +1,35 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 45 items
+
+tests/unit/test_download_s3_closure.py ................................. [ 73%]
+.........FFF                                                             [100%]
+
+=================================== FAILURES ===================================
+___________ test_global_switch_alone_never_certifies_transport[sra] ____________
+tests/unit/test_download_s3_closure.py:55: in test_global_switch_alone_never_certifies_transport
+    with pytest.raises(ValidationError) as error:
+E   Failed: DID NOT RAISE ValidationError
+_______ test_global_switch_alone_never_certifies_transport[direct_link] ________
+tests/unit/test_download_s3_closure.py:55: in test_global_switch_alone_never_certifies_transport
+    with pytest.raises(ValidationError) as error:
+E   Failed: DID NOT RAISE ValidationError
+______ test_global_switch_alone_never_certifies_transport[cloud_storage] _______
+tests/unit/test_download_s3_closure.py:55: in test_global_switch_alone_never_certifies_transport
+    with pytest.raises(ValidationError) as error:
+E   Failed: DID NOT RAISE ValidationError
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s3_closure.py::test_global_switch_alone_never_certifies_transport[sra]
+FAILED tests/unit/test_download_s3_closure.py::test_global_switch_alone_never_certifies_transport[direct_link]
+FAILED tests/unit/test_download_s3_closure.py::test_global_switch_alone_never_certifies_transport[cloud_storage]
+=================== 3 failed, 42 passed, 1 warning in 0.30s ====================

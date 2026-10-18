@@ -85,10 +85,16 @@ class CygnusXAPIClient:
         return await self.get(f"/tasks/{task_id}/dag")
 
     # ===== Flows =====
-    async def list_flows(self, category: str | None = None) -> dict:
-        params = {}
+    async def list_flows(
+        self, category: str | None = None, limit: int | None = None, offset: int = 0
+    ) -> dict:
+        params: dict[str, Any] = {}
         if category:
             params["category"] = category
+        if limit is not None:
+            params["limit"] = limit
+        if offset:
+            params["offset"] = offset
         return await self.get("/flows", params=params)
 
     async def get_flow(self, flow_id: str) -> dict:
@@ -100,6 +106,12 @@ class CygnusXAPIClient:
     # ===== Analysis =====
     async def submit_task(self, payload: dict) -> dict:
         return await self.post("/tasks", json=payload)
+
+    async def prepare_flow(self, flow_id: str, arguments: dict) -> dict:
+        return await self.post(f"/ai/flows/{flow_id}/prepare", json={"arguments": arguments})
+
+    async def submit_flow_confirmation(self, confirmation_id: str) -> dict:
+        return await self.post(f"/ai/flow-confirmations/{confirmation_id}/submit")
 
     # ===== Unified Runs =====
     async def list_runs(self, project_slug: str | None = None, status: str | None = None) -> list:

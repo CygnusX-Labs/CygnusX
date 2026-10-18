@@ -31,6 +31,7 @@ def render_audit_pdf(
         env = {
             "PATH": os.environ.get("PATH", ""),
             "HOME": temp,
+            "TMPDIR": temp,
             "NO_PROXY": "*",
         }
         command = [
@@ -54,6 +55,10 @@ def render_audit_pdf(
                 text=True,
                 timeout=timeout_seconds,
                 env=env,
+                # Pandoc/Typst create scratch files relative to the working
+                # directory; the container's /app is read-only for UID 10001,
+                # so run inside the writable temporary directory.
+                cwd=temp,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise AuditPdfRenderError("审计 PDF 渲染工具不可用或超时") from exc

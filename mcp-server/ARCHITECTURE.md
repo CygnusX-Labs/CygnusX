@@ -240,6 +240,41 @@ groups:
 
 启动时自校验会确认三处（registry / yaml / FastMCP 实例）闭合。
 
+### Flow 分析工具：冻结政策（工具固定化）
+
+**平台每新增一个 Flow，MCP 工具清单不得增长。** 新流程只允许注册流程契约
+（`flows/*.yaml`），一律复用固定目录工具暴露，禁止新增 per-flow 工具。
+
+固定目录工具（分析流程域只增这四个能力，命名固定）：
+
+| 能力 | 外部 mcp-server | 平台内置 |
+|------|----------------|---------|
+| 目录（门控后可提交集合） | `cygnusx_list_flows`（`tools/flows.py`） | `AnalysisFlowToolService.discover()` |
+| 契约 describe | `cygnusx_get_flow_detail`（`tools/flows.py`） | `AnalysisFlowToolService.describe()` |
+| prepare（全量校验 + 冻结确认记录） | `cygnusx_prepare`（`tools/analysis.py` → `POST /ai/flows/{flow_id}/prepare`） | `AnalysisFlowToolService.prepare()`（`tools_schema.yaml` 固定工具，tool_role=prepare_fixed） |
+| submit（确认凭证 + 幂等） | `cygnusx_submit`（`tools/analysis.py` → `POST /ai/flow-confirmations/{id}/submit`） | `AnalysisFlowToolService.confirm_and_submit()`（tool_role=submit_fixed） |
+
+任务状态 / 结果 / 日志 / 取消**复用现有通用任务工具**（外部
+`tools/tasks.py` 的 `cygnusx_get_task_progress` / `cygnusx_get_task_logs` /
+`cygnusx_cancel_task` 等），不为 Flow 新增任务工具。
+
+旧 RNA/ATAC 四件套（`rna_seq_*` / `atac_seq_*`，内外两端）与 Chat 自动生成的
+`cygnusx_prepare_<flow_id>_submission` 已加 `[DEPRECATED]` 软弃用标注，处于
+"兼容包装 → 默认清单移除"下线路径；冻结政策对它们同样生效——**禁止给旧路径
+新增任何流程**。
+
+阶段 3 切换开关 `LEGACY_PIPELINE_TOOLS`（后端 Settings + 本仓 `config.yaml`
+的 `legacy_pipeline_tools`，同语义需同步翻转）：`true`=旧工具可见（默认，
+现状保持）；`false`=Chat per-flow 工具与内置 pipelines preset 从默认清单移除
+（preset 变迁移壳），外部四件套变同名迁移 stub（调用返回明确"已迁移"提示）。
+**默认清单切换需平台侧灰度验收后进行**（见
+`ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md` §11.5 阶段 3）。
+
+目标接入架构与分阶段路线见
+`ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md` §11
+（《MCP 工具固定化：固定工具 + 动态 Flow 目录》）；实施手册见
+`docs/info/26.10.15/CygnusX-MCP工具固定化-审查核对与实施手册.md`。
+
 ### 新增"破坏性"工具（需确认门）
 
 - **外部 mcp-server**：加 `user_confirmed: bool = False` 参数，缺省返回
@@ -305,6 +340,7 @@ async def my_endpoint(self, param: str) -> dict:
 | 返回格式 | `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}`；内部双通道 `llm_payload`（精简回灌）+ `ui_payload`（完整渲染） |
 | 错误处理 | 外部捕获 `CygnusXAPIError` 返回 `{"success": False, …}`；内部按 `failure_kind` 分流（网络类计入熔断，调用方错误不计入）且保留根因 |
 | 输出上限 | `cygnusx_read_file_content` 行数、`cygnusx_get_task_logs` 条数、`cygnusx_sandbox_execute` 超时均 clamp 到 `config.yaml` 的 `limits.*`（默认 50 行 / 100 条 / 300 秒） |
+| 平台侧审查加固（2026-10-16） | 实验池 invoke（`POST /mcp/builder/servers/{id}/invoke`）平台侧强制 归属→审核 APPROVED→is_enabled→TTL 校验链，输出 >16KiB 截断；目录分页（list_flows 默认 20/上限 50）；`cygnusx_prepare` 的 llm_payload 3000B 三级限额；版本契约指纹 `contract_digest` + 回退 `expected_current_version` 乐观锁 + 版本递进 `FOR UPDATE` 行锁。详见 `ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md` §12 |
 | 认证 | 平台→服务：`X-API-Key` 统一注入；服务→人类：JWT approve/reject 端点是确认状态机的唯一人类写入点；SSE 传输本身无鉴权，host 默认回环，仅可信内网使用 |
 
 ## 11. 平台侧对应关系

@@ -168,5 +168,10 @@ async def rollback_version(
     server_id: UUID,
     service: BuilderDep,
     version: str = Query(..., description="目标版本号，如 1.1.0"),
+    expected_current_version: str | None = Query(
+        None, description="乐观锁：读取时看到的当前版本号，不一致即拒绝"
+    ),
 ) -> dict[str, Any]:
-    return await service.rollback(str(server_id), version, user_id)
+    return await service.rollback(
+        str(server_id), version, user_id, expected_current_version=expected_current_version
+    )

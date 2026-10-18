@@ -15,6 +15,7 @@ PARTIAL/BLOCKED，真实 Redis、HTTP/STDIO MCP、Node→平台网络、Worker �
   Node 用固定 `CYGNUSX_TOOL_CALLBACK_URL` 回调 Gateway。浏览器也可通过同一 BFF REST 检查预案。
 - Flow discover/describe/prepare 复用 AnalysisFlowToolService；下载最终适配复用 DownloadService；
   分析最终适配复用 TaskService。执行适配器仅在隔离测试中解锁源码门禁并使用业务 doubles。
+- **下载能力细节见 [平台下载模块架构](CygnusX_download_architecture.md)**——三来源传输、Worker/CLI 分发、FileRegistry 登记、源码门禁与 DL-RG 验收一律以该文为准，本文只保留 Gateway 侧的目录/审批/恢复接入点。
 
 ```mermaid
 flowchart LR
@@ -102,7 +103,11 @@ API-Key /tasks /downloads /cancel 均在业务边界前检查运行门禁。普�
 
 ## 验证与回滚
 
+S5-A只读目录增量（2026-10-16）：原`downloads.describe_capabilities`复用下载DTO/config投影十二类来源，区分代码、配置、未认证与执行阻断；按可信Agent/scope裁剪query_tools。委托验证将签名scope交集带入invoke，invoke重验后继续取交集；dataset.discover还要求read:discovery，避免downloads模块禁用后仍可解析。项目Dataset列表补最近200版本的有界ID发现，资产仍走原inspect/list_files；无项目Task fallback安全拒绝。没有新Gateway/工具输入Schema/审批或执行路径，读开关及写门禁均保持原语义。测试与接续条件见[S5-A报告](../docs/implementation/download-s5a-capability-catalog.md)。
+
 实施和 G0–G14 证据见 `docs/implementation/cygnusx-phase2-shared-agent-tool-orchestration.md`。
 先关闭读开关和 Node callback 配置，保留 SQL/Task/审计事实。未授权迁移/部署本轮均未执行。
 发布前须在隔离 PostgreSQL 验证迁移、row-lock/失败恢复和 schema drift，再验证 Node/MCP
 真实 Transport、双用户、Redis 和 Worker；不能仅把环境写开关改 true。
+
+S5-C1 代码隔离闭环（2026-10-17）：平台聊天缺少 scopes 时沿原 context 派生，校验已有项目/Agent 绑定；已有受限上下文仍取 scope 交集。builtin BioOps 保留业务失败状态且拒绝后不切换执行器；目录回灌优先保留服务端执行门禁字段。双 Runtime 完整轮次与权限隔离验证通过，真实运行及执行准入不变。范围与遗留检查见 [C1 报告](../docs/implementation/download-s5c1-agent-runtime-code-closure.md)。

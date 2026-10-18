@@ -1,0 +1,333 @@
+[32m2026-10-17 04:52:10.742[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.core.telemetry[0m:[36msetup_telemetry[0m:[36m225[0m | [1m遥测已初始化（service=worker, otlp=off, prometheus=on）[0m
+[32m2026-10-17 04:52:11.795[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mconnect_tcp.started host='raw.githubusercontent.com' port=443 local_address=None timeout=5 socket_options=None[0m
+[32m2026-10-17 04:52:11.798[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mconnect_tcp.failed exception=ConnectError(gaierror(-3, 'Temporary failure in name resolution'))[0m
+[92m04:52:11 - LiteLLM:WARNING[0m: get_model_cost_map.py:290 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: [Errno -3] Temporary failure in name resolution. Falling back to local backup.
+[32m2026-10-17 04:52:11.799[0m | [33m[1mWARNING [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [33m[1mLiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: [Errno -3] Temporary failure in name resolution. Falling back to local backup.[0m
+[92m04:52:13 - LiteLLM:DEBUG[0m: litellm_logging.py:206 - [Non-Blocking] Unable to import GenericAPILogger - LiteLLM Enterprise Feature - No module named 'litellm_enterprise'
+[32m2026-10-17 04:52:13.683[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m[Non-Blocking] Unable to import GenericAPILogger - LiteLLM Enterprise Feature - No module named 'litellm_enterprise'[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:948 - Using AiohttpTransport...
+[32m2026-10-17 04:52:14.277[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1014 - Creating AiohttpTransport...
+[32m2026-10-17 04:52:14.277[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mCreating AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1026 - NEW SESSION: Creating new ClientSession (no shared session provided)
+[32m2026-10-17 04:52:14.277[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mNEW SESSION: Creating new ClientSession (no shared session provided)[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:948 - Using AiohttpTransport...
+[32m2026-10-17 04:52:14.287[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1014 - Creating AiohttpTransport...
+[32m2026-10-17 04:52:14.287[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mCreating AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1026 - NEW SESSION: Creating new ClientSession (no shared session provided)
+[32m2026-10-17 04:52:14.287[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mNEW SESSION: Creating new ClientSession (no shared session provided)[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:948 - Using AiohttpTransport...
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1014 - Creating AiohttpTransport...
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mCreating AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1026 - NEW SESSION: Creating new ClientSession (no shared session provided)
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mNEW SESSION: Creating new ClientSession (no shared session provided)[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:948 - Using AiohttpTransport...
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1014 - Creating AiohttpTransport...
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mCreating AiohttpTransport...[0m
+[92m04:52:14 - LiteLLM:DEBUG[0m: http_handler.py:1026 - NEW SESSION: Creating new ClientSession (no shared session provided)
+[32m2026-10-17 04:52:14.288[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mNEW SESSION: Creating new ClientSession (no shared session provided)[0m
+[32m2026-10-17 04:52:14.400[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_report_jobs():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_volcano_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def watch_cases():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def recover_expired_goal_leases():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def daily_reconcile():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def sync_case_rooms():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def replan_run(run_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.401[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def index_file(self, file_path):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_project_reports():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def recycle_idle_sandboxes():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def respond_to_room_namespace_message(self, room_id, requester_ref, content, dispatch=0, actor_user_id=1, model_id=2):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_used_storage():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_quality_gate_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def migrate_legacy_memories():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def scan_and_index(user_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def check_alerts():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_manager_job(run_id, manager_task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.402[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_dataset_jobs():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def hibernate_dormant_workspaces():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def publish_outbox():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def cleanup_expired():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_ebi_download_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def backfill_embeddings(limit=0):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def consume_case_events():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def prune_archives():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_manager_review_job(run_id, task_id, attempt):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def build_phylogenetic_tree(self, task_input):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def deliver_reminder(self, delivery_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.403[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_download(task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def cleanup_expired_workspace_archives():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def requeue_stale_tasks():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def consume_events():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def settle_session_memory(session_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_scanpy_qc_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def backend_cleanup():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_delivery_summary_job(run_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def retry_failed_deliveries():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def publish_pending():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.404[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_studio_sandbox(self, *, language, session_id, code, user_id, timeout_sec, task_id="0", image="1"):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_approval_timeouts():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def accumulate(self, *args, **kwargs):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_synteny_task(self, task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_downloads():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_enrichment_task(self, task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.405[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_fake_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def unlock_chord(self, group_id, callback, interval=0, max_retries=1, result=2, Result=3, GroupResult=4, result_from_tuple=5, **kwargs):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def xmap(task, it):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def scan_due_schedules():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def generate_project_export(job_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def auto_confirm_cases():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def xstarmap(task, it):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def build_blast_database_task(self, db_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_assistant_job(run_id, assistant_instance_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.410[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def chunks(task, it, n):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_deg_task(self, task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_rnaflow_node(run_id, node_key):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def group(self, tasks, result, group_id, partial_args, add_to_parent=0):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def cleanup_evidence():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def chain(*args, **kwargs):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def cleanup_expired():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_blast_search_task(self, task_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def generate_reproducible_report(job_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def expire_experimental():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.411[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_project_exports():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_goal_step(goal_id, cause=0):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def chord(self, header, body, partial_args=0, interval=1, countdown=2, max_retries=3, eager=4, **kwargs):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def advance_run(run_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def reconcile_studio_long_tasks():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def cleanup_expired_workspaces():
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def respond_to_room_message(self, case_id, requester_ref, content, dispatch=0, model_id=1):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def generate_project_report(job_id):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def run_snakemake(snakefile, task_id, config_file=0, config_file_param=1, work_dir=2, cores=3):
+    return 1
+[0m
+[32m2026-10-17 04:52:14.412[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m
+def recycle_expired():
+    return 1
+[0m
+REGISTERED_TASKS:
+  cygnusx.infrastructure.celery_app.tasks.project_exports.generate_project_export
+  cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports
+  cygnusx.infrastructure.celery_app.tasks.project_reports.generate_project_report
+  cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports
+DEFAULT_QUEUE: ri095_acceptance
+ROUTES: {'cygnusx.infrastructure.celery_app.tasks.project_reports.*': {'queue': 'ri095_acceptance'}, 'cygnusx.infrastructure.celery_app.tasks.project_exports.*': {'queue': 'ri095_acceptance'}}
+BEAT_KEYS: ['project-export-reconcile', 'project-report-reconcile']
+[92m04:52:14 - LiteLLM:DEBUG[0m: logging_worker.py:434 - [LoggingWorker] atexit: No queue initialized
+[32m2026-10-17 04:52:14.413[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1m[LoggingWorker] atexit: No queue initialized[0m

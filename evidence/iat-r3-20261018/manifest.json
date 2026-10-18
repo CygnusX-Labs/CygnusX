@@ -1,0 +1,450 @@
+{
+  "run_id": "iat-r3-g3-e2-20261018-workspace",
+  "status": "PARTIAL_ISOLATED_RUNTIME_BLOCKED",
+  "hash_algorithm": "sha256",
+  "files": [
+    {
+      "path": ".env.example",
+      "size_bytes": 24827,
+      "sha256": "fd7bcfcba48e21e3d23451fdd448438b0b4b847130a984c6b8d4972902bfc686"
+    },
+    {
+      "path": "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md",
+      "size_bytes": 28971,
+      "sha256": "9fd4e259bcc676db86fc2395a0e49375f46b68a60faecdfd8f1512bff13ead4f"
+    },
+    {
+      "path": "ARCHITECTURE_DESIGN/CygnusX_treasure_mouse_architecture.md",
+      "size_bytes": 37805,
+      "sha256": "48e110ea51e8429c93d5e34b9441cb775ad3194557ecb31f9a4600a3434780d8"
+    },
+    {
+      "path": "alembic/versions/resstream01_add_research_request_event_resume.py",
+      "size_bytes": 679,
+      "sha256": "3b484a5fe18be877cabf4cbe472eb667bc4ab2900d1288922499a2a761f0b79f"
+    },
+    {
+      "path": "deploy/acceptance/README.md",
+      "size_bytes": 11314,
+      "sha256": "a38d7a1533f9759090845e77e4cc366eb6223b604a6cc9859e311ed1d19ae3c9"
+    },
+    {
+      "path": "deploy/acceptance/acceptance.env.example",
+      "size_bytes": 836,
+      "sha256": "3ffb60a6f985b6e028bc029fc89209af125a193a28e344840c2305c0fa1e97e6"
+    },
+    {
+      "path": "deploy/acceptance/checks.py",
+      "size_bytes": 6466,
+      "sha256": "9589c6ffb39866ac0babbd96e1182d21a0b15cb4f51a0007e6a145aa9b03993f"
+    },
+    {
+      "path": "deploy/acceptance/e2e_driver.py",
+      "size_bytes": 20047,
+      "sha256": "e8c88ed96929aa2c696c86e1a989de3499ecbe400e9ca72d06dff15bc70e0132"
+    },
+    {
+      "path": "deploy/acceptance/ra02_runner.py",
+      "size_bytes": 7433,
+      "sha256": "937e9d6104663773237e60738208011435316a0f9409294cb483a220bf729b98"
+    },
+    {
+      "path": "deploy/acceptance/repro422.py",
+      "size_bytes": 1044,
+      "sha256": "ab0821a53f6b80da857959f8b0df1adbb0309c5e25d5f452f5ba11abf9e1d90a"
+    },
+    {
+      "path": "deploy/acceptance/runtime_dl.py",
+      "size_bytes": 2322,
+      "sha256": "2481dfe58c286fe3d41606b33d3068e8527108630ae23ac0e18926d31d1b381d"
+    },
+    {
+      "path": "docs/implementation/README.md",
+      "size_bytes": 5287,
+      "sha256": "500924530578a1ce20829171461ada7a554b2b89e14070a8c8fbe0e6b50d17cd"
+    },
+    {
+      "path": "docs/implementation/cygnusx-agent-runtime-acceptance-compass.md",
+      "size_bytes": 12688,
+      "sha256": "24797e6a2b8db7116839f560425e567802aa2566b2396e383aca0c9bbbb5e243"
+    },
+    {
+      "path": "docs/implementation/cygnusx-g3-e2-trusted-http-runtime.md",
+      "size_bytes": 9953,
+      "sha256": "8778e967e674a5864ad0142dbad8c09bcedcc1e66b80b30c1cb3ce1608f28a2d"
+    },
+    {
+      "path": "docs/implementation/cygnusx-iat-r2-runtime-evidence-closure.md",
+      "size_bytes": 16572,
+      "sha256": "fed856c27379d0f535d4836bd03d4a7d88a3dee7e4c4b75d4224ec5d137a27c2"
+    },
+    {
+      "path": "docs/implementation/cygnusx-iat-r3-mq02-evidence-reconciliation.md",
+      "size_bytes": 2463,
+      "sha256": "3259ac18e4f40ff78549021fbdf9e6b9c5c428763848c39087e89e58dccac7b5"
+    },
+    {
+      "path": "docs/implementation/cygnusx-iat-r3-pg11-source-audit.md",
+      "size_bytes": 3219,
+      "sha256": "32de40efed0afa8d9b0628b76cd992bfc3b3d4aa0b42e9a47379e39c0d4f72cc"
+    },
+    {
+      "path": "docs/implementation/cygnusx-iat-r3-runtime-ui-closure.md",
+      "size_bytes": 8588,
+      "sha256": "08823f47bf10c08ff2a83827f5ebefb476730e4bb4a220dc4607556ffd32b430"
+    },
+    {
+      "path": "docs/implementation/download-compass.md",
+      "size_bytes": 12687,
+      "sha256": "207622c95bf86d34f8eb6a06ac934f7c223d458804578fca28e06dcbbe4b94d8"
+    },
+    {
+      "path": "docs/implementation/download-s5c-agent-runtime-acceptance.md",
+      "size_bytes": 11290,
+      "sha256": "e1c0e2fe0c6223ea5e84b554563d3ca9e37383893bb2a3073ee4ebd3fef07926"
+    },
+    {
+      "path": "docs/implementation/罗盘.md",
+      "size_bytes": 6829,
+      "sha256": "cbb5ca34ba0287f8e60d92f0cb48984745ee2dec9fd9c9c6f6608da20d4402ee"
+    },
+    {
+      "path": "docs/info/26.10.18/04_验收证据与S6-S7交接模板.md",
+      "size_bytes": 6107,
+      "sha256": "f4c195c1bfeeb5c5f51c8bec580b976f7eb875e86dca67d64c0e6493174a2c53"
+    },
+    {
+      "path": "docs/info/26.10.18/CygnusX_Integration_Test_Matrix_2026-10-18.csv",
+      "size_bytes": 41996,
+      "sha256": "6c2d58166ce32f99be78e06b38d85a6921ea8e64ad1bb001a184e5bcea9c0228"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/admission-source-audit.md",
+      "size_bytes": 3479,
+      "sha256": "c9efb8ead4d9bd4ab474039a7f5708c944e512a10ba9a9ef28089bcb1a40188e"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight-continued.json",
+      "size_bytes": 2860,
+      "sha256": "48127ff72049bd950781617189b439b845e10234c82f20b200f557e4419d96f7"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight-current.json",
+      "size_bytes": 2763,
+      "sha256": "5bbf3246c5468bcfb032bd915b8dcdc8acc5737c84d41003a0664d02994184d2"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight-rerun-20261018.json",
+      "size_bytes": 2860,
+      "sha256": "48127ff72049bd950781617189b439b845e10234c82f20b200f557e4419d96f7"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight-visible-gate-20261018.json",
+      "size_bytes": 3833,
+      "sha256": "29e7f40ee45684217a1a66bc7b1e77fdad474e5c2e7680f3dbfb7b6142c83ef3"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight-visible-gate.txt",
+      "size_bytes": 1065,
+      "sha256": "69d3d93d193c4d319d796c7348c019fd87c3e043948cf005996fe8d368c21cbd"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/host-preflight.txt",
+      "size_bytes": 3179,
+      "sha256": "21873d8800a4faa52111f450c742329d43c487e878b60e79590d062eab4b4a84"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/isolated-regression.txt",
+      "size_bytes": 11510,
+      "sha256": "352ced8c7c05b6712d97833a88774c57a0c2f0ff3c3ed73a4e42c60328339842"
+    },
+    {
+      "path": "evidence/g3-e2-20261018/real-http-boundary.txt",
+      "size_bytes": 1692,
+      "sha256": "7af601ed4c1e5b7757a1d135042240a114b1f36e03c3dfc8c41445fbc5b3a0ef"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/ag06-revocation-regression.txt",
+      "size_bytes": 1814,
+      "sha256": "196efdd44e8ac3a988f9e2f4c551f472a548b97c7a550678164fb0967ac2e1ec"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/ag09-gateway-isolated.txt",
+      "size_bytes": 1155,
+      "sha256": "c3e7569cebbaba56af778b3c603280acfec1b7938c187bb623fd9101b386280e"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/ag09-prepare-isolated.txt",
+      "size_bytes": 1156,
+      "sha256": "f77b867b7d52fc53f6e959b35907ff676e6dec55e957c906e0875908f81ad3f9"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/baseline.txt",
+      "size_bytes": 1732,
+      "sha256": "37b17fc50003c9dd215247f5c58639cdee3b4e52f04510af66c2f8a3067d869c"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/current-cross-boundary-regression.txt",
+      "size_bytes": 2038,
+      "sha256": "62a6fd89044cb1b585050e658b2df5c1d0bd19ac8ca96f38a3f8c267744f9566"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/environment.md",
+      "size_bytes": 5682,
+      "sha256": "3764a5d9070d88e0604a5b266cf1a5fd5b3da395269f1c9199a6f76734b1ddb2"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/fr07-workdir-isolated.txt",
+      "size_bytes": 1236,
+      "sha256": "83c4ef7cf7f06fa97d25abb5b15c73f4a0639e6559be8de52ea8b1168adfd861"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/fr09-terminal-retry-isolated.txt",
+      "size_bytes": 1156,
+      "sha256": "385f2b4fd5a8e94abf85171c9ec8a10ecb3080f2b42aee66d37e08d9aab66bb5"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/frontend-unit-regression.txt",
+      "size_bytes": 820,
+      "sha256": "bf62a4282015ff84b761cd7ca8656b2c8305a15df95ade1fc68d253f99a77c6f"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/handoff.md",
+      "size_bytes": 15004,
+      "sha256": "572e42a02b4e96bdccc0570e3a68a8f3907db412c010fd5d3cbd90c6a035d5d0"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/matrix-and-gateway-regression.txt",
+      "size_bytes": 1894,
+      "sha256": "54e52b7dad7f0399605981a7412f400437c01d4248eeacce75c3870f6a29e7dc"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/matrix-summary.json",
+      "size_bytes": 2678,
+      "sha256": "c97ed06001eefd20160d5817bb76b6ae7e12913096359ac91596f338f05dd97c"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/mtls-evidence-client.txt",
+      "size_bytes": 1157,
+      "sha256": "83ad6f251682058cd2bf2147026e3ee67b27d2c3a07ef3607aed91f3ad21584f"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/r3-runtime-regression.txt",
+      "size_bytes": 3190,
+      "sha256": "839b82fc9b4a7fdf41cf4c10906cfe968cc21d1bfc5aacbb21dab6ca66a1232d"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/rec04-backlog-fairness.txt",
+      "size_bytes": 1155,
+      "sha256": "fe3dc24e476509d4dfcebf29e90d0e3767d0ef6570fd190d8ebcce3078f5cf4e"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/rec06-recovery-commit-failure.txt",
+      "size_bytes": 1155,
+      "sha256": "796cec2d07cba6e4deea778db1cc39764b578af6b63de702a976bd9c125e891a"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/rec07-cooldown-isolated.txt",
+      "size_bytes": 1206,
+      "sha256": "eb32bb0d056eafd650d800e3e2312056074df2c45e7f139c8665cd84f903ded3"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/ri095-offline-checks.txt",
+      "size_bytes": 607,
+      "sha256": "8296d68a0f064a4f88b7c3391f4201c9093ea3916ad2eef4db192d5b8637a602"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/s4-unit-regression.txt",
+      "size_bytes": 1644,
+      "sha256": "a5e7fdb3acd17828a48ff72ddd3107d22b58a3d08d9ac2c36da73b5758a66b69"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/sse-reconnect-isolated.txt",
+      "size_bytes": 3336,
+      "sha256": "bf389365e0ea3daf79d91af64ed84dbe22ddc82adaf4b66ca78b4cd50fcae746"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/sse-reconnect-protocol-audit.txt",
+      "size_bytes": 2868,
+      "sha256": "ebbd6873754b343cce9b926d70d931a88e52c66fec4dc0e4ccf13858a58af368"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/static-checks.txt",
+      "size_bytes": 6448,
+      "sha256": "9ef3ba67035d9f2c23c2f6d8d2832c62e5e764cb9556bdbd07b0045e202c7233"
+    },
+    {
+      "path": "evidence/iat-r3-20261018/treasure-stream-cancel-regression.txt",
+      "size_bytes": 1364,
+      "sha256": "f08df6923bf4092afb2c1a90d0c4192b99517ca9053fca4e0abd3439a8783993"
+    },
+    {
+      "path": "frontend/src/components/ai-chat/__tests__/deep-thinking-stream.test.ts",
+      "size_bytes": 6856,
+      "sha256": "6f9a2d347a67c1d0b9b0309265a9577f997b703b4e81b1719b01cad156cdab35"
+    },
+    {
+      "path": "frontend/src/components/ai-chat/__tests__/live-stream-render.test.ts",
+      "size_bytes": 6483,
+      "sha256": "dd12472084ec45ab242548e1a7ee1c78209d39a99093ed60b101e494c12fb0a5"
+    },
+    {
+      "path": "frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts",
+      "size_bytes": 5761,
+      "sha256": "20e07fcda5cbd6967b9aebf185cc9cfb55821d265b8d08545e78fec251a2b42c"
+    },
+    {
+      "path": "frontend/src/components/research/adapters/__tests__/researchPresentation.test.ts",
+      "size_bytes": 3954,
+      "sha256": "e5a09565172f361f9f49591f2b2e425083854beced94436bffe7a09721347cc7"
+    },
+    {
+      "path": "frontend/src/components/research/adapters/researchPresentation.ts",
+      "size_bytes": 7342,
+      "sha256": "70b8144b48251b3a49da9ea588dfc908bbc912f2e980d4f939a14c3c40af4e95"
+    },
+    {
+      "path": "frontend/src/views/TreasureResearchWorkbench.vue",
+      "size_bytes": 12217,
+      "sha256": "ae3833d95c3932b26ebeedd44ae15d0a1e035f965ccaf7dbf4dfde1bc35a1841"
+    },
+    {
+      "path": "frontend/src/views/__tests__/agent-teams-room-send.test.ts",
+      "size_bytes": 16886,
+      "sha256": "32c6931697d6d991f420f05b0c4f07030c97c9d62c6acfcc3f0452c444465764"
+    },
+    {
+      "path": "scripts/check_download_execution_boundary.py",
+      "size_bytes": 8356,
+      "sha256": "b759103e463a6fe050d1cf6da3eee996acfeeaeb8b244a235c242271ff44ca96"
+    },
+    {
+      "path": "scripts/summarize_acceptance_matrix.py",
+      "size_bytes": 4043,
+      "sha256": "cab12649d348623348c2e67d5fccd4139fec26c4752c5c6e900c6bce7d2e609e"
+    },
+    {
+      "path": "src/cygnusx/api/v1/research_agent.py",
+      "size_bytes": 4784,
+      "sha256": "2b6565b4093c3568d8e93aeccd1992e4c71ae1d41c1a611a1fbf7fee2f6cb5ee"
+    },
+    {
+      "path": "src/cygnusx/application/schemas/research_agent.py",
+      "size_bytes": 3004,
+      "sha256": "e5b0ecdbf7de89b36b5260a41fdbfc18bd780f07e7e3420047a3dddff951674c"
+    },
+    {
+      "path": "src/cygnusx/application/services/research_treasure_service.py",
+      "size_bytes": 31759,
+      "sha256": "093f3a10d05ecb57d8e3c2672116890f7d016645a3637e45b5012bfb3f574d06"
+    },
+    {
+      "path": "src/cygnusx/core/config.py",
+      "size_bytes": 47112,
+      "sha256": "58e6b158b27e787ead0f8ab0942eb7902be78f94eb7436cb935f32e841e9ba9c"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/ai_provider/testing.py",
+      "size_bytes": 3727,
+      "sha256": "c293208b5c2b655e9bc29955d5aa770646c8bbe638534fab306c3f96b2a9453e"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/celery_app/tasks/download.py",
+      "size_bytes": 55871,
+      "sha256": "3bcb2ba95f24b1d91b9a9cc52f63773b3d04864e5964877500bf0cd1a19727b7"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/database/models/chat.py",
+      "size_bytes": 23989,
+      "sha256": "cf4b939b8fefda2df68e76ee078cdfc5ca723469d4fa6cd16a4a840bd6ebaadf"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py",
+      "size_bytes": 4408,
+      "sha256": "f039a1eac296fc5eae1ec126f525a5a7192e5214e602db6d7f61bf6e0a9cdff9"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/download/reliability.py",
+      "size_bytes": 5256,
+      "sha256": "b423d718959e92cf19c4a6d2479bf34c27717bf7593688412436ffbf92cbc87d"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/download/supervisor_client.py",
+      "size_bytes": 10552,
+      "sha256": "59ae2de7ac1e5c05822a56a4e4467319731108f0ebe77545beacd7bf5dd67c40"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/download/trusted_execution.py",
+      "size_bytes": 14871,
+      "sha256": "c300afb53473fabfe214cd5960db5fa46c7786e9ce1759069330aa01cc363099"
+    },
+    {
+      "path": "tests/unit/test_dataset_gateway_phase3.py",
+      "size_bytes": 7656,
+      "sha256": "4ace4d9e3f88dc275d937aa31094f805e311424dc5458a4d309d72566318df5e"
+    },
+    {
+      "path": "tests/unit/test_dataset_import_handoff.py",
+      "size_bytes": 11328,
+      "sha256": "4dd2e9696c98b82a9c29f0b7ecbfc5960561f08b03ec7d4593990909582b5369"
+    },
+    {
+      "path": "tests/unit/test_deterministic_test_provider.py",
+      "size_bytes": 4630,
+      "sha256": "8dbdaaff1d596d2e014313932c27b3736deca66242e80d6f0cf49a7a15680aa1"
+    },
+    {
+      "path": "tests/unit/test_download_execution_boundary_probe.py",
+      "size_bytes": 2565,
+      "sha256": "440a7a5cd076113a89a66c45439aa69761a086264434618b457d828bf9c2410a"
+    },
+    {
+      "path": "tests/unit/test_download_execution_receipt.py",
+      "size_bytes": 13766,
+      "sha256": "42107581d4682bbfd39b146686052582713ded46fce8cfe517d7ddb7ac33fe51"
+    },
+    {
+      "path": "tests/unit/test_download_execution_receipt_nonce.py",
+      "size_bytes": 6331,
+      "sha256": "c63f1b13e2b01528d1bc6ac3aee68680e2bb1d7e40e4a884e38f3d50bb7e34c6"
+    },
+    {
+      "path": "tests/unit/test_download_registration_contract.py",
+      "size_bytes": 25462,
+      "sha256": "7cf5db19253071a1267e3242c6468d59a73816c892e4ba52c88196f5c56a94c8"
+    },
+    {
+      "path": "tests/unit/test_download_s4a_reliability.py",
+      "size_bytes": 13760,
+      "sha256": "79b0605dd0663042517302c03e794f871f084ec9f941125dce8ea5b619faf86b"
+    },
+    {
+      "path": "tests/unit/test_download_s4b0_reliability.py",
+      "size_bytes": 12329,
+      "sha256": "25506a766f65ecb7d5cbd94245b78efe830b15cae193b4bb91f98a02916d527d"
+    },
+    {
+      "path": "tests/unit/test_download_supervisor_client.py",
+      "size_bytes": 12908,
+      "sha256": "f8acd7d88e9cd210fd5a9c4e7b4ada737500664092fc1a7fd226f629db356e48"
+    },
+    {
+      "path": "tests/unit/test_download_trusted_execution_contract.py",
+      "size_bytes": 5106,
+      "sha256": "5692dc7a0603e0a9e4d1e78d688fd74f5ac62f37c721b3ef3c3bedf30a8ec85a"
+    },
+    {
+      "path": "tests/unit/test_summarize_acceptance_matrix.py",
+      "size_bytes": 2190,
+      "sha256": "c8b7f2cba3fd93bace2c42a95989687db194a8843cc056ddb11e1480e2ef1a77"
+    },
+    {
+      "path": "tests/unit/test_treasure_native_access.py",
+      "size_bytes": 24847,
+      "sha256": "f916345945a4a4b65ec03a4845f284b445290320286caee70490acb09b268ba0"
+    }
+  ],
+  "superseded_artifacts": [
+    "evidence/iat-r3-20261018/isolated-regression.txt (earlier 47-test G3 run; replaced by evidence/g3-e2-20261018/isolated-regression.txt)"
+  ]
+}

@@ -11,6 +11,7 @@ export interface GeoCandidate { primary_accession: string; status: string; error
 const base = (project: string) => `/projects/${encodeURIComponent(project)}`
 const versionBase = (project: string, dataset: string, version: string) => `${base(project)}/datasets/${encodeURIComponent(dataset)}/versions/${encodeURIComponent(version)}`
 export const datasetsApi = {
+  async decideAnalysis(project: string, dataset: string, version: string, proposal: string, approve: boolean): Promise<Record<string, unknown>> { return (await apiClient.post(`${versionBase(project, dataset, version)}/analysis-proposals/${encodeURIComponent(proposal)}/${approve ? 'approve' : 'reject'}`)).data },
   async newVersion(project: string, dataset: string, revision_reason: string): Promise<{version_id:string}> { return (await apiClient.post(`${base(project)}/datasets/${encodeURIComponent(dataset)}/versions`, { revision_reason })).data },
   async reviewVersion(project: string, dataset: string, version: string, assay_type: string, reason: string): Promise<unknown> { return (await apiClient.post(`${versionBase(project, dataset, version)}/review`, { assay_type, reason })).data },
   async reviewRole(project: string, dataset: string, version: string, asset: string, role: string, reason: string): Promise<unknown> { return (await apiClient.post(`${versionBase(project, dataset, version)}/assets/${encodeURIComponent(asset)}/review`, { role, reason })).data },

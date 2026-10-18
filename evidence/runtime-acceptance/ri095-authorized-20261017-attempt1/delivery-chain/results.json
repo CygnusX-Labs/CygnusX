@@ -1,0 +1,128 @@
+[
+  {
+    "step": "chain.m0_download",
+    "ok": true,
+    "status": 200,
+    "sha256": "d971316a1ce0378809b15257a2c27085b01bbb6cee38901f8badbc605dd53933",
+    "size": 7372
+  },
+  {
+    "step": "chain.prepare_report_html_pdf",
+    "ok": true,
+    "status": 200,
+    "body": "{\"source\":{\"schema_version\":\"cygnusx.project_report_source.v1\",\"source_kind\":\"project\",\"report_type\":\"project_scientific_summary\",\"owner_id\":\"3ee28976-6009-4f1e-ac6b-a3daacb53f19\",\"project_id\":\"a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6\",\"source_manifest_job_id\":\"36df0530-351c-4b4f-bb04-5e64dbfbb76e\",\"sou"
+  },
+  {
+    "step": "chain.create_report",
+    "ok": true,
+    "status": 200,
+    "body": "{\"id\":\"c3698987-6f04-4a66-b3d2-b31379a65607\",\"status\":\"queued\",\"source_digest\":\"a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f\"}"
+  },
+  {
+    "step": "chain.report_terminal",
+    "ok": true,
+    "status": "ready",
+    "pdf_status": "PDF_GENERATED",
+    "html_sha256": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b",
+    "pdf_sha256": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83",
+    "html_size": 6635,
+    "pdf_size": 44369,
+    "error_code": null
+  },
+  {
+    "step": "chain.html_db_http_sha_parity",
+    "ok": true,
+    "status": 200,
+    "http_sha": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b",
+    "db_sha": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b"
+  },
+  {
+    "step": "chain.pdf_db_http_sha_parity",
+    "ok": true,
+    "status": 200,
+    "http_sha": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83",
+    "db_sha": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83"
+  },
+  {
+    "step": "chain.pdf_parse",
+    "ok": true,
+    "pages": 3,
+    "chars": 1752,
+    "has_cjk": true
+  },
+  {
+    "step": "chain.m1_prepare_v2",
+    "ok": true,
+    "status": 200,
+    "body": "{\"manifest\":{\"schema_version\":\"cygnusx.project_delivery.v2\",\"digest_policy\":\"sorted_utf8_json.v1\",\"owner_id\":\"3ee28976-6009-4f1e-ac6b-a3daacb53f19\",\"project_id\":\"a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6\",\"selection\":{\"kind\":\"evidence\",\"task_ids\":[],\"report_ids\":[],\"source_manifest_job_id\":\"36df0530-351c",
+    "schema": "cygnusx.project_delivery.v2"
+  },
+  {
+    "step": "chain.m1_has_report_artifacts",
+    "ok": true,
+    "report_artifacts": [
+      {
+        "project_report_job_id": "c3698987-6f04-4a66-b3d2-b31379a65607",
+        "source_digest": "a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f",
+        "report_file_id": "12648917-6215-4f9e-8b3b-786821bda070",
+        "file_record_id": "80a62287-2996-4153-b66c-5342c0616e8b",
+        "format": "html",
+        "sha256": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b",
+        "size": 6635
+      },
+      {
+        "project_report_job_id": "c3698987-6f04-4a66-b3d2-b31379a65607",
+        "source_digest": "a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f",
+        "report_file_id": "600873c4-765a-4752-a859-482ac8cfed97",
+        "file_record_id": "f465f5c4-f09a-4c38-b794-585682788761",
+        "format": "pdf",
+        "sha256": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83",
+        "size": 44369
+      }
+    ]
+  },
+  {
+    "step": "chain.m1_create_export",
+    "ok": true,
+    "status": 200,
+    "body": "{\"id\":\"690bb801-3924-453a-a12e-560c0aed4d57\",\"project_id\":\"a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6\",\"status\":\"queued\",\"manifest_digest\":\"e954513609f4e71100b1cf8d5cb09fd9c920eb049467ca670082a39cc23ff7b2\",\"evidence_partial\":true,\"attempt_count\":0,\"retryable\":false,\"error_code\":null,\"archive_sha256\":null,"
+  },
+  {
+    "step": "chain.m1_export_ready",
+    "ok": true,
+    "status": "ready",
+    "archive_sha256": "b112317efde17e3e2b07d2847771bd52f03d3ed6785a36295be5594db7ee2a2c",
+    "error_code": null
+  },
+  {
+    "step": "chain.zip_download_jwt",
+    "ok": true,
+    "status": 200,
+    "http_sha": "b112317efde17e3e2b07d2847771bd52f03d3ed6785a36295be5594db7ee2a2c",
+    "db_sha": "b112317efde17e3e2b07d2847771bd52f03d3ed6785a36295be5594db7ee2a2c"
+  },
+  {
+    "step": "chain.zip_verify_archive",
+    "ok": true,
+    "result": "{'manifest': {'digest_policy': 'sorted_utf8_json.v1', 'evidence_status': 'partial', 'files': [{'path': 'README.md', 'sha256': '48000b73399a85995276e79797ba07341d301259c03b1671dcb480bdd1d4ff66', 'size'",
+    "members": [
+      "ProjectDeliveryManifest.json",
+      "README.md",
+      "checksums.sha256",
+      "project_reports/c3698987-6f04-4a66-b3d2-b31379a65607/report.html",
+      "project_reports/c3698987-6f04-4a66-b3d2-b31379a65607/report.pdf",
+      "verify_project_delivery.py"
+    ]
+  },
+  {
+    "step": "chain.zip_cross_owner_denied",
+    "ok": true,
+    "status": 404
+  },
+  {
+    "step": "chain.m0_bytes_unchanged",
+    "ok": true,
+    "before": "d971316a1ce0378809b15257a2c27085b01bbb6cee38901f8badbc605dd53933",
+    "after": "d971316a1ce0378809b15257a2c27085b01bbb6cee38901f8badbc605dd53933"
+  }
+]

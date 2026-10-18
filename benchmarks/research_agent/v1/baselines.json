@@ -1,0 +1,11 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "comparison_status": "NOT_MEASURED",
+  "shared_budget": {"network": false, "live_execution": false, "max_seconds_per_case": 30, "max_retries": 0},
+  "systems": [
+    {"id": "manual", "runner": "human UI/CLI operation, import actual BenchmarkRun JSONL", "measured": false, "model_id": null},
+    {"id": "existing_assistant", "runner": "existing assistant runtime, import actual BenchmarkRun JSONL", "measured": false, "model_id": null},
+    {"id": "contract_candidate", "runner": "scripts/evaluate_research_benchmark.py", "measured": true, "model_id": null, "scope": "synthetic contracts only; not full Research Agent"}
+  ],
+  "fairness": "No ranking until same tasks, permissions, hardware, model differences and actual budgets are disclosed"
+}

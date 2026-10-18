@@ -1,0 +1,11 @@
+✔ untrusted direct runtime never receives platform tools (13.24821ms)
+✔ only read/prepare schemas projected, token is never a model tool definition (0.47253ms)
+✔ callback has fixed URL, scoped ID, bearer and nonce; never retries errors (1.663857ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 19.449433

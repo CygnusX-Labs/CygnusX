@@ -1,0 +1,2 @@
+origin	git@github.com:xsx123123/omichub.git (fetch)
+origin	git@github.com:xsx123123/omichub.git (push)

@@ -1,0 +1,4 @@
+top_keys: ['manifest', 'manifest_digest']
+manifest_keys: ['schema_version', 'digest_policy', 'project_id', 'owner_id', 'selection', 'files', 'references', 'gaps', 'evidence_status', 'reproduction_status', 'association_scope', 'redaction_policy']
+digest_policy: sorted_utf8_json.v1
+owner_id: b81b4152-ecf0-4779-ae50-3c2ae9cbf4d0

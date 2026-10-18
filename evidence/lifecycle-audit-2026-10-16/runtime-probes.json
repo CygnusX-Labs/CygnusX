@@ -1,0 +1,32 @@
+{
+  "scope": "socket capability and tool presence only; no authentication or business API requests",
+  "socket": {
+    "postgres_local": {
+      "error_type": "PermissionError",
+      "errno": 1
+    },
+    "redis_local": {
+      "error_type": "PermissionError",
+      "errno": 1
+    },
+    "docker": {
+      "error_type": "PermissionError",
+      "errno": 1
+    }
+  },
+  "binaries": {
+    "EBIDownload": null,
+    "polariseq": null,
+    "aria2c": null,
+    "ossutil": null,
+    "tosutil": "/home/zj/software/tosutil/tosutil",
+    "obsutil": null,
+    "quarto": "/opt/quarto/bin/quarto",
+    "Rscript": "/usr/bin/Rscript",
+    "snakemake": "/home/zj/miniconda3/bin/snakemake",
+    "node": "/home/zj/.nvm/versions/node/v24.11.0/bin/node",
+    "docker": "/usr/bin/docker",
+    "pandoc": "/usr/bin/pandoc",
+    "typst": "/home/zj/.cargo/bin/typst"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "download_registration": {
+    "constructor_fields": [
+      "checksum",
+      "directory",
+      "file_type",
+      "id",
+      "original_name",
+      "path",
+      "size",
+      "status",
+      "user_id"
+    ],
+    "has_task_id_parameter": false,
+    "reconciler_requires_file_task_id": true
+  },
+  "download_schema_methods": [
+    "aws",
+    "aspera",
+    "ftp"
+  ],
+  "ebidownload_core_methods": [
+    "Ftp",
+    "Prefetch",
+    "Aws",
+    "Auto"
+  ],
+  "polariseq_sibling_methods": [
+    "Ftp",
+    "Aws"
+  ],
+  "cloud_uri_validation": {
+    "oss://127.0.0.1/x": "REJECTED_SCHEMA_ONLY",
+    "oss://[::1]/x": "ACCEPTED_SCHEMA_ONLY",
+    "oss://example.com/x": "REJECTED_SCHEMA_ONLY",
+    "oss://bucket/x": "ACCEPTED_SCHEMA_ONLY"
+  },
+  "catalog_all": [
+    "research.plan.assess_claim",
+    "research.plan.artifact_cell",
+    "research.plan.prepare",
+    "research.plan.validate",
+    "research.plan.get_status",
+    "research.plan.get_evidence",
+    "downloads.describe_capabilities",
+    "downloads.prepare",
+    "analysis.list_workflows",
+    "analysis.get_workflow_schema",
+    "analysis.prepare",
+    "tasks.get_status",
+    "research.task_provenance",
+    "research.report_provenance",
+    "research.dataset_provenance",
+    "research.project_delivery",
+    "tasks.list_related",
+    "dataset.discover",
+    "dataset.inspect",
+    "dataset.list_files",
+    "dataset.list_project_assets",
+    "dataset.prepare_import",
+    "analysis.list_compatible_workflows",
+    "analysis.prepare_from_dataset",
+    "dataset.execute_import",
+    "downloads.submit",
+    "analysis.submit",
+    "tasks.cancel"
+  ],
+  "catalog_default": [
+    "downloads.describe_capabilities",
+    "downloads.prepare",
+    "analysis.list_workflows",
+    "analysis.get_workflow_schema",
+    "analysis.prepare",
+    "tasks.get_status",
+    "tasks.list_related"
+  ],
+  "write_runtime_accepted": false,
+  "local_flags": {
+    "treasure_native_ui_enabled": true,
+    "tool_gateway_read_enabled": false,
+    "dataset_discovery_readonly": false,
+    "dataset_import_write": false,
+    "analysis_submit_from_dataset": false,
+    "counts_deg_flow_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "research_plan_enabled": false,
+    "agent_download_write_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "legacy_pipeline_tools": true
+  },
+  "evidence_entry_report_roles": [
+    {
+      "assigned_role": "Scientific_Report",
+      "actual_kind": "reproducibility",
+      "same_source_object": true
+    },
+    {
+      "assigned_role": "Reproducibility_Record",
+      "actual_kind": "reproducibility",
+      "same_source_object": true
+    }
+  ]
+}

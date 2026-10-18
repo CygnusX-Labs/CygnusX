@@ -73,28 +73,42 @@ class TaskListResponse(CygnusXBaseSchema):
 
 def task_to_response(task: Any) -> TaskResponse:
     """Task 实体 / ORM → TaskResponse"""
+    name, error_message, parameters = task.name, task.error_message, task.parameters or {}
+    logs = task.logs
+    if task.flow_id == "ebi_download":
+        from cygnusx.domain.download_security import (
+            redact_download_parameters,
+            redact_download_text,
+        )
+
+        name = redact_download_text(name)
+        error_message = redact_download_text(error_message)
+        parameters = redact_download_parameters(parameters)
+        assert isinstance(parameters, dict)
     return TaskResponse(
         id=task.id,
         flow_id=task.flow_id,
         user_id=task.user_id,
-        name=task.name,
+        name=name,
         status=task.status.value if isinstance(task.status, TaskStatus) else task.status,
         execution_mode=task.execution_mode.value
         if isinstance(task.execution_mode, ExecutionMode)
         else task.execution_mode,
-        parameters=task.parameters or {},
+        parameters=parameters,
         work_dir=task.work_dir,
         result_path=task.result_path,
-        error_message=task.error_message,
+        error_message=error_message,
         progress=task.progress,
         logs=[
             TaskLogResponse(
                 timestamp=log.timestamp,
                 level=log.level.value if isinstance(log.level, LogLevel) else log.level,
-                message=log.message,
+                message=redact_download_text(log.message)
+                if task.flow_id == "ebi_download"
+                else log.message,
                 source=log.source,
             )
-            for log in task.logs
+            for log in logs
         ],
         created_at=task.created_at,
         started_at=task.started_at,

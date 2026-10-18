@@ -1,0 +1,1 @@
+/app/.venv/bin/python: can't open file '/acceptance/scripts/init_admin.py': [Errno 2] No such file or directory

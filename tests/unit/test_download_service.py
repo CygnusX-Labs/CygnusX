@@ -1,7 +1,8 @@
 """DownloadService 单元测试 — 任务创建 / 参数落库 / 目录生成 / dispatch。"""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -13,21 +14,59 @@ from cygnusx.application.services.download_service import (
 )
 from cygnusx.domain.task.entities import Task
 from cygnusx.domain.task.value_objects import TaskStatus
-from cygnusx.infrastructure.celery_app.tasks.download import run_download
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def service(tmp_path: Path) -> DownloadService:
-    """DownloadService，仓储/域服务 mock，Celery delay mock。"""
-    svc = DownloadService(db=MagicMock())
-    svc._settings = svc._settings.model_copy(update={"storage_path": str(tmp_path)})
+def service(tmp_path: Path, monkeypatch) -> DownloadService:
+    """Submission-only unit doubles; runtime admission tested separately without bypass."""
+    from cygnusx.application.services import download_service as module
+    from cygnusx.core.config import get_settings
+    from cygnusx.infrastructure.config.storage_config import StorageConfig
+    from cygnusx.infrastructure.download import policy
+    from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
+    from cygnusx.tools.download.config import DownloadConfig
+
+    factory = StoragePathFactory(StorageConfig(data_root=str(tmp_path), users_subdir="users"))
+    monkeypatch.setattr(module, "get_path_factory", lambda: factory)
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: get_settings().model_copy(
+            update={
+                "enable_ebi_download": True,
+                "enable_direct_download": True,
+                "enable_cloud_storage_download": True,
+            }
+        ),
+    )
+    monkeypatch.setattr(module, "get_download_config", lambda: DownloadConfig())
+    monkeypatch.setattr(policy, "require_download_runtime", lambda source: None)
+    monkeypatch.setattr(
+        "cygnusx.application.services.file_service.ensure_directory_chain", AsyncMock()
+    )
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    def query_result(statement):
+        result = MagicMock()
+        is_user = statement.column_descriptions[0].get("entity").__name__ == "UserModel"
+        result.scalar_one_or_none.return_value = SimpleNamespace(status="active") if is_user else None
+        result.scalars.return_value.all.return_value = []
+        return result
+
+    db.execute.side_effect = query_result
+    db.execute.return_value.scalars.return_value.all.return_value = []
+    backend = AsyncMock()
+    backend.name = "local"
+    svc = DownloadService(db=db, backend=backend)
     svc._repo = AsyncMock()
+    svc._repo.get_by_idempotency_key.return_value = None
     svc._domain = AsyncMock()
     return svc
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="fixture 构造的 DownloadService 依赖 _settings 属性，现行实现已移除，setup 阶段 AttributeError")
 async def test_submit_creates_download_task_and_dispatches(service):
     user_id = str(uuid4())
     req = DownloadRequest(accession="PRJNA1251654", download_method="aws")
@@ -46,7 +85,7 @@ async def test_submit_creates_download_task_and_dispatches(service):
     queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
     service._domain.transition_status.return_value = queued
 
-    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+    with patch("cygnusx.application.services.download_service.notify_after_commit") as mock_enqueue:
         result = await service.submit(user_id, req)
 
     # 域服务以 ebi_download flow_id 建任务
@@ -57,11 +96,13 @@ async def test_submit_creates_download_task_and_dispatches(service):
     assert call_kwargs["sample_count"] == 0
 
     # work_dir 落在 upload_dir 下（触发 Files 自动入库）
-    assert "raw_data" in created_task.work_dir
+    assert "downloads" in Path(created_task.work_dir).parts
     assert "PRJNA1251654" in created_task.work_dir
 
     # 统一任务路由器已投递（默认仍可走 Celery）
-    mock_enqueue.assert_called_once_with(run_download, task_id=str(created_task.id))
+    mock_enqueue.assert_called_once_with(
+        service._db.sync_session, created_task.id
+    )
     # 状态推进到 QUEUED
     service._domain.transition_status.assert_called_once()
     assert result.flow_id == DOWNLOAD_FLOW_ID
@@ -106,33 +147,16 @@ def test_build_direct_link_args_keeps_urls_as_argv_values():
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="fixture 构造的 DownloadService 依赖 _settings 属性，现行实现已移除，setup 阶段 AttributeError")
 async def test_submit_sanitizes_accession_path(service):
-    """accession 含路径分隔符时清理，防越权写目录。"""
-    req = DownloadRequest(accession="../etc/passwd")
-    created = Task(
-        id=uuid4(),
-        flow_id=DOWNLOAD_FLOW_ID,
-        user_id=uuid4(),
-        name="x",
-        status=TaskStatus.PENDING,
-        parameters={},
-    )
-    service._domain.submit.return_value = created
-    service._repo.save.return_value = created
-    service._domain.transition_status.return_value = created
+    """Invalid accessions are rejected before directory/Task construction."""
+    from pydantic import ValidationError
 
-    with patch("cygnusx.application.services.download_service.run_download"):
-        await service.submit(str(uuid4()), req)
-
-    # 不存在 ".." 路径分量（即无目录穿越，原始 ../ 已被替换为单段目录名）
-    from pathlib import Path
-
-    assert ".." not in Path(created.work_dir).parts
+    with pytest.raises(ValidationError):
+        DownloadRequest(accession="../etc/passwd")
+    service._domain.submit.assert_not_called()
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="fixture 构造的 DownloadService 依赖 _settings 属性，现行实现已移除，setup 阶段 AttributeError")
 async def test_submit_cloud_storage_task_and_dispatches(service):
     user_id = str(uuid4())
     req = DownloadRequest(
@@ -155,7 +179,7 @@ async def test_submit_cloud_storage_task_and_dispatches(service):
     queued = created_task.model_copy(update={"status": TaskStatus.QUEUED})
     service._domain.transition_status.return_value = queued
 
-    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+    with patch("cygnusx.application.services.download_service.notify_after_commit") as mock_enqueue:
         result = await service.submit(user_id, req)
 
     call_kwargs = service._domain.submit.call_args.kwargs
@@ -165,12 +189,13 @@ async def test_submit_cloud_storage_task_and_dispatches(service):
     assert call_kwargs["parameters"]["object_uri"] == "oss://bucket/raw/"
     assert "projects/rna-seq" in created_task.work_dir
     assert "aliyun_oss_bucket_raw" in created_task.work_dir
-    mock_enqueue.assert_called_once_with(run_download, task_id=str(created_task.id))
+    mock_enqueue.assert_called_once_with(
+        service._db.sync_session, created_task.id
+    )
     assert result.flow_id == DOWNLOAD_FLOW_ID
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="fixture 构造的 DownloadService 依赖 _settings 属性，现行实现已移除，setup 阶段 AttributeError")
 async def test_submit_direct_link_task_persists_batch_options(service):
     user_id = str(uuid4())
     req = DownloadRequest(
@@ -193,7 +218,7 @@ async def test_submit_direct_link_task_persists_batch_options(service):
     service._repo.save.return_value = created
     service._domain.transition_status.return_value = created
 
-    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+    with patch("cygnusx.application.services.download_service.notify_after_commit") as mock_enqueue:
         await service.submit(user_id, req)
 
     params = service._domain.submit.call_args.kwargs["parameters"]
@@ -202,11 +227,10 @@ async def test_submit_direct_link_task_persists_batch_options(service):
     assert params["download_threads"] == 8
     assert params["overwrite_policy"] == "skip"
     assert params["recursive"] is True
-    mock_enqueue.assert_called_once_with(run_download, task_id=str(created.id))
+    mock_enqueue.assert_called_once_with(service._db.sync_session, created.id)
 
 
 @pytest.mark.asyncio
-@pytest.mark.quarantine(reason="fixture 构造的 DownloadService 依赖 _settings 属性，现行实现已移除，setup 阶段 AttributeError")
 async def test_list_downloads_filters_by_flow_id(service):
     user_id = str(uuid4())
     download_task = Task(

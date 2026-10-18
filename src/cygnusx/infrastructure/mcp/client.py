@@ -384,6 +384,9 @@ class MCPClient:
                     if attempt > 1:
                         result["reliability"] = {"attempts": attempt, "recovered": True}
                     return result
+                if tool_name.startswith("bioops_") and server.transport == Transport.BUILTIN:
+                    # Shared Gateway refusals are authoritative, never fallback authority.
+                    return result
                 # 熔断只统计传输层/server 级失败。tool_error/validation/file_reference
                 # 等调用方错误（典型场景：模型连续传坏参数）不计入，避免把健康
                 # server 短路。builtin 不经熔断门控，维持原有全量统计口径。
@@ -497,6 +500,12 @@ class MCPClient:
                         f"ToolInvocationContext 被忽略：{server.name}.{tool_name} 不接受 context 参数"
                     )
                 result = await handler(arguments, **kwargs)
+                if tool_name.startswith("bioops_") and isinstance(result, dict):
+                    return {
+                        "success": result.get("success") is True
+                        and not result.get("is_error", False),
+                        "result": result,
+                    }
                 return {"success": True, "result": result}
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"MCP 工具调用失败 {server.name}.{tool_name}: {e}")

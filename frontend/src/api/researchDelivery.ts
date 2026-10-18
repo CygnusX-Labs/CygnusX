@@ -2,7 +2,7 @@ import apiClient from './client'
 
 export type Integrity = 'VERIFIED' | 'PARTIAL' | 'UNKNOWN' | 'MISSING' | 'FAILED' | 'NOT_APPLICABLE'
 export interface ResearchArtifact { file_record_id: string | null; logical_name: string; category: string; size: number | null; sha256: string | null; declared_sha256: string | null; integrity: Integrity; file_url: string | null }
-export interface ResearchReport { report_id: string; kind: 'scientific' | 'reproducibility' | 'delivery'; state: string; integrity: Integrity; result_observation_id: string | null; report_url: string }
+export interface ResearchReport { report_id: string; kind: 'scientific' | 'reproducibility' | 'delivery'; state: string; integrity: Integrity; result_observation_id: string | null; report_url: string; version?: number | null }
 export interface ResearchProvenance {
   schema_version: 'cygnusx.research_provenance.v1'; task_id: string; owner_id: string; project_id: string | null
   analysis_link_id: string | null; parameters_sha256: string | null; result_observation_id: string | null; manifest_sha256: string | null

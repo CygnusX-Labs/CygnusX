@@ -1,0 +1,122 @@
+ M .env.example
+ M .gitignore
+ M ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_frontend.md
+ M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+ M ARCHITECTURE_DESIGN/README.md
+ m Protocol/FlowFrame
+ M deploy/docker/Dockerfile.frontend
+ M deploy/docker/nginx/frontend.conf
+ M deploy/docker/nginx/nginx.conf
+ M deploy/docker/nginx/nginx.prod.conf
+ M frontend/package.json
+ M frontend/src/api/datasets.ts
+ M frontend/src/api/researchAgent.ts
+ M frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts
+ M frontend/src/views/ProjectDetailView.vue
+ M frontend/src/views/TreasureMouseView.vue
+ M frontend/vite.config.js
+ M frontend/vite.config.ts
+ M mcp-server/ARCHITECTURE.md
+ M mcp-server/client/api_client.py
+ M mcp-server/tools.yaml
+ M mcp-server/tools/analysis.py
+ M mcp-server/tools/flows.py
+ M mcp-server/tools/pipelines.py
+ m pipelines/ATACFlow
+ m pipelines/RNAFlow
+ m pipelines/Treasure-Seeking_Mouse
+ m pipelines/tools
+ M src/cygnusx/api/v1/ai.py
+ M src/cygnusx/api/v1/datasets.py
+ M src/cygnusx/api/v1/research_agent.py
+ M src/cygnusx/api/v1/router.py
+ M src/cygnusx/application/schemas/agent_tools.py
+ M src/cygnusx/application/schemas/research_agent.py
+ M src/cygnusx/application/services/agent_service.py
+ M src/cygnusx/application/services/agent_tool_gateway.py
+ M src/cygnusx/application/services/dataset_analysis_service.py
+ M src/cygnusx/application/services/dataset_import_service.py
+ M src/cygnusx/application/services/research_treasure_service.py
+ M src/cygnusx/application/services/tool_bridge_service.py
+ M src/cygnusx/core/config.py
+ M src/cygnusx/infrastructure/database/models/__init__.py
+ M src/cygnusx/infrastructure/mcp/pipeline_preset.py
+ M src/cygnusx/infrastructure/mcp/presets.py
+ M src/cygnusx/tools/flow_schema_compiler.py
+ M tests/unit/test_dataset_gateway_phase3.py
+ M tests/unit/test_dataset_phase3_review.py
+ M tool_configs/tools_schema.yaml
+?? ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+?? alembic/versions/bioopsphase5_research_plans.py
+?? benchmarks/
+?? docs/adr/phase5-governed-research-agent-orchestration.md
+?? docs/adr/treasure-agent-shared-tools-and-delivery.md
+?? docs/adr/treasure-native-entry-and-capabilities.md
+?? docs/adr/treasure-react-island-poc.md
+?? docs/audits/cygnusx-phase5-acceptance.md
+?? docs/audits/cygnusx-phase5-changes.md
+?? docs/audits/cygnusx-phase5-entry-gates.md
+?? docs/audits/cygnusx-phase5-implementation-report.md
+?? docs/audits/cygnusx-treasure-mouse-ui-regression-and-mcp-integration-audit-2026-10-15.md
+?? docs/audits/treasure-e2e-release-gates.md
+?? docs/contracts/cygnusx-research-artifact-cell-v1.schema.json
+?? docs/contracts/cygnusx-research-claim-input-v1.schema.json
+?? docs/contracts/cygnusx-research-claim-v1.schema.json
+?? docs/contracts/cygnusx-research-plan-input-v1.schema.json
+?? docs/contracts/cygnusx-research-plan-v1.md
+?? docs/contracts/cygnusx-research-plan-v1.schema.json
+?? docs/contracts/treasure-research-actions-v1.md
+?? docs/contracts/treasure-research-event-projection-v1.md
+?? docs/contracts/treasure-research-message-v1.md
+?? docs/implementation/CygnusX_TreasureMouse_End_to_End_Implementation_2026-10-16.md
+?? docs/implementation/treasure-e2e-w0-baseline.md
+?? docs/implementation/treasure-full-presentation-migration.md
+?? docs/implementation/treasure-mouse-e2e-research-workflow-implementation.md
+?? docs/implementation/treasure-native-entry-reload-fix.md
+?? docs/implementation/treasure-native-p0-access-and-entry.md
+?? docs/implementation/treasure-native-refresh-404-fix.md
+?? docs/implementation/treasure-native-screenshot-style-alignment.md
+?? docs/implementation/treasure-react-island-poc.md
+?? "docs/info/26.10.11/2026-10-15\342\200\224\342\200\22423.10.01.png"
+?? docs/info/26.10.15/
+?? docs/runbooks/cygnusx-phase5-rollback.md
+?? evidence/phase5/
+?? evidence/treasure-e2e/
+?? evidence/treasure-native/
+?? frontend/poc/
+?? frontend/scripts/
+?? frontend/src/api/researchPlans.ts
+?? frontend/src/components/ResearchPlanWorkbench.vue
+?? frontend/src/components/research/TreasureBrandMark.vue
+?? frontend/src/components/research/TreasureOriginalDisplay.vue
+?? frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
+?? frontend/src/components/research/__tests__/TreasureAccess.test.ts
+?? frontend/src/components/research/__tests__/TreasureOriginalEntry.test.ts
+?? frontend/src/components/research/adapters/
+?? frontend/src/components/research/treasureIslandLoader.ts
+?? frontend/src/types/treasureIsland.d.ts
+?? frontend/src/views/TreasureResearchWorkbench.vue
+?? frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+?? scripts/analyze_research_benchmark.py
+?? scripts/evaluate_research_benchmark.py
+?? scripts/export_research_plan_contracts.py
+?? scripts/poc/check-treasure-island.sh
+?? scripts/poc/treasure-island-browser.mjs
+?? src/cygnusx/api/v1/research_claims.py
+?? src/cygnusx/api/v1/research_plans.py
+?? src/cygnusx/application/schemas/research_claims.py
+?? src/cygnusx/application/schemas/research_plan.py
+?? src/cygnusx/application/services/research_claim_service.py
+?? src/cygnusx/application/services/research_plan_service.py
+?? src/cygnusx/domain/research/
+?? src/cygnusx/infrastructure/database/models/research_plan.py
+?? tests/unit/test_fixed_flow_tools_api.py
+?? tests/unit/test_research_benchmark_phase5.py
+?? tests/unit/test_research_claim_artifact_phase5.py
+?? tests/unit/test_research_plan_gateway_phase5.py
+?? tests/unit/test_research_plan_phase5.py
+?? tests/unit/test_research_plan_storage_phase5.py
+?? tests/unit/test_research_science_phase5.py
+?? tests/unit/test_treasure_native_access.py
+?? tests/unit/tools/test_fixed_flow_bridge.py

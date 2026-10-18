@@ -81,10 +81,17 @@ groups:
       - name: cygnusx_preview_analysis
         description: "验证参数（dry-run）"
         read_only: true
+      - name: cygnusx_prepare
+        description: "预检任意已开放流程参数并创建确认记录（固定工具；提交请走 cygnusx_submit）"
+        read_only: false
+      - name: cygnusx_submit
+        description: "凭服务端确认记录 ID 提交已预检且经用户网页确认的分析任务（固定工具；幂等）"
+        read_only: false
+        requires_confirm: true
 
   - id: downloads
     module: tools.downloads
-    description: "数据下载 — 公共数据库(SRA/GEO, PRJ/SRR/GSM 登录号, aws/aspera/ftp 高速下载)、多云存储(aliyun/volc/huawei)、HTTP 直链下载到用户 raw_data"
+    description: "数据下载 — 公共数据库(ENA/SRA 单登录号, aws/ftp；GEO 需先解析)、多云存储(aliyun/volc/huawei)、HTTP/HTTPS/匿名FTP 直链下载到用户 downloads"
     tools:
       - name: cygnusx_submit_download
         description: "提交下载任务(SRA/GEO 公共数据库、云存储、直链三类来源)"

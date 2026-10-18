@@ -257,6 +257,26 @@ class FlowSubmissionValidator:
         if flow.meta.id in {"rna_seq", "atac_seq"}:
             self._validate_fastq_input(context, normalized_params, errors)
 
+        # 7.5 流程配置的校验插件（可复用扩展点；插件不增加 MCP 工具）
+        for plugin_name in ai.validation_plugins or []:
+            from cygnusx.domain.flow.validation_plugins import get_flow_validation_plugin
+
+            plugin = get_flow_validation_plugin(plugin_name)
+            if plugin is None:
+                errors.append(
+                    ValidationErrorItem(
+                        field="flow",
+                        code="UNKNOWN_VALIDATION_PLUGIN",
+                        message=f"流程配置了未知校验插件 '{plugin_name}'",
+                    )
+                )
+                continue
+            errors.extend(
+                await plugin.validate(
+                    context, flow, arguments, normalized_params, sample_rows
+                )
+            )
+
         if errors:
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
 

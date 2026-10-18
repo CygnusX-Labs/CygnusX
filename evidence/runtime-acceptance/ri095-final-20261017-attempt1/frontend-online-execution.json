@@ -1,0 +1,22 @@
+{
+  "run_id": "ri095-final-20261017-attempt1",
+  "git_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+  "image_digest": "NOT_OBSERVED",
+  "environment": "disposable /tmp frontend; no production credentials",
+  "gate": "frontend clean online npm ci",
+  "command": [
+    "npm",
+    "ci",
+    "--no-audit",
+    "--no-fund",
+    "--fetch-retries=0",
+    "--fetch-timeout=10000",
+    "--cache",
+    "/tmp/ri095-final-avz7genf/npm-cache"
+  ],
+  "started_at": "2026-10-17T12:53:31.707601+00:00",
+  "ended_at": "2026-10-17T12:53:32.333545+00:00",
+  "exit_code": 1,
+  "observed_result": "See log; no build or runtime PASS inferred",
+  "evidence_path": "frontend-online-npm-ci.log"
+}

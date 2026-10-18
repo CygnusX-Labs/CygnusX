@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/zj/zj_code_libarary/OmicHub/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  23:08:53
+   Duration  1.15s (transform 50ms, setup 0ms, import 605ms, tests 60ms, environment 403ms)
+

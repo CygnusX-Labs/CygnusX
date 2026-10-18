@@ -1,0 +1,26 @@
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+index cf003e22..d4bec8c3 100644
+--- a/frontend/package-lock.json
++++ b/frontend/package-lock.json
+@@ -7046,6 +7046,10 @@
+         "sass": "1.100.0"
+       }
+     },
++    "node_modules/sass-embedded-all-unknown/node_modules/sass": {
++      "dev": true,
++      "optional": true
++    },
+     "node_modules/sass-embedded-android-arm": {
+       "version": "1.100.0",
+       "resolved": "https://registry.npmmirror.com/sass-embedded-android-arm/-/sass-embedded-android-arm-1.100.0.tgz",
+@@ -7301,6 +7305,10 @@
+         "sass": "1.100.0"
+       }
+     },
++    "node_modules/sass-embedded-unknown-all/node_modules/sass": {
++      "dev": true,
++      "optional": true
++    },
+     "node_modules/sass-embedded-win32-arm64": {
+       "version": "1.100.0",
+       "resolved": "https://registry.npmmirror.com/sass-embedded-win32-arm64/-/sass-embedded-win32-arm64-1.100.0.tgz",

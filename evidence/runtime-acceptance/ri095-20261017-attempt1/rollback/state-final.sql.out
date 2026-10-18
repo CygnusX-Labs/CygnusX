@@ -1,0 +1,61 @@
+     current_database      |   current_user   | inet_server_addr |                                                           version                                                            
+---------------------------+------------------+------------------+------------------------------------------------------------------------------------------------------------------------------
+ project_export_test_ri095 | ri095_acceptance |                  | PostgreSQL 14.23 (Debian 14.23-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+(1 row)
+
+   version_num   
+-----------------
+ projectreport01
+(1 row)
+
+      conrelid       |                     conname                     |                                                                                                                                           pg_get_constraintdef                                                                                                                                            
+---------------------+-------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ project_export_jobs | ck_project_export_status                        | CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'collecting'::character varying, 'validating'::character varying, 'packaging'::character varying, 'verifying'::character varying, 'publishing'::character varying, 'ready'::character varying, 'failed'::character varying])::text[])))
+ project_export_jobs | project_export_jobs_file_record_id_fkey         | FOREIGN KEY (file_record_id) REFERENCES file_records(id) ON DELETE RESTRICT
+ project_export_jobs | project_export_jobs_pkey                        | PRIMARY KEY (id)
+ project_export_jobs | project_export_jobs_project_id_fkey             | FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+ project_export_jobs | project_export_jobs_user_id_fkey                | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+ project_export_jobs | uq_project_export_manifest                      | UNIQUE (user_id, project_id, manifest_digest)
+ project_export_jobs | uq_project_export_request                       | UNIQUE (user_id, project_id, request_key)
+ project_report_jobs | ck_project_report_counters                      | CHECK (((version >= 1) AND (attempt_count >= 0)))
+ project_report_jobs | ck_project_report_ready_file                    | CHECK ((((status)::text <> 'ready'::text) OR ((html_file_record_id IS NOT NULL) AND (html_sha256 IS NOT NULL) AND (html_size IS NOT NULL) AND (html_size > 0))))
+ project_report_jobs | ck_project_report_status                        | CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'validating'::character varying, 'rendering'::character varying, 'publishing'::character varying, 'ready'::character varying, 'failed'::character varying])::text[])))
+ project_report_jobs | project_report_jobs_html_file_record_id_fkey    | FOREIGN KEY (html_file_record_id) REFERENCES file_records(id) ON DELETE RESTRICT
+ project_report_jobs | project_report_jobs_parent_id_fkey              | FOREIGN KEY (parent_id) REFERENCES project_report_jobs(id) ON DELETE RESTRICT
+ project_report_jobs | project_report_jobs_pdf_file_record_id_fkey     | FOREIGN KEY (pdf_file_record_id) REFERENCES file_records(id) ON DELETE RESTRICT
+ project_report_jobs | project_report_jobs_pkey                        | PRIMARY KEY (id)
+ project_report_jobs | project_report_jobs_project_id_fkey             | FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT
+ project_report_jobs | project_report_jobs_source_manifest_job_id_fkey | FOREIGN KEY (source_manifest_job_id) REFERENCES project_export_jobs(id) ON DELETE RESTRICT
+ project_report_jobs | project_report_jobs_user_id_fkey                | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+ project_report_jobs | uq_project_report_request                       | UNIQUE (user_id, project_id, request_key)
+ project_report_jobs | uq_project_report_source                        | UNIQUE (user_id, project_id, source_digest)
+ report_files        | ck_report_files_source                          | CHECK ((((report_id IS NOT NULL) AND (project_report_job_id IS NULL)) OR ((report_id IS NULL) AND (project_report_job_id IS NOT NULL))))
+ report_files        | fk_report_files_file_record                     | FOREIGN KEY (file_record_id) REFERENCES file_records(id) ON DELETE RESTRICT
+ report_files        | fk_report_files_project_job                     | FOREIGN KEY (project_report_job_id) REFERENCES project_report_jobs(id) ON DELETE RESTRICT
+ report_files        | report_files_pkey                               | PRIMARY KEY (id)
+ report_files        | report_files_report_id_fkey                     | FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+(24 rows)
+
+       tgrelid       |              tgname              |                                                                          pg_get_triggerdef                                                                           
+---------------------+----------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ project_export_jobs | project_export_scope_guard       | CREATE TRIGGER project_export_scope_guard BEFORE UPDATE ON public.project_export_jobs FOR EACH ROW EXECUTE FUNCTION cygnusx_project_export_guard()
+ project_report_jobs | project_report_source_guard      | CREATE TRIGGER project_report_source_guard BEFORE UPDATE ON public.project_report_jobs FOR EACH ROW EXECUTE FUNCTION cygnusx_project_report_guard()
+ project_report_jobs | project_report_publication_guard | CREATE TRIGGER project_report_publication_guard BEFORE UPDATE ON public.project_report_jobs FOR EACH ROW EXECUTE FUNCTION cygnusx_project_report_publication_guard()
+(3 rows)
+
+                  id                  |               user_id                |              project_id              |        source_manifest_job_id        |                          source_digest                           | version | status | attempt_count | retryable |         html_file_record_id          |                           html_sha256                            | html_size | pdf_file_record_id | pdf_sha256 | pdf_size |    pdf_status     |    error_code    
+--------------------------------------+--------------------------------------+--------------------------------------+--------------------------------------+------------------------------------------------------------------+---------+--------+---------------+-----------+--------------------------------------+------------------------------------------------------------------+-----------+--------------------+------------+----------+-------------------+------------------
+ 00000000-0000-4000-8000-0000000000e1 | 00000000-0000-4000-8000-0000000000a1 | 00000000-0000-4000-8000-0000000000b1 | 00000000-0000-4000-8000-0000000000d1 | sd1                                                              |       1 | failed |             0 | f         |                                      |                                                                  |           |                    |            |          | not_requested     | invalid_evidence
+ 99323137-44f8-4bea-ad62-b65ad10d3962 | b81b4152-ecf0-4779-ae50-3c2ae9cbf4d0 | f469e8c8-6c37-4838-bd54-fa5c5af35ccd | f61dafa4-ea30-4b09-9112-b262ceb0f1d8 | 987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cdd4d8f2b1fe2fdc |       1 | ready  |             1 | f         | adecb7a4-73f6-4aec-8bf5-b05f2855e1f3 | 1d89e889399a611a708e1528e8c1be44b033a022d1b09fbc12f5e69bc999c33a |      6635 |                    |            |          | PDF_NOT_GENERATED | 
+(2 rows)
+
+                  id                  |               user_id                |              project_id              |                         manifest_digest                          | status | attempt_count 
+--------------------------------------+--------------------------------------+--------------------------------------+------------------------------------------------------------------+--------+---------------
+ 00000000-0000-4000-8000-0000000000d1 | 00000000-0000-4000-8000-0000000000a1 | 00000000-0000-4000-8000-0000000000b1 | md1                                                              | failed |             0
+ f61dafa4-ea30-4b09-9112-b262ceb0f1d8 | b81b4152-ecf0-4779-ae50-3c2ae9cbf4d0 | f469e8c8-6c37-4838-bd54-fa5c5af35ccd | c4c36dd3b43a6d1a6eaae81183afdbf102dcc5ca9f9c9cec2dcb5915abbbb902 | ready  |             2
+(2 rows)
+
+ locktype | database | classid | objid | objsubid | mode | granted 
+----------+----------+---------+-------+----------+------+---------
+(0 rows)
+

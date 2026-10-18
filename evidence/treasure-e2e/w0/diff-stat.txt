@@ -1,0 +1,32 @@
+ .env.example                                       |  19 ++
+ .gitignore                                         |   3 +
+ ARCHITECTURE_DESIGN/CygnusX_frontend.md            |  13 +-
+ ARCHITECTURE_DESIGN/README.md                      |   2 +
+ Protocol/FlowFrame                                 |   0
+ deploy/docker/Dockerfile.frontend                  |  20 +-
+ deploy/docker/nginx/frontend.conf                  |  18 ++
+ deploy/docker/nginx/nginx.conf                     |  17 +-
+ deploy/docker/nginx/nginx.prod.conf                |  16 +-
+ frontend/package.json                              |   4 +-
+ frontend/src/api/researchAgent.ts                  |  43 ++++-
+ .../__tests__/TreasureSessionIsolation.test.ts     |  10 +-
+ frontend/src/views/ProjectDetailView.vue           |  50 +++--
+ frontend/src/views/TreasureMouseView.vue           | 213 +--------------------
+ frontend/vite.config.js                            |   4 +
+ frontend/vite.config.ts                            |   4 +
+ pipelines/ATACFlow                                 |   0
+ pipelines/RNAFlow                                  |   0
+ pipelines/Treasure-Seeking_Mouse                   |   0
+ pipelines/tools                                    |   0
+ src/cygnusx/api/v1/research_agent.py               |  40 ++--
+ src/cygnusx/api/v1/router.py                       |   4 +
+ src/cygnusx/application/schemas/agent_tools.py     |  41 +++-
+ src/cygnusx/application/schemas/research_agent.py  |  23 ++-
+ src/cygnusx/application/services/agent_service.py  |   6 +-
+ .../application/services/agent_tool_gateway.py     |  63 +++++-
+ .../services/research_treasure_service.py          | 172 +++++++++++++++--
+ .../application/services/tool_bridge_service.py    |   2 +-
+ src/cygnusx/core/config.py                         |   7 +
+ .../infrastructure/database/models/__init__.py     |   2 +
+ src/cygnusx/infrastructure/mcp/presets.py          |   2 +-
+ 31 files changed, 515 insertions(+), 283 deletions(-)

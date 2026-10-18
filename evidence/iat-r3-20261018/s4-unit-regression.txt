@@ -1,0 +1,25 @@
+S4-A/S4-B0 isolated reliability regression
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 34 items
+
+tests/unit/test_download_s4a_reliability.py ....................         [ 58%]
+tests/unit/test_download_s4b0_reliability.py ..............              [100%]
+
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 34 passed, 1 warning in 1.41s =========================
+exit_code=0
+
+Current-worktree revalidation (2026-10-18):
+  UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/unit/test_download_s4a_reliability.py tests/unit/test_download_s4b0_reliability.py -q -m unit
+Result: 34 passed, 1 Pydantic deprecation warning, exit code 0. SQLite and mocked
+transport only; real PostgreSQL, Broker, Worker, and Beat intervals were not run.

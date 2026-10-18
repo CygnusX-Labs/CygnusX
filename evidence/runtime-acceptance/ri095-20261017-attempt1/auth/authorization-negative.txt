@@ -1,0 +1,6 @@
+=== cross-owner: user B reads A's project inventory (expect 404) ===
+  HTTP/1.1 404 Not Found
+=== cross-owner: user B downloads A's report (expect 404/403) ===
+  HTTP/1.1 404 Not Found
+=== user B on own project list (should not leak A project) ===
+[]

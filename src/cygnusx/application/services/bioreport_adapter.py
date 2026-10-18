@@ -50,6 +50,26 @@ class BioReportAdapter:
         self.template_version = template_version
         self.timeout_seconds = timeout_seconds
 
+    def render_project_document(self, html: bytes, *, output_format: str = "html") -> bytes:
+        """Adapt a fixed project template without fabricating a Task snapshot.
+
+        This shares the static dependency boundary and existing controlled PDF
+        toolchain. It never invokes BioReport scientific modules or accepts config.
+        Runtime admission remains the caller's responsibility.
+        """
+        if output_format not in {"html", "pdf"}:
+            raise ValueError("Unsupported project report format")
+        with tempfile.TemporaryDirectory(prefix="cygnusx-project-report-") as temp:
+            source = Path(temp) / "report.html"
+            source.write_bytes(html)
+            if self.validate_html_dependencies(source):
+                raise ValueError("Project report must be self-contained")
+            if output_format == "html":
+                return source.read_bytes()
+            from cygnusx.application.services.report_audit_pdf_renderer import render_audit_pdf
+
+            return render_audit_pdf(html, timeout_seconds=self.timeout_seconds)
+
     @staticmethod
     def validate_html_dependencies(source: Path) -> tuple[Path, ...]:
         """Return local HTML dependencies and reject remote or missing assets."""

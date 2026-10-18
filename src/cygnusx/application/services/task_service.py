@@ -61,8 +61,8 @@ class TaskService:
         2. 锁定参数快照；
         3. 通过通用构建器生成流程输入文件；
         4. 创建任务聚合根并持久化；
-        5. 投递 Celery 异步任务；
-        6. 将任务状态推进为 QUEUED。
+        5. 保存执行证据及启用时的预扣参数，持久化 QUEUED；
+        6. 投递 Celery 异步任务，投递不明交由对账。
         """
         if req.flow_id == "counts_deg":
             from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
@@ -130,11 +130,23 @@ class TaskService:
         # 参数快照：复制一份不可变的提交时参数
         parameter_snapshot = dict(req.parameters)
 
+        from cygnusx.application.services.execution_evidence_service import (
+            EVIDENCE_KEY,
+            capture_generated_files,
+            freeze_execution_evidence,
+        )
+
+        handoff = None
+        if dataset_link is not None:
+            from cygnusx.application.services.research_execution_binding import check_inputs
+
+            handoff = await check_inputs(self._db, UUID(user_id), dataset_link)
+
         # 通用构建器生成底层流程输入文件
         builder = GenericFlowBuilder()
         files = builder.build_project_files(
             flow_config=flow_config,
-            parameters=parameter_snapshot,
+            parameters=dict(req.parameters),
             sample_rows=req.sample_sheet,
             comparisons=req.comparisons,
             work_dir=work_dir,
@@ -162,6 +174,15 @@ class TaskService:
             user_id=user_id,
             project_name=req.name,
         )
+        parameter_snapshot[EVIDENCE_KEY] = freeze_execution_evidence(
+            task_id,
+            UUID(user_id),
+            req,
+            flow_config.model_dump(mode="json"),
+            link=dataset_link,
+            handoff=handoff,
+            generated_files=capture_generated_files(UUID(user_id), work_dir, files),
+        )
 
         # 创建任务聚合根（复用预生成的 task_id，保证 work_dir 路径与 task id 一致）
         task = await self._domain.submit(
@@ -178,25 +199,6 @@ class TaskService:
         # 写入工作目录等运行信息
         task.work_dir = work_dir
         await self._repo.save(task)
-
-        if dataset_link is not None:
-            dataset_link.task_id = task.id
-            # Persist the actual Task + binding before queue visibility. Ambiguous delivery is not replayed.
-            await self._db.commit()
-
-        enqueue_task(
-            run_snakemake,
-            flow_detail.execution["snakefile"],
-            str(task.id),
-            task_id=f"analysis-{task.id}-attempt-0",
-            config_file=config_file,
-            config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
-            work_dir=work_dir,
-            cores=flow_detail.execution.get("default_resources", {}).get("cores", 4),
-        )
-
-        # 状态推进为已入队
-        task = await self._domain.transition_status(task, TaskStatus.QUEUED)
 
         # 集成点#2: 任务提交前预扣饼干
         pre_deducted = Decimal("0")
@@ -215,6 +217,24 @@ class TaskService:
             )
             task.parameters["_cookie_pre_deducted"] = float(pre_deducted)
             task = await self._repo.save(task)
+
+        if dataset_link is not None:
+            dataset_link.task_id = task.id
+        task = await self._domain.transition_status(task, TaskStatus.QUEUED)
+        # Freeze evidence before queue visibility for both manual and Dataset submissions.
+        # Ambiguous queue delivery is reconciled; it is never an implicit execution retry.
+        await self._db.commit()
+
+        enqueue_task(
+            run_snakemake,
+            flow_detail.execution["snakefile"],
+            str(task.id),
+            task_id=f"analysis-{task.id}-attempt-0",
+            config_file=config_file,
+            config_file_param=flow_detail.execution.get("config_file_param") or "analysisyaml",
+            work_dir=work_dir,
+            cores=flow_detail.execution.get("default_resources", {}).get("cores", 4),
+        )
 
         return task_to_response(task)
 
@@ -281,8 +301,31 @@ class TaskService:
             raise NotFoundError("任务不存在")
         if str(task.user_id) != user_id:
             raise NotFoundError("任务不存在")
+        if task.flow_id == "ebi_download":
+            from sqlalchemy import select
+
+            from cygnusx.infrastructure.database.models.task import TaskModel
+
+            await self._db.execute(select(TaskModel).where(TaskModel.id == task_id)
+                                   .with_for_update().execution_options(populate_existing=True))
+            task = await self._repo.get_by_id(task_id)
+            if task is None or str(task.user_id) != user_id:
+                raise NotFoundError("任务不存在")
+        if task.flow_id == "ebi_download" and task.status == TaskStatus.CANCELLED:
+            return task_to_response(task)
         if task.status not in {TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING}:
             raise ValidationError(f"当前状态 {task.status.value} 不允许取消")
+        if task.flow_id == "ebi_download":
+            # Business cancellation is not evidence of OS/process/egress cleanup.
+            task.parameters = {
+                **task.parameters,
+                "_download_cancellation": {
+                    "request_accepted": True,
+                    "process_tree_stopped": False,
+                    "egress_revoked": False,
+                    "reconciliation_required": True,
+                },
+            }
         task = await self._domain.transition_status(task, TaskStatus.CANCELLED)
 
         # 集成点#4: 任务取消退还预扣饼干

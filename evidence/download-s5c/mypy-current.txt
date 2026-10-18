@@ -1,0 +1,9 @@
+src/cygnusx/application/services/agent_service.py:256: error: Need type annotation for "models_by_tier" (hint: "models_by_tier: dict[<type>, <type>] = ...")  [var-annotated]
+src/cygnusx/application/services/agent_service.py:483: error: "UserAgentCapabilityModel" has no attribute "features"  [attr-defined]
+src/cygnusx/application/services/agent_service.py:510: error: "UserAgentCapabilityModel" has no attribute "features"  [attr-defined]
+src/cygnusx/application/services/agent_service.py:725: error: Argument 1 to "get" of "dict" has incompatible type "UUID | None"; expected "UUID"  [arg-type]
+src/cygnusx/application/services/agent_service.py:851: error: "UserAgentCapabilityModel" has no attribute "features"  [attr-defined]
+src/cygnusx/application/services/agent_service.py:1157: error: Need type annotation for "handoff_config" (hint: "handoff_config: dict[<type>, <type>] = ...")  [var-annotated]
+src/cygnusx/application/services/agent_service.py:1157: error: Argument 1 to "dict" has incompatible type "Literal[True] | dict[Never, Never]"; expected "SupportsKeysAndGetItem[Never, Never]"  [arg-type]
+pyproject.toml: note: unused section(s): module = ['flower.*', 'rocketmq.*', 'snakemake.*']
+Found 7 errors in 1 file (checked 1 source file)

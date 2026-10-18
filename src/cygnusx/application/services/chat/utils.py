@@ -21,6 +21,16 @@ def _invocation_payload_hash(envelope: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _finalize_invocation_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Project new display metadata before hashing; never change execution/confirmation data."""
+    from cygnusx.domain.download_security import redact_download_tool_history
+
+    safe = redact_download_tool_history(envelope)
+    assert isinstance(safe, dict)
+    safe["payload_hash"] = _invocation_payload_hash(safe)
+    return safe
+
+
 #: 代码执行类工具（WP3-Task1）：这些工具调用的落库信封会带 cell 语义冗余字段
 CODE_EXECUTION_TOOL_NAMES = frozenset({"sandbox_execute", "chat_sandbox_execute"})
 

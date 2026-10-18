@@ -21,7 +21,7 @@ from cygnusx.application.services.chat.utils import (
     _cap_tool_invocation_payload_detail,
     _code_cell_envelope_fields,
     _fanout_ask_request,
-    _invocation_payload_hash,
+    _finalize_invocation_envelope,
     _max_persisted_cell_index,
     _normalize_ask_questions,
     _studio_risk_hint,
@@ -1135,9 +1135,7 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
                         }
                         if _cell_fields["cell_index"] is not None:
                             code_cell_next += 1
-                        _invocation_envelope["payload_hash"] = _invocation_payload_hash(
-                            _invocation_envelope
-                        )
+                        _invocation_envelope = _finalize_invocation_envelope(_invocation_envelope)
                         persisted_tool_invocations.append(_invocation_envelope)
                         if tool_name == PARALLEL_SUBAGENTS_TOOL_NAME and isinstance(llm_result, dict):
                             fanout_envelope = {

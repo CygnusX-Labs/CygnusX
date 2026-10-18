@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from html import escape
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cygnusx.application.schemas.claim_provenance import ClaimProvenance
+    from cygnusx.application.schemas.project_delivery import ProjectDeliveryManifest
 
 from cygnusx.application.schemas.report_snapshot import (
     EvidenceSource,
@@ -270,7 +274,24 @@ def render_audit_report(
         f'<section id="{anchor}"><h2>{_value(name)}</h2>{content}</section>'
         for anchor, name, content in sections
     )
-    css = """
+    css = report_document_css()
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
+        "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">"
+        f"<title>{_value(title)}</title><style>{css}</style></head><body><header>"
+        f'<p class="meta">CygnusX BioOps · 执行证据归档</p><h1>{_value(title)}</h1>'
+        f'<p class="meta">Snapshot {_value(snapshot.snapshot_digest)} · '
+        f"{_value(snapshot.schema_version)} · {_value(TEMPLATE_VERSION)}</p>"
+        '<p class="notice">本报告记录可证明的执行证据及缺口；未执行复现验证。</p>'
+        f"</header>{nav}{body}</body></html>"
+    )
+
+
+def report_document_css() -> str:
+    """Shared static report styling; no renderer subprocess or scientific computation."""
+    return """
         *{box-sizing:border-box}body{font:14px/1.6 system-ui,sans-serif;color:#25314d;
         background:#f4f6fc;margin:0 auto;padding:28px 20px;max-width:1280px}
         header,section{background:white;border:1px solid #dfe4f0;border-radius:14px;
@@ -291,15 +312,158 @@ def render_audit_report(
         h2{font-size:18px}nav a{padding:6px 8px}th,td{padding:8px;font-size:12px}}
         @media print{body{background:white;padding:0}nav{display:none}section{break-inside:avoid}}
     """
+
+
+PROJECT_SUMMARY_TEMPLATE = "project-summary-prototype.v1"
+
+
+def render_project_summary_prototype(
+    manifest: ProjectDeliveryManifest,
+    manifest_digest: str,
+    claims: tuple[ClaimProvenance, ...] = (),
+) -> str:
+    """Read-only manifest projection. Not a published project scientific report."""
+    if manifest.content_digest() != manifest_digest:
+        raise ValueError("Project manifest digest mismatch")
+    for claim in claims:
+        if (
+            claim.verification_status != "VERIFIED_VALUE"
+            or claim.observation_binding != "VERIFIED_ASSOCIATION"
+            or (
+                claim.project_id != manifest.project_id
+                or claim.task_id not in manifest.selection.task_ids
+                or not any(
+                    f.source_kind == "file_record"
+                    and f.source_id == claim.file_record_id
+                    and f.task_id == claim.task_id
+                    and f.sha256 == claim.file_sha256
+                    for f in manifest.files
+                )
+                or not any(
+                    r.kind == "result_observation"
+                    and r.id == claim.result_observation_id
+                    and r.task_id == claim.task_id
+                    for r in manifest.references
+                )
+            )
+        ):
+            raise ValueError("Claim outside frozen project scope")
+
+    def references(kind: str) -> str:
+        return _table(
+            ("身份", "Task", "状态", "范围", "版本"),
+            (
+                (
+                    _value(r.id),
+                    _value(r.task_id),
+                    _value(r.status),
+                    _value(r.disposition),
+                    _value(r.version),
+                )
+                for r in manifest.references
+                if r.kind == kind
+            ),
+        )
+
+    unknown = (
+        "<p>NOT_RECORDED：该冻结清单没有记录相应科学事实；原型不从当前配置或自然语言推断。</p>"
+    )
+    sections = (
+        (
+            "overview",
+            "1. Project Overview",
+            _table(
+                ("字段", "冻结引用"),
+                (
+                    ("Project", _value(manifest.project_id)),
+                    ("Manifest SHA-256", _value(manifest_digest)),
+                    ("Template", PROJECT_SUMMARY_TEMPLATE),
+                    ("Scope", _value(manifest.selection.kind)),
+                ),
+            ),
+        ),
+        ("objectives", "2. Research Objectives", unknown),
+        ("datasets", "3. Dataset Inventory", references("dataset_version")),
+        (
+            "provenance",
+            "4. Data Provenance",
+            references("file_record") + references("result_observation"),
+        ),
+        ("workflows", "5. Analysis Workflows", unknown),
+        (
+            "executions",
+            "6. Execution Summary",
+            references("task")
+            + references("run")
+            + "<p>本节仅列稳定身份，不从文件时间或报告存在推断执行状态。</p>",
+        ),
+        (
+            "results",
+            "7. Scientific Results",
+            references("report")
+            + "<p>科学结果仍以原报告为准。此原型不解析任意报告正文、不执行统计计算。</p>",
+        ),
+        (
+            "findings",
+            "8. Key Findings",
+            _table(
+                ("Claim", "原始单元值", "文件 SHA", "解释状态"),
+                (
+                    (
+                        _value(c.claim_id),
+                        _value(c.supported_statement),
+                        _value(c.file_sha256),
+                        _value(c.interpretation_status),
+                    )
+                    for c in claims
+                ),
+            )
+            + "<p>未提供有明确冻结范围的Claim时，不生成项目科研发现。SUPPORTED_CLAIM仅指有限数值陈述。</p>",
+        ),
+        ("qc", "9. Quality Control", unknown),
+        (
+            "coverage",
+            "10. Evidence Coverage",
+            _table(("缺口",), ((_value(gap),) for gap in manifest.gaps)),
+        ),
+        (
+            "reports",
+            "11. Report Inventory",
+            references("report_snapshot") + references("evidence_manifest"),
+        ),
+        (
+            "readiness",
+            "12. Reproducibility Readiness",
+            "<p>REPRODUCIBILITY_STATUS: NOT_RUN。FILE_INTEGRITY是冻结指纹声明，EVIDENCE_COVERAGE与DELIVERY_COMPLETENESS仍受缺口约束。</p>",
+        ),
+        (
+            "limitations",
+            "13. Limitations",
+            "<p>只读HTML原型，未正式发布；PDF_NOT_GENERATED。无科学重运行、无跨组学计算、无虚构方法或文献。</p>",
+        ),
+        (
+            "appendix",
+            "14. Appendix",
+            _table(
+                ("实际包含文件", "字节数", "SHA-256"),
+                ((_value(f.path), _value(f.size), _value(f.sha256)) for f in manifest.files),
+            ),
+        ),
+    )
+    nav = (
+        '<nav aria-label="章节导航">'
+        + "".join(f'<a href="#{anchor}">{_value(title)}</a>' for anchor, title, _ in sections)
+        + "</nav>"
+    )
+    body = "".join(
+        f'<section id="{anchor}"><h2>{_value(title)}</h2>{content}</section>'
+        for anchor, title, content in sections
+    )
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
-        "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">"
-        f"<title>{_value(title)}</title><style>{css}</style></head><body><header>"
-        f'<p class="meta">CygnusX BioOps · 执行证据归档</p><h1>{_value(title)}</h1>'
-        f'<p class="meta">Snapshot {_value(snapshot.snapshot_digest)} · '
-        f"{_value(snapshot.schema_version)} · {_value(TEMPLATE_VERSION)}</p>"
-        '<p class="notice">本报告记录可证明的执行证据及缺口；未执行复现验证。</p>'
-        f"</header>{nav}{body}</body></html>"
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">"
+        f"<title>Project Scientific Summary · 只读原型</title><style>{report_document_css()}</style></head><body>"
+        '<header><h1>Project Scientific Summary · 只读原型</h1><p class="notice">不是正式项目科学报告；未执行科学复现或PDF生成。</p>'
+        f'<p class="meta">Manifest {_value(manifest_digest)} · {_value(PROJECT_SUMMARY_TEMPLATE)}</p></header>{nav}{body}</body></html>'
     )

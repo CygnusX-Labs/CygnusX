@@ -1,0 +1,119 @@
+{
+  "scope": "mixed; each log has its actual validation layer",
+  "results": {
+    "related-final": {
+      "exit": 0,
+      "log": "related-final.log"
+    },
+    "bridge-final": {
+      "exit": 0,
+      "log": "bridge-final.log"
+    },
+    "focused-types-final": {
+      "exit": 0,
+      "log": "focused-types-final.log"
+    },
+    "focused-lint-final": {
+      "exit": 0,
+      "log": "focused-lint-final.log"
+    },
+    "frontend-plan-current": {
+      "exit": 0,
+      "log": "frontend-plan-current.log"
+    },
+    "frontend-types-current": {
+      "exit": 0,
+      "log": "frontend-types-current.log"
+    },
+    "migrations-direct-final": {
+      "exit": 0,
+      "log": "migrations-direct-final.log"
+    },
+    "backend-full": {
+      "exit": 124,
+      "log": "backend-full.log"
+    },
+    "frontend-full": {
+      "exit": 1,
+      "log": "frontend-full.log"
+    },
+    "ruff-full": {
+      "exit": 1,
+      "log": "ruff-full.log"
+    },
+    "mypy-full": {
+      "exit": 1,
+      "log": "mypy-full.log"
+    },
+    "compute-state-tests": {
+      "exit": 0,
+      "log": "compute-state-tests.log"
+    },
+    "reconcile-reservation-tests": {
+      "exit": 0,
+      "log": "reconcile-reservation-tests.log"
+    },
+    "recovery-final": {
+      "exit": 0,
+      "log": "recovery-final.log"
+    },
+    "recovery-lint": {
+      "exit": 0,
+      "log": "recovery-lint.log"
+    },
+    "focused-types-latest": {
+      "exit": 0,
+      "log": "focused-types-latest.log"
+    },
+    "frontend-build-final": {
+      "exit": 0,
+      "log": "frontend-build-final.log"
+    },
+    "scientific-inputs-current": {
+      "exit": 0,
+      "log": "scientific-inputs-current.log"
+    },
+    "scientific-context-tests": {
+      "exit": 0,
+      "log": "scientific-context-tests.log"
+    },
+    "related-science-final": {
+      "exit": 0,
+      "log": "related-science-final.log"
+    },
+    "science-types": {
+      "exit": 0,
+      "log": "science-types.log"
+    },
+    "frontend-version-tests": {
+      "exit": 0,
+      "log": "frontend-version-tests.log"
+    },
+    "frontend-version-types": {
+      "exit": 0,
+      "log": "frontend-version-types.log"
+    },
+    "frontend-context-tests": {
+      "exit": 0,
+      "log": "frontend-context-tests.log"
+    },
+    "frontend-context-types": {
+      "exit": 0,
+      "log": "frontend-context-types.log"
+    },
+    "frontend-full-context": {
+      "exit": 1,
+      "log": "frontend-full-context.log"
+    },
+    "frontend-context-build": {
+      "exit": 0,
+      "log": "frontend-context-build.log"
+    }
+  },
+  "frontend_build_artifact": {
+    "path": "frontend/dist/index.html",
+    "size": 490,
+    "mtime_ns": 1792054378649285435,
+    "sha256": "643d9437623e91ac2043cc5b58e45440fdbe81c1d92ff083e1c3ce8b733f85c1"
+  }
+}

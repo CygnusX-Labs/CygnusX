@@ -1,0 +1,10 @@
+{
+  "mypy_baseline_errors": 9,
+  "mypy_current_errors": 8,
+  "new_diagnostics": [],
+  "incremental_status": "PASS_NO_NEW_DIAGNOSTICS",
+  "raw_current_mypy": "FAIL_INHERITED_ERRORS",
+  "ruff_selected": "PASS",
+  "new_evidence_boundary_mypy": "PASS_3_SOURCE_FILES",
+  "full_repository": "NOT_CLAIMED"
+}

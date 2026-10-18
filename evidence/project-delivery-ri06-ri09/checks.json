@@ -1,0 +1,101 @@
+{
+  "verified_at": "2026-10-16T12:57:26.939695+00:00",
+  "scope": "RI06-RI09 incremental isolated implementation; runtime acceptance pending",
+  "backend": {
+    "status": "PASS_ISOLATED",
+    "combined": {
+      "tests": 155,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "new_business_tests": 26,
+    "related_regression_tests": 129,
+    "no_addition_of_overlapping_batches": true,
+    "final_new_tests_after_project_delete_lock": {
+      "tests": 26,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  },
+  "frontend": {
+    "targeted_files": 2,
+    "targeted_tests": 9,
+    "status": "PASS_ISOLATED",
+    "type_check": "PASS_CODE",
+    "build": "PASS_CODE",
+    "full_suite": {
+      "status": "FAIL",
+      "files_failed": 3,
+      "tests_failed": 7,
+      "tests_passed": 567,
+      "note": "chat streaming token and AgentTeams tests outside changed feature; no full-suite PASS claimed"
+    }
+  },
+  "quality": {
+    "ruff_selected": "PASS_CODE",
+    "mypy_new_6_sources": "PASS_CODE",
+    "mypy_existing_sources": 8,
+    "baseline_errors": 6,
+    "current_errors": 6,
+    "new_diagnostics": [],
+    "ruff_full_diagnostics_observed": 288,
+    "mypy_full_observed": "FAIL_1022_ERRORS_223_FILES"
+  },
+  "runtime": {
+    "PostgreSQL": "BLOCKED_NO_EXPLICIT_TEST_DSN",
+    "Celery_worker_broker": "BLOCKED_NOT_RUN",
+    "object_storage": "BLOCKED_NOT_RUN",
+    "browser_narrow_viewports": "BLOCKED_PLAYWRIGHT_UNAVAILABLE",
+    "PASS_RUNTIME": false,
+    "PASS_E2E": false
+  },
+  "migration": {
+    "static": "PASS_CODE",
+    "sqlite_actual_upgrade": "PASS_ISOLATED",
+    "postgres_trigger_concurrency": "BLOCKED",
+    "alembic_existing_warning": "duplicate revision a6b7c8d9e0f1 inherited; not repaired in dirty worktree"
+  },
+  "no_production_actions": [
+    "commit",
+    "push",
+    "deploy",
+    "production_migration",
+    "real_download",
+    "analysis",
+    "gate_enable"
+  ],
+  "source_sha256": {
+    "src/cygnusx/core/config.py": "46157de6ff7c44887126b4c52ec88fc82279c64d07156245f19598bb5dd2e645",
+    "src/cygnusx/application/schemas/agent_tools.py": "91ac0435cb1136ed6349fdbc21742e7830ba57c96cf6103a1bd47e375506a7bc",
+    "src/cygnusx/application/services/agent_tool_gateway.py": "98e251d443c9efef94dc9a92a149296ccd11f5f6605f2bff3304ec528034bdb3",
+    "src/cygnusx/application/services/project_service.py": "86c11d2b6b32dea69713b22e93e704c3fb37b85f6bcd73eb7acec85826f29ef5",
+    "src/cygnusx/application/services/research_provenance_service.py": "a1c55b2a52f2ac5a59b91958f4397cdc34fb142fc47221e11d185a3e9f216b7d",
+    "src/cygnusx/api/v1/research_delivery.py": "389c098f384d2e358ab729ff9ec5278ff3632e8d9c8323e3746c4ef7cf2bb32d",
+    "src/cygnusx/infrastructure/celery_app/celery.py": "669bde8b1a9e7eafd33bb9fe22d04b91c0b3447aaaf55d37dd01232365de1af1",
+    "src/cygnusx/infrastructure/database/models/__init__.py": "edbe19fd50312b87cc6144a1e3bd52609de1f9b28f75dbe98d6a73ad06013164",
+    "frontend/src/views/ProjectDetailView.vue": "df59c58d0ebca087bc4ad7231c40b943c14bdfed2dc771c2d016be88a92fa806",
+    "frontend/src/api/researchDelivery.ts": "8fe160c03badd4098b417e151190c809700dc9b23d8c6a7ffc1bece7551ab241",
+    "ARCHITECTURE_DESIGN/CygnusX_frontend.md": "da27de763164f0bcfc8db1e8dfbdad87d89caac7db5511f73bb9e9a14f212288",
+    "ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md": "c2fe8914602897d4f4950687342e90d6fd9f62bb16a4ed534c712e588b7daed7",
+    "ARCHITECTURE_DESIGN/README.md": "9768c3f1ad18b622150da5577ab9d7ff2d004c9f19aa6ac8d21d943f68fac5fb",
+    "ARCHITECTURE_DESIGN/CygnusX_report_architecture.md": "e3ecb0ea4c7c5747015ddf9d7326c15bf854ec14fe24c564afa8e40283b16508",
+    "src/cygnusx/application/schemas/project_delivery.py": "240d603aeb69980c248e7494f268129023ece044c7fb382d0d62a7e67dbb0cee",
+    "src/cygnusx/application/services/project_delivery_service.py": "0a8a2b93e4fad3bef3a08583f4e570064f4ace61f33e25698caa9627cfa137f4",
+    "src/cygnusx/domain/project_delivery_archive.py": "0d9b91a4322e0c198bb8064de1131f521e5bc0d4b0a2d83a6ef3890d1674578c",
+    "src/cygnusx/infrastructure/database/models/project_export.py": "d1d8cbdf7f85c2f9723994f649f4d72dcd93fc969a08bc9bc0d5405203408bd6",
+    "src/cygnusx/infrastructure/celery_app/tasks/project_exports.py": "9c20e166d53348d9db1976d7432dabb79a10016d82f9df3f360f110397491f68",
+    "alembic/versions/projectdelivery01_project_exports.py": "2a3b37ef4ee8a432b8173c623148cf7607b5f2185768480e3abced80ae77b1ed",
+    "frontend/src/api/projectDelivery.ts": "4a070d1849a78807c039aaff1867c9dfb4f2b4b97152836bacf1c7709ad87207",
+    "frontend/src/components/ProjectResearchDelivery.vue": "166aa47b89d639c87cfc14a634fe5a5587e89b77596e4817aa9d640838e315e1",
+    "frontend/src/components/__tests__/ProjectResearchDelivery.test.ts": "34173eb0f725f2cdc654c1e5073f6eaefe1ca6eef7cf62f2b8fdf227dd94569b",
+    "tests/unit/test_project_delivery.py": "31e81145e06978fab361d94f9467446a1b5fbe5a9a097e59e2a6dd8cf22ba1aa",
+    "tests/integration/test_project_delivery_postgres.py": "46da32be38b3c1a4a753826945fd5b61f806cd176fc8e5c628a26c9e75050ba7",
+    "docs/contracts/cygnusx-project-delivery-v1.md": "da5b9a009728fbd020180118d5da9e91588ade0ea2051f93b28585df14bbf0f6",
+    "docs/contracts/cygnusx-project-delivery-v1.schema.json": "5f57cafe03af6b84d8642b3cfb340aa5ae3cf9e8f9af93fbb8436cf329659f73",
+    "docs/implementation/cygnusx-project-delivery-ri06-ri09-implementation.md": "ea5be29153567e7cd40c3391fdaef178311c61364277e91e3c386ad4c8001f50"
+  },
+  "schema_parity": "PASS_CODE",
+  "default_gates": "VERIFIED_CLOSED"
+}

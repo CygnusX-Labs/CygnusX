@@ -1,0 +1,1167 @@
+--- before/deploy/docker/nginx/nginx.prod.conf
++++ after/deploy/docker/nginx/nginx.prod.conf
+@@ -96,20 +96,13 @@
+             proxy_read_timeout 86400;
+         }
+ 
+-        # 寻宝鼠独立应用。末尾斜杠剥离平台前缀，子应用按根路径提供资源。
++        # Native research UI uses the authenticated BFF. Keep legacy account/chat
++        # paths private; the Node service remains available on the internal network.
+         location = /treasure-mouse {
+-            return 301 /treasure-mouse/;
++            return 404;
+         }
+         location ^~ /treasure-mouse/ {
+-            proxy_pass http://treasure-mouse-web:80/;
+-            proxy_http_version 1.1;
+-            proxy_set_header Host $host;
+-            proxy_set_header X-Real-IP $remote_addr;
+-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-            proxy_set_header X-Forwarded-Proto $scheme;
+-            proxy_set_header X-Forwarded-Prefix /treasure-mouse;
+-            proxy_buffering off;
+-            proxy_read_timeout 600s;
++            return 404;
+         }
+ 
+         # 健康检查
+--- before/deploy/docker/nginx/nginx.conf
++++ after/deploy/docker/nginx/nginx.conf
+@@ -92,20 +92,13 @@
+             proxy_read_timeout 86400;  # WebSocket 长连接超时
+         }
+ 
+-        # 寻宝鼠独立应用。末尾斜杠剥离平台前缀，子应用按根路径提供资源。
++        # Native research UI uses the authenticated BFF. Keep legacy account/chat
++        # paths private; the Node service remains available on the internal network.
+         location = /treasure-mouse {
+-            return 301 /treasure-mouse/;
++            return 404;
+         }
+         location ^~ /treasure-mouse/ {
+-            proxy_pass http://treasure-mouse-web:80/;
+-            proxy_http_version 1.1;
+-            proxy_set_header Host $host;
+-            proxy_set_header X-Real-IP $remote_addr;
+-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-            proxy_set_header X-Forwarded-Proto $scheme;
+-            proxy_set_header X-Forwarded-Prefix /treasure-mouse;
+-            proxy_buffering off;
+-            proxy_read_timeout 600s;
++            return 404;
+         }
+ 
+         # 分块上传：放宽限流。前端 3 路并发连续打分片，burst=20 nodelay 会秒触 429，
+--- before/src/cygnusx/application/schemas/research_agent.py
++++ after/src/cygnusx/application/schemas/research_agent.py
+@@ -30,7 +30,7 @@
+     conversation_id: str = Field(min_length=1, max_length=64)
+     provenance: dict[str, Any] = Field(default_factory=dict)
+     next_actions: list[Literal["inspect_metadata", "refine_search", "review_evidence"]] = Field(
+-        default_factory=lambda: ["inspect_metadata", "refine_search"]
++        default=["inspect_metadata", "refine_search"]
+     )
+ 
+ 
+@@ -48,8 +48,17 @@
+ 
+ class ResearchAgentCapabilities(BaseModel):
+     native_ui_enabled: bool
++    enabled: bool = False
++    read_discovery: bool = False
++    read_sessions: bool = False
++    prepare_import: bool = False
++    prepare_analysis: bool = False
++    project_required_for_prepare: Literal[True] = True
++    write_execution: Literal[False] = False
++    reason_code: str | None = None
++    cancellation_mode: Literal["browser_abort_only"] = "browser_abort_only"
+     read_only: bool = True
+-    write_tools_enabled: bool = False
++    write_tools_enabled: Literal[False] = False
+     supported_events: list[str] = Field(
+         default_factory=lambda: ["delta", "tool", "cards", "polariseq", "grounding", "end", "error", "cancel"]
+     )
+--- before/src/cygnusx/application/services/research_treasure_service.py
++++ after/src/cygnusx/application/services/research_treasure_service.py
+@@ -8,20 +8,28 @@
+ import uuid
+ from collections.abc import AsyncIterator
+ from datetime import UTC, datetime
+-from typing import Any
++from typing import Any, cast
+ 
+ import httpx
++from loguru import logger
+ from sqlalchemy import desc, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from cygnusx.application.schemas.research_agent import DiscoveryProposal
++from cygnusx.application.schemas.chat import ChatMessageDTO, ChatSessionDTO
++from cygnusx.application.schemas.research_agent import DiscoveryProposal, ResearchAgentCapabilities
+ from cygnusx.application.services.chat.session_service import SessionService
+-from cygnusx.application.services.chat_service import ChatService
+ from cygnusx.core.config import Settings, get_settings
+-from cygnusx.core.exceptions import AuthorizationError, DependencyUnavailableError, NotFoundError
++from cygnusx.core.exceptions import (
++    AuthenticationError,
++    AuthorizationError,
++    CygnusXError,
++    DependencyUnavailableError,
++    NotFoundError,
++)
+ from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
+-from cygnusx.infrastructure.database.models.chat import ChatSessionModel
++from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+ from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.models.user import UserModel
+ 
+ RESEARCH_AGENT_MARKER = "research-treasure-mouse"
+ ACCESSION_RE = re.compile(
+@@ -47,7 +55,8 @@
+ ) -> DiscoveryProposal:
+     """Map the legacy DatasetCard without upgrading it into a platform asset."""
+     accession = str(card.get("accession") or "").strip() or None
+-    meta = card.get("meta") if isinstance(card.get("meta"), dict) else {}
++    raw_meta = card.get("meta")
++    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
+     link = _source_link(accession)
+     proposal_id = f"{session_id}:{accession or uuid.uuid4().hex}"
+     return DiscoveryProposal(
+@@ -154,6 +163,45 @@
+         if not get_settings().treasure_native_ui_enabled:
+             raise AuthorizationError("科研寻宝鼠原生入口尚未在当前环境启用", code="FEATURE_DISABLED")
+ 
++    async def _current_user(self, user_id: str) -> UserModel:
++        # Re-read even in a long-lived SQLAlchemy identity map after access revocation.
++        user = await self._db.get(UserModel, uuid.UUID(user_id), populate_existing=True)
++        if user is None or user.status != "active":
++            raise AuthenticationError("用户不存在或已被禁用")
++        return user
++
++    async def capabilities(self, user_id: str) -> ResearchAgentCapabilities:
++        user = await self._current_user(user_id)
++        denied = set(user.disabled_modules or []) if user.role != "admin" else set()
++        settings = get_settings()
++        allowed = "treasure-mouse" not in denied
++        enabled = allowed and settings.treasure_native_ui_enabled
++        discovery = enabled and bool(
++            settings.treasure_agent_url and settings.treasure_agent_internal_token
++        )
++        prepare = enabled and settings.tool_gateway_read_enabled
++        dataset = prepare and settings.dataset_discovery_readonly and "files" not in denied
++        reason = (
++            "MODULE_LOCKED" if not allowed else
++            "FEATURE_DISABLED" if not enabled else
++            "NODE_NOT_CONFIGURED" if not discovery else None
++        )
++        return ResearchAgentCapabilities(
++            native_ui_enabled=settings.treasure_native_ui_enabled,
++            enabled=enabled,
++            read_sessions=enabled,
++            read_discovery=discovery,
++            prepare_import=dataset and "downloads" not in denied,
++            prepare_analysis=dataset and "flows" not in denied,
++            reason_code=reason,
++        )
++
++    async def ensure_access(self, user_id: str) -> None:
++        user = await self._current_user(user_id)
++        if user.role != "admin" and "treasure-mouse" in (user.disabled_modules or []):
++            raise AuthorizationError("寻宝鼠模块未开通，请联系管理员", code="MODULE_LOCKED")
++        self.ensure_enabled()
++
+     async def _owned_project(self, user_id: str, project_id: str | None) -> None:
+         if not project_id:
+             return
+@@ -168,7 +216,7 @@
+             )
+         )
+         if result.scalar_one_or_none() is None:
+-            raise AuthorizationError("无权访问该项目")
++            raise AuthorizationError("无权访问该项目", code="PROJECT_FORBIDDEN")
+ 
+     async def _provider(self, model_id: uuid.UUID | None) -> AIProviderConfigModel:
+         query = select(AIProviderConfigModel).where(AIProviderConfigModel.is_active.is_(True))
+@@ -182,12 +230,13 @@
+         result = await self._db.execute(query.limit(1))
+         provider = result.scalar_one_or_none()
+         if provider is None:
+-            raise DependencyUnavailableError("平台没有可用的 AI 模型配置")
++            raise DependencyUnavailableError("平台没有可用的 AI 模型配置", code="PROVIDER_UNAVAILABLE")
+         return provider
+ 
+     async def create_session(
+         self, user_id: str, project_id: str | None, title: str, model_id: uuid.UUID | None
+     ) -> Any:
++        await self.ensure_access(user_id)
+         await self._owned_project(user_id, project_id)
+         provider = await self._provider(model_id)
+         # Research discovery explicitly permits a global read-only session. Do not
+@@ -210,9 +259,10 @@
+         # inherit a default project as a side effect.
+         self._db.add(session)
+         await self._db.flush()
+-        return ChatService._to_session_dto(session)
++        return ChatSessionDTO.model_validate(session)
+ 
+     async def list_sessions(self, user_id: str, project_id: str | None) -> list[Any]:
++        await self.ensure_access(user_id)
+         await self._owned_project(user_id, project_id)
+         query = select(ChatSessionModel).where(
+             ChatSessionModel.user_id == user_id,
+@@ -224,9 +274,10 @@
+         else:
+             query = query.where(ChatSessionModel.project_id.is_(None))
+         result = await self._db.execute(query)
+-        return [ChatService._to_session_dto(session) for session in result.scalars().all()]
++        return [ChatSessionDTO.model_validate(session) for session in result.scalars().all()]
+ 
+     async def _owned_session(self, user_id: str, session_id: str) -> ChatSessionModel:
++        await self.ensure_access(user_id)
+         result = await self._db.execute(select(ChatSessionModel).where(
+             ChatSessionModel.session_id == session_id,
+             ChatSessionModel.user_id == user_id,
+@@ -241,8 +292,14 @@
+ 
+     async def messages(self, user_id: str, session_id: str) -> list[Any]:
+         await self._owned_session(user_id, session_id)
+-        rows = await self._sessions.get_messages(session_id)
+-        return [ChatService._to_msg_dto(row) for row in rows]
++        rows = cast(list[ChatMessageModel], await self._sessions.get_messages(session_id))
++        return [ChatMessageDTO.model_validate(row) for row in rows]
++
++    async def check_stream_access(
++        self, user_id: str, session_id: str, model_id: uuid.UUID | None
++    ) -> None:
++        session = await self._owned_session(user_id, session_id)
++        await self._provider(model_id or session.model_id)
+ 
+     async def cancel(self, user_id: str, session_id: str) -> bool:
+         await self._owned_session(user_id, session_id)
+@@ -266,11 +323,12 @@
+             session_id=session_id,
+             role="user",
+             content=content,
++            content_type="text",
+             status="complete",
+             metadata={"source": RESEARCH_AGENT_MARKER},
+         )
+         del user_message
+-        history = await self._sessions.get_messages(session_id)
++        history = cast(list[ChatMessageModel], await self._sessions.get_messages(session_id))
+         messages = [{"role": row.role, "content": row.content} for row in history if row.role in {"user", "assistant"}]
+         cancel_event = asyncio.Event()
+         self._active_cancels[session_id] = cancel_event
+@@ -318,19 +376,25 @@
+                     terminal = "cancel"
+                     yield {"event": "cancel"}
+                     break
++                if event.get("error") or event_name == "error":
++                    terminal = "error"
++                    yield {
++                        "event": "error", "code": "NODE_UNAVAILABLE",
++                        "error": "科研发现服务暂不可用，请稍后重试。",
++                    }
++                    break
+                 yield event
+                 if event_name == "end":
+                     terminal = "end"
+-                    break
+-                if event.get("error"):
+-                    terminal = "error"
+                     break
+         except asyncio.CancelledError:
+             terminal = "cancel"
+             raise
+         except Exception as exc:
+             terminal = "error"
+-            yield {"event": "error", "error": str(exc)}
++            logger.warning("Research discovery stream failed: {}", type(exc).__name__)
++            code = exc.code if isinstance(exc, CygnusXError) and exc.code else "NODE_UNAVAILABLE"
++            yield {"event": "error", "code": code, "error": "科研发现服务暂不可用，请稍后重试。"}
+         finally:
+             self._active_cancels.pop(session_id, None)
+             metadata: dict[str, Any] = {
+@@ -347,6 +411,7 @@
+                 session_id=session_id,
+                 role="assistant",
+                 content=assistant_text,
++                content_type="text",
+                 status=terminal,
+                 metadata=metadata,
+             )
+--- before/src/cygnusx/api/v1/research_agent.py
++++ after/src/cygnusx/api/v1/research_agent.py
+@@ -19,7 +19,6 @@
+     ResearchAgentSessionCreate,
+ )
+ from cygnusx.application.services.research_treasure_service import ResearchTreasureService
+-from cygnusx.core.config import get_settings
+ 
+ router = APIRouter()
+ def _service(db: DbSession) -> ResearchTreasureService:
+@@ -27,12 +26,8 @@
+ 
+ 
+ @router.get("/capabilities", response_model=ResearchAgentCapabilities)
+-async def capabilities(_: CurrentUserId) -> ResearchAgentCapabilities:
+-    settings = get_settings()
+-    return ResearchAgentCapabilities(
+-        native_ui_enabled=settings.treasure_native_ui_enabled,
+-        write_tools_enabled=False,
+-    )
++async def capabilities(user: CurrentUserId, db: DbSession) -> ResearchAgentCapabilities:
++    return await _service(db).capabilities(user)
+ 
+ 
+ @router.post("/sessions")
+@@ -42,7 +37,7 @@
+     db: DbSession,
+ ) -> object:
+     service = _service(db)
+-    service.ensure_enabled()
++    await service.ensure_access(current_user_id)
+     return await service.create_session(
+         current_user_id,
+         str(request.project_id) if request.project_id else None,
+@@ -58,14 +53,14 @@
+     project_id: UUID | None = None,
+ ) -> list[object]:
+     service = _service(db)
+-    service.ensure_enabled()
++    await service.ensure_access(current_user_id)
+     return await service.list_sessions(current_user_id, str(project_id) if project_id else None)
+ 
+ 
+ @router.get("/sessions/{session_id}/messages")
+ async def get_messages(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> list[object]:
+     service = _service(db)
+-    service.ensure_enabled()
++    await service.ensure_access(current_user_id)
+     return await service.messages(current_user_id, session_id)
+ 
+ 
+@@ -77,7 +72,8 @@
+     db: DbSession,
+ ) -> StreamingResponse:
+     service = _service(db)
+-    service.ensure_enabled()
++    # Check ownership before committing SSE headers so HTTP failures stay diagnosable.
++    await service.check_stream_access(current_user_id, session_id, request.model_id)
+ 
+     async def generate() -> AsyncIterator[str]:
+         async for event in service.stream_message(
+@@ -100,5 +96,5 @@
+ @router.post("/sessions/{session_id}/cancel")
+ async def cancel_session(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> dict[str, bool]:
+     service = _service(db)
+-    service.ensure_enabled()
++    await service.ensure_access(current_user_id)
+     return {"cancelled": await service.cancel(current_user_id, session_id)}
+--- before/frontend/src/views/TreasureResearchWorkbench.vue
++++ after/frontend/src/views/TreasureResearchWorkbench.vue
+@@ -1,13 +1,17 @@
+ <script setup lang="ts">
+ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+-import { NButton, NEmpty, NInput, NSelect, NSpin, useMessage } from 'naive-ui'
++import { NButton, NEmpty, NInput, NSelect, NSpin } from 'naive-ui'
+ import { projectsApi, type ProjectItem } from '@/api/projects'
+-import { researchAgentApi, researchStreamUrl, type DiscoveryProposal, type ResearchMessage, type ResearchSession } from '@/api/researchAgent'
++import { researchAgentApi, researchFailure, researchStreamUrl, type ResearchCapabilities, type DiscoveryProposal, type ResearchMessage, type ResearchSession } from '@/api/researchAgent'
+ import DiscoveryProposalCard from '@/components/research/DiscoveryProposalCard.vue'
+ import AgentToolPanel from '@/components/research/AgentToolPanel.vue'
+ import DatasetWorkspace from '@/components/research/DatasetWorkspace.vue'
+ 
+-const message = useMessage()
++const capabilities = ref<ResearchCapabilities | null>(null)
++const accessError = ref('')
++const historyError = ref('')
++const canReadSessions = computed(() => !loading.value && capabilities.value?.read_sessions === true)
++const canDiscover = computed(() => !loading.value && capabilities.value?.read_discovery === true)
+ const projects = ref<ProjectItem[]>([])
+ const sessions = ref<ResearchSession[]>([])
+ const selectedProjectId = ref<string | null>(null)
+@@ -57,23 +61,35 @@
+ }
+ 
+ async function loadSessions() {
+-  sessions.value = await researchAgentApi.listSessions(selectedProjectId.value || undefined)
++  const generation = sessionGeneration
++  const project = selectedProjectId.value
++  const restored = await researchAgentApi.listSessions(project || undefined)
++  if (generation !== sessionGeneration || project !== selectedProjectId.value) return
++  sessions.value = restored
+   if (sessions.value.length && !currentSession.value) await selectSession(sessions.value[0])
+ }
+ 
+ async function selectSession(session: ResearchSession) {
++  if (!canReadSessions.value || (session.project_id || null) !== selectedProjectId.value) return
+   stopCurrentStream()
+   const generation = sessionGeneration
+   currentSession.value = session
+   messages.value = []
+-  const restored = await researchAgentApi.getMessages(session.session_id)
+-  if (generation === sessionGeneration) messages.value = restored
++  try {
++    const restored = await researchAgentApi.getMessages(session.session_id)
++    if (generation === sessionGeneration) messages.value = restored
++  } catch (error) {
++    if (generation === sessionGeneration) historyError.value = researchFailure(error)
++  }
+ }
+ 
+ async function createSession() {
+-  stopCurrentStream()
+-  const generation = sessionGeneration
+-  const session = await researchAgentApi.createSession(selectedProjectId.value || undefined)
++  if (!canDiscover.value) return
++  stopCurrentStream()
++  const generation = sessionGeneration
++  let session: ResearchSession
++  try { session = await researchAgentApi.createSession(selectedProjectId.value || undefined) }
++  catch (error) { if (generation === sessionGeneration) streamError.value = researchFailure(error); return }
+   if (generation !== sessionGeneration) return
+   currentSession.value = session
+   messages.value = []
+@@ -83,7 +99,7 @@
+ 
+ async function send() {
+   const content = draft.value.trim()
+-  if (!content || sending.value) return
++  if (!content || sending.value || !canDiscover.value) return
+   if (!currentSession.value) await createSession()
+   if (!currentSession.value) return
+   const generation = sessionGeneration
+@@ -103,7 +119,10 @@
+       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
+       body: JSON.stringify({ content }), signal: controller.value.signal,
+     })
+-    if (!response.ok || !response.body) throw new Error(`科研发现请求失败（${response.status}）`)
++    if (!response.ok || !response.body) {
++      const data = await response.json().catch(() => ({})) as { code?: string }
++      throw { response: { status: response.status, data } }
++    }
+     const reader = response.body.getReader()
+     const decoder = new TextDecoder()
+     let buffer = ''
+@@ -128,12 +147,12 @@
+           assistant.metadata_json = { proposals: cardsToProposals(cards, sessionId, projectId), events: { cards, tools: toolTrace.value, grounding: grounding.value } }
+         }
+         if (event.event === 'cancel') assistant.status = 'cancelled'
+-        if (event.event === 'error') streamError.value = String(event.error || '科研发现服务异常')
++        if (event.event === 'error' || event.error) streamError.value = researchFailure({ code: event.code || 'NODE_UNAVAILABLE' })
+       }
+     }
+     assistant.status = streamError.value ? 'error' : assistant.status === 'cancelled' ? 'cancelled' : 'complete'
+   } catch (error) {
+-    if (generation === sessionGeneration && (error as Error).name !== 'AbortError') streamError.value = (error as Error).message
++    if (generation === sessionGeneration && (error as Error).name !== 'AbortError') streamError.value = researchFailure(error)
+     assistant.status = 'error'
+   } finally {
+     if (generation === sessionGeneration) {
+@@ -149,43 +168,70 @@
+   controller.value?.abort()
+   await researchAgentApi.cancel(currentSession.value.session_id).catch(() => undefined)
+   sending.value = false
++  streamError.value = '已停止接收回复。当前服务尚不保证跨进程取消；重新打开会话可查看已保存快照。'
+ }
+ 
+ async function changeProject(value: string) {
++  if (!canReadSessions.value) return
+   stopCurrentStream()
+   selectedProjectId.value = value || null
+   currentSession.value = null
+   messages.value = []
+-  await loadSessions()
+-}
+-
+-onMounted(async () => {
++  historyError.value = ''
++  sessions.value = []
++  try { await loadSessions() } catch (error) { historyError.value = researchFailure(error) }
++}
++
++async function refreshAccess() {
++  stopCurrentStream()
++  const generation = sessionGeneration
++  capabilities.value = null
++  accessError.value = ''
++  historyError.value = ''
++  loading.value = true
++  sessions.value = []
++  currentSession.value = null
++  messages.value = []
+   try {
++    const access = await researchAgentApi.capabilities()
++    if (generation !== sessionGeneration) return
++    capabilities.value = access
++    if (!access.read_sessions) { accessError.value = researchFailure({ code: access.reason_code || 'FEATURE_DISABLED' }); return }
++    if (!access.read_discovery) accessError.value = researchFailure({ code: access.reason_code || 'NODE_NOT_CONFIGURED' })
+     projects.value = await projectsApi.listProjects()
++    if (generation !== sessionGeneration) return
++    loading.value = false
+     await loadSessions()
+   } catch (error) {
+-    streamError.value = (error as Error).message || '科研发现入口暂时不可用'
+-  } finally { loading.value = false }
++    if (generation === sessionGeneration) historyError.value = researchFailure(error)
++  } finally { if (generation === sessionGeneration) loading.value = false }
++}
++onMounted(() => {
++  void refreshAccess()
++  window.addEventListener('focus', refreshAccess)
+ })
+-onUnmounted(() => controller.value?.abort())
++onUnmounted(() => { stopCurrentStream(); window.removeEventListener('focus', refreshAccess) })
+ </script>
+ 
+ <template>
+   <main class="treasure-page" aria-labelledby="treasure-title">
+     <header class="treasure-header">
+       <div><p class="eyebrow">CygnusX BioOps</p><h1 id="treasure-title">科研寻宝鼠</h1><p>面向 GEO、SRA、ENA 与文献的只读科研发现。</p></div>
+-      <div class="context-controls"><label for="project-select">项目上下文</label><NSelect id="project-select" :value="selectedProjectId || ''" :options="projectOptions" @update:value="changeProject" /><NButton secondary @click="createSession">新会话</NButton></div>
++      <div class="context-controls"><label for="project-select">项目上下文</label><NSelect id="project-select" :disabled="!canReadSessions" :value="selectedProjectId || ''" :options="projectOptions" @update:value="changeProject" /><NButton :disabled="!canDiscover" secondary @click="createSession">新会话</NButton><NButton :disabled="loading" @click="refreshAccess">刷新权限</NButton></div>
+     </header>
++    <p v-if="accessError" role="status">{{ accessError }}</p>
++    <p v-if="historyError" role="alert">{{ historyError }}</p>
+     <section class="treasure-layout">
+       <aside class="session-panel" aria-label="科研发现会话">
+-        <div class="panel-title"><strong>历史会话</strong><span>{{ sessions.length }}</span></div>
++        <div class="panel-title"><strong>历史会话</strong><span v-if="canReadSessions && !historyError">{{ sessions.length }}</span><span v-else>未加载</span></div>
+         <NSpin v-if="loading" size="small" />
+-        <NEmpty v-else-if="!sessions.length" description="暂无平台会话" />
++        <NEmpty v-else-if="!canReadSessions || historyError" description="会话列表暂不可读取" />
++        <NEmpty v-else-if="!sessions.length" description="暂无平台会话（旧独立应用历史未合并）" />
+         <button v-for="session in sessions" v-else :key="session.session_id" class="session-item" :class="{ active: currentSession?.session_id === session.session_id }" @click="selectSession(session)">{{ session.title }}</button>
+       </aside>
+       <section class="conversation-panel">
+-        <DatasetWorkspace v-if="currentSession" :key="`dataset-${currentSession.session_id}`" ref="datasetPanel" :project-id="currentSession.project_id" />
+-        <AgentToolPanel v-if="currentSession" :key="currentSession.session_id" ref="toolPanel" :session-id="currentSession.session_id" />
++        <DatasetWorkspace v-if="currentSession && capabilities?.prepare_import" :key="`dataset-${currentSession.session_id}`" ref="datasetPanel" :project-id="currentSession.project_id" />
++        <AgentToolPanel v-if="currentSession && capabilities?.prepare_import" :key="currentSession.session_id" ref="toolPanel" :session-id="currentSession.session_id" />
+         <div v-if="loading" class="loading-state"><NSpin /> 正在加载科研发现</div>
+         <NEmpty v-else-if="!messages.length" description="从一个科研问题开始，例如：寻找小鼠肝脏单细胞 RNA-seq 数据集" class="empty-state" />
+         <div v-else class="message-list" aria-live="polite">
+@@ -194,7 +240,7 @@
+           <div v-if="grounding" class="grounding">已保留正文与证据编号的核验状态，请以来源页面为准。</div>
+         </div>
+         <p v-if="streamError" class="error-text" role="alert">{{ streamError }}</p>
+-        <form class="composer" @submit.prevent="send"><NInput v-model:value="draft" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" maxlength="12000" placeholder="描述你想寻找的研究、物种或实验条件" aria-label="科研发现问题" @keydown.enter.exact.prevent="send" /><NButton v-if="sending" type="warning" @click="cancel">取消检索</NButton><NButton v-else type="primary" attr-type="submit" :disabled="!draft.trim()">发送</NButton></form>
++        <form class="composer" @submit.prevent="send"><NInput v-model:value="draft" :disabled="!canDiscover" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" maxlength="12000" placeholder="描述你想寻找的研究、物种或实验条件" aria-label="科研发现问题" @keydown.enter.exact.prevent="send" /><NButton v-if="sending" type="warning" @click="cancel">停止接收</NButton><NButton v-else type="primary" attr-type="submit" :disabled="!draft.trim() || !canDiscover">发送</NButton></form>
+       </section>
+     </section>
+   </main>
+--- before/frontend/src/views/TreasureMouseView.vue
++++ after/frontend/src/views/TreasureMouseView.vue
+@@ -1,33 +1,8 @@
+ <script setup lang="ts">
+-import { defineAsyncComponent, ref } from 'vue'
++import TreasureResearchWorkbench from './TreasureResearchWorkbench.vue'
+ 
+-const Workbench = defineAsyncComponent(() => import('./TreasureResearchWorkbench.vue'))
+-const mode = ref<'original' | 'platform'>('original')
+-const loading = ref(true)
+ </script>
+ 
+ <template>
+-  <main class="treasure-entry" aria-label="科研寻宝鼠">
+-    <nav class="treasure-modes" aria-label="寻宝鼠工作区">
+-      <button :aria-pressed="mode === 'original'" @click="mode = 'original'">寻宝鼠</button>
+-      <button :aria-pressed="mode === 'platform'" @click="mode = 'platform'">平台数据与分析</button>
+-      <a href="/treasure-mouse/" target="_blank" rel="noopener">独立窗口 ↗</a>
+-    </nav>
+-    <section v-show="mode === 'original'" class="original-workspace">
+-      <p v-if="loading" class="loading" role="status">正在打开原版寻宝鼠…</p>
+-      <iframe title="寻宝鼠原版" src="/treasure-mouse/" @load="loading = false" />
+-    </section>
+-    <Workbench v-if="mode === 'platform'" />
+-  </main>
++  <TreasureResearchWorkbench />
+ </template>
+-
+-<style scoped>
+-.treasure-entry { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--neutral-bg); }
+-.treasure-modes { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--neutral-border); }
+-.treasure-modes button, .treasure-modes a { padding: 6px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--neutral-text-secondary); font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; }
+-.treasure-modes button[aria-pressed="true"] { background: var(--neutral-card); color: var(--primary-color); }
+-.treasure-modes a { margin-left: auto; }
+-.original-workspace { position: relative; flex: 1; min-height: 0; }
+-iframe { display: block; width: 100%; height: 100%; border: 0; }
+-.loading { position: absolute; top: 12px; left: 16px; color: var(--neutral-text-secondary); }
+-</style>
+--- before/frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts
++++ after/frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts
+@@ -6,8 +6,8 @@
+ 
+ const calls = vi.hoisted(() => ({ messages: vi.fn(), sessions: vi.fn(), related: vi.fn() }))
+ vi.mock('@/api/projects', () => ({ projectsApi: { listProjects: async () => [] } }))
+-vi.mock('@/api/researchAgent', () => ({ researchStreamUrl: (id: string) => '/stream/' + id,
+-  researchAgentApi: { listSessions: calls.sessions, getMessages: calls.messages } }))
++vi.mock('@/api/researchAgent', () => ({ researchFailure: () => '服务不可用', researchStreamUrl: (id: string) => '/stream/' + id,
++  researchAgentApi: { capabilities: async () => ({ read_sessions: true, read_discovery: true, prepare_import: true }), listSessions: calls.sessions, getMessages: calls.messages } }))
+ vi.mock('@/api/agentTools', () => ({ agentToolsApi: { related: calls.related }, asToolProposal: () => null }))
+ const sessionA = { session_id: 'session-a', title: '会话 A', project_id: null }
+ const sessionB = { session_id: 'session-b', title: '会话 B', project_id: null }
+--- before/frontend/src/components/research/__tests__/TreasureOriginalEntry.test.ts
++++ after/frontend/src/components/research/__tests__/TreasureOriginalEntry.test.ts
+@@ -5,15 +5,15 @@
+ 
+ vi.mock('@/views/TreasureResearchWorkbench.vue', () => ({ default: { template: '<div>平台工作台</div>' } }))
+ 
+-describe('original treasure entry', () => {
+-  it('opens the original app without requiring the native research API', () => {
++describe('native treasure entry', () => {
++  it('renders the native workbench without a legacy application entry', () => {
+     const host = document.createElement('div')
+     const app = createApp(TreasureMouseView)
+     app.mount(host)
+     try {
+-      expect(host.querySelector('iframe')?.getAttribute('src')).toBe('/treasure-mouse/')
+-      expect(host.querySelector('button')?.getAttribute('aria-pressed')).toBe('true')
+-      expect(host.textContent).not.toContain('平台工作台')
++      expect(host.querySelector('iframe')).toBeNull()
++      expect(host.querySelector('a[href*="treasure-mouse"]')).toBeNull()
++      expect(host.textContent).toContain('平台工作台')
+     } finally { app.unmount() }
+   })
+ })
+--- before/frontend/src/api/researchAgent.ts
++++ after/frontend/src/api/researchAgent.ts
+@@ -1,4 +1,35 @@
+ import apiClient from './client'
++
++export interface ResearchCapabilities {
++  native_ui_enabled: boolean
++  enabled: boolean
++  read_discovery: boolean
++  read_sessions: boolean
++  prepare_import: boolean
++  prepare_analysis: boolean
++  project_required_for_prepare: true
++  write_execution: false
++  write_tools_enabled: false
++  reason_code: string | null
++  cancellation_mode: 'browser_abort_only'
++}
++
++/** Keep server detail/stack traces out of the UI; codes describe the next action. */
++export function researchFailure(error: unknown): string {
++  const failure = error as { response?: { status?: number; data?: { code?: string } }; code?: string }
++  const status = failure?.response?.status
++  const code = failure?.response?.data?.code || failure?.code
++  if (code === 'FEATURE_DISABLED') return '科研发现入口尚未启用，请联系管理员确认只读服务状态。'
++  if (code === 'MODULE_LOCKED') return '你尚无寻宝鼠模块权限，请联系管理员开通。'
++  if (code === 'PROJECT_FORBIDDEN') return '当前项目授权已变更，请重新选择有权访问的项目。'
++  if (code === 'PROVIDER_UNAVAILABLE') return '平台模型暂不可用，请联系管理员检查模型配置。'
++  if (status === 401) return '登录状态已失效，请重新登录后重试。'
++  if (status === 403) return '当前操作未获授权，请刷新权限或重新选择项目。'
++  if (status === 404) return '会话或项目已不可用，请刷新列表后重试。'
++  if (status === 422) return '请求参数不符合要求，请检查项目与输入内容。'
++  if (code === 'NODE_NOT_CONFIGURED' || code === 'NODE_UNAVAILABLE' || status === 503) return '科研发现服务暂不可用，已保存的会话可在服务恢复后查看。'
++  return '无法连接科研发现服务，请检查网络后重试。'
++}
+ 
+ export interface DiscoveryProposal {
+   schema_version: '1.0'
+@@ -44,6 +75,9 @@
+ }
+ 
+ export const researchAgentApi = {
++  async capabilities(): Promise<ResearchCapabilities> {
++    return (await apiClient.get<ResearchCapabilities>('/research-agent/capabilities')).data
++  },
+   async listSessions(projectId?: string): Promise<ResearchSession[]> {
+     const response = await apiClient.get<ResearchSession[]>('/research-agent/sessions', {
+       params: projectId ? { project_id: projectId } : undefined,
+--- before/ARCHITECTURE_DESIGN/CygnusX_frontend.md
++++ after/ARCHITECTURE_DESIGN/CygnusX_frontend.md
+@@ -2616,7 +2616,7 @@
+ 
+ ### 38.1 已核实现状
+ 
+-1. **主平台与寻宝鼠边界**：主平台由 `frontend/src/main.ts` 单入口创建 Vue 应用，路由页面使用动态 import。`/treasure-mouse` 对应 `TreasureMouseView.vue`，该组件默认 iframe 嵌入同源 `/treasure-mouse/` 原版 React 应用，并可切换至 `TreasureResearchWorkbench.vue` 平台数据与分析工作台。原版请求走子应用自身服务；平台工作台仍走受开关保护的 research-agent BFF，二者尚未共享会话与下载/分析交接。开发与生产 nginx 均转发原版路径至 treasure-mouse-web，Vite 开发代理同步转发该路径。寻宝鼠子应用源码不在 `frontend/src`，本节不描述其内部布局、主题或状态实现。
++1. **主平台与寻宝鼠边界**：主平台由 `frontend/src/main.ts` 单入口创建 Vue 应用，路由页面使用动态 import。`/treasure-mouse` 对应 `TreasureMouseView.vue`，当前直接挂载 `TreasureResearchWorkbench.vue`，不含 iframe 或旧账号入口。首屏先读取 `/api/v1/research-agent/capabilities`；native 关闭或模块未授权时不请求项目/会话。窗口重新聚焦或手动刷新会重验许可并清空旧内容。Research BFF 对实际业务请求重验 active、模块和 owner，project=null 允许全局只读历史。开发与生产 Nginx 配置关闭旧 `/treasure-mouse/` 子应用路径，Node 科研后端仍留内网。停止接收不保证跨进程取消。当前仅 P0 访问边界修复，旧 React 主视觉、完整协议与下载/分析交接尚未完成；未部署，Gate 仍待审查。详见 `docs/implementation/treasure-native-p0-access-and-entry.md`。
+ 2. **全局壳层与 fullscreen 语义**：受保护路由均由 `DefaultLayout.vue` 承载。路由 `meta.fullscreen` 在该布局中让内容区 padding 归零并使用原生滚动容器；它不会移除全局 Header 或 Sidebar。AI/Studio 路由会自动折叠全局 Sidebar。工具区域另有零外层 padding 规则，普通内容区使用 24px。
+ 3. **AI/Studio 内部工具栏**：`AIChatView.vue` 挂载 `AgentWorkspace.vue`；后者包含 60px `AgentSidebar`，活跃会话时 `AgentSandbox.vue` 渲染会话级 header。Studio 页面在全局 Header 下方渲染自己的 `.studio-topbar`。这些是全局壳层内的工作区导航/操作区，不替代全局 Header。
+ 4. **项目上下文**：Agent session 数据包含 `project_id`，`agentHub` 在 chat stream 请求中传递该字段。新 Studio 会话提供项目选择；未选择时前端提示后端将会话归入默认项目。项目详情使用路由 `projectId` 加载项目及关联概览；Studio API DTO 支持 `project_id`，报告转 Studio 使用 `report_id` 来源入口。项目关联确实存在，但各入口的传递规则不同；当前证据不支持“平台缺少项目上下文”或“必须强制选择项目”的结论。
+@@ -2625,7 +2625,7 @@
+ 
+ ### 38.2 后续评估项（非已实施设计）
+ 
+-- 先取得寻宝鼠 iframe 子应用源码或受控运行证据，再判断哪些主题和交互规范可以跨应用共享；不要仅凭父页面推断子应用视觉。
++- 寻宝鼠旧 React 展示源码位于 `pipelines/Treasure-Seeking_Mouse/src/`；P1-A 须以隔离 PoC、旧新版截图与人工视觉验收判断展示复用方式，不凭临时平台工作台推断已恢复原版体验。
+ - 对比文件管理、AI 助手、Studio 的全局壳层、内部工具栏和滚动容器职责。确认实际重复后，再决定是否抽象 `WorkspaceLayout`；保留各业务工作区所需的导航和信息密度。
+ - 按 chat、Studio、下载、分析任务、文件空间逐条核对后端项目关联契约。前端当前允许未选择项目时使用默认项目；任何改变默认行为的提议都需先核实业务边界。
+ - 在实现统一错误体验前，先以浏览器验证 `AppErrorBoundary` 对异步路由加载失败的表现；再决定是否增加 router error hook 或重试 UI。
+--- /dev/null
++++ after/tests/unit/test_treasure_native_access.py
+@@ -0,0 +1,280 @@
++"""P0: real JWT/ASGI routes + isolated SQLite, never a deployed service or queue."""
++
++from __future__ import annotations
++
++from collections.abc import AsyncIterator, Iterator
++from contextlib import asynccontextmanager
++from datetime import UTC, datetime, timedelta
++from types import SimpleNamespace
++from typing import Any
++from uuid import UUID, uuid4
++
++import jwt
++import pytest
++from fastapi import FastAPI, Request
++from fastapi.responses import JSONResponse
++from httpx import ASGITransport, AsyncClient
++from sqlalchemy import create_engine, select
++from sqlalchemy.dialects.postgresql import JSONB
++from sqlalchemy.ext.asyncio import AsyncSession
++from sqlalchemy.ext.compiler import compiles
++from sqlalchemy.orm import Session
++
++from cygnusx.api import deps
++from cygnusx.api.v1.research_agent import router
++from cygnusx.application.services import research_treasure_service as research
++from cygnusx.core import security
++from cygnusx.core.exceptions import CygnusXError
++from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
++from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
++from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.models.user import UserModel
++
++pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
++TEST_KEY = "treasure-native-test-key-only-not-production"
++
++
++@compiles(JSONB, "sqlite")
++def sqlite_json(element: Any, compiler: Any, **kw: Any) -> str:
++    return "JSON"
++
++
++class OfflineDB(AsyncSession):
++    """Actual SQLite SQL with an async facade; no sockets or external credentials."""
++
++    def __init__(self, engine: Any) -> None:
++        self.sync = Session(engine, expire_on_commit=False)
++
++    async def get(self, model: Any, key: Any, **kw: Any) -> Any:
++        return self.sync.get(model, key, **kw)
++
++    async def execute(self, statement: Any, **kw: Any) -> Any:
++        return self.sync.execute(statement, **kw)
++
++    def add(self, instance: Any, **kw: Any) -> None:
++        self.sync.add(instance)
++
++    async def flush(self, **kw: Any) -> None:
++        self.sync.flush()
++
++
++@pytest.fixture
++def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
++    engine = create_engine("sqlite://")
++    for model in (UserModel, ProjectModel, AIProviderConfigModel, ChatSessionModel, ChatMessageModel):
++        model.__table__.create(engine)
++    db = OfflineDB(engine)
++    owner, other, project, foreign, provider = [uuid4() for _ in range(5)]
++    for uid in (owner, other):
++        db.add(UserModel(id=uid, username=str(uid), email=f"{uid}@invalid.test",
++                         hashed_password="unused", status="active", role="user", token_version=0))
++    for pid, uid in ((project, owner), (foreign, other)):
++        db.add(ProjectModel(id=pid, user_id=uid, slug=str(pid), name=str(pid)))
++    for sid, uid, pid in (("global", owner, None), ("owned", owner, project),
++                          ("foreign", other, foreign)):
++        db.add(ChatSessionModel(session_id=sid, user_id=str(uid),
++                                project_id=str(pid) if pid else None, model_id=provider,
++                                title=sid, status="active",
++                                sandbox_meta={"research_agent": research.RESEARCH_AGENT_MARKER}))
++        db.add(ChatMessageModel(message_id=sid, session_id=sid, content=f"message-{sid}",
++                                role="assistant", status="complete", metadata_json={}))
++    db.sync.commit()
++    settings = SimpleNamespace(treasure_native_ui_enabled=True,
++        treasure_agent_url="http://isolated-node.invalid", treasure_agent_internal_token="test-only",
++        tool_gateway_read_enabled=False, dataset_discovery_readonly=False,
++        jwt_secret_key=TEST_KEY, jwt_algorithm="HS256")
++    monkeypatch.setattr(research, "get_settings", lambda: settings)
++    monkeypatch.setattr(security, "get_settings", lambda: settings)
++
++    @asynccontextmanager
++    async def auth_db() -> AsyncIterator[OfflineDB]:
++        yield db
++
++    monkeypatch.setattr(deps, "get_session_factory", lambda: auth_db)
++    app = FastAPI()
++    app.include_router(router, prefix="/api/v1/research-agent")
++
++    async def route_db() -> OfflineDB:
++        return db
++
++    app.dependency_overrides[deps.get_db] = route_db
++
++    @app.exception_handler(CygnusXError)
++    async def error_handler(request: Request, exc: CygnusXError) -> JSONResponse:
++        return JSONResponse(status_code=exc.status_code,
++                            content={"detail": exc.detail, "code": exc.code})
++
++    def token(uid: UUID = owner, **claims: Any) -> dict[str, str]:
++        payload = {"sub": str(uid), "type": "access", "token_version": 0,
++                   "exp": datetime.now(UTC) + timedelta(minutes=5), **claims}
++        return {"Authorization": "Bearer " + jwt.encode(payload, TEST_KEY, algorithm="HS256")}
++
++    yield SimpleNamespace(app=app, db=db, owner=owner, other=other, project=project,
++                          foreign=foreign, settings=settings, headers=token)
++    db.sync.close()
++    engine.dispose()
++
++
++async def request(env: SimpleNamespace, method: str, path: str, **kwargs: Any) -> Any:
++    async with AsyncClient(transport=ASGITransport(app=env.app), base_url="http://isolated") as c:
++        return await c.request(method, "/api/v1/research-agent" + path,
++                               headers=kwargs.pop("headers", env.headers()), **kwargs)
++
++
++async def test_capability_remains_readable_when_native_disabled(env: SimpleNamespace) -> None:
++    env.settings.treasure_native_ui_enabled = False
++    response = await request(env, "GET", "/capabilities")
++    assert response.status_code == 200
++    body = response.json()
++    assert body["reason_code"] == "FEATURE_DISABLED"
++    assert not any(body[name] for name in ("enabled", "read_sessions", "read_discovery",
++                                         "prepare_import", "prepare_analysis", "write_execution"))
++
++
++@pytest.mark.parametrize("method,path,body", [
++    ("GET", "/sessions", None), ("POST", "/sessions", {}),
++    ("GET", "/sessions/owned/messages", None),
++    ("POST", "/sessions/owned/messages:stream", {"content": "read only"}),
++    ("POST", "/sessions/owned/cancel", None),
++])
++@pytest.mark.parametrize("enabled", [False, True])
++async def test_module_revocation_denies_every_route_before_native_gate(
++    env: SimpleNamespace, method: str, path: str, body: Any, enabled: bool,
++) -> None:
++    env.settings.treasure_native_ui_enabled = enabled
++    user = env.db.sync.get(UserModel, env.owner)
++    user.disabled_modules = ["treasure-mouse"]
++    env.db.sync.commit()
++    response = await request(env, method, path, json=body)
++    assert response.status_code == 403
++    assert response.json()["code"] == "MODULE_LOCKED"
++    assert len(env.db.sync.scalars(select(ChatSessionModel)).all()) == 3
++    assert len(env.db.sync.scalars(select(ChatMessageModel)).all()) == 3
++
++
++async def test_permission_refresh_is_fail_closed(env: SimpleNamespace) -> None:
++    assert (await request(env, "GET", "/capabilities")).json()["read_sessions"]
++    env.db.sync.get(UserModel, env.owner).disabled_modules = ["treasure-mouse"]
++    env.db.sync.commit()
++    body = (await request(env, "GET", "/capabilities")).json()
++    assert body["reason_code"] == "MODULE_LOCKED" and not body["read_sessions"]
++
++
++@pytest.mark.parametrize("headers", ["anonymous", "expired", "wrong_version", "invalid"])
++async def test_real_jwt_authentication_rejects_invalid_identity(
++    env: SimpleNamespace, headers: str,
++) -> None:
++    options = {
++        "anonymous": {},
++        "expired": env.headers(exp=datetime.now(UTC) - timedelta(minutes=1)),
++        "wrong_version": env.headers(token_version=99),
++        "invalid": {"Authorization": "Bearer not-a-jwt"},
++    }
++    response = await request(env, "GET", "/capabilities", headers=options[headers])
++    assert response.status_code == 401
++
++
++async def test_global_history_and_message_dto_without_project_or_old_chat_runtime(
++    env: SimpleNamespace,
++) -> None:
++    response = await request(env, "GET", "/sessions")
++    assert response.status_code == 200
++    assert [s["session_id"] for s in response.json()] == ["global"]
++    messages = await request(env, "GET", "/sessions/global/messages")
++    assert messages.status_code == 200
++    assert messages.json()[0]["content"] == "message-global"
++
++
++@pytest.mark.parametrize("path,status", [
++    ("/sessions/foreign/messages", 404),
++    ("/sessions/foreign/messages:stream", 404),
++    ("/sessions?project_id=foreign", 403),
++    ("/sessions?project_id=bad-uuid", 422),
++])
++async def test_owner_scope_errors_remain_http_errors(
++    env: SimpleNamespace, path: str, status: int,
++) -> None:
++    path = path.replace("project_id=foreign", "project_id=" + str(env.foreign))
++    method = "POST" if path.endswith(":stream") else "GET"
++    response = await request(env, method, path, json={"content": "query"} if method == "POST" else None)
++    assert response.status_code == status
++    assert "text/event-stream" not in response.headers.get("content-type", "")
++
++
++async def test_disabled_native_and_unavailable_provider_are_distinct(env: SimpleNamespace) -> None:
++    env.settings.treasure_native_ui_enabled = False
++    response = await request(env, "GET", "/sessions")
++    assert response.status_code == 403 and response.json()["code"] == "FEATURE_DISABLED"
++    env.settings.treasure_native_ui_enabled = True
++    response = await request(env, "POST", "/sessions", json={})
++    assert response.status_code == 503 and response.json()["code"] == "PROVIDER_UNAVAILABLE"
++
++
++async def test_admin_can_access_module_but_not_another_owners_project(env: SimpleNamespace) -> None:
++    user = env.db.sync.get(UserModel, env.owner)
++    user.role = "admin"
++    user.disabled_modules = ["treasure-mouse"]
++    env.db.sync.commit()
++    assert (await request(env, "GET", "/capabilities")).json()["enabled"]
++    response = await request(env, "GET", "/sessions?project_id=" + str(env.foreign))
++    assert response.status_code == 403
++
++
++async def test_prepare_capabilities_respect_modules_and_never_advertise_execution(
++    env: SimpleNamespace,
++) -> None:
++    env.settings.tool_gateway_read_enabled = True
++    env.settings.dataset_discovery_readonly = True
++    body = (await request(env, "GET", "/capabilities")).json()
++    assert body["prepare_import"] and body["prepare_analysis"]
++    assert body["project_required_for_prepare"] and not body["write_execution"]
++    env.db.sync.get(UserModel, env.owner).disabled_modules = ["flows", "downloads"]
++    env.db.sync.commit()
++    body = (await request(env, "GET", "/capabilities")).json()
++    assert body["read_discovery"] and not body["prepare_import"] and not body["prepare_analysis"]
++
++
++async def test_downstream_configuration_not_confused_with_empty_history(env: SimpleNamespace) -> None:
++    env.settings.treasure_agent_internal_token = ""
++    body = (await request(env, "GET", "/capabilities")).json()
++    assert body["read_sessions"] and not body["read_discovery"]
++    assert body["reason_code"] == "NODE_NOT_CONFIGURED"
++
++async def test_stream_provider_failure_is_http_503_before_sse(env: SimpleNamespace) -> None:
++    response = await request(env, "POST", "/sessions/global/messages:stream", json={"content": "read"})
++    assert response.status_code == 503
++    assert response.json()["code"] == "PROVIDER_UNAVAILABLE"
++    assert "text/event-stream" not in response.headers.get("content-type", "")
++
++
++@pytest.mark.parametrize("failure_mode", ["exception", "event"])
++async def test_stream_persists_messages_and_sanitizes_downstream_failure(
++    env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, failure_mode: str
++) -> None:
++    async def provider(self: Any, model_id: Any) -> Any:
++        return SimpleNamespace(model="isolated-test-model")
++
++    async def stream(self: Any, **kw: Any) -> AsyncIterator[dict[str, Any]]:
++        yield {"event": "delta", "delta": "已发现"}
++        if failure_mode == "event":
++            yield {"event": "error", "error": "SECRET INTERNAL TRACE"}
++        else:
++            raise RuntimeError("SECRET INTERNAL TRACE")
++
++    monkeypatch.setattr(research.ResearchTreasureService, "_provider", provider)
++    monkeypatch.setattr(research.TreasureAgentAdapter, "stream", stream)
++    response = await request(env, "POST", "/sessions/global/messages:stream", json={"content": "read"})
++    assert response.status_code == 200
++    assert "NODE_UNAVAILABLE" in response.text
++    assert "SECRET" not in response.text
++    restored = await request(env, "GET", "/sessions/global/messages")
++    rows = restored.json()
++    assert any(row["role"] == "user" and row["content"] == "read" for row in rows)
++    assert any(row["content"] == "已发现" and row["status"] == "error" for row in rows)
++
++async def test_inactive_user_cannot_read_capabilities(env: SimpleNamespace) -> None:
++    user = env.db.sync.get(UserModel, env.owner)
++    user.status = "disabled"
++    env.db.sync.commit()
++    response = await request(env, "GET", "/capabilities")
++    assert response.status_code == 401
+--- /dev/null
++++ after/frontend/src/components/research/__tests__/TreasureAccess.test.ts
+@@ -0,0 +1,80 @@
++// @vitest-environment jsdom
++import { createApp, nextTick } from 'vue'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import Workbench from '@/views/TreasureResearchWorkbench.vue'
++import { researchFailure } from '@/api/researchAgent'
++const calls = vi.hoisted(() => ({ capabilities: vi.fn(), projects: vi.fn(), sessions: vi.fn(), messages: vi.fn() }))
++vi.mock('@/api/projects', () => ({ projectsApi: { listProjects: calls.projects } }))
++vi.mock('@/api/researchAgent', async (original) => ({
++  ...await original<typeof import('@/api/researchAgent')>(),
++  researchAgentApi: { capabilities: calls.capabilities, listSessions: calls.sessions, getMessages: calls.messages },
++}))
++vi.mock('@/components/research/AgentToolPanel.vue', () => ({ default: { template: '<div />' } }))
++vi.mock('@/components/research/DatasetWorkspace.vue', () => ({ default: { template: '<div />' } }))
++async function settle() { for (let i = 0; i < 12; i++) { await Promise.resolve(); await nextTick() } }
++let cleanup: (() => void) | undefined
++async function mount() {
++  const host = document.createElement('div')
++  document.body.append(host)
++  const app = createApp(Workbench)
++  app.mount(host)
++  cleanup = () => { app.unmount(); host.remove() }
++  await settle()
++  return host
++}
++beforeEach(() => {
++  vi.resetAllMocks()
++  calls.projects.mockResolvedValue([])
++  calls.sessions.mockResolvedValue([])
++  calls.messages.mockResolvedValue([])
++})
++afterEach(() => cleanup?.())
++describe('treasure access preflight', () => {
++  it('skips protected calls when disabled', async () => {
++    calls.capabilities.mockResolvedValue({ read_sessions: false, read_discovery: false, reason_code: 'FEATURE_DISABLED' })
++    const host = await mount()
++    expect(calls.projects).not.toHaveBeenCalled()
++    expect(calls.sessions).not.toHaveBeenCalled()
++    expect(host.textContent).toContain('入口尚未启用')
++    expect(host.textContent).toContain('未加载')
++    expect(host.textContent).not.toContain('暂无平台会话')
++  })
++  it('loads capabilities before projects and sessions', async () => {
++    calls.capabilities.mockResolvedValue({ read_sessions: true, read_discovery: true })
++    const host = await mount()
++    expect(calls.capabilities.mock.invocationCallOrder[0]).toBeLessThan(calls.projects.mock.invocationCallOrder[0])
++    expect(calls.projects.mock.invocationCallOrder[0]).toBeLessThan(calls.sessions.mock.invocationCallOrder[0])
++    expect(host.textContent).toContain('暂无平台会话')
++  })
++  it('clears private history after revocation', async () => {
++    calls.capabilities.mockResolvedValueOnce({ read_sessions: true, read_discovery: true })
++      .mockResolvedValueOnce({ read_sessions: false, reason_code: 'MODULE_LOCKED' })
++    calls.sessions.mockResolvedValue([{ session_id: 's', title: '会话一', project_id: null }])
++    calls.messages.mockResolvedValue([{ message_id: 'm', role: 'assistant', content: '私有历史内容', metadata_json: {} }])
++    const host = await mount()
++    expect(host.textContent).toContain('私有历史内容')
++    window.dispatchEvent(new Event('focus'))
++    await settle()
++    expect(host.textContent).not.toContain('私有历史内容')
++    expect(host.textContent).toContain('尚无寻宝鼠模块权限')
++    expect(calls.sessions).toHaveBeenCalledTimes(1)
++  })
++  it('does not disguise a failed preflight as empty history', async () => {
++    calls.capabilities.mockRejectedValue({ response: { status: 401 } })
++    const host = await mount()
++    expect(host.textContent).toContain('登录状态已失效')
++    expect(host.textContent).not.toContain('暂无平台会话')
++    expect(calls.sessions).not.toHaveBeenCalled()
++  })
++})
++describe('safe research errors', () => {
++  it.each([
++    [401, undefined, '登录状态已失效'], [403, 'MODULE_LOCKED', '尚无寻宝鼠模块权限'],
++    [403, 'PROJECT_FORBIDDEN', '项目授权已变更'], [422, undefined, '请求参数不符合要求'],
++    [503, 'PROVIDER_UNAVAILABLE', '平台模型暂不可用'], [503, 'NODE_UNAVAILABLE', '科研发现服务暂不可用'],
++  ])('maps %s/%s without exposing details', (status, code, expected) => {
++    const result = researchFailure({ response: { status, data: { code, detail: 'SECRET INTERNAL TRACE' } } })
++    expect(result).toContain(expected)
++    expect(result).not.toContain('SECRET')
++  })
++})
+--- /dev/null
++++ after/docs/adr/treasure-native-entry-and-capabilities.md
+@@ -0,0 +1,23 @@
++# ADR：寻宝鼠统一原生入口与能力预检
++
++状态：P0 已实现，待 Gate 审查；未发布。范围仅访问边界，不决定 P1-A 的 React/Vue 展示方案。
++
++## 决策与理由
++
++`TreasureMouseView.vue` 只挂载平台 `TreasureResearchWorkbench.vue`。Vue 持有平台身份、项目与平台会话；不再默认 iframe，也不提供用户可切换的旧账号入口。Node 科研服务保留为内网适配器。两个 Nginx 配置对 `/treasure-mouse` 和 `/treasure-mouse/` 旧子应用路径返回 404；平台页面使用 Vue Router 的 hash 路由。未重载 Nginx。
++
++已登录用户先读取 `/api/v1/research-agent/capabilities`，native flag 关闭时仍可获得安全的能力快照。模块未授权返回 disabled 快照，不访问受保护会话；实际业务请求在服务端重新校验 active、模块和 owner。注册表的 treasure-mouse `api_prefix` 维持原值，避免中间件提前 403 破坏 capability 契约；BFF 服务明确复用现有用户 `disabled_modules` 与管理员豁免语义。
++
++capability 是配置与身份许可的前提，不是 Redis、模型、Node、Worker 的健康保证；`write_execution` 与 `write_tools_enabled` 均由 DTO 限制为 false。实际下游仍会 fail closed。
++
++## 结果与边界
++
++- 用户得到一个入口；native 关闭时可解释原因，不把请求失败展示为零历史。
++- 模块撤权后手动刷新或窗口重新聚焦会清空当前内容并重新预检；每次 HTTP 业务访问继续独立校验。已开始的 SSE 不保证中途撤权终止。
++- 全局 project=null 仅用于只读科研发现；不隐式创建默认项目。
++- 停止按钮明确为“停止接收”。实例内 asyncio.Event 不构成跨请求或跨进程取消保证，P1-C 再处理。
++- 旧 React 主视觉尚未恢复；此 ADR 不宣称临时 Vue 工作台满足 P1-A/B。
++
++## 回退
++
++原始脏文件已保存在 `evidence/treasure-native/baseline/`，附 HEAD 与内容 hash。按文件选择性恢复本次增量；禁止 git reset 覆盖其他 Phase5 工作。回退也不得重新暴露旧独立认证 API 或放开写门禁。
+--- /dev/null
++++ after/docs/implementation/treasure-native-p0-access-and-entry.md
+@@ -0,0 +1,76 @@
++# Treasure Native P0：访问边界与统一入口
++
++状态：代码与隔离验证完成，G-P0 审查为 CONDITIONAL；全仓门禁未绿、现场归因尚未确认，不可发布为 READY。按任务书逐 Gate 停止，未开始 P1-A 依赖实现。
++
++## 基线与变更范围
++
++基线 HEAD `51011118535f782f5282f638b4a54649c79bf6d6`，工作分支 `feat/research-agent-phase5`。工作区原有大量 Phase5 与子模块未提交改动；本次未提交、未推送、未部署、未修改子模块或依赖锁文件。原始相关文件、hash 与 Git 状态见 `evidence/treasure-native/baseline/manifest.json`。前序调查见 `docs/audits/cygnusx-treasure-mouse-ui-regression-and-mcp-integration-audit-2026-10-15.md`。
++
++| 文件 | 本次增量 |
++|---|---|
++| `frontend/src/views/TreasureMouseView.vue` | 单原生入口，移除 iframe/双模式 |
++| `frontend/src/views/TreasureResearchWorkbench.vue` | capability 首屏预检、中文状态、撤权刷新、请求代际隔离、停止接收说明 |
++| `frontend/src/api/researchAgent.ts` | 能力 DTO、预检 API、安全错误映射 |
++| `src/cygnusx/api/v1/research_agent.py` | capability 读取真实用户；业务授权、SSE 开始前校验 owner 与 provider |
++| `src/cygnusx/application/services/research_treasure_service.py` | active/模块校验；能力快照；项目错误码；修正不存在的 DTO 转换调用和消息必填 content_type；隐藏异常细节 |
++| `src/cygnusx/application/schemas/research_agent.py` | 细粒度 capability 与恒 false 写执行字段；修正默认值类型 |
++| `deploy/docker/nginx/nginx{,.prod}.conf` | 关闭旧公开子应用路径，内网 Node 不变 |
++| `tests/unit/test_treasure_native_access.py` | JWT+ASGI+隔离 SQLite 权限与流式落库回归 |
++| `frontend/src/components/research/__tests__/Treasure*.test.ts` | 原生入口、首屏预检、撤权与会话隔离回归 |
++| `docs/adr/treasure-native-entry-and-capabilities.md` | 入口选择、能力契约与回退 |
++| `ARCHITECTURE_DESIGN/CygnusX_frontend.md` | 回写当前入口与请求顺序 |
++
++## 403 证据分级与请求路由
++
++**现场故障仍为 Suspected**：没有取得原报错浏览器的 Network、真实后端 build SHA、实际运行配置或 image digest，不将单测复现冒充事故根因。
++
++隔离 Verified：关闭 `treasure_native_ui_enabled` 时业务路由返回 `403 FEATURE_DISABLED`；模块撤销时返回 `403 MODULE_LOCKED`（即便 native 同时关闭也优先按模块拒绝）；非 owner 项目 `403 PROJECT_FORBIDDEN`；非 owner 会话 404；JWT 缺失、失效、版本错误或 inactive 401；非法 UUID 422；无可用 provider 503。SSE 内 Node 错误属于流事件，不能等同 HTTP 403。
++
++新首屏顺序经 DOM 测试的调用序号验证：
++
++1. `GET /api/v1/research-agent/capabilities`。
++2. 仅 `read_sessions=true` 后请求 `GET /api/v1/projects`（projects API 的分页实现沿用平台）。
++3. `GET /api/v1/research-agent/sessions`，再恢复当前会话 messages。
++4. 用户发送后 `POST /api/v1/research-agent/sessions/{id}/messages:stream`。
++
++native=false 时不请求 projects/sessions，显示入口未启用；preflight 请求失败显示会话“未加载”，不显示“暂无”。无 token 日志。Axios 统一 baseURL `/api/v1`，fetch SSE 使用相同前缀。开发 Vite 的 `/api` 仍转发 :8888；旧 `/treasure-mouse/` 代理仍可抵达 Nginx，但 Nginx 配置返回 404。仅静态核查，未验证正在运行的代理。
++
++## 能力与安全边界
++
++capabilities 在关闭 native 时仍需有效平台 JWT。读取 active 用户和 `disabled_modules`；admin 仅沿用模块豁免，不获得跨 owner 项目访问权。模块与 native 都允许才开放会话；Node URL+internal token 的配置前提满足才声明 read_discovery。prepare 额外依赖 Gateway 只读开关、Dataset 只读开关与 files/downloads/flows 模块许可。
++
++该快照不是健康检查，不承诺模型、Redis 或 Node 可达。prepare 仍需服务端 owner 项目和现有 Gateway 再验；不支持写执行。实际会话路由在请求时重新取用户状态，owner 在服务层检查，不依赖按钮隐藏。全局 project=null 按独立查询返回，无默认项目副作用。
++
++平台历史 DTO 直接校验现有 ORM；修复原实现调用不存在的 `ChatService._to_msg_dto`。流式消息通过现有 SessionService 写入，补齐必填 `content_type=text`。跨进程取消尚未实现，capability 明示 `browser_abort_only`，UI 明示停止接收，不能承诺服务端任务已停止。
++
++`WRITE_RUNTIME_ACCEPTED=False`、`worker_paths_verified=false` 未修改。没有 Task/下载执行、生产凭据、数据库迁移或真实分析副作用。
++
++## 验证与限制
++
++证据目录 `evidence/treasure-native/` 仅保留本地验证，不进入提交。
++
++| 检查 | 结果 | 证据 |
++|---|---|---|
++| P0 后端 + 既有 Phase1 合约 | 32 passed | `p0-backend-tests.log` |
++| 寻宝鼠前端三组 | 12 passed | `p0-frontend-tests.log` |
++| 前端类型检查 | PASS | `p0-frontend-types.log` |
++| 前端 npm run build | PASS | `p0-frontend-build.log`（Vite 配置 logLevel=error） |
++| 修改后端三文件 mypy | PASS，follow-imports=silent，非全仓 strict 结论 | `p0-backend-types.log` |
++| 本次后端文件 Ruff | PASS | `p0-ruff-focused.log` |
++| 迁移链检查 | PASS，单 head | `p0-migrations.log` |
++| 全仓 Ruff | FAIL，295 项 | `p0-ruff-full.log` |
++| 前端全套 | FAIL，541 passed / 7 failed，79 文件 | `p0-frontend-full-tests.log` |
++
++前端失败涉及 `agent-teams-room-send` 五项、`deep-thinking-stream` 一项、`live-stream-render` 一项；未改这些业务文件，也未以此证明它们在基线就失败。全仓 Ruff 涉及其他领域，同样不擅自清理。后端全套运行 90 秒后超时（exit 124），停在约 11%，已出现 `test_agent_config_consistency.py` 失败；日志 `p0-backend-full-tests.log`。未获取最终汇总，不将局部通过推导全量通过。全仓 mypy、bridge 和真实集成验证未完成。未运行真实 PG/Redis/Worker、MCP 双进程或浏览器 E2E；没有现场 403、镜像运行证据，不宣称部署可用。
++
++## Gate 与下一步
++
++| 阶段 | 状态 | 原因 |
++|---|---|---|
++| G-P0 隔离功能 | PASS | 权限负例、全局只读历史、能力预检与入口测试通过 |
++| G-P0 整体审查 | CONDITIONAL / NOT RELEASE READY | 现场证据缺失、全仓门禁未绿，待人工审查 |
++| G-P1A | NOT STARTED | 依任务书逐 Gate 停止；尚无 React Island、截图或视觉验收 |
++| G-P1B / G-P1C / G-P2 | NOT STARTED | 依赖前序 Gate；旧卡片协议、完整历史与受控交接尚未验收 |
++| G-R | BLOCKED | 真实基础设施、镜像/Worker/审批执行证据未闭合 |
++
++下一项是审查 P0 diff 与隔离证据、补现场归因及全仓失败基线；之后可按任务书进入完全隔离的 P1-A PoC。P1-A 需旧新版截图与人工视觉确认，未通过不得进入完整迁移。

@@ -9,7 +9,7 @@ import json
 from collections.abc import AsyncIterator
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from cygnusx.api.deps import CurrentUserId, DbSession
@@ -17,9 +17,10 @@ from cygnusx.application.schemas.research_agent import (
     ResearchAgentCapabilities,
     ResearchAgentMessageRequest,
     ResearchAgentSessionCreate,
+    ResearchLiteratureRequest,
+    ResearchSessionUpdate,
 )
 from cygnusx.application.services.research_treasure_service import ResearchTreasureService
-from cygnusx.core.config import get_settings
 
 router = APIRouter()
 def _service(db: DbSession) -> ResearchTreasureService:
@@ -27,12 +28,8 @@ def _service(db: DbSession) -> ResearchTreasureService:
 
 
 @router.get("/capabilities", response_model=ResearchAgentCapabilities)
-async def capabilities(_: CurrentUserId) -> ResearchAgentCapabilities:
-    settings = get_settings()
-    return ResearchAgentCapabilities(
-        native_ui_enabled=settings.treasure_native_ui_enabled,
-        write_tools_enabled=False,
-    )
+async def capabilities(user: CurrentUserId, db: DbSession) -> ResearchAgentCapabilities:
+    return await _service(db).capabilities(user)
 
 
 @router.post("/sessions")
@@ -42,7 +39,7 @@ async def create_session(
     db: DbSession,
 ) -> object:
     service = _service(db)
-    service.ensure_enabled()
+    await service.ensure_access(current_user_id)
     return await service.create_session(
         current_user_id,
         str(request.project_id) if request.project_id else None,
@@ -58,14 +55,14 @@ async def list_sessions(
     project_id: UUID | None = None,
 ) -> list[object]:
     service = _service(db)
-    service.ensure_enabled()
+    await service.ensure_access(current_user_id)
     return await service.list_sessions(current_user_id, str(project_id) if project_id else None)
 
 
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> list[object]:
     service = _service(db)
-    service.ensure_enabled()
+    await service.ensure_access(current_user_id)
     return await service.messages(current_user_id, session_id)
 
 
@@ -75,9 +72,30 @@ async def stream_message(
     request: ResearchAgentMessageRequest,
     current_user_id: CurrentUserId,
     db: DbSession,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
     service = _service(db)
-    service.ensure_enabled()
+    cursor = 0
+    if last_event_id is not None:
+        try:
+            cursor = int(last_event_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid Last-Event-ID") from exc
+        if cursor < 0 or cursor > 2_147_483_647:
+            raise HTTPException(status_code=400, detail="Invalid Last-Event-ID")
+    # Check ownership before committing SSE headers so HTTP failures stay diagnosable.
+    await service.check_stream_access(
+        current_user_id, session_id, request.model_id, request.request_id,
+        request.content, request.lang,
+    )
+    await service.ensure_generation_running(
+        current_user_id,
+        session_id,
+        request.content,
+        request.model_id,
+        request.lang,
+        request.request_id,
+    )
 
     async def generate() -> AsyncIterator[str]:
         async for event in service.stream_message(
@@ -86,8 +104,11 @@ async def stream_message(
             request.content,
             request.model_id,
             request.lang,
+            request.request_id,
+            cursor,
         ):
-            yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+            event_id = event.pop("_sse_id")
+            yield f"id: {event_id}\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -100,5 +121,23 @@ async def stream_message(
 @router.post("/sessions/{session_id}/cancel")
 async def cancel_session(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> dict[str, bool]:
     service = _service(db)
-    service.ensure_enabled()
+    await service.ensure_access(current_user_id)
     return {"cancelled": await service.cancel(current_user_id, session_id)}
+
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str, request: ResearchSessionUpdate,
+    current_user_id: CurrentUserId, db: DbSession,
+) -> object:
+    return await _service(db).update_session(
+        current_user_id, session_id, title=request.title, status=request.status,
+    )
+
+
+@router.post("/sessions/{session_id}/literature")
+async def literature(
+    session_id: str, request: ResearchLiteratureRequest,
+    current_user_id: CurrentUserId, db: DbSession,
+) -> dict[str, object]:
+    return await _service(db).literature(current_user_id, session_id, request.kind, request.id)

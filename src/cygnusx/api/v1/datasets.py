@@ -321,6 +321,10 @@ async def decide_analysis(
             return await service.approve(
                 UUID(user), project_id, dataset_id, version_id, proposal_id
             )
+        if decision == "reject":
+            return await service.decide(
+                UUID(user), project_id, dataset_id, version_id, proposal_id, False
+            )
         if decision == "execute":
             return await service.execute(
                 UUID(user), project_id, dataset_id, version_id, proposal_id

@@ -1,0 +1,319 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.claim_provenance.v1",
+      "default": "cygnusx.claim_provenance.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "claim_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "claim_type": {
+      "const": "DEG_TABLE_CELL",
+      "default": "DEG_TABLE_CELL",
+      "title": "Claim Type",
+      "type": "string"
+    },
+    "claim_text": {
+      "title": "Claim Text",
+      "type": "string"
+    },
+    "claim_text_verified": {
+      "const": false,
+      "default": false,
+      "title": "Claim Text Verified",
+      "type": "boolean"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "source_report_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Report Id"
+    },
+    "report_version": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Report Version"
+    },
+    "report_snapshot_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Report Snapshot Id"
+    },
+    "snapshot_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Snapshot Digest"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "result_observation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Result Observation Id"
+    },
+    "observation_digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Observation Digest"
+    },
+    "observation_binding": {
+      "enum": [
+        "VERIFIED_ASSOCIATION",
+        "NOT_RECORDED"
+      ],
+      "title": "Observation Binding",
+      "type": "string"
+    },
+    "file_record_id": {
+      "format": "uuid",
+      "title": "File Record Id",
+      "type": "string"
+    },
+    "file_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "File Sha256",
+      "type": "string"
+    },
+    "table_identifier": {
+      "const": "deg.tsv",
+      "default": "deg.tsv",
+      "title": "Table Identifier",
+      "type": "string"
+    },
+    "row_identifier": {
+      "title": "Row Identifier",
+      "type": "string"
+    },
+    "row_number": {
+      "title": "Row Number",
+      "type": "integer"
+    },
+    "column_identifier": {
+      "title": "Column Identifier",
+      "type": "string"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Value"
+    },
+    "transformation": {
+      "const": "identity",
+      "default": "identity",
+      "title": "Transformation",
+      "type": "string"
+    },
+    "verification_status": {
+      "enum": [
+        "VERIFIED_VALUE",
+        "NOT_VERIFIED"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "supported_statement": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Supported Statement"
+    },
+    "supported_statement_status": {
+      "enum": [
+        "SUPPORTED_CLAIM",
+        "NOT_VERIFIED"
+      ],
+      "title": "Supported Statement Status",
+      "type": "string"
+    },
+    "interpretation_status": {
+      "anyOf": [
+        {
+          "const": "AI_INTERPRETATION",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Interpretation Status"
+    },
+    "dataset_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Dataset Version Id"
+    },
+    "analysis_link_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Analysis Link Id"
+    },
+    "definition_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Definition Digest"
+    },
+    "execution_binding_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Execution Binding Digest"
+    },
+    "definition_status": {
+      "enum": [
+        "VERIFIED_DOCUMENT",
+        "REFERENCE_ONLY",
+        "NOT_RECORDED"
+      ],
+      "title": "Definition Status",
+      "type": "string"
+    },
+    "input_file_record_ids": {
+      "default": [],
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Input File Record Ids",
+      "type": "array"
+    },
+    "missing_evidence": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Evidence",
+      "type": "array"
+    },
+    "verification_scope": {
+      "const": "current_cell_bytes_not_claim_truth_or_historical_execution",
+      "default": "current_cell_bytes_not_claim_truth_or_historical_execution",
+      "title": "Verification Scope",
+      "type": "string"
+    },
+    "reproducibility_status": {
+      "const": "NOT_RUN",
+      "default": "NOT_RUN",
+      "title": "Reproducibility Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_id",
+    "claim_text",
+    "project_id",
+    "source_report_id",
+    "report_version",
+    "report_snapshot_id",
+    "snapshot_digest",
+    "task_id",
+    "result_observation_id",
+    "observation_digest",
+    "observation_binding",
+    "file_record_id",
+    "file_sha256",
+    "row_identifier",
+    "row_number",
+    "column_identifier",
+    "value",
+    "verification_status",
+    "supported_statement",
+    "supported_statement_status",
+    "interpretation_status",
+    "dataset_version_id",
+    "analysis_link_id",
+    "definition_digest",
+    "execution_binding_digest",
+    "definition_status"
+  ],
+  "title": "ClaimProvenance",
+  "type": "object"
+}

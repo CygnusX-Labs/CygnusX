@@ -1,0 +1,4 @@
+flags after closure:
+ACCEPTANCE_READS=true
+ACCEPTANCE_WRITES=true
+ACCEPTANCE_PDF=true

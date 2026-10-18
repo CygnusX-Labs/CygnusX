@@ -1,0 +1,42 @@
+[
+  {
+    "path": "src/cygnusx/application/schemas/execution_definition.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/application/services/task_service.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/application/services/research_execution_binding.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/celery_app/tasks/analysis.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/application/services/research_provenance_service.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/application/services/report_snapshot_builder.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/download_capability.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  },
+  {
+    "path": "src/cygnusx/tools/download/config.py",
+    "exit_code": 0,
+    "diagnostics": "All checks passed!\n"
+  }
+]

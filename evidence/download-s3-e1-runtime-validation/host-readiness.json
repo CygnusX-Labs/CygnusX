@@ -1,0 +1,89 @@
+{
+  "time_utc": "2026-10-16T14:22:37.610494+00:00",
+  "scope": "HOST_READ_ONLY_NOT_WORKER",
+  "kernel": "6.8.0-147-generic",
+  "machine": "x86_64",
+  "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/tmux-spawn-e59e94fe-7753-44eb-96f1-c0b15337eab7.scope",
+  "controllers": "cpuset cpu io memory hugetlb pids rdma misc",
+  "userns_setting": "1",
+  "max_net_namespaces": "2147483647",
+  "selected_filesystems": {
+    "/home/zj/zj_code_libarary/OmicHub": {
+      "exists": true,
+      "write_access_hint": true,
+      "mountpoint": "/home/zj/zj_code_libarary/OmicHub",
+      "fs": "ext4",
+      "mount_options": "rw,nosuid,nodev,relatime",
+      "super_options": "rw"
+    },
+    "/tmp": {
+      "exists": true,
+      "write_access_hint": true,
+      "mountpoint": "/tmp",
+      "fs": "ext4",
+      "mount_options": "rw,nosuid,nodev,relatime",
+      "super_options": "rw"
+    },
+    "/data/omichub": {
+      "exists": true,
+      "write_access_hint": false,
+      "mountpoint": "/",
+      "fs": "ext4",
+      "mount_options": "ro,nosuid,nodev,relatime",
+      "super_options": "rw"
+    },
+    "/sys/fs/cgroup": {
+      "exists": true,
+      "write_access_hint": false,
+      "mountpoint": "/sys/fs/cgroup",
+      "fs": "cgroup2",
+      "mount_options": "ro,nosuid,nodev,noexec,relatime",
+      "super_options": "rw,nsdelegate,memory_recursiveprot"
+    }
+  },
+  "namespace_handles": {
+    "user": "user:[4026533746]",
+    "net": "net:[4026534543]",
+    "mnt": "mnt:[4026534540]",
+    "pid": "pid:[4026534542]"
+  },
+  "tools": {
+    "aria2c": null,
+    "unshare": "/usr/bin/unshare",
+    "nsenter": "/usr/bin/nsenter",
+    "systemctl": "/usr/bin/systemctl",
+    "xfs_quota": "/usr/sbin/xfs_quota",
+    "quota": null,
+    "docker": "/usr/bin/docker"
+  },
+  "configured_cli_files": {
+    "/usr/bin/aria2c": {
+      "exists": false,
+      "executable_hint": false
+    },
+    "/data/omichub/bin/EBIDownload": {
+      "exists": true,
+      "executable_hint": true
+    },
+    "/data/omichub/bin/ossutil": {
+      "exists": false,
+      "executable_hint": false
+    },
+    "/data/omichub/bin/tosutil": {
+      "exists": true,
+      "executable_hint": false
+    },
+    "/data/omichub/bin/obsutil": {
+      "exists": false,
+      "executable_hint": false
+    }
+  },
+  "not_executed": [
+    "namespace creation",
+    "container API connection",
+    "CLI version commands",
+    "quota mutations",
+    "network probes",
+    "downloads"
+  ]
+}

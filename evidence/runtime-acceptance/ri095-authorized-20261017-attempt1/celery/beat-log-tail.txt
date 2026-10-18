@@ -1,0 +1,6 @@
+[2026-10-18 01:01:41,166: INFO/MainProcess] Scheduler: Sending due task project-report-reconcile (cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports)
+[2026-10-18 01:01:41,175: INFO/MainProcess] Scheduler: Sending due task project-export-reconcile (cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports)
+[2026-10-18 01:02:41,166: INFO/MainProcess] Scheduler: Sending due task project-report-reconcile (cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports)
+[2026-10-18 01:02:41,175: INFO/MainProcess] Scheduler: Sending due task project-export-reconcile (cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports)
+[2026-10-18 01:03:41,166: INFO/MainProcess] Scheduler: Sending due task project-report-reconcile (cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports)
+[2026-10-18 01:03:41,175: INFO/MainProcess] Scheduler: Sending due task project-export-reconcile (cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports)

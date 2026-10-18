@@ -1,0 +1,16 @@
+{
+  "src/cygnusx/core/config.py": "5da23063e07fd316f4a291fb407793bc496c82f3997bfbc72c0d3afbc3607f82",
+  "src/cygnusx/application/schemas/agent_tools.py": "53eca1d27dfba1420cc7591c7a3bad14339f65d988c96ee669fd73ee94c1dc55",
+  "src/cygnusx/application/services/agent_tool_gateway.py": "e1fc3113a299df83c5c40bc922937a3c73c3658e7cb57686c671d35e3c9d4e05",
+  "src/cygnusx/application/services/project_service.py": "dd11c2e8d26d52ab4bd3e6b54f8840f29ce43974ea89ff3fa950055b3b4104ca",
+  "src/cygnusx/application/services/research_provenance_service.py": "988cede90b8c826e0d4a7d87d1a293a5e6f0ac08e3651d743beed944f986c27b",
+  "src/cygnusx/api/v1/research_delivery.py": "6ffa30013202d562754610ad2b8f31b72fb8de4913baebcd553b4d8e64c7b2a8",
+  "src/cygnusx/infrastructure/celery_app/celery.py": "9625b68ebd61e5eeae03f2cc24ab7422c1049871c459764c872971630910890f",
+  "src/cygnusx/infrastructure/database/models/__init__.py": "c4d7b28bf8d350ab0920c6793c8e9fec1a286a1ac0d1a446bf01caafbd7b955a",
+  "frontend/src/views/ProjectDetailView.vue": "d590cbc328494d84c0f470e6dbe94c4db376253ac291c97a870e3d155a19dfae",
+  "frontend/src/api/researchDelivery.ts": "9319ed525f598be2d9aff95ed68385131123549f70d10e6c89d437988ef64c48",
+  "ARCHITECTURE_DESIGN/CygnusX_frontend.md": "089898961bc8e2a7a0ba73a8588a124256abac22a50a6a2c0a73a36da787a57d",
+  "ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md": "12fcf16c2f841e8ae0a2487200a0367973b013f2a18574a42cc0a3e438ca3e19",
+  "ARCHITECTURE_DESIGN/README.md": "b156038c7b185768546f1ec61c8da586d045b700f272ef57370e88b3a26a64f1",
+  "ARCHITECTURE_DESIGN/CygnusX_report_architecture.md": "76cb332e8cd1ad42b4375b3e2d3955c5acf61bda900a4d716afd1f999d5b8d6e"
+}

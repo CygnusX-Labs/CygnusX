@@ -7,6 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from cygnusx.application.schemas.dataset import DatasetAnalysisPrepare, ImportPrepare
+from cygnusx.application.schemas.research_claims import ArtifactCellRequest, ClaimDraft
+from cygnusx.application.schemas.research_plan import PlanPrepare, ResearchPlanDraft
 
 
 class ToolArgs(BaseModel):
@@ -121,7 +123,37 @@ class ReportEvidenceArgs(ToolArgs):
     report_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
 
 
+class PlanPrepareArgs(ToolArgs):
+    request: PlanPrepare
+
+
+class PlanValidateArgs(ToolArgs):
+    draft: ResearchPlanDraft
+
+
+class PlanGetArgs(ToolArgs):
+    plan_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+
+
+class ClaimArgs(TaskArgs):
+    claim: ClaimDraft
+
+
+class ArtifactCellArgs(ToolArgs):
+    request: ArtifactCellRequest
+
+
+class ProjectExportArgs(ToolArgs):
+    job_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+
+
 CAPABILITY_MODELS: dict[str, type[ToolArgs]] = {
+    "research.plan.assess_claim": ClaimArgs,
+    "research.plan.artifact_cell": ArtifactCellArgs,
+    "research.plan.prepare": PlanPrepareArgs,
+    "research.plan.validate": PlanValidateArgs,
+    "research.plan.get_status": PlanGetArgs,
+    "research.plan.get_evidence": PlanGetArgs,
     "downloads.describe_capabilities": EmptyArgs,
     "downloads.prepare": DownloadPrepareArgs,
     "analysis.list_workflows": EmptyArgs,
@@ -132,6 +164,8 @@ CAPABILITY_MODELS: dict[str, type[ToolArgs]] = {
     "research.report_provenance": ReportEvidenceArgs,
     "research.dataset_provenance": DatasetVersionArgs,
     "research.project_delivery": EmptyArgs,
+    "research.project_inventory": EmptyArgs,
+    "research.project_export_status": ProjectExportArgs,
     "tasks.list_related": EmptyArgs,
     "dataset.discover": DatasetDiscoverArgs,
     "dataset.inspect": DatasetVersionArgs,
@@ -148,11 +182,18 @@ CAPABILITY_MODELS: dict[str, type[ToolArgs]] = {
 
 
 def capability_catalog(
-    *, include_write: bool = False, include_dataset: bool = False, include_research: bool = False
+    *,
+    include_write: bool = False,
+    include_dataset: bool = False,
+    include_research: bool = False,
+    include_plans: bool = False,
 ) -> list[ToolCapability]:
     catalog: list[ToolCapability] = []
     for name, model in CAPABILITY_MODELS.items():
-        if name.startswith("research.") and not include_research:
+        if name.startswith("research.plan."):
+            if not include_plans:
+                continue
+        elif name.startswith("research.") and not include_research:
             continue
         if not include_dataset and (
             name.startswith("dataset.")
@@ -162,7 +203,7 @@ def capability_catalog(
         write = name.endswith(".submit") or name in {"tasks.cancel", "dataset.execute_import"}
         if write and not include_write:
             continue
-        prepare = name.endswith(".prepare") or name in {
+        prepare = (name.endswith(".prepare") and not name.startswith("research.plan.")) or name in {
             "dataset.prepare_import",
             "analysis.prepare_from_dataset",
         }

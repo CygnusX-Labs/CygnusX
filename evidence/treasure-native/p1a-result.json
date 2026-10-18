@@ -1,0 +1,144 @@
+{
+  "gate": "G-P1A",
+  "status": "BLOCKED_VISUAL_REVIEW_PENDING",
+  "scope": "isolated welcome UI PoC only",
+  "dom_passed": 8,
+  "script_exit_code": 0,
+  "module_count": 1792,
+  "forbidden_modules": [],
+  "library_js_bytes": 563498,
+  "library_js_gzip_bytes": 164736,
+  "vue_js_bytes": 660198,
+  "fonts_inlined_in_js": false,
+  "real_browser": "BLOCKED_SOCKET_PERMISSION",
+  "screenshots": [],
+  "human_visual_review": "PENDING",
+  "production_integration": false,
+  "write_execution": false,
+  "changes": [
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/components/ui/dialog.tsx",
+      "baseline_sha256": "16da52a0c652046bfa0773ba2ccaa182e0f0d5a424b5a4bc977983256441bdfe",
+      "sha256": "52b7e45e7df7677f4a27e602466d88fca37895b08706e0b591401b7e6b0f9b42"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/components/chat/EmptyState.tsx",
+      "baseline_sha256": "7cafb63eca29260c8f8f8f6f3b0813886c0f83cde161883dad8a169fe0f64e00",
+      "sha256": "c5e582c728f71c3320f77a06b182ba2e8d781e0a32b1b2959e5010d14603f7d3"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/components/chat/Composer.tsx",
+      "baseline_sha256": "207913c6b8d3c5c61b6a7d73b1818c1682990d539cad7a6124d3d6cb575610fe",
+      "sha256": "8c4852241e331c4ceefc149a9c542b7a5b4be7508e5c0279b52b392b27ea4987"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/i18n/provider.tsx",
+      "baseline_sha256": "7aaec9bef715ebd5b333a086a0ad054dae541b1effc70b8ad1e6513cc35b7b4c",
+      "sha256": "e319fe87fc80faa555163ad56bb7a92c398e48a6e51de405805754dd385e575b"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/docs/ARC/architecture-2026-10-06.md",
+      "baseline_sha256": "2bf5447060e644ab8100640c9f07ea3b2512dac7502f60cf0da584640645c602",
+      "sha256": "44d9b5eefb531494ca78820ee826dbcc852c29305a94f4a71b04d9c820047802"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/island/contract.ts",
+      "new_in_p1a": true,
+      "sha256": "69f46d164f78a1f5ee3a3f2d6a27a5b61aff03a3503b5bc30c8ffe23bc54f2b6"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/island/index.tsx",
+      "new_in_p1a": true,
+      "sha256": "7b15a1db2a40b933c29ce55d60dccb5fb02a4075937fdfa708ce33670a081a2c"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/src/island/reference.tsx",
+      "new_in_p1a": true,
+      "sha256": "de7bb1fc7701a96eacfaaefcdfcf9389e8b5e9f0685d4efb6471c5c96ed72d86"
+    },
+    {
+      "path": "frontend/poc/treasure-island/island.poc.ts",
+      "new_in_p1a": true,
+      "sha256": "f05e3de8427f768f9279534100ab2eafb55f38ad5ed0ff39c9573bb7032f48c1"
+    },
+    {
+      "path": "frontend/poc/treasure-island/tsconfig.json",
+      "new_in_p1a": true,
+      "sha256": "c497610ef793b240fb4d9d111c5648e08f891b702f0a95a67450de7f0e246e22"
+    },
+    {
+      "path": "frontend/poc/treasure-island/island.d.ts",
+      "new_in_p1a": true,
+      "sha256": "a28382f83412dc41bf13fb5636f7b8bcc21aea0823c238984736b301097919fc"
+    },
+    {
+      "path": "frontend/poc/treasure-island/App.vue",
+      "new_in_p1a": true,
+      "sha256": "54bf08079d2e3e39c3d935609903b45967b45caadae3f757042bb39df7c30e19"
+    },
+    {
+      "path": "frontend/poc/treasure-island/vitest.config.ts",
+      "new_in_p1a": true,
+      "sha256": "14763f43d4164ad7ef49cd2bba05a5d7703c0395099398dc2f45c7584d16facb"
+    },
+    {
+      "path": "frontend/poc/treasure-island/main.ts",
+      "new_in_p1a": true,
+      "sha256": "8cce7eb400795e8089a5922391a90f5148ec373c6dedcc727c8c2a3dc978e0ba"
+    },
+    {
+      "path": "frontend/poc/treasure-island/vite.config.ts",
+      "new_in_p1a": true,
+      "sha256": "5f73cd18a34876b8b1f896a0f687b48337400918f7447c11e2e50d485cbd08cc"
+    },
+    {
+      "path": "frontend/poc/treasure-island/index.html",
+      "new_in_p1a": true,
+      "sha256": "8decc75cdd987da2a22d5efb22c36392592adf93f7d8beca71927d0e48b4881a"
+    },
+    {
+      "path": "scripts/poc/treasure-island-browser.mjs",
+      "new_in_p1a": true,
+      "sha256": "4953c52808ab21b2e699ffcc858ecf1baeccae41267cad3671d0e0cc79391881"
+    },
+    {
+      "path": "scripts/poc/check-treasure-island.sh",
+      "new_in_p1a": true,
+      "sha256": "cbd20a8ea6c70602d8ebda1d89e401c3c961c6c987cccaa8a2e972beeada5b41"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/vite.island.config.ts",
+      "new_in_p1a": true,
+      "sha256": "9d09ed426296e2a064f46e7c617a1d7a45dfc88996e10f78037c57b6158a83dd"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/vite.island-reference.config.ts",
+      "new_in_p1a": true,
+      "sha256": "90ecead4c4642d82aa87a60f0a88ed94a2fe2a3388ea108be78d47b0cbd4d610"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/tsconfig.island.json",
+      "new_in_p1a": true,
+      "sha256": "ed14844b72c68aced4c955b5caab93e12e5350f891374a7567c491557782146a"
+    },
+    {
+      "path": "pipelines/Treasure-Seeking_Mouse/island-reference.html",
+      "new_in_p1a": true,
+      "sha256": "4d9261bdf1835c757f5552d8abb099480d8f998a25e8724814197e8e02dbccab"
+    },
+    {
+      "path": "docs/adr/treasure-react-island-poc.md",
+      "new_in_p1a": true,
+      "sha256": "06d4baf1271689bf0b938cac108874ade7ab17123dc0843abb4c514dec5fd446"
+    },
+    {
+      "path": "docs/implementation/treasure-react-island-poc.md",
+      "new_in_p1a": true,
+      "sha256": "e2f00e4a0cc9bc29cb5762691f82e733f5f40d4c277cee18cf0708cede4d2943"
+    }
+  ],
+  "main_test_discovery_count": 79,
+  "main_test_discovery_includes_poc": false,
+  "scoped_dialog_dom_verified": true,
+  "real_keyboard_verified": false
+}

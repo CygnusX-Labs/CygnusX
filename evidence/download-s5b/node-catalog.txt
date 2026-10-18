@@ -1,0 +1,9 @@
+✔ S5-B shared catalog dispatch uses fixed callback and preserves business result (20.426071ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24.341548

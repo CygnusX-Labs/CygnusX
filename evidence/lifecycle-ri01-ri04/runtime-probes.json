@@ -1,0 +1,20 @@
+{
+  "scope": "connect-only capability check, no DB protocol/authentication/business API",
+  "probes": {
+    "postgres": {
+      "status": "BLOCKED",
+      "error": "PermissionError",
+      "errno": 1
+    },
+    "redis": {
+      "status": "BLOCKED",
+      "error": "PermissionError",
+      "errno": 1
+    },
+    "docker": {
+      "status": "BLOCKED",
+      "error": "PermissionError",
+      "errno": 1
+    }
+  }
+}

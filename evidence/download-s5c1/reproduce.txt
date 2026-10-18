@@ -1,0 +1,186 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 23 items
+
+tests/unit/test_langgraph_runtime.py ...........FFFFFFFF...F             [100%]
+
+=================================== FAILURES ===================================
+_________ test_tool_executor_mas_plan_preview_returns_adapter_envelope _________
+tests/unit/test_langgraph_runtime.py:549: in test_tool_executor_mas_plan_preview_returns_adapter_envelope
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.013[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________ test_tool_executor_parallel_subagents_rejects_when_case_bound _________
+tests/unit/test_langgraph_runtime.py:566: in test_tool_executor_parallel_subagents_rejects_when_case_bound
+    executor, emitted = await _capture_tool_executor(
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.296[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+____________ test_tool_executor_parallel_subagents_per_round_guard _____________
+tests/unit/test_langgraph_runtime.py:608: in test_tool_executor_parallel_subagents_per_round_guard
+    executor, _ = await _capture_tool_executor(monkeypatch)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.572[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+______ test_tool_executor_parallel_subagents_emits_started_and_aggregated ______
+tests/unit/test_langgraph_runtime.py:648: in test_tool_executor_parallel_subagents_emits_started_and_aggregated
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.592[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_________ test_tool_executor_skill_route_emits_started_and_aggregated __________
+tests/unit/test_langgraph_runtime.py:708: in test_tool_executor_skill_route_emits_started_and_aggregated
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.612[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+___________ test_tool_executor_create_agentteams_case_confirmed_run ____________
+tests/unit/test_langgraph_runtime.py:747: in test_tool_executor_create_agentteams_case_confirmed_run
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.633[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________ test_tool_executor_create_agentteams_case_records_confirmation ________
+tests/unit/test_langgraph_runtime.py:810: in test_tool_executor_create_agentteams_case_records_confirmation
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.654[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+__________ test_tool_executor_goal_terminal_tools_delegate_to_service __________
+tests/unit/test_langgraph_runtime.py:851: in test_tool_executor_goal_terminal_tools_delegate_to_service
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.674[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________________ test_persisted_envelope_matches_legacy_fields _________________
+tests/unit/test_langgraph_runtime.py:1032: in test_persisted_envelope_matches_legacy_fields
+    _ = [
+tests/unit/test_langgraph_runtime.py:1032: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:52:24.701[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_mas_plan_preview_returns_adapter_envelope
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_rejects_when_case_bound
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_per_round_guard
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_emits_started_and_aggregated
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_skill_route_emits_started_and_aggregated
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_create_agentteams_case_confirmed_run
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_create_agentteams_case_records_confirmation
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_goal_terminal_tools_delegate_to_service
+FAILED tests/unit/test_langgraph_runtime.py::test_persisted_envelope_matches_legacy_fields
+=================== 9 failed, 14 passed, 1 warning in 0.86s ====================
+--- Logging error in Loguru Handler #5 ---
+Record was: {'elapsed': datetime.timedelta(seconds=5, microseconds=725030), 'exception': (type=<class 'ValueError'>, value=ValueError('I/O operation on closed file.'), traceback=<traceback object at 0x74d118e75c40>), 'extra': {'service': 'app', 'trace_id': '', 'span_id': '', 'request_id': '', 'session_id': ''}, 'file': (name='__init__.py', path='/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/logging/__init__.py'), 'function': 'callHandlers', 'level': (name='ERROR', no=40, icon='❌'), 'line': 1706, 'message': 'Exception while exporting Span.', 'module': '__init__', 'name': 'logging', 'process': (id=2, name='MainProcess'), 'thread': (id=128439570912960, name='OtelBatchSpanRecordProcessor'), 'time': datetime(2026, 10, 17, 0, 52, 25, 226723, tzinfo=datetime.timezone(datetime.timedelta(seconds=28800), 'CST'))}
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/_shared_internal/__init__.py", line 182, in _export
+    self._exporter.export(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/trace/export/__init__.py", line 346, in export
+    self.out.write(self.formatter(span))
+ValueError: I/O operation on closed file.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 206, in emit
+    self._sink.write(str_record)
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_simple_sinks.py", line 16, in write
+    self._stream.write(message)
+ValueError: I/O operation on closed file.
+--- End of logging error ---

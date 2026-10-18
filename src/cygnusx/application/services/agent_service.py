@@ -1003,7 +1003,7 @@ class AgentService:
                 ]
             tools.extend(builtin_tools)
 
-            # Shared capability schemas are generated from the gateway contract,
+            # Shared tool_capability schemas are generated from the gateway contract,
             # and filtered here as well as rechecked by the final service.
             from cygnusx.application.schemas.agent_tools import capability_catalog
             from cygnusx.infrastructure.database.models.user import UserModel
@@ -1012,19 +1012,36 @@ class AgentService:
                 user = await self._db.get(UserModel, uuid.UUID(user_id))
                 if user and user.status == "active":
                     denied = set(user.disabled_modules or []) if user.role != "admin" else set()
-                    for capability in capability_catalog(include_dataset=get_settings().dataset_discovery_readonly, include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
-                        module = ("flows" if capability.capability_id.startswith("analysis.") else
-                                  "tasks" if capability.capability_id.startswith("tasks.") else
-                                  "files" if capability.capability_id.startswith("dataset.") else "downloads")
+                    for tool_capability in capability_catalog(include_dataset=get_settings().dataset_discovery_readonly, include_research=getattr(get_settings(), "research_delivery_read_enabled", False), include_plans=getattr(get_settings(), "research_plan_enabled", False)):
+                        if "platform_ai" not in tool_capability.agents:
+                            continue
+                        if tool_capability.capability_id == "dataset.discover" and "downloads" in denied:
+                            continue
+                        module = ("flows" if tool_capability.capability_id.startswith("analysis.") else
+                                  "tasks" if tool_capability.capability_id.startswith("tasks.") else
+                                  "files" if tool_capability.capability_id.startswith("dataset.") else "downloads")
+                        if tool_capability.capability_id.startswith("research."):
+                            if denied & {"files", "tasks", "reports"}:
+                                continue
+                            module = "reports"
                         if module in denied or "ai-assistant" in denied:
                             continue
-                        if capability.side_effect == "confirmation" and "files" in denied:
+                        if tool_capability.side_effect == "confirmation" and "files" in denied:
                             continue
-                        if allowed_builtin_names and capability.tool_name not in allowed_builtin_names:
+                        if allowed_builtin_names and tool_capability.tool_name not in allowed_builtin_names:
                             continue
+                        # Both chat runtimes locate a server through server.tools.
+                        # A model function alone is not a dispatchable MCP capability.
+                        if not any(t.tool_name == tool_capability.tool_name for t in cygnusx_tools_server.tools):
+                            cygnusx_tools_server.tools.append(MCPToolRegistry(
+                                tool_name=tool_capability.tool_name,
+                                description=tool_capability.description,
+                                input_schema=tool_capability.input_schema,
+                                server_id=CYGNUSX_TOOLS_SERVER_ID,
+                            ))
                         tools.append({"type": "function", "function": {
-                            "name": capability.tool_name, "description": capability.description,
-                            "parameters": capability.input_schema,
+                            "name": tool_capability.tool_name, "description": tool_capability.description,
+                            "parameters": tool_capability.input_schema,
                         }})
 
         # 3. 系统提示词 = Agent 设定 + 技能 L1 索引 + cygnusx-tools 清单。

@@ -1,0 +1,684 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 105 items
+
+tests/unit/test_download_s5b_consumption.py ..........                   [  9%]
+tests/unit/test_download_s5a_catalog.py .......................          [ 31%]
+tests/unit/test_agent_tools_phase2.py .................................. [ 63%]
+.....                                                                    [ 68%]
+tests/unit/test_dataset_gateway_phase3.py ....                           [ 72%]
+tests/unit/test_dataset_import_handoff.py ......                         [ 78%]
+tests/unit/test_langgraph_runtime.py ...........FFFFFFFF...F             [100%]
+
+=================================== FAILURES ===================================
+_________ test_tool_executor_mas_plan_preview_returns_adapter_envelope _________
+tests/unit/test_langgraph_runtime.py:549: in test_tool_executor_mas_plan_preview_returns_adapter_envelope
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.185[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________ test_tool_executor_parallel_subagents_rejects_when_case_bound _________
+tests/unit/test_langgraph_runtime.py:566: in test_tool_executor_parallel_subagents_rejects_when_case_bound
+    executor, emitted = await _capture_tool_executor(
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.574[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+____________ test_tool_executor_parallel_subagents_per_round_guard _____________
+tests/unit/test_langgraph_runtime.py:608: in test_tool_executor_parallel_subagents_per_round_guard
+    executor, _ = await _capture_tool_executor(monkeypatch)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.601[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+______ test_tool_executor_parallel_subagents_emits_started_and_aggregated ______
+tests/unit/test_langgraph_runtime.py:648: in test_tool_executor_parallel_subagents_emits_started_and_aggregated
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.624[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_________ test_tool_executor_skill_route_emits_started_and_aggregated __________
+tests/unit/test_langgraph_runtime.py:708: in test_tool_executor_skill_route_emits_started_and_aggregated
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.646[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+___________ test_tool_executor_create_agentteams_case_confirmed_run ____________
+tests/unit/test_langgraph_runtime.py:747: in test_tool_executor_create_agentteams_case_confirmed_run
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.667[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________ test_tool_executor_create_agentteams_case_records_confirmation ________
+tests/unit/test_langgraph_runtime.py:810: in test_tool_executor_create_agentteams_case_records_confirmation
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.690[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+__________ test_tool_executor_goal_terminal_tools_delegate_to_service __________
+tests/unit/test_langgraph_runtime.py:851: in test_tool_executor_goal_terminal_tools_delegate_to_service{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x9abb8d7e30813445abae684bc475cca0",
+        "span_id": "0xbbb2c31307054117",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.156598Z",
+    "end_time": "2026-10-16T15:46:01.156615Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xf2fb9559a221fde0d78a7d9bda580802",
+        "span_id": "0x2b429f7ed9d9f898",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.158343Z",
+    "end_time": "2026-10-16T15:46:01.158355Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xa67f2b333ea1303a2a00e14af0a9e57b",
+        "span_id": "0x8f0331606af6c06e",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.159251Z",
+    "end_time": "2026-10-16T15:46:01.159264Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xb05cf252f4706c356edd583071c14707",
+        "span_id": "0x500310a2aad3db9b",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.159334Z",
+    "end_time": "2026-10-16T15:46:01.159341Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_pathway",
+        "tool.call_id": "call_2"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x5e6b4f5f9252616c478d75a7292026df",
+        "span_id": "0x5c03a3fcd9957484",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.163483Z",
+    "end_time": "2026-10-16T15:46:01.163494Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x0de46da67677bc06c79ab2c72a9a7d95",
+        "span_id": "0x28f8a940c3e170cc",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.166847Z",
+    "end_time": "2026-10-16T15:46:01.166857Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "transfer_to_agent",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x117ece1abdf612ff6838c5a467b20e72",
+        "span_id": "0x813a58fac4df0d9b",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.170285Z",
+    "end_time": "2026-10-16T15:46:01.170771Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [
+        {
+            "name": "exception",
+            "timestamp": "2026-10-16T15:46:01.170760Z",
+            "attributes": {
+                "exception.type": "RuntimeError",
+                "exception.message": "MCP \u8fde\u63a5\u65ad\u5f00",
+                "exception.stacktrace": "Traceback (most recent call last):\n  File \"/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/execution/langgraph_nodes.py\", line 261, in tool_exec_node\n    result = await deps.tool_executor(tool_name, args, tool_call_id)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/zj/zj_code_libarary/OmicHub/tests/unit/test_langgraph_runtime.py\", line 325, in _executor\n    raise RuntimeError(\"MCP \u8fde\u63a5\u65ad\u5f00\")\nRuntimeError: MCP \u8fde\u63a5\u65ad\u5f00\n",
+                "exception.escaped": "False"
+            }
+        }
+    ],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xde099e536f1544334a0735a8115887c1",
+        "span_id": "0xff66f473e89d99f7",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.174058Z",
+    "end_time": "2026-10-16T15:46:01.174071Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "ask_user",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x49c3b380fa0df811f64e692efe47356f",
+        "span_id": "0x4a8f992d9b41c750",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.177390Z",
+    "end_time": "2026-10-16T15:46:01.177399Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xf4bfeec40e6bb80a418a12be57dd70f6",
+        "span_id": "0x95fc4c5de49605ec",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.177808Z",
+    "end_time": "2026-10-16T15:46:01.177815Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x53e6bc667536eb79b50c6347e3e31350",
+        "span_id": "0x52e4b6afac09fa65",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.181099Z",
+    "end_time": "2026-10-16T15:46:01.181107Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0x3f1452812501912e882a9df4a3f7bcd7",
+        "span_id": "0xecc0087c0e994714",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:01.184704Z",
+    "end_time": "2026-10-16T15:46:01.184713Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "ask_user",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xf23c36d56a82f49d09e9b396b903b3ea",
+        "span_id": "0x4a9cf86a6f24cdf7",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:02.023034Z",
+    "end_time": "2026-10-16T15:46:02.023047Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "submit_output",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xa7d275747d53650ce6336f972be64324",
+        "span_id": "0x41f5c9413b65a5ab",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:02.025025Z",
+    "end_time": "2026-10-16T15:46:02.025034Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "get_gene",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "agent.tool_dispatch",
+    "context": {
+        "trace_id": "0xd76f16979bc430156804740142955cb5",
+        "span_id": "0x6f61a39ed316121c",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2026-10-16T15:46:02.025118Z",
+    "end_time": "2026-10-16T15:46:02.025123Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "tool.name": "chat_sandbox_execute",
+        "tool.call_id": "call_1"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.44.0",
+            "service.instance.id": "9b14d5c4-6aa6-49cf-9cac-3229a3d3abc3",
+            "service.name": "worker",
+            "service.version": "0.1.0",
+            "deployment.environment": "development"
+        },
+        "schema_url": ""
+    }
+}
+
+    executor, emitted = await _capture_tool_executor(monkeypatch)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_langgraph_runtime.py:506: in _capture_tool_executor
+    _ = [
+tests/unit/test_langgraph_runtime.py:506: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:01.711[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________________ test_persisted_envelope_matches_legacy_fields _________________
+tests/unit/test_langgraph_runtime.py:1032: in test_persisted_envelope_matches_legacy_fields
+    _ = [
+tests/unit/test_langgraph_runtime.py:1032: in <listcomp>
+    _ = [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 23:46:02.025[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+tests/unit/test_agent_tools_phase2.py::test_delegation_token_never_user_override_scope_or_replay
+  /home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/jwt/api_jwt.py:147: InsecureKeyLengthWarning: The HMAC key is 6 bytes long, which is below the minimum recommended length of 32 bytes for SHA256. See RFC 7518 Section 3.2.
+    return self._jws.encode(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_mas_plan_preview_returns_adapter_envelope
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_rejects_when_case_bound
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_per_round_guard
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_parallel_subagents_emits_started_and_aggregated
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_skill_route_emits_started_and_aggregated
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_create_agentteams_case_confirmed_run
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_create_agentteams_case_records_confirmation
+FAILED tests/unit/test_langgraph_runtime.py::test_tool_executor_goal_terminal_tools_delegate_to_service
+FAILED tests/unit/test_langgraph_runtime.py::test_persisted_envelope_matches_legacy_fields
+=================== 9 failed, 96 passed, 2 warnings in 9.55s ===================

@@ -1,0 +1,21 @@
+=== 任务四 B/C: 平台 AI Legacy/LangGraph 完整模型轮次 — BLOCKED 判定 (2026-10-17T15:36:25Z) ===
+
+阻断 1: 隔离 DB agent_templates 表为空 (count=0) — chat/stream 请求带 agent_id 报 'Agent 不存在或已停用'
+阻断 2: ai_provider_configs.api_key 全部 EMPTY — 请求带 model_id 报 '模型 qwen3.8-flash 的 API Key 未配置'
+
+证据:
+ agent_templates 
+-----------------
+               0
+        name        | api_key 
+--------------------+---------
+ qwen3.8-flash      | EMPTY
+ qwen3.8-omni-flash | EMPTY
+
+真实 chat SSE 拒绝响应(带 agent_id): data: {"type": "error", "content": "Agent 不存在或已停用"}
+真实 chat SSE 拒绝响应(带 model_id): data: {"type": "error", "content": "模型 'qwen3.8-flash' 的 API Key 未配置，请联系管理员设置"}
+
+已验证的子场景(保留):
+  - /chat/stream SSE 事件流与错误终态投影正常 (type=error 正确返回)
+  - Gateway 消费侧完整轮次语义由隔离基线 133 passed + AG-01 真实 Node 链覆盖
+  - AG-02 直接调 gateway.invoke 已在任务一纠偏中降级 NOT_TESTED

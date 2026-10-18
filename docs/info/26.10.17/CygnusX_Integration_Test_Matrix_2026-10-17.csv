@@ -1,0 +1,79 @@
+﻿Test ID,优先级,测试分组,测试场景,验收预期,必要证据,状态,执行者,执行日期(UTC),证据路径,缺陷/阻断编号
+ENV-01,P0,5. P0：环境运行准入（首先执行）,操作授权与 Environment ID,测试资源、允许操作、额度、清理责任书面确定；无共享生产对象,授权清单，脱敏,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/00-authority/authorization.md,
+ENV-02,P0,5. P0：环境运行准入（首先执行）,工作树和子模块一致性,主仓 HEAD、dirty 文件、FlowFrame/寻宝鼠 SHA、构建上下文有记录；运行镜像源码一致,manifest + image digest,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/01-baseline/env-02-manifest.txt,
+ENV-03,P0,5. P0：环境运行准入（首先执行）,独立存储与网络,专属 PG/Redis/Broker/queue/volume；无生产数据挂载，无 docker.sock 给测试 Worker,审查后配置摘要、运行观察,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-03-06-runtime-identity.log,
+ENV-04,P0,5. P0：环境运行准入（首先执行）,IPC 与服务端口,`socketpair`/self-pipe、loopback TCP、Unix IPC 正常；全部仅在测试域,本地最小脚本、exit code,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-04-ipc.log,
+ENV-05,P0,5. P0：环境运行准入（首先执行）,PostgreSQL 身份,独立 DB/role，读写范围、迁移允许范围已核验,脱敏 SQL 结果,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-03-06-runtime-identity.log,
+ENV-06,P0,5. P0：环境运行准入（首先执行）,Broker / Worker 隔离,真实独立 broker 队列，Worker 只订阅测试队列，任务注册匹配,Worker inspect/启动日志,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-03-06-runtime-identity.log,
+ENV-07,P0,5. P0：环境运行准入（首先执行）,安全门禁,未认证真实下载仍拒绝；Agent 不能执行下载,API/Service 拒绝响应+源码配置,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-07-frozen-gate.log,
+ENV-08,P0,5. P0：环境运行准入（首先执行）,运行额度与日志,时间/连接/磁盘/消息上限已设定；日志不含 Token/敏感 URL,配额表、脱敏日志,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/12-report/progress-notes.md,
+PG-01,P0,7.2 PostgreSQL 事务与幂等矩阵,两个独立 PG connection/transaction 同 owner+project+intent 并发提交,同一活动意图至多一个有效 Task；其余复用或正确冲突；无死锁,Task count、事务日志、锁等待,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-02,P0,7.2 PostgreSQL 事务与幂等矩阵,同 `request_key` 同参数重复提交（含 HTTP 客户端重试）,返回同 Task，不重复建目录/扣配额,task_id、目录数、request_digest,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-03,P0,7.2 PostgreSQL 事务与幂等矩阵,同 `request_key` 变更参数,明确 `DOWNLOAD_REQUEST_CONFLICT`，不复用错误意图,状态码/错误、Task 快照,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-04,P0,7.2 PostgreSQL 事务与幂等矩阵,A1/A2/B1 相同表面请求,不跨 user/project 复用，也不泄露对方 Task,多项目/跨用户查询,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-05,P0,7.2 PostgreSQL 事务与幂等矩阵,外层 rollback 与 savepoint commit/rollback,外层回滚没有可见有效 Task/投递；savepoint 不提前投递,DB 事务记录+队列计数,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-06,P0,7.2 PostgreSQL 事务与幂等矩阵,Commit 成功但通知/发布异常,持久 queued Task 存在，可被恢复；同键重试复用,Task、enqueue 日志,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-07,P0,7.2 PostgreSQL 事务与幂等矩阵,两事务并发更新同 Task 别名与旧实体回写,不丢失别名、恢复/取消/登记事实；唯一约束保持,列值前后对照,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+PG-08,P1,7.2 PostgreSQL 事务与幂等矩阵,别名到上限及已存在键,新别名拒绝，旧键可查询；当前上限由有效配置读取,限额/错误码/Task,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-gap-run.log,
+PG-09,P1,7.2 PostgreSQL 事务与幂等矩阵,无键重复终态 vs 带新键明确重试,无键复用已有终态；新键重新尝试依契约创建新 Task/目录,Task lineage / request keys,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-gap-run.log,
+PG-10,P1,7.2 PostgreSQL 事务与幂等矩阵,User 行锁并发负载、别名 JSON 查询,实测锁等待与执行计划；无灾难性阻塞，超阈值需登记优化项,`EXPLAIN`、耗时分位数,NOT_TESTED,zj (iat 验收操作者),,,未执行(EXPLAIN 锁负载)
+PG-11,P0,7.2 PostgreSQL 事务与幂等矩阵,FAILED/CANCELLED 遭旧 SUCCESS 回写,终态不被复活；相关 FileRecord/配额事实不丢失,并发前后 DB 状态,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-gap-run.log,
+MQ-01,P0,7.3 Broker、Worker 和恢复矩阵,commit 前检查 Broker；commit 后检查投递,未提交前不消费；提交后才发布,commit 时间、消息时间、task_id,NOT_TESTED,zj (iat 验收操作者),,,未执行(真实 Broker 消息时序; 隔离 Worker 剥离 run_download)
+MQ-02,P0,7.3 Broker、Worker 和恢复矩阵,Broker 不可用导致发布失败,queued Task 持久，重试不会建第二 Task,原 DB 行、Broker/应用日志,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/13-iat-r2/mq02-final-verdict.txt,
+MQ-03,P0,7.3 Broker、Worker 和恢复矩阵,Broker 收到消息但发布者丢 ACK / 超时,重投允许，但 Worker 原子领取只执行一次,Broker message-id、claim 记录,NOT_TESTED,zj (iat 验收操作者),,,未执行(Broker ACK 丢失竞争)
+MQ-04,P0,7.3 Broker、Worker 和恢复矩阵,同一 Task 两次消息/两个消费者竞争,至多一个 `queued→running` 成功，不重复 FileRegistry 登记,PG 条件更新与 claim 计数,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/13-iat-r2/iat-mq-run.log,
+MQ-05,P0,7.3 Broker、Worker 和恢复矩阵,发布前 API 进程终止或 HTTP 断开,不依赖请求对象仍可恢复已提交 Task,DB/恢复扫描日志,NOT_TESTED,zj (iat 验收操作者),,,未执行(发布前进程终止恢复)
+MQ-06,P0,7.3 Broker、Worker 和恢复矩阵,停止测试 Worker 后恢复，queued/task 状态连续,queued 能恢复；running 不盲目重跑,旧/新 worker identity、Task,NOT_TESTED,zj (iat 验收操作者),,,未执行(Worker 重启恢复扫描)
+MQ-07,P1,7.3 Broker、Worker 和恢复矩阵,Broker 长时间故障和恢复,发布尝试有冷却，不紧密重试；恢复后可推进,attempts、间隔、队列计数,NOT_TESTED,zj (iat 验收操作者),,,未执行(长故障冷却)
+MQ-08,P1,7.3 Broker、Worker 和恢复矩阵,Worker/Beat 源码与队列注册,注册的是当前测试镜像中的原目标任务；不订阅生产队列,registered/active_queues 摘要,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/03-env-runtime/env-03-06-runtime-identity.log,
+REC-01,P0,7.4 Beat、恢复、公平性矩阵,101 个历史旧版本 queued + 有效 version=1 queued,过滤发生在 LIMIT 前，有效任务能进入恢复批次,SQL 查询/扫描 Task IDs,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+REC-02,P0,7.4 Beat、恢复、公平性矩阵,105 个符合时间条件的有效 queued,按批处理，实际扫描总数与各轮 Task IDs 匹配；不漏不重执行,100/5/0 的可复现实测或解释差异,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-gap-run.log,
+REC-03,P0,7.4 Beat、恢复、公平性矩阵,两个真实 PG 会话同时执行扫描,`SKIP LOCKED` 无重复领取，不死锁,双扫描器日志+锁证据,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+REC-04,P1,7.4 Beat、恢复、公平性矩阵,持续输入新任务 + 原积压任务,旧任务最终获得处理机会；记录实际最大等待与原因,enqueue/scan 时间线,NOT_TESTED,zj (iat 验收操作者),,,未执行(公平性时间线)
+REC-05,P0,7.4 Beat、恢复、公平性矩阵,`running` 长时间不更新、Worker 状态不明,仅 `RECONCILIATION_REQUIRED`，**不自动改 queued 或重新下载**,Task、扫描记录,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+REC-06,P1,7.4 Beat、恢复、公平性矩阵,恢复扫描事务提交失败,未提交的扫描结果不发布；恢复后仍可扫描,事务/队列/attempts,NOT_TESTED,zj (iat 验收操作者),,,未执行(扫描事务失败)
+REC-07,P1,7.4 Beat、恢复、公平性矩阵,比较当前有效 beat 周期与冷却配置,扫描频率按配置，测量端到端恢复延迟；不能声称恒定上界,Beat 配置和时间戳,NOT_TESTED,zj (iat 验收操作者),,,未执行(beat 周期实测)
+FR-01,P0,7.5 FileRegistry、取消、目录安全矩阵,受控本地文件经原 FileRegistry 登记,FileRecord.task_id、owner/project/source/size/SHA 真实匹配,DB FileRecord + `sha256sum`,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/07-s4-files/p2-fr-run.log,
+FR-02,P0,7.5 FileRegistry、取消、目录安全矩阵,重复登记同 Task 同文件,不重复计数或扣除配额,前后 FileRecord count、quota,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/07-s4-files/p2-fr-run.log,
+FR-03,P0,7.5 FileRegistry、取消、目录安全矩阵,登记写入中断/事务回滚,不写虚假成功、不删除原文件；保持待对账,savepoint/Task/文件快照,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/07-s4-files/p2-fr-run.log,
+FR-04,P0,7.5 FileRegistry、取消、目录安全矩阵,非零退出或部分文件,Task 非成功；有效部分按原规则处理，`scientific_ready=false`,Task 状态、产物清单,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/07-s4-files/p2-fr-run.log,
+FR-05,P0,7.5 FileRegistry、取消、目录安全矩阵,取消与 finalize 两连接并发,CANCELLED 不被晚到 SUCCESS 覆盖；无二次退款,并发时间线、Task/quota,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+FR-06,P0,7.5 FileRegistry、取消、目录安全矩阵,同 Task 两次取消,结果幂等，不重复副作用；不声称进程已停止,响应和 Task 投影,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/05-s4-postgres/p2-pg-run.log,
+FR-07,P1,7.5 FileRegistry、取消、目录安全矩阵,工作目录冲突、rollback 残留 marker,目录唯一；marker 仅提示，不能单独清理,work_dir、marker/DB 比对,NOT_TESTED,zj (iat 验收操作者),,,未执行(work_dir 冲突 marker)
+FR-08,P0,7.5 FileRegistry、取消、目录安全矩阵,软链接/路径替换/特殊文件输入,拒绝越界、拒绝登记不安全文件，不影响其它 Task,访问拒绝与磁盘快照,PASS_ISOLATED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/04-isolated-regression/p1-download-reliability.log,
+FR-09,P0,7.5 FileRegistry、取消、目录安全矩阵,任意 FAILED/CANCELLED 后重新提交同键,符合原幂等/新键重试，旧 FileRecord 不被复用到新 Task,task_id 与 sha 关联,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/07-s4-files/p2-fr-run.log,
+AG-01,P0,8.2 Agent 接入与权限矩阵,Node 真实 HTTP fixed callback 查询目录,Node/API 双侧记录，同一可信委托；返回授权能力与 BLOCKED 执行状态,请求关联+Gateway audit,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/13-iat-r2/task4-a-node-evidence.txt,
+AG-02,P0,8.2 Agent 接入与权限矩阵,平台 AI Legacy 完整工具轮次,实际装配工具→MCPClient/Bridge→Gateway→结果回灌；拒绝不会 success=true,Runtime 事件与调用日志,NOT_TESTED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,"直接 Gateway 调用,非完整 Legacy 工具轮次;待 Runtime 链复核"
+AG-03,P0,8.2 Agent 接入与权限矩阵,平台 AI LangGraph 完整工具轮次,同上，走真实 LangGraph 执行代码,Runtime / graph event,NOT_TESTED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/04-isolated-regression/p1-agent-gateway.log,"仅隔离回归,未跑真实 LangGraph 工具轮次"
+AG-04,P0,8.2 Agent 接入与权限矩阵,A1 读取 A2/B1 的 Dataset/FileRecord/Task,同用户其他项目按权限隔离；跨用户必须拒绝，无错误泄露,API/PG 行与拒绝日志,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+AG-05,P0,8.2 Agent 接入与权限矩阵,委托过期、重放、token_version 更新,Redis 与持久身份重验后拒绝，不重放 Prepare,Redis 状态、审计,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+AG-06,P0,8.2 Agent 接入与权限矩阵,模块禁用、项目撤权、归档 session,在 invoke 时再验证；旧 Catalog 不产生永久能力,实时 API 拒绝,PASS_ISOLATED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/04-isolated-regression/p1-agent-gateway.test,
+AG-07,P0,8.2 Agent 接入与权限矩阵,模型传入 owner/project/scopes/runtime_verified,Schema 或业务拒绝，无扩权，不改变可信上下文,原始参数（脱敏）、结果,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+AG-08,P0,8.2 Agent 接入与权限矩阵,通用 Context 缺 scopes vs 已有限 scopes,缺省通过可信会话最小派生；已有限 scope 不扩张,Bridge/Gateway 输入投影,PASS_ISOLATED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/04-isolated-regression/p1-agent-gateway.log,
+AG-09,P0,8.2 Agent 接入与权限矩阵,`dataset.prepare_import` 预案,真实 PG Proposal 与原一次确认关联，**没有执行下载 Task**,proposal_id、Task count,NOT_TESTED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,"空 accession 被拒,未持久化合法预案;待合规 prepare 复核"
+AG-10,P0,8.2 Agent 接入与权限矩阵,两并发确认请求抢同一批准,依原确认机制仅一次有效消费；没有模型自批,Redis/PG 原子证据,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+AG-11,P1,8.2 Agent 接入与权限矩阵,Redis 故障时防重放/确认,失败关闭；不能因 Redis 不可用转为允许,真实故障窗口与响应,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-ag-gap-run.log,
+AG-12,P1,8.2 Agent 接入与权限矩阵,GEO/SRA/ENA 元数据查询,权威来源、真实 accession、缺失 size/checksum 明确缺失；无科学文件下载,来源 URL 元数据、大小界限,NOT_TESTED,zj (iat 验收操作者),,,未执行(外部元数据端点)
+AG-13,P0,8.2 Agent 接入与权限矩阵,ToolBridge 业务拒绝/非法参数,`success=false` 或等价错误结构，不走替代执行或隐式重试,tool_result + invoke 次数,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+AG-14,P1,8.2 Agent 接入与权限矩阵,Node Callback 超时、网络断连,产生正确失败；Prepare 不自动重放，不创建伪造 Task,双侧网络日志/PG,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-ag-gap-run.log,
+AG-15,P1,8.2 Agent 接入与权限矩阵,`dataset.list_project_assets` 版本上限,有界最多 200 最近版本；不把截断空列表表示为“无历史”,响应页/数据库计数,PASS_RUNTIME,zj (iat 验收操作者),,evidence/iat-20261017/13-iat-r2/iat-ag-gap-run.log,
+AG-16,P0,8.2 Agent 接入与权限矩阵,12 类 Download Capabilities 状态,未认证协议 `execution_allowed=false`；Cloud Drive 不冒充实现,原 Catalog + Gateway,PASS_RUNTIME,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/08-s5-agent/p3-s5-run.log,
+BR-01,P0,9. P4：浏览器真实科研工作流验收,Chromium 打开真实测试项目的寻宝鼠页面,React Presentation 完整，真实网络请求正常,screenshot、HAR（脱敏）、console,NOT_TESTED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/09-s5-browser/p4-br-run.log,"实测平台登录页,非寻宝鼠 React Presentation;待寻宝鼠 E2E 复核"
+BR-02,P0,9. P4：浏览器真实科研工作流验收,GEO DatasetCard / 文件候选 / 来源证据,与 Gateway 服务端结果一致，缺失字段不伪造,card截图+API payload,NOT_TESTED,zj (iat 验收操作者),,,未执行(GEO DatasetCard 需 Gateway 数据)
+BR-03,P0,9. P4：浏览器真实科研工作流验收,Existing Dataset / Version / FileRecord,仅当前授权项目，版本/校验状态真实显示,screenshot+PG 关联,NOT_TESTED,zj (iat 验收操作者),,,未执行(Existing Dataset 展示)
+BR-04,P0,9. P4：浏览器真实科研工作流验收,Capability / 下载按钮,未认证的协议显示 BLOCKED，不可调用执行 API,点击日志+API trace,PASS_E2E,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/09-s5-browser/p4-br-run.log,
+BR-05,P0,9. P4：浏览器真实科研工作流验收,Import Prepare,显示预案与审核步骤，绝不显示“下载成功”,proposal_id+截图+Task数,NOT_TESTED,zj (iat 验收操作者),,,未执行(Import Prepare 展示)
+BR-06,P0,9. P4：浏览器真实科研工作流验收,A1→A2 项目切换，旧请求迟到,旧数据不覆盖当前项目、不泄漏权限,延迟请求日志+前端截图,PASS_E2E,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/09-s5-browser/p4-br-run.log,
+BR-07,P0,9. P4：浏览器真实科研工作流验收,A/B 切换登录 / session 归档,旧身份数据消失、旧权限不能复用,UI+后端拒绝,NOT_TESTED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/09-s5-browser/p4-br-auth-run.log,平台登录页 A/B 验证;原预期含 session 归档场景未测
+BR-08,P1,9. P4：浏览器真实科研工作流验收,SSE 断流与浏览器刷新,错误终态正确；重新获取持久事实，不伪造 Task,Network/console/会话记录,PASS_E2E,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/09-s5-browser/p4-br-run.log,
+BR-09,P0,9. P4：浏览器真实科研工作流验收,运行中撤销权限/关闭模块,UI 重新读取后按钮受限，后端调用始终拒绝,撤权前后屏幕+日志,NOT_TESTED,zj (iat 验收操作者),,,未执行(运行中撤权)
+BR-10,P1,9. P4：浏览器真实科研工作流验收,中英文与原有组件回归,Composer、Literature、ToolTrace、Grounding、Next Shovel、Sidebar 正常,双语截图/可复现实测,NOT_TESTED,zj (iat 验收操作者),,,未执行(双语回归)
+G3-01,P0,10.2 九项 HTTP 实际安全场景,`small_file`,在批准的自有 HTTP 源下载小文件，SHA/size 正确、真实 RX>0，按原 FileRegistry 登记,Task/scope/sha/RX/DB,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无受信 Supervisor
+G3-02,P0,10.2 九项 HTTP 实际安全场景,`unauthorized_address`,未批准 IPv4/IPv6/私网/回环/元数据地址均无法从 scope 连接,egress deny + 目标无请求,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无受信 Supervisor
+G3-03,P0,10.2 九项 HTTP 实际安全场景,`unauthorized_redirect`,HTTP 跳转到受控未授权目标被阻断，不发生直连 fallback,redirect & deny logs,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无受信 Supervisor
+G3-04,P0,10.2 九项 HTTP 实际安全场景,`unknown_length`,无 Content-Length 响应依可信实际 RX 计量，仍受硬上界,接收字节计量与文件,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无原子 RX 计量
+G3-05,P0,10.2 九项 HTTP 实际安全场景,`network_over_budget`,低额度 + 重试/并发/Range 下真实已放行 RX 不越硬限,原子账本、上下限,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无原子 RX 计量
+G3-06,P0,10.2 九项 HTTP 实际安全场景,`disk_quota_exhausted`,块/inode 耗尽硬拒绝，不影响其他 Task/父卷，不转 SUCCESS,FS quota/EDQUOT、产物,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无 FS quota 设施
+G3-07,P0,10.2 九项 HTTP 实际安全场景,`cancel`,断出口→清空整个进程树→稳定文件对账；CANCELLED 非停止证明,scope 空树+出口撤销,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无 scope 清空设施
+G3-08,P0,10.2 九项 HTTP 实际安全场景,`worker_sigkill`,单测试 Worker 被终止后独立 Supervisor 按租约断出口清理，记录时长,lease/death/reap evidence,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无租约监管
+G3-09,P0,10.2 九项 HTTP 实际安全场景,`partial_reconciliation`,失败后安全稳定文件可登记，但 Task 非成功、Dataset 不伪造 READY,Task/FileRecord/状态,BLOCKED,zj (iat 验收操作者),2026-10-17,evidence/iat-20261017/10-g3-security/BLOCKED-determination.md,无受信 Supervisor

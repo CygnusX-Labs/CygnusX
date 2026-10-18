@@ -86,6 +86,86 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             return {"success": False, "summary": f"提交失败: {e.detail}"}
 
     @mcp.tool()
+    async def cygnusx_prepare(flow_id: str, arguments: dict) -> dict:
+        """预检任意已开放分析流程的参数（固定工具，不随流程数变化）。
+
+        对 flow_id 与 arguments 做全量服务端校验（参数类型/枚举、样本表、
+        比较组、资源约束），通过后冻结参数快照并创建待确认记录（默认 30 分钟有效）。
+        流程特定参数一律放入 arguments 对象，字段以 cygnusx_get_flow_detail
+        返回的契约为准。任务不会立即提交——须用户在平台网页确认后，再由
+        cygnusx_submit 凭 confirmation_id 提交。
+
+        :param flow_id: 流程 ID（先调 cygnusx_list_flows / cygnusx_get_flow_detail 确认已开放）
+        :param arguments: 该流程的完整参数对象
+        :return: JSON 格式预检结果，含 valid / errors / confirmation_id / expires_at
+
+        示例:
+            await cygnusx_prepare("rna_seq", {"task_name": "demo", "species": "human", ...})
+        """
+        try:
+            result = await api.prepare_flow(flow_id, arguments)
+        except CygnusXAPIError as e:
+            return {"success": False, "summary": f"预检失败: {e.detail}"}
+        if not result.get("valid"):
+            errors = result.get("errors") or []
+            lines = [f"- {e.get('field', '?')}: {e.get('message', '')}" for e in errors]
+            return {
+                "success": False,
+                "summary": "参数校验未通过:\n" + "\n".join(lines),
+                "data": result,
+            }
+        confirmation_id = result.get("confirmation_id", "")
+        return {
+            "success": True,
+            "summary": (
+                f"预检通过: {result.get('flow_name', flow_id)}"
+                f"（样本 {result.get('sample_count', 0)} 个，比较组 {result.get('comparison_count', 0)} 个）。\n"
+                f"确认记录: {confirmation_id}（{result.get('expires_at', '?')} 前有效）\n"
+                "请在平台网页确认后调用 cygnusx_submit 提交。"
+            ),
+            "data": result,
+            "next_steps": [
+                "提示用户在平台网页确认该分析任务",
+                f"用户确认后调用 cygnusx_submit(confirmation_id='{confirmation_id}')",
+            ],
+        }
+
+    @mcp.tool()
+    async def cygnusx_submit(confirmation_id: str, user_confirmed: bool = False) -> dict:
+        """提交已预检并经由用户在平台网页确认的分析任务（固定工具）。
+
+        仅接受服务端确认记录 ID：服务端校验归属、有效期与消费状态，原子单次
+        消费防并发重放；同一 confirmation_id 重复调用幂等返回既有 task_id，
+        不新建任务。严禁用布尔值自证已确认。
+
+        :param confirmation_id: cygnusx_prepare 返回、且已由用户在平台网页批准的确认记录 ID
+        :return: JSON 格式提交结果，含 task_id / status / task_url
+
+        示例:
+            await cygnusx_submit("3f8a2b...-....-....")
+        """
+        if user_confirmed:
+            return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请使用服务端 confirmation_id。"}
+        if not confirmation_id:
+            return {"success": False, "summary": "缺少 confirmation_id；请先调用 cygnusx_prepare。"}
+        try:
+            result = await api.submit_flow_confirmation(confirmation_id)
+        except CygnusXAPIError as e:
+            return {"success": False, "summary": f"提交失败: {e.detail}"}
+        task_id = result.get("task_id", "?")
+        return {
+            "success": True,
+            "summary": (
+                f"分析任务已提交!\n  任务 ID: {task_id}\n  状态: {result.get('status', 'queued')}"
+            ),
+            "data": result,
+            "next_steps": [
+                f"调用 cygnusx_get_task_progress(task_id='{task_id}') 监控进度",
+                "任务完成后调用 cygnusx_get_task_logs / cygnusx_get_task 查看结果",
+            ],
+        }
+
+    @mcp.tool()
     async def cygnusx_preview_analysis(
         flow_id: str,
         parameters: dict | None = None,

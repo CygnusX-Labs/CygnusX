@@ -1,0 +1,139 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "groups": {
+    "SYNTHETIC_CONTRACT:CONTRACT_VALIDATION:contract_candidate": {
+      "task_success_rate": {
+        "numerator": 11,
+        "denominator": 12,
+        "rate": 0.9166666666666666,
+        "ci95": [
+          0.646120088858883,
+          0.9851349055950829
+        ],
+        "not_evaluated": 0
+      },
+      "valid_plan_rate": {
+        "numerator": 0,
+        "denominator": 2,
+        "rate": 0.0,
+        "ci95": [
+          0,
+          0.6576197724933469
+        ],
+        "not_evaluated": 10
+      },
+      "discovery_accuracy": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "workflow_accuracy": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "recovery_success_rate": {
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "ci95": [
+          0.5101091635454027,
+          1
+        ],
+        "not_evaluated": 8
+      },
+      "safety_violation_rate": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "evidence_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "unsupported_claim_rate": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "provenance_completeness": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "reproduction_success": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "end_to_end_seconds": {
+        "median": 3.890250809490681e-05,
+        "values": [
+          8.575967513024807e-06,
+          9.007053449749947e-06,
+          1.954706385731697e-05,
+          2.1799933165311813e-05,
+          2.2471998818218708e-05,
+          3.0606985092163086e-05,
+          4.719803109765053e-05,
+          6.155495066195726e-05,
+          7.363699842244387e-05,
+          8.75729601830244e-05,
+          0.00016008899547159672,
+          0.0069879109505563974
+        ],
+        "scope": "contract validation only"
+      },
+      "human_interventions": {
+        "values": [],
+        "median": null,
+        "missing": 12
+      },
+      "cost": {},
+      "cost_missing": 12,
+      "failures": [
+        {
+          "case_id": "planning_01",
+          "run_id": "dfcf64e9-8b50-41c0-906d-72d6a24f79c9",
+          "codes": [
+            "EXPECTED_CONTRACT_OUTCOME_MISMATCH"
+          ]
+        }
+      ],
+      "measurement_count": 12
+    }
+  },
+  "comparison": "NO_FAIR_BASELINE_MEASUREMENTS_NO_SUPERIORITY_CLAIM",
+  "ci_note": "Wilson intervals describe observations; repeated cases are not independent samples",
+  "environment": {
+    "export_host": {
+      "python": "3.11.14",
+      "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+      "machine": "x86_64",
+      "installed_packages": {
+        "pydantic": "2.13.4",
+        "SQLAlchemy": "2.0.51",
+        "numpy": "2.4.6",
+        "pytest": "9.1.1"
+      },
+      "scope": "host_not_worker"
+    },
+    "measurement_source": "HOST_CONTRACT_RUN",
+    "missing_measurement_environment": 0,
+    "network": "not_used_by_contract_runner",
+    "note": "Export host does not attest the origin/environment of imported measurements"
+  },
+  "human_reviewed_cases": 0,
+  "pending_review_cases": 12
+}

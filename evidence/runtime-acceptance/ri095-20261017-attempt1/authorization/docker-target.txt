@@ -1,0 +1,5 @@
+docker_client=28.3.3
+docker_server=28.3.3
+compose=2.39.1
+user=uid=1000(zj) gid=1000(zj) groups=1000(zj),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),101(lxd),986(ollama),987(docker)
+socket=srw-rw---- 1 root docker 0 Oct 16 20:05 /var/run/docker.sock

@@ -1,0 +1,865 @@
+--- before/pipelines/Treasure-Seeking_Mouse/src/components/ui/dialog.tsx
++++ after/pipelines/Treasure-Seeking_Mouse/src/components/ui/dialog.tsx
+@@ -14,6 +14,15 @@
+ 
+ const DialogClose = DialogPrimitive.Close;
+ 
++const overlayClassName = "fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";
++
++function focusableChildren(container: HTMLElement): HTMLElement[] {
++  return [...container.querySelectorAll<HTMLElement>(
++    'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
++  )].filter(element => getComputedStyle(element).display !== "none" &&
++    getComputedStyle(element).visibility !== "hidden");
++}
++
+ const DialogOverlay = React.forwardRef<
+   React.ElementRef<typeof DialogPrimitive.Overlay>,
+   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
+@@ -21,7 +30,7 @@
+   <DialogPrimitive.Overlay
+     ref={ref}
+     className={cn(
+-      "fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
++      overlayClassName,
+       className,
+     )}
+     {...props}
+@@ -31,10 +40,14 @@
+ 
+ const DialogContent = React.forwardRef<
+   React.ElementRef<typeof DialogPrimitive.Content>,
+-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
+->(({ className, children, ...props }, ref) => (
+-  <DialogPortal>
+-    <DialogOverlay />
++  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { portalContainer?: HTMLElement }
++>(({ className, children, portalContainer, onKeyDown, onOpenAutoFocus, ...props }, ref) => (
++  <DialogPortal container={portalContainer}>
++    {portalContainer ? (
++      // Non-modal Radix avoids document-wide scroll/aria mutations. Preserve the
++      // original visual backdrop inside the island instead of dropping it.
++      <div aria-hidden="true" data-treasure-dialog-backdrop="" data-state="open" className={overlayClassName} />
++    ) : <DialogOverlay />}
+     <DialogPrimitive.Content
+       ref={ref}
+       className={cn(
+@@ -42,6 +55,28 @@
+         className,
+       )}
+       {...props}
++      onOpenAutoFocus={(event) => {
++        onOpenAutoFocus?.(event);
++        if (portalContainer && !event.defaultPrevented && event.target instanceof HTMLElement) {
++          event.preventDefault();
++          (focusableChildren(event.target)[0] || event.target).focus();
++        }
++      }}
++      onKeyDown={(event) => {
++        onKeyDown?.(event);
++        if (!portalContainer || event.defaultPrevented || event.key !== "Tab") return;
++        const content = event.currentTarget;
++        const candidates = focusableChildren(content);
++        const first = candidates[0], last = candidates.at(-1);
++        const scope = content.getRootNode();
++        const active = scope instanceof ShadowRoot ? scope.activeElement : document.activeElement;
++        if (!first || !last) { event.preventDefault(); content.focus(); }
++        else if (event.shiftKey && (active === first || active === content)) {
++          event.preventDefault(); last.focus();
++        } else if (!event.shiftKey && (active === last || active === content)) {
++          event.preventDefault(); first.focus();
++        }
++      }}
+     >
+       {children}
+       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background cursor-pointer transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+--- before/pipelines/Treasure-Seeking_Mouse/src/components/chat/EmptyState.tsx
++++ after/pipelines/Treasure-Seeking_Mouse/src/components/chat/EmptyState.tsx
+@@ -1,7 +1,7 @@
+ import { useRef, useState, type ReactNode } from "react";
+ import { ArrowUpLeft, BookOpen, Database, Fingerprint, Microscope } from "lucide-react";
+ import { useI18n } from "@/i18n/provider";
+-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
++import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+ import mouseBase from "@/assets/pet/mouse-base.webp";
+ import mouseWink from "@/assets/pet/mouse-wink.webp";
+ 
+@@ -12,10 +12,11 @@
+   { id: "literature", icon: BookOpen },
+ ] as const;
+ 
+-export function EmptyState({ onPick, composer, submitting }: { onPick: (q: string) => void; composer: ReactNode; submitting: boolean }): React.ReactElement {
++export function EmptyState({ onPick, composer, submitting, dialogContainer }: { onPick: (q: string) => void; composer: ReactNode; submitting: boolean; dialogContainer?: HTMLElement }): React.ReactElement {
+   const { t } = useI18n();
+   const [eggOpen, setEggOpen] = useState(false);
+   const clicks = useRef({ count: 0, last: 0 });
++  const avatar = useRef<HTMLButtonElement>(null);
+   function poke(): void {
+     const now = Date.now();
+     clicks.current.count = now - clicks.current.last < 1500 ? clicks.current.count + 1 : 1;
+@@ -29,7 +30,7 @@
+     <div className="mx-auto flex min-h-full w-full max-w-[820px] flex-col px-4 sm:px-6">
+       <div className="my-auto flex flex-col gap-5 py-6 sm:py-8">
+       <div className="flex items-center gap-3">
+-        <button type="button" onClick={poke} title={t("easterEgg.hint")} aria-label={t("easterEgg.hint")} className="h-14 w-14 shrink-0 rounded-lg bg-pet-gold-soft transition-transform active:scale-95">
++        <button ref={avatar} type="button" onClick={poke} title={t("easterEgg.hint")} aria-label={t("easterEgg.hint")} className="h-14 w-14 shrink-0 rounded-lg bg-pet-gold-soft transition-transform active:scale-95">
+           <img src={mouseBase} alt={t("pet.alt")} className="h-full w-full object-contain" />
+         </button>
+         <div className="min-w-0">
+@@ -66,11 +67,13 @@
+       </div>
+       <p className="text-center text-[11px] leading-relaxed text-muted-foreground">{t("empty.sources")}</p>
+       </div>
+-      <Dialog open={eggOpen} onOpenChange={setEggOpen}>
+-        <DialogContent className="border-border bg-card text-center sm:max-w-[380px]">
++      <Dialog open={eggOpen} onOpenChange={setEggOpen} modal={!dialogContainer}>
++        <DialogContent portalContainer={dialogContainer} onCloseAutoFocus={dialogContainer ? (event) => {
++          event.preventDefault(); avatar.current?.focus();
++        } : undefined} className="border-border bg-card text-center sm:max-w-[380px]">
+           <img src={mouseWink} alt={t("pet.alt")} className="mx-auto h-24 w-24 object-contain" />
+           <DialogTitle>{t("easterEgg.title")}</DialogTitle>
+-          <p className="text-sm leading-relaxed text-muted-foreground">{t("easterEgg.body")}</p>
++          <DialogDescription className="text-sm leading-relaxed text-muted-foreground">{t("easterEgg.body")}</DialogDescription>
+           <button type="button" onClick={() => setEggOpen(false)} className="rounded-lg bg-primary p-3 text-sm text-primary-foreground">{t("easterEgg.close")}</button>
+         </DialogContent>
+       </Dialog>
+--- before/pipelines/Treasure-Seeking_Mouse/src/components/chat/Composer.tsx
++++ after/pipelines/Treasure-Seeking_Mouse/src/components/chat/Composer.tsx
+@@ -15,6 +15,7 @@
+   value,
+   onValueChange,
+   welcome = false,
++  onTyping = emitPetTyping,
+ }: {
+   models: string[];
+   model: string;
+@@ -26,6 +27,7 @@
+   value: string;
+   onValueChange: (value: string) => void;
+   welcome?: boolean;
++  onTyping?: (active: boolean) => void;
+ }): React.ReactElement {
+   const { t } = useI18n();
+   const taRef = useRef<HTMLTextAreaElement>(null);
+@@ -39,9 +41,9 @@
+ 
+   // 输入联动：有字符时阿寻竖起耳朵随时准备出发（桌宠经 petBus 感知）
+   useEffect(() => {
+-    emitPetTyping(value.trim().length > 0);
+-    return () => emitPetTyping(false);
+-  }, [value]);
++    onTyping(value.trim().length > 0);
++    return () => onTyping(false);
++  }, [value, onTyping]);
+ 
+   function submit(): void {
+     const t = value.trim();
+--- before/pipelines/Treasure-Seeking_Mouse/src/i18n/provider.tsx
++++ after/pipelines/Treasure-Seeking_Mouse/src/i18n/provider.tsx
+@@ -11,6 +11,14 @@
+ }
+ 
+ const I18nContext = createContext<I18nValue | null>(null);
++
++/** Platform-owned locale: never reads/writes storage, title or document language. */
++export function ControlledI18nProvider({ lang, children }: { lang: Lang; children: React.ReactNode }): React.ReactElement {
++  const value = useMemo<I18nValue>(() => ({
++    lang, t: createT(lang), setLang: () => {}, toggleLang: () => {},
++  }), [lang]);
++  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
++}
+ 
+ export function I18nProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+   const [lang, setLangState] = useState<Lang>(() => readLang());
+--- before/pipelines/Treasure-Seeking_Mouse/docs/ARC/architecture-2026-10-06.md
++++ after/pipelines/Treasure-Seeking_Mouse/docs/ARC/architecture-2026-10-06.md
+@@ -99,6 +99,12 @@
+ | 10-06 | 关于页同步 README | 新增「阿寻能挖的数据库」七库一节、页脚版本号 |
+ | 10-06 | 样式规范成文 | `docs/ARC/frontend-style-spec.md`，token/组件/动效/硬约束全收录 |
+ 
++### CygnusX 展示 Island 隔离实验（未发布）
++
++`src/island/index.tsx` 提供 mount/update/unmount，仅复用 EmptyState、Composer、本地鼠形象与受控 i18n；未导入 routes、账号、历史或网络服务。Vue PoC 位于父仓 `frontend/poc/treasure-island/`，单向传入非敏感 ViewModel 与回调。ShadowRoot 隔离非字体 CSS，Portal 定位于主题 wrapper；字体规则 refcount 管理并在最终卸载时释放。共用组件新增可选参数，独立 SPA 默认行为不变。
++
++独立 library 与对照页配置为 `vite.island.config.ts`、`vite.island-reference.config.ts`，产物只写 `/tmp`。这不是独立 SPA 的新部署入口。DOM/编译通过不代表视觉通过：当前 Chromium 被运行环境 socket 权限阻断，截图、字体、Focus 与窄屏验收未完成，G-P1A 未通过；父仓报告 `docs/implementation/treasure-react-island-poc.md` 记录边界。非空消息仍拒绝进入此欢迎页 PoC，完整消息/卡片投影属下一阶段。
++
+ ## 八、已知取舍与边界
+ 
+ - **安全定位**：自托管面向熟人场景——scrypt + token 无速率限制；`CHAT_SHARED_SECRET` 只挡爬虫级滥用。公网开放部署前应叠加反代限流（审计报告 §三-F/E 的宿主机 nginx 模板可直接用）。
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/src/island/contract.ts
+@@ -0,0 +1,20 @@
++/** Non-sensitive view data only. Authentication, networking and state belong to Vue. */
++export interface TreasureIslandProps {
++  context: { projectId: string | null; projectName: string; locale: 'zh' | 'en'; theme: 'light' | 'dark' };
++  messages: readonly { id: string; role: 'user' | 'assistant'; content: string }[];
++  modelOptions: readonly string[];
++  selectedModel: string;
++  draft: string;
++  streaming: boolean;
++  disabled: boolean;
++  onDraftChange: (draft: string) => void;
++  onSubmit: (text: string) => void;
++  onPickExample: (text: string) => void;
++  onCancel: () => void;
++  onSelectModel: (model: string) => void;
++  onOpenDataset: (accession: string) => void;
++}
++export interface TreasureIslandHandle {
++  update: (props: TreasureIslandProps) => void;
++  unmount: () => void;
++}
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/src/island/index.tsx
+@@ -0,0 +1,68 @@
++import { createRoot } from 'react-dom/client';
++import { flushSync } from 'react-dom';
++import { EmptyState } from '../components/chat/EmptyState';
++import { Composer } from '../components/chat/Composer';
++import { ControlledI18nProvider } from '../i18n/provider';
++import originalStyles from '../styles.css?inline';
++import type { TreasureIslandHandle, TreasureIslandProps } from './contract';
++export type { TreasureIslandHandle, TreasureIslandProps } from './contract';
++
++const owners = new WeakSet<HTMLElement>();
++const noTyping = () => {};
++let fontUsers = 0;
++let fontStyle: HTMLStyleElement | undefined;
++// Font faces are document resources in Chromium; only these rules leave the shadow tree.
++const fontRules = originalStyles.match(/@font-face\s*\{[^}]+\}/g)?.join('\n') || '';
++const shadowStyles = originalStyles.replace(/@font-face\s*\{[^}]+\}/g, '')
++  .replace(/:root\b/g, '.treasure-island-root');
++function View({ props, portal }: { props: TreasureIslandProps; portal: HTMLElement }) {
++  return <ControlledI18nProvider lang={props.context.locale}>
++    <EmptyState onPick={props.onPickExample} submitting={props.streaming || props.disabled}
++      dialogContainer={portal} composer={<Composer models={[...props.modelOptions]}
++        model={props.selectedModel} onModelChange={props.onSelectModel}
++        streaming={props.streaming} disabled={props.disabled} onSend={props.onSubmit}
++        onStop={props.onCancel} value={props.draft} onValueChange={props.onDraftChange}
++        welcome onTyping={noTyping} />} />
++  </ControlledI18nProvider>;
++}
++/** P1-A welcome PoC only. Full message/card projection is intentionally gated at P1-B. */
++export function mount(container: HTMLElement, initial: TreasureIslandProps): TreasureIslandHandle {
++  if (initial.messages.length) throw new Error('Message rendering requires the P1-B adapter');
++  if (owners.has(container)) throw new Error('Treasure island already mounted');
++  if (container.shadowRoot?.childNodes.length) throw new Error('Treasure island host is not empty');
++  const shadow = container.shadowRoot || container.attachShadow({ mode: 'open' });
++  const style = document.createElement('style');
++  style.textContent = shadowStyles + `\n:host{display:block;min-width:0} .treasure-island-root{min-height:100%;background:var(--background);color:var(--foreground);font-family:var(--font-sans);isolation:isolate} .treasure-island-view{min-height:inherit}`;
++  const theme = document.createElement('div');
++  const view = document.createElement('div');
++  view.className = 'treasure-island-view';
++  const portal = document.createElement('div');
++  portal.dataset.treasurePortal = '';
++  theme.append(view, portal);
++  shadow.append(style, theme);
++  owners.add(container);
++  if (fontUsers++ === 0) {
++    fontStyle = document.createElement('style');
++    fontStyle.dataset.treasureIslandFonts = '';
++    fontStyle.textContent = fontRules;
++    document.head.append(fontStyle);
++  }
++  const root = createRoot(view);
++  let disposed = false;
++  function update(props: TreasureIslandProps) {
++    if (disposed) throw new Error('Treasure island has been unmounted');
++    if (props.messages.length) throw new Error('Message rendering requires the P1-B adapter');
++    theme.className = `treasure-island-root${props.context.theme === 'dark' ? ' dark' : ''}`;
++    theme.lang = props.context.locale === 'zh' ? 'zh-CN' : 'en';
++    flushSync(() => root.render(<View props={props} portal={portal} />));
++  }
++  update(initial);
++  return { update, unmount() {
++    if (disposed) return;
++    disposed = true;
++    flushSync(() => root.unmount());
++    shadow.replaceChildren();
++    owners.delete(container);
++    if (--fontUsers === 0) { fontStyle?.remove(); fontStyle = undefined; }
++  } };
++}
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/src/island/reference.tsx
+@@ -0,0 +1,23 @@
++/** Original welcome components in their ordinary document CSS context; no SPA/auth. */
++import { useState } from 'react';
++import { createRoot } from 'react-dom/client';
++import { EmptyState } from '../components/chat/EmptyState';
++import { Composer } from '../components/chat/Composer';
++import { ControlledI18nProvider } from '../i18n/provider';
++import '../styles.css';
++const query = new URLSearchParams(location.search);
++const lang = query.get('lang') === 'en' ? 'en' : 'zh';
++document.documentElement.lang = lang;
++document.documentElement.classList.toggle('dark', query.get('theme') === 'dark');
++const noTyping = () => {};
++function Reference() {
++  const [draft, setDraft] = useState('');
++  const [model, setModel] = useState('平台模型 A');
++  return <ControlledI18nProvider lang={lang}>
++    <main style={{ minHeight: '100vh' }}><EmptyState submitting={false} onPick={setDraft}
++      composer={<Composer models={['平台模型 A', '平台模型 B']} model={model} onModelChange={setModel}
++        streaming={false} onSend={() => {}} onStop={() => {}} value={draft} onValueChange={setDraft}
++        welcome onTyping={noTyping} />} /></main>
++  </ControlledI18nProvider>;
++}
++createRoot(document.getElementById('root')!).render(<Reference />);
+--- /dev/null
++++ after/frontend/poc/treasure-island/island.poc.ts
+@@ -0,0 +1,132 @@
++// @vitest-environment jsdom
++import { createApp, nextTick } from 'vue'
++import { afterEach, describe, expect, it, vi } from 'vitest'
++import { mount, type TreasureIslandProps } from '@treasure-island-poc'
++import App from './App.vue'
++const cleanups: (() => void)[] = []
++afterEach(() => { cleanups.splice(0).reverse().forEach(fn => fn()); vi.restoreAllMocks() })
++function props(): TreasureIslandProps {
++  return {
++    context: { projectId: null, projectName: '只读', locale: 'zh', theme: 'light' },
++    messages: [], modelOptions: ['A', 'B'], selectedModel: 'A', draft: '', streaming: false, disabled: false,
++    onDraftChange: vi.fn(), onSubmit: vi.fn(), onPickExample: vi.fn(), onCancel: vi.fn(),
++    onSelectModel: vi.fn(), onOpenDataset: vi.fn(),
++  }
++}
++function host() { const el = document.createElement('div'); document.body.append(el); cleanups.push(() => el.remove()); return el }
++describe('original React display island contract', () => {
++  it('renders four original scenes and eight examples with callbacks', () => {
++    const el = host(), p = props(), handle = mount(el, p)
++    cleanups.push(handle.unmount)
++    const scenes = el.shadowRoot!.querySelectorAll('section')
++    expect(scenes).toHaveLength(4)
++    expect(el.querySelector('textarea')).toBeNull()
++    scenes.forEach(scene => (scene.querySelector('button') as HTMLButtonElement).click())
++    expect(p.onPickExample).toHaveBeenCalledTimes(4)
++    expect(el.shadowRoot!.querySelectorAll('section button')).toHaveLength(8)
++    expect(el.shadowRoot!.querySelector('img')?.src).toMatch(/mouse-base.*\.webp/)
++  })
++  it('uses controlled draft, model, disabled and stop callbacks', () => {
++    const el = host(), p = props(), handle = mount(el, { ...p, draft: 'GSE123' })
++    cleanups.push(handle.unmount)
++    const shadow = el.shadowRoot!
++    ;(shadow.querySelector('textarea')!.nextElementSibling as HTMLButtonElement).click()
++    expect(p.onSubmit).toHaveBeenCalledWith('GSE123')
++    expect(p.onDraftChange).toHaveBeenCalledWith('')
++    const select = shadow.querySelector('select')!
++    select.value = 'B'; select.dispatchEvent(new Event('change', { bubbles: true }))
++    expect(p.onSelectModel).toHaveBeenCalledWith('B')
++    handle.update({ ...p, streaming: true })
++    ;(shadow.querySelector('textarea')!.nextElementSibling as HTMLButtonElement).click()
++    expect(p.onCancel).toHaveBeenCalledTimes(1)
++    handle.update({ ...p, disabled: true })
++    expect(shadow.querySelector('textarea')!.disabled).toBe(true)
++    expect([...shadow.querySelectorAll('section button')].every(el => (el as HTMLButtonElement).disabled)).toBe(true)
++  })
++  it('updates locale and theme without platform language, title or storage mutations', () => {
++    const title = document.title, lang = document.documentElement.lang, htmlClass = document.documentElement.className
++    const spy = vi.spyOn(Storage.prototype, 'setItem')
++    const reads = vi.spyOn(Storage.prototype, 'getItem')
++    const el = host(), p = props(), handle = mount(el, p)
++    cleanups.push(handle.unmount)
++    handle.update({ ...p, context: { ...p.context, locale: 'en', theme: 'dark' } })
++    expect(el.shadowRoot!.querySelector('.dark')?.getAttribute('lang')).toBe('en')
++    expect(el.shadowRoot!.querySelector('h1')!.textContent).not.toMatch(/[\u4e00-\u9fff]/)
++    expect(document.title).toBe(title)
++    expect(document.documentElement.lang).toBe(lang)
++    expect(document.documentElement.className).toBe(htmlClass)
++    expect(spy).not.toHaveBeenCalled()
++    expect(reads).not.toHaveBeenCalled()
++    const fonts = document.head.querySelector('[data-treasure-island-fonts]')?.textContent
++    expect(fonts).toMatch(/^@font-face/)
++    expect(fonts).not.toContain('.dark')
++  })
++  it('keeps the easter-egg portal inside the shadow tree and cleans focus guards', async () => {
++    const el = host(), p = props(), handle = mount(el, p)
++    cleanups.push(handle.unmount)
++    const bodyStyle = document.body.getAttribute('style')
++    const trigger = el.shadowRoot!.querySelector('button')!
++    for (let i = 0; i < 3; i++) trigger.click()
++    await new Promise(resolve => setTimeout(resolve, 20))
++    expect(el.shadowRoot!.querySelector('[role=dialog]')).not.toBeNull()
++    expect(el.shadowRoot!.querySelector('[data-treasure-dialog-backdrop]')).not.toBeNull()
++    expect(document.querySelector('[role=dialog]')).toBeNull()
++    expect(document.body.getAttribute('style')).toBe(bodyStyle)
++    handle.unmount()
++    expect(document.querySelector('[data-radix-focus-guard]')).toBeNull()
++    expect(document.querySelector('[aria-hidden=true]')).toBeNull()
++  })
++  it('wraps Tab inside the shadow dialog and restores the avatar on close', async () => {
++    const el = host(), handle = mount(el, props())
++    cleanups.push(handle.unmount)
++    const shadow = el.shadowRoot!, trigger = shadow.querySelector('button')!
++    trigger.focus()
++    for (let i = 0; i < 3; i++) trigger.click()
++    await new Promise(resolve => setTimeout(resolve, 20))
++    const dialog = shadow.querySelector<HTMLElement>('[role=dialog]')!
++    const buttons = dialog.querySelectorAll('button')
++    expect(shadow.activeElement).toBe(buttons[0])
++    buttons[buttons.length - 1].focus()
++    buttons[buttons.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true }))
++    expect(shadow.activeElement).toBe(buttons[0])
++    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, composed: true, cancelable: true }))
++    expect(shadow.activeElement).toBe(buttons[buttons.length - 1])
++    buttons[0].click()
++    await new Promise(resolve => setTimeout(resolve, 20))
++    expect(shadow.querySelector('[role=dialog]')).toBeNull()
++    expect(shadow.querySelector('[data-treasure-dialog-backdrop]')).toBeNull()
++    expect(shadow.activeElement).toBe(trigger)
++  })
++  it('rejects messages until the P1-B projection exists instead of silently dropping them', () => {
++    const el = host(), p = props()
++    expect(() => mount(el, { ...p, messages: [{ id: 'm', role: 'assistant', content: 'preserve me' }] })).toThrow('P1-B')
++    expect(el.shadowRoot).toBeNull()
++  })
++  it('unmounts idempotently and remounts without retained styles or DOM', () => {
++    const el = host(), p = props()
++    for (let i = 0; i < 2; i++) {
++      const handle = mount(el, p)
++      expect(() => mount(el, p)).toThrow('already mounted')
++      expect(document.head.querySelectorAll('[data-treasure-island-fonts]')).toHaveLength(1)
++      handle.unmount(); handle.unmount()
++      expect(el.shadowRoot!.childNodes).toHaveLength(0)
++      expect(document.head.querySelectorAll('[data-treasure-island-fonts]')).toHaveLength(0)
++      expect(() => handle.update(p)).toThrow('unmounted')
++    }
++  })
++  it('enters and leaves the Vue wrapper twice without network requests', async () => {
++    const network = vi.spyOn(globalThis, 'fetch')
++    const el = host(), app = createApp(App)
++    app.mount(el); cleanups.push(() => app.unmount())
++    for (let i = 0; i < 2; i++) {
++      await nextTick()
++      expect(el.querySelector('#treasure-island-host')!.shadowRoot!.querySelectorAll('section')).toHaveLength(4)
++      ;(el.querySelector('#route-toggle') as HTMLButtonElement).click(); await nextTick()
++      expect(el.querySelector('#treasure-island-host')).toBeNull()
++      expect(document.head.querySelector('[data-treasure-island-fonts]')).toBeNull()
++      ;(el.querySelector('#route-toggle') as HTMLButtonElement).click()
++    }
++    await nextTick()
++    expect(network).not.toHaveBeenCalled()
++  })
++})
+--- /dev/null
++++ after/frontend/poc/treasure-island/tsconfig.json
+@@ -0,0 +1,6 @@
++{
++  "extends": "../../tsconfig.json",
++  "compilerOptions": { "types": ["vite/client", "node"] },
++  "include": ["*.ts", "*.vue", "*.d.ts"],
++  "references": []
++}
+--- /dev/null
++++ after/frontend/poc/treasure-island/island.d.ts
+@@ -0,0 +1,5 @@
++declare module '@treasure-island-poc' {
++  export type TreasureIslandProps = import('../../../pipelines/Treasure-Seeking_Mouse/src/island/contract').TreasureIslandProps;
++  export type TreasureIslandHandle = import('../../../pipelines/Treasure-Seeking_Mouse/src/island/contract').TreasureIslandHandle;
++  export function mount(container: HTMLElement, props: TreasureIslandProps): TreasureIslandHandle;
++}
+--- /dev/null
++++ after/frontend/poc/treasure-island/App.vue
+@@ -0,0 +1,52 @@
++<script setup lang="ts">
++import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
++import { mount, type TreasureIslandHandle, type TreasureIslandProps } from '@treasure-island-poc'
++const host = ref<HTMLElement>()
++const locale = ref<'zh' | 'en'>(new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh')
++const theme = ref<'light' | 'dark'>(new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light')
++const draft = ref('')
++const model = ref('平台模型 A')
++const streaming = ref(false)
++const visible = ref(true)
++const events = ref<{ event: string; value?: string }[]>([])
++let island: TreasureIslandHandle | undefined
++function record(event: string, value?: string) { events.value.push({ event, value }) }
++const props = computed<TreasureIslandProps>(() => ({
++  context: { projectId: null, projectName: '全局只读发现', locale: locale.value, theme: theme.value },
++  messages: [], modelOptions: ['平台模型 A', '平台模型 B'], selectedModel: model.value,
++  draft: draft.value, streaming: streaming.value, disabled: false,
++  onDraftChange: (value) => { draft.value = value },
++  onSubmit: (value) => record('submit', value),
++  onPickExample: (value) => { draft.value = value; record('example', value) },
++  onCancel: () => { streaming.value = false; record('cancel') },
++  onSelectModel: (value) => { model.value = value; record('model', value) },
++  onOpenDataset: (value) => record('dataset', value),
++}))
++function enter() { if (host.value && !island) { island = mount(host.value, props.value); record('mount') } }
++function leave() { island?.unmount(); island = undefined; record('unmount') }
++function toggle() { if (visible.value) leave(); visible.value = !visible.value }
++watch(props, value => island?.update(value))
++watch(host, () => { if (visible.value) enter() })
++onMounted(enter)
++onUnmounted(leave)
++</script>
++<template>
++  <nav aria-label="隔离 PoC 控制台">
++    <strong id="platform-sentinel">Vue Shell · 隔离展示 PoC</strong>
++    <button id="route-toggle" @click="toggle">{{ visible ? '离开页面' : '进入页面' }}</button>
++    <button id="theme-toggle" @click="theme = theme === 'light' ? 'dark' : 'light'">{{ theme }}</button>
++    <button id="locale-toggle" @click="locale = locale === 'zh' ? 'en' : 'zh'">{{ locale }}</button>
++    <button id="stream-toggle" @click="streaming = !streaming">测试停止态</button>
++  </nav>
++  <main><div v-if="visible" ref="host" id="treasure-island-host" /></main>
++  <output id="events">{{ JSON.stringify(events) }}</output>
++</template>
++<style>
++/* Deliberately conflicting platform styles: the original UI must stay isolated. */
++body { margin: 0; font: 14px system-ui; background: #eef0f4; color: #25304a; }
++nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; align-items: center; }
++button { border: 2px solid #5064a0; border-radius: 2px; padding: 6px; font-family: monospace; }
++h1 { font-size: 60px; color: red; } section { background: purple; }
++main { min-height: calc(100vh - 58px); } #treasure-island-host { min-height: inherit; }
++#events { display: block; max-height: 70px; overflow: auto; font-size: 11px; padding: 8px; }
++</style>
+--- /dev/null
++++ after/frontend/poc/treasure-island/vitest.config.ts
+@@ -0,0 +1,7 @@
++import { defineConfig } from 'vitest/config'
++import vue from '@vitejs/plugin-vue'
++export default defineConfig({
++  plugins: [vue()],
++  resolve: { alias: { '@treasure-island-poc': '/tmp/treasure-island-poc-lib/treasure-island.js' } },
++  test: { environment: 'jsdom', include: ['poc/treasure-island/*.poc.ts'] },
++})
+--- /dev/null
++++ after/frontend/poc/treasure-island/main.ts
+@@ -0,0 +1,3 @@
++import { createApp } from 'vue'
++import App from './App.vue'
++createApp(App).mount('#app')
+--- /dev/null
++++ after/frontend/poc/treasure-island/vite.config.ts
+@@ -0,0 +1,9 @@
++import { defineConfig } from 'vite'
++import vue from '@vitejs/plugin-vue'
++import { resolve } from 'node:path'
++export default defineConfig({
++  root: __dirname, plugins: [vue()], envDir: '/tmp/treasure-island-no-env',
++  resolve: { alias: { '@treasure-island-poc': '/tmp/treasure-island-poc-lib/treasure-island.js' } },
++  server: { host: '127.0.0.1', port: 5178, strictPort: true, fs: { allow: [resolve(__dirname, '../../..'), '/tmp/treasure-island-poc-lib'] } },
++  build: { outDir: '/tmp/treasure-vue-poc-dist', emptyOutDir: true },
++})
+--- /dev/null
++++ after/frontend/poc/treasure-island/index.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Treasure Island isolated PoC</title></head><body><div id="app"></div><script type="module" src="./main.ts"></script></body></html>
+--- /dev/null
++++ after/scripts/poc/treasure-island-browser.mjs
+@@ -0,0 +1,113 @@
++/** Offline browser evidence runner. Does not need a listening server or credentials.
++ * TREASURE_POC_PLAYWRIGHT_PATH=/path/to/playwright-core/index.js
++ * TREASURE_POC_CHROMIUM=/path/to/chrome node scripts/poc/treasure-island-browser.mjs
++ */
++import { readFile, mkdir, writeFile } from 'node:fs/promises';
++import { resolve, extname, sep } from 'node:path';
++import { pathToFileURL } from 'node:url';
++import assert from 'node:assert/strict';
++const evidence = resolve('evidence/treasure-native/p1a-browser');
++await mkdir(evidence, { recursive: true });
++const report = { status: 'BLOCKED', screenshots: [], errors: [], checks: [] };
++let browser;
++try {
++  const playwright = await import(process.env.TREASURE_POC_PLAYWRIGHT_PATH
++    ? pathToFileURL(process.env.TREASURE_POC_PLAYWRIGHT_PATH).href : 'playwright-core');
++  const { chromium } = playwright.default || playwright;
++  browser = await chromium.launch({ headless: true,
++    ...(process.env.TREASURE_POC_CHROMIUM ? { executablePath: process.env.TREASURE_POC_CHROMIUM } : {}),
++    args: ['--no-sandbox'],
++  });
++  const page = await browser.newPage();
++  const consoleErrors = [];
++  page.on('pageerror', error => consoleErrors.push(error.message));
++  await page.route('**/*', async route => {
++    const url = new URL(route.request().url());
++    if (url.origin !== 'http://treasure-poc.test') return route.abort();
++    const reference = url.pathname.startsWith('/reference/');
++    const root = reference ? '/tmp/treasure-reference-poc-dist' : '/tmp/treasure-vue-poc-dist';
++    const relative = reference ? url.pathname.slice('/reference/'.length) : url.pathname.slice(1);
++    const file = resolve(root, relative || 'index.html');
++    if (!file.startsWith(root + sep)) return route.abort();
++    const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.woff2': 'font/woff2', '.webp': 'image/webp' };
++    try { await route.fulfill({ body: await readFile(file), contentType: types[extname(file)] || 'application/octet-stream' }); }
++    catch { await route.abort(); }
++  });
++  for (const [width, height] of [[1920, 1080], [1366, 768], [768, 1024], [390, 844]]) {
++    await page.setViewportSize({ width, height });
++    for (const lang of ['zh', 'en']) for (const theme of ['light', 'dark']) {
++      for (const mode of ['reference', 'island']) {
++        const path = mode === 'reference' ? '/reference/island-reference.html' : '/';
++        await page.goto(`http://treasure-poc.test${path}?lang=${lang}&theme=${theme}`);
++        await page.locator('h1').waitFor();
++        await page.evaluate(async () => {
++          await document.fonts.load('14px "Noto Sans SC Variable"', '科研寻宝鼠');
++          await document.fonts.ready;
++          const root = document.querySelector('#treasure-island-host')?.shadowRoot || document;
++          await Promise.all([...root.querySelectorAll('img')].map(image => image.decode()));
++        });
++        assert.equal(await page.locator('section').count(), 4);
++        if (mode === 'island') {
++          const isolated = await page.evaluate(() => {
++            const host = document.querySelector('#treasure-island-host');
++            const root = host.shadowRoot;
++            const heading = root.querySelector('h1');
++            return {
++              headingColor: getComputedStyle(heading).color,
++              foreground: getComputedStyle(root.querySelector('.treasure-island-root')).color,
++              noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth,
++              imagesLoaded: [...root.querySelectorAll('img')].every(image => image.naturalWidth > 0),
++            };
++          });
++          assert.equal(isolated.headingColor, isolated.foreground, 'Platform h1 color leaked into island');
++          assert.ok(isolated.noHorizontalOverflow, 'Viewport overflows horizontally');
++          assert.ok(isolated.imagesLoaded, 'Original local image failed to load');
++        }
++        const name = `${mode}-${width}-${lang}-${theme}.png`;
++        await page.screenshot({ path: resolve(evidence, name), fullPage: true });
++        report.screenshots.push(name);
++      }
++    }
++  }
++  await page.goto('http://treasure-poc.test/');
++  for (let i = 0; i < 2; i++) {
++    await page.locator('#treasure-island-host h1').waitFor();
++    await page.locator('#route-toggle').click();
++    assert.equal(await page.locator('#treasure-island-host').count(), 0);
++    assert.equal(await page.locator('style[data-treasure-island-fonts]').count(), 0);
++    await page.locator('#route-toggle').click();
++  }
++  report.checks.push('Vue enter/leave twice; owned font rules released');
++  const examples = page.locator('#treasure-island-host section button');
++  for (const index of [0, 2, 4, 6]) {
++    await examples.nth(index).click();
++    assert.ok((await page.locator('#treasure-island-host textarea').inputValue()).length > 0);
++  }
++  report.checks.push('Four scenes update the Vue-owned draft');
++  const before = await page.evaluate(() => ({ body: document.body.getAttribute('style'), title: document.title, lang: document.documentElement.lang }));
++  await page.locator('#treasure-island-host button').first().click({ clickCount: 3 });
++  await page.locator('#treasure-island-host [role=dialog]').waitFor();
++  assert.equal(await page.locator('#treasure-island-host [data-treasure-dialog-backdrop]').count(), 1);
++  assert.equal(await page.locator('body > [role=dialog]').count(), 0);
++  const dialogButtons = page.locator('#treasure-island-host [role=dialog] button');
++  await dialogButtons.last().focus();
++  await page.keyboard.press('Tab');
++  assert.ok(await dialogButtons.first().evaluate(element => element.getRootNode().activeElement === element));
++  await page.keyboard.press('Shift+Tab');
++  assert.ok(await dialogButtons.last().evaluate(element => element.getRootNode().activeElement === element));
++  await page.screenshot({ path: resolve(evidence, 'island-dialog.png'), fullPage: true });
++  await page.keyboard.press('Escape');
++  await page.locator('#treasure-island-host [role=dialog]').waitFor({ state: 'detached' });
++  assert.ok(await page.locator('#treasure-island-host button').first().evaluate(element => element.getRootNode().activeElement === element));
++  assert.deepEqual(await page.evaluate(() => ({ body: document.body.getAttribute('style'), title: document.title, lang: document.documentElement.lang })), before);
++  report.checks.push('Scoped backdrop, Tab/Shift+Tab wrap, Escape and focus restoration; platform metadata untouched');
++  assert.deepEqual(consoleErrors, []);
++  report.status = 'AUTOMATED_CHECKS_PASSED_VISUAL_REVIEW_PENDING';
++} catch (error) {
++  report.errors.push(String(error));
++  process.exitCode = 1;
++} finally {
++  await browser?.close();
++  await writeFile(resolve(evidence, 'result.json'), JSON.stringify(report, null, 2) + '\n');
++  console.log(JSON.stringify({ status: report.status, screenshots: report.screenshots.length, errors: report.errors }, null, 2));
++}
+--- /dev/null
++++ after/scripts/poc/check-treasure-island.sh
+@@ -0,0 +1,23 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cygnus_repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
++cd "$cygnus_repo_root"
++(
++  cd pipelines/Treasure-Seeking_Mouse
++  ./node_modules/.bin/tsc --noEmit
++  ./node_modules/.bin/tsc --noEmit -p tsconfig.island.json
++  ./node_modules/.bin/vite build --config vite.island.config.ts
++  ./node_modules/.bin/vite build --config vite.island-reference.config.ts
++)
++(
++  cd frontend
++  ./node_modules/.bin/vue-tsc --noEmit -p poc/treasure-island/tsconfig.json
++  ./node_modules/.bin/vitest run --config poc/treasure-island/vitest.config.ts
++  ./node_modules/.bin/vite build --config poc/treasure-island/vite.config.ts
++)
++if [[ -n "${TREASURE_POC_PLAYWRIGHT_PATH:-}" ]]; then
++  node scripts/poc/treasure-island-browser.mjs
++else
++  echo 'Browser evidence not run: set TREASURE_POC_PLAYWRIGHT_PATH to an installed playwright-core module.'
++  echo 'G-P1A remains pending until real browser checks and human visual review pass.'
++fi
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/vite.island.config.ts
+@@ -0,0 +1,31 @@
++import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import tailwindcss from '@tailwindcss/vite';
++import { resolve } from 'node:path';
++
++// Isolated library PoC: no SPA router, env directory, account client or network proxy.
++export default defineConfig({
++  base: './',
++  envDir: '/tmp/treasure-island-no-env',
++  plugins: [tailwindcss(), react(), {
++    name: 'treasure-island-boundary-evidence',
++    generateBundle() {
++      const modules = [...this.getModuleIds()].sort();
++      const forbidden = modules.filter(id => /\/src\/(routes\/|supabase\/|services\/(localAuth|chatStore|seqoutChat))/.test(id));
++      if (forbidden.length) this.error(`Unexpected SPA dependency: ${forbidden.join(', ')}`);
++      this.emitFile({ type: 'asset', fileName: 'module-inventory.json', source: JSON.stringify({ modules, forbidden }, null, 2) });
++    },
++  }],
++  resolve: { alias: { '@': resolve(import.meta.dirname, 'src') } },
++  build: {
++    outDir: '/tmp/treasure-island-poc-lib', emptyOutDir: true,
++    // App-mode assets retain font subsets instead of inlining the entire font into JS.
++    // Strict entry exports keep the same standalone mount/update/unmount ES-module API.
++    assetsInlineLimit: 0,
++    rollupOptions: {
++      input: resolve(import.meta.dirname, 'src/island/index.tsx'),
++      preserveEntrySignatures: 'strict',
++      output: { entryFileNames: 'treasure-island.js', assetFileNames: 'assets/[name]-[hash][extname]' },
++    },
++  },
++});
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/vite.island-reference.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import tailwindcss from '@tailwindcss/vite';
++import { resolve } from 'node:path';
++export default defineConfig({
++  base: './', plugins: [tailwindcss(), react()], envDir: '/tmp/treasure-island-no-env',
++  resolve: { alias: { '@': resolve(import.meta.dirname, 'src') } },
++  build: { outDir: '/tmp/treasure-reference-poc-dist', emptyOutDir: true,
++    rollupOptions: { input: resolve(import.meta.dirname, 'island-reference.html') } },
++});
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/tsconfig.island.json
+@@ -0,0 +1,5 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": { "incremental": false },
++  "include": ["src/island/**/*", "vite.island.config.ts", "vite.island-reference.config.ts"]
++}
+--- /dev/null
++++ after/pipelines/Treasure-Seeking_Mouse/island-reference.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Original Treasure welcome reference</title></head><body><div id="root"></div><script type="module" src="/src/island/reference.tsx"></script></body></html>
+--- /dev/null
++++ after/docs/adr/treasure-react-island-poc.md
+@@ -0,0 +1,29 @@
++# ADR：科研展示 React Island 隔离 PoC
++
++状态：EXPERIMENTAL / 决策待定。没有把 PoC 接入正式平台路由，也没有通过 G-P1A。
++
++## 实验决策
++
++复用子仓根 `src/components/chat/{EmptyState,Composer}.tsx` 与鼠形象、本地字体、中英文词典。新增 `src/island/` 展示入口；不 import SPA routes、Supabase、localAuth、chatStore 或科研网络客户端。Vue PoC 宿主负责草稿、语言、主题、模型与回调，React 不另建项目或消息状态。
++
++构建分成两个独立产物：子仓现有 React19/Vite7/Tailwind4 生成临时 ES module，主前端现有 Vue/Vite5 消费该 module。只用已有 node_modules；主前端没有新增 React 依赖、没有改锁文件。此方式是兼容性实验，尚非供应链与发布方案。
++
++ShadowRoot 隔离 CSS。原 `:root` token 在 shadow 样式内映射至 theme wrapper，`.dark` 与 lang 仅作用于该 wrapper。字体规则作为 refcount 管理的单个 `@font-face` 样式进入 document.head，其他 CSS 留在 shadow。最后一个 Island 卸载时移除该字体样式。
++
++受控 i18n provider 不读写 localStorage、不改 html/title；Composer 在 Island 中使用 no-op typing callback，不触发旧 petBus。共用组件保留默认行为，原 SPA 不传新增可选参数。
++
++彩蛋 Portal 显式挂载 theme wrapper 内，Island 使用非 modal Radix Dialog，以避免旧 Dialog 对整个 document 的滚动、pointer-events 和 aria-hidden 操作。为保持原遮罩结构，在 shadow Portal 内显式绘制同样的遮罩；针对 shadow activeElement 做本地 Tab/Shift+Tab 边界循环，关闭时恢复头像焦点。8 项 DOM 回归包括这些行为；真实焦点循环、焦点恢复、遮罩视觉与窄屏行为仍未验证，不能据此声称原版弹窗已等价恢复。
++
++## 当前证据
++
++- 原 React 源码与独立 Island TS 编译通过；Vue 独立 PoC 类型与构建通过。
++- 8 项 DOM 回归通过，含原四场景/八示例、回调、禁用/停止态、语言主题隔离、Portal 所属树、两次 Vue 进入/离开与 style/focus guard 清理。
++- 模块图 1792 项，禁止的 SPA/auth/network 入口命中为零。模块图检查不是完整安全审计。
++- 初版 library mode 内联完整字体，ES module 约 8.07 MB。已改为保留 ES 入口导出的普通构建、assetsInlineLimit=0 与相对资源路径；字体按原 unicode-range 分片外置，最终 module 约 564 KB，Vue PoC JS 约 660 KB。两侧资源重定位构建与 DOM 测试通过；实际字体加载仍待浏览器验证，生产依赖固定与共享 React 方案仍待评审。
++- Chromium socket 被当前环境拒绝，本地 dev server listen 也返回 EPERM。无新截图，不存在视觉通过结论。
++
++## Gate 与替代路径
++
++G-P1A = BLOCKED / VISUAL REVIEW PENDING。环境拒绝不等于 React 技术方案失败；目前不提前选择 Vue 重写，也不继续耦合 P1-B。保留隔离 PoC，在可运行浏览器环境完成字体、布局、Portal、Focus、滚动与截图对照，再由用户确认；若确认存在不可接受的隔离问题，再按功能矩阵评审 Vue 严格等价实现。
++
++回退只需移除新增实验文件，按 `evidence/treasure-native/p1a-baseline/` 恢复四个共用展示文件本次增量。子仓已有科研后端改动不得覆盖；父仓不能替子仓提交内部变更。本次未提交。
+--- /dev/null
++++ after/docs/implementation/treasure-react-island-poc.md
+@@ -0,0 +1,82 @@
++# Treasure React Island P1-A PoC
++
++状态：最小真实展示 PoC 已实现；隔离编译与 DOM 验证通过；浏览器/视觉 Gate BLOCKED。不是原版体验完整恢复，也不是发布 READY。
++
++P0 仍保留 CONDITIONAL 结论。本阶段使用任务书明确允许的完全隔离 UI PoC 路径，不放开正式 native 入口，不依赖现场 403 已被确认。
++
++## 代码与边界
++
++| 位置 | 内容 |
++|---|---|
++| 子仓 `src/island/contract.ts` | typed 非敏感 context/messages/models/draft 与 callbacks |
++| 子仓 `src/island/index.tsx` | mount/update/unmount、ShadowRoot、refcount 字体资源、原 EmptyState/Composer |
++| 子仓 `src/island/reference.tsx` | 同一原展示组件在普通 document CSS 下渲染的对照页，不含原 SPA/auth |
++| 子仓 `src/i18n/provider.tsx` | 新增受控 provider，不读取或修改平台语言存储 |
++| 子仓 `src/components/chat/{EmptyState,Composer}.tsx` | 可选 Portal 容器与 typing callback；原默认行为保留 |
++| 子仓 `src/components/ui/dialog.tsx` | 可选 Portal container |
++| 子仓 `vite.island*.config.ts`、`tsconfig.island.json` | 隔离 React/对照构建与类型检查；无旧 env/Router 插件 |
++| `frontend/poc/treasure-island/` | 独立 Vue 展示宿主、冲突样式探针、生命周期与交互测试 |
++| `scripts/poc/check-treasure-island.sh` | 本地构建和测试复现入口 |
++| `scripts/poc/treasure-island-browser.mjs` | 离线拦截本地产物的浏览器验证/截图 runner，阻断外网请求 |
++
++主平台 `frontend/src/`、生产路由、生产部署、依赖清单和锁文件在 P1-A 未修改。子仓既有后端脏改动原样保留；修改前共用文件快照在 `evidence/treasure-native/p1a-baseline/`。子仓 HEAD 仍为 `88dae95e7294dea5004330203f56e4211776fd74`。
++
++## 展示恢复矩阵
++
++| 原 UI | PoC 实现证据 | 待验 |
++|---|---|---|
++| 阿寻头像、品牌名、问题标题/副标题 | 直接复用 EmptyState 与原 webp；DOM 有本地资产 | 实际图片绘制、字体、主视觉 |
++| 四场景、双示例 | 原 TASKS 和双语字典；4 sections/8 buttons，四场景 callback 测试 | 点击与键盘真实浏览器体验 |
++| 原 Composer / 模型选择 / 下铲 / 停止 | 直接复用，draft/model/streaming 由 Vue 控制 | IME、自动高度、触屏/焦点 |
++| 中英、明暗 | props update；不改 html/title/storage | 4 视口 × 2 语言 × 2 主题截图 |
++| 彩蛋 Dialog | 原遮罩 class 在 shadow Portal 内复用；Tab 双向边界、关闭焦点恢复与 focus guards 卸载的 DOM 验证 | 遮罩、Focus Trap/恢复、滚动、层叠 |
++| BrandMark / 原独立 Header | 未移入展示首页，避免引入旧独立 Header | 需要时在平台导航另行复用原 BrandMark |
++| Dataset/Literature/Trace/Grounding/Next Shovel | 尚未实现，属于 P1-B | PoC 非空 messages 显式拒绝，避免静默丢消息 |
++
++旧 SPA 的身份、历史、Router、网络调用均未接入。`onOpenDataset` 和 messages 是后续 adapter 的保留类型，当前没有卡片展示实现。项目/模型仅为合成的非敏感测试 ViewModel，不宣称已接通真实项目与 Provider。
++
++## 实际验证
++
++证据全部位于 `evidence/treasure-native/`：
++
++| 验证 | 当前结果 | 日志 |
++|---|---|---|
++| 原 React `tsc --noEmit` | PASS | `p1a-react-types.log` |
++| 独立 Island 与新 Vite 配置 TS | PASS | `p1a-island-types.log` |
++| React library 构建 | PASS | `p1a-library-build.log` |
++| 原展示对照页构建 | PASS | `p1a-reference-build.log` |
++| Vue PoC 类型检查 | PASS | `p1a-vue-types.log` |
++| Vue 消费 React 产物构建 | PASS | `p1a-vue-build.log` |
++| 隔离 DOM | 8 passed | `p1a-dom-tests.log` |
++| 导入边界图 | 1792 modules，forbidden=[] | `p1a-module-inventory.json` |
++| 真浏览器 | BLOCKED：socket setsockopt EPERM / SIGTRAP | `p1a-browser-attempt.log`、`p1a-browser/result.json` |
++| dev server | BLOCKED：listen EPERM 127.0.0.1:5178 | 工具返回；浏览器 runner 本身不依赖监听端口 |
++| 截图 / 人工视觉 | 未执行，没有生成截图 | `p1a-browser/result.json` 的 screenshots=[] |
++
++DOM 测试证明 DOM/回调/指定资源释放，不能证明像素、字体加载、焦点循环、移动布局或所有事件监听器均无泄漏。没有把 jsdom 结果计为真实 E2E。主平台源码未被本 PoC 修改，P0 的主前端 type/build 通过记录保留；P0 全仓门禁失败也仍保留。
++
++## 复现
++
++已有两侧 node_modules 时，在父仓根运行：
++
++```bash
++bash scripts/poc/check-treasure-island.sh
++```
++
++产物位于 `/tmp/treasure-island-poc-lib/`、`/tmp/treasure-reference-poc-dist/`、`/tmp/treasure-vue-poc-dist/`，不进入子仓提交。可运行浏览器的环境中指定**已安装** playwright-core 与 Chromium：
++
++```bash
++TREASURE_POC_PLAYWRIGHT_PATH=/path/to/playwright-core/index.js \
++TREASURE_POC_CHROMIUM=/path/to/chrome \
++node scripts/poc/treasure-island-browser.mjs
++```
++
++runner 仅提供本地编译产物，拒绝其他 origin；计划输出 32 张原展示/Island 对照图及弹窗图。对照页是原 EmptyState/Composer 的实际渲染，不代表旧独立 SPA 的完整截图。还需与用户原截图一起人工对照；脚本通过也只标记 AUTOMATED_CHECKS_PASSED_VISUAL_REVIEW_PENDING。
++
++## 尚未闭合的 Gate
++
++G-P1A 未通过：缺真浏览器图像、字体/窄屏/焦点验证与用户视觉确认，字体已外置分片，仍需实际加载及最终 chunk 预算评估。具体隔离方案与回退见 `docs/adr/treasure-react-island-poc.md`。
++
++P1-B、P1-C、P2、Release 不因编译成功而自动启动。没有更改 `WRITE_RUNTIME_ACCEPTED=False` 或 `worker_paths_verified=false`，没有下载、分析、审批执行、生产访问或部署。下一步是在允许 Chromium 运行的环境执行 runner、逐项修复真实渲染问题并取得视觉验收，再决定正式依赖方案。
++
++本轮 PoC 复核修复：Radix 非模态路径原本省略遮罩，已补 shadow 内原样遮罩；以 ShadowRoot.activeElement 处理键盘边界并显式恢复头像焦点。离线 DOM 验证更新为 8 项通过；浏览器 runner 新增字体/图片加载、水平溢出、样式泄漏与真实键盘焦点断言，当前仍因 socket 权限未执行。

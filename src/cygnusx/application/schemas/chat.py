@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatAttachment(BaseModel):
@@ -90,6 +90,15 @@ class ChatMessageDTO(BaseModel):
     metadata_json: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     tokens: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata_json")
+    @classmethod
+    def protect_download_history(cls, value: dict[str, Any]) -> dict[str, Any]:
+        from cygnusx.domain.download_security import redact_download_tool_history
+
+        projected = redact_download_tool_history(value)
+        assert isinstance(projected, dict)
+        return projected
 
 
 class MessageFeedbackRequest(BaseModel):

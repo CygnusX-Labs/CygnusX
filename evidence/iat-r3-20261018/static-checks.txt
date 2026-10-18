@@ -1,0 +1,82 @@
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 5 source files
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+✅ 迁移文件内部依赖检查通过。
+✅ 迁移链拓扑连通。
+✅ Alembic head 唯一。
+
+🎉 迁移链健康检查全部通过。
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+dwnreceiptnonce01 (head)
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 1 source file
+
+R3 deterministic provider follow-up: ruff_exit=0 mypy_exit=0
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 1 source file
+
+R3 deterministic provider final static rerun: ruff_exit=0 mypy_exit=0
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+2 files already formatted
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'lunardate.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 2 source files
+
+G3 mTLS client final static rerun: ruff_exit=0 format_exit=0 mypy_exit=0
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+2 files already formatted
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'lunardate.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 2 source files
+
+G3 mTLS client and bounded response static checks: ruff_exit=0 format_exit=0 mypy_exit=0
+
+## Bounded streaming implementation static checks
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run ruff check src/cygnusx/infrastructure/download/supervisor_client.py tests/unit/test_download_supervisor_client.py
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run ruff format --check src/cygnusx/infrastructure/download/supervisor_client.py tests/unit/test_download_supervisor_client.py
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+2 files already formatted
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run mypy src/cygnusx/infrastructure/download/supervisor_client.py tests/unit/test_download_supervisor_client.py
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'lunardate.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 2 source files
+
+## Identity-encoding bounded stream static checks
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+2 files already formatted
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'lunardate.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 2 source files
+
+## Supervisor client and preflight static checks
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+3 files already formatted
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'lunardate.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Success: no issues found in 3 source files
+
+## Savepoint notification implementation static checks
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+All checks passed!
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version
+pyproject.toml: note: unused section(s): module = ['docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'mcp.*', 'snakemake.*']
+Success: no issues found in 1 source file

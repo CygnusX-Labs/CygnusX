@@ -89,10 +89,19 @@ class ReportFileModel(Base, TimestampMixin):
     """报告文件表"""
 
     __tablename__ = "report_files"
+    __table_args__ = (
+        CheckConstraint(
+            "(report_id IS NOT NULL AND project_report_job_id IS NULL) OR (report_id IS NULL AND project_report_job_id IS NOT NULL)",
+            name="ck_report_files_source",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    report_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), index=True, nullable=False
+    report_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    project_report_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("project_report_jobs.id", ondelete="RESTRICT"), index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)  # html/pdf/png/zip/csv
@@ -105,7 +114,7 @@ class ReportFileModel(Base, TimestampMixin):
     )
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    report: Mapped["ReportModel"] = relationship("ReportModel", back_populates="files")
+    report: Mapped["ReportModel | None"] = relationship("ReportModel", back_populates="files")
 
 
 class ReportSnapshotModel(Base, TimestampMixin):

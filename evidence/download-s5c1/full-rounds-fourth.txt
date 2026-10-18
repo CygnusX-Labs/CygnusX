@@ -1,0 +1,69 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 25 items / 21 deselected / 4 selected
+
+tests/unit/test_download_s5b_consumption.py ..F
+
+=================================== FAILURES ===================================
+___________________ test_full_shared_tool_round[True-legacy] ___________________
+tests/unit/test_download_s5b_consumption.py:385: in test_full_shared_tool_round
+    assert results[0].metadata['success'] is (not invalid)
+E   assert True is not True
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:01:20.861[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 01:01:20.876[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:20.880[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:20.892[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:20.905[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:20.909[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:20.921[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:20.933[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:20.936[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:20.948[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:20.963[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:20.967[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:20.978[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:20.984[0m | [31m[1mERROR   [0m | [36mapp[0m | [36mcygnusx.application.services.chat_service[0m:[36m_stream_agent_chat_inner[0m:[36m3630[0m | [31m[1mAgent 长期记忆召回失败，已跳过: %s[0m
+[32m2026-10-17 01:01:20.986[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.application.services.chat_service[0m:[36m_stream_agent_chat_inner[0m:[36m4286[0m | [1m[Agent聊天] 开始调用模型 provider=isolated model=isolated messages=1 tools=11 attachments=0[0m
+[32m2026-10-17 01:01:20.997[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:21.001[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:21.013[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:21.025[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:01:21.028[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:01:21.040[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:01:21.057[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.mcp.client[0m:[36mcall_tool[0m:[36m339[0m | [1mmcp.call_tool completed[0m
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[True-legacy]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+============ 1 failed, 2 passed, 21 deselected, 1 warning in 1.37s =============
+--- Logging error in Loguru Handler #5 ---
+Record was: {'elapsed': datetime.timedelta(seconds=6, microseconds=376821), 'exception': (type=<class 'ValueError'>, value=ValueError('I/O operation on closed file.'), traceback=<traceback object at 0x768d0e882d80>), 'extra': {'service': 'app', 'trace_id': '', 'span_id': '', 'request_id': '', 'session_id': ''}, 'file': (name='__init__.py', path='/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/logging/__init__.py'), 'function': 'callHandlers', 'level': (name='ERROR', no=40, icon='❌'), 'line': 1706, 'message': 'Exception while exporting Span.', 'module': '__init__', 'name': 'logging', 'process': (id=2, name='MainProcess'), 'thread': (id=130348222506688, name='OtelBatchSpanRecordProcessor'), 'time': datetime(2026, 10, 17, 1, 1, 21, 869800, tzinfo=datetime.timezone(datetime.timedelta(seconds=28800), 'CST'))}
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/_shared_internal/__init__.py", line 182, in _export
+    self._exporter.export(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/trace/export/__init__.py", line 346, in export
+    self.out.write(self.formatter(span))
+ValueError: I/O operation on closed file.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 206, in emit
+    self._sink.write(str_record)
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_simple_sinks.py", line 16, in write
+    self._stream.write(message)
+ValueError: I/O operation on closed file.
+--- End of logging error ---

@@ -1,0 +1,12 @@
+{
+  "sections": 22,
+  "diagrams": 7,
+  "test_requirements": 45,
+  "ten_questions": 10,
+  "roadmap_tasks": 17,
+  "audited_source_hashes_unchanged": true,
+  "local_links_exist": true,
+  "business_actions_by_audit": "NONE",
+  "runtime_e2e_claim": "NONE",
+  "parallel_changes": "recorded in status-delta; inspected and separately tested"
+}

@@ -1,0 +1,57 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 51 items
+
+tests/unit/test_download_history_projection.py ....                      [  7%]
+tests/unit/chat/test_event_sequence.py .................                 [ 41%]
+tests/unit/chat/test_runtime_golden_baselines.py ..........              [ 60%]
+tests/unit/chat/test_golden_records.py ........                          [ 76%]
+tests/unit/chat/test_langgraph_chat_runtime.py FF..........              [100%]
+
+=================================== FAILURES ===================================
+______ test_langgraph_runtime_error_stream_emits_failed_terminal_and_done ______
+tests/unit/chat/test_langgraph_chat_runtime.py:79: in test_langgraph_runtime_error_stream_emits_failed_terminal_and_done
+    chunks = await _stream_chunks(runtime)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/chat/test_langgraph_chat_runtime.py:54: in _stream_chunks
+    return [
+tests/unit/chat/test_langgraph_chat_runtime.py:54: in <listcomp>
+    return [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: '_Service' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 15:51:35.732[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_______ test_unhandled_langgraph_handoff_emits_failed_terminal_and_done ________
+tests/unit/chat/test_langgraph_chat_runtime.py:132: in test_unhandled_langgraph_handoff_emits_failed_terminal_and_done
+    chunks = await _stream_chunks(LangGraphChatRuntime(service))  # type: ignore[arg-type]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/chat/test_langgraph_chat_runtime.py:54: in _stream_chunks
+    return [
+tests/unit/chat/test_langgraph_chat_runtime.py:54: in <listcomp>
+    return [
+src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py:316: in _stream_agent_chat_langgraph
+    provider_result = await self._service._db.execute(
+                            ^^^^^^^^^^^^^^^^^
+E   AttributeError: '_Service' object has no attribute '_db'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 15:51:36.367[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/chat/test_langgraph_chat_runtime.py::test_langgraph_runtime_error_stream_emits_failed_terminal_and_done
+FAILED tests/unit/chat/test_langgraph_chat_runtime.py::test_unhandled_langgraph_handoff_emits_failed_terminal_and_done
+=================== 2 failed, 49 passed, 1 warning in 0.93s ====================

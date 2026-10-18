@@ -1,0 +1,51 @@
+===RA02_1_XOR_both_null_expect_23514===
+psql:/tmp/ra02.sql:18: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:20: ERROR:  new row for relation "report_files" violates check constraint "ck_report_files_source"
+DETAIL:  Failing row contains (00000000-0000-4000-8000-0000000000f1, null, n, html, 1, p, t, 2026-10-17 04:48:07.278296+00, 2026-10-17 04:48:07.278296+00, x, null, null).
+SQLSTATE=23514
+===RA02_2_XOR_both_set_expect_23514===
+psql:/tmp/ra02.sql:24: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:25: ERROR:  null value in column "created_at" of relation "reports" violates not-null constraint
+DETAIL:  Failing row contains (bdfe57fe-ee52-4256-948f-3d3478d3dfd7, e40d7628-7302-4f30-b2d6-a73fd19b55a3, 00000000-0000-4000-8000-0000000000a1, rna_seq, , , , , , generating, 0, 0, null, null, f, f, 2026-10-17 04:48:07.278643+00, null, 1, scientific, null, null, null, null).
+SQLSTATE=00000
+===RA02_3_FK_bad_file_record_expect_23503===
+psql:/tmp/ra02.sql:31: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:33: ERROR:  insert or update on table "report_files" violates foreign key constraint "fk_report_files_file_record"
+DETAIL:  Key (file_record_id)=(00000000-0000-4000-8000-00000000dead) is not present in table "file_records".
+SQLSTATE=23503
+===RA02_4_XOR_legal_expect_00000===
+psql:/tmp/ra02.sql:37: ERROR:  SAVEPOINT can only be used in transaction blocks
+SQLSTATE=00000
+===RA02_5_frozen_export_manifest_expect_P0001===
+psql:/tmp/ra02.sql:41: ERROR:  RELEASE SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:44: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:45: ERROR:  Frozen project export scope cannot change
+CONTEXT:  PL/pgSQL function cygnusx_project_export_guard() line 6 at RAISE
+SQLSTATE=P0001
+===RA02_6_frozen_report_identity_expect_P0001===
+psql:/tmp/ra02.sql:49: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:50: ERROR:  Frozen project report identity cannot change
+CONTEXT:  PL/pgSQL function cygnusx_project_report_guard() line 1 at RAISE
+SQLSTATE=P0001
+===RA02_7_ready_report_requires_html_expect_23514===
+psql:/tmp/ra02.sql:54: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:55: ERROR:  new row for relation "project_report_jobs" violates check constraint "ck_project_report_ready_file"
+DETAIL:  Failing row contains (00000000-0000-4000-8000-0000000000e1, 00000000-0000-4000-8000-0000000000a1, 00000000-0000-4000-8000-0000000000b1, 00000000-0000-4000-8000-0000000000d1, rrk1, sd1, {}, null, 1, ready, 0, f, null, null, null, null, null, null, null, null, not_requested, 2026-10-17 04:48:07.272876+00, 2026-10-17 04:48:07.272876+00).
+SQLSTATE=23514
+===RA02_8_export_status_enum_expect_23514===
+psql:/tmp/ra02.sql:59: ERROR:  SAVEPOINT can only be used in transaction blocks
+psql:/tmp/ra02.sql:60: ERROR:  new row for relation "project_export_jobs" violates check constraint "ck_project_export_status"
+DETAIL:  Failing row contains (00000000-0000-4000-8000-0000000000d1, 00000000-0000-4000-8000-0000000000a1, 00000000-0000-4000-8000-0000000000b1, rk1, md1, {}, garbage, 0, t, null, null, null, null, null, 2026-10-17 04:48:07.272876+00, 2026-10-17 04:48:07.272876+00).
+SQLSTATE=23514
+===RA02_9_route_B_status_rollback_check===
+ export_status_after 
+---------------------
+ queued
+(1 row)
+
+psql:/tmp/ra02.sql:65: WARNING:  there is no transaction in progress
+ export_status_final 
+---------------------
+ queued
+(1 row)
+

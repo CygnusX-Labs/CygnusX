@@ -1,0 +1,25 @@
+{
+  "scope": "SOURCE_CONFIG_NOT_PRODUCTION_DB",
+  "flags": {
+    "tool_gateway_read_enabled": false,
+    "dataset_discovery_readonly": false,
+    "agent_download_write_enabled": false,
+    "dataset_import_write": false
+  },
+  "research_pack_agents": [
+    "agent-general",
+    "agentteams-manager",
+    "agent-rnaseq",
+    "agent-atacseq",
+    "agent-scrna",
+    "agent-scrna-upstream",
+    "agent-scrna-integration",
+    "agent-scrna-advanced",
+    "agent-data",
+    "agent-qc",
+    "agent-delivery",
+    "agent-cloud-ops",
+    "shania",
+    "agent-skill-builder"
+  ]
+}

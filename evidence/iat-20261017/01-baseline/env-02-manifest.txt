@@ -1,0 +1,663 @@
+ENV-02 baseline manifest (read-only)
+captured_at_utc: 2026-10-17T07:03:49Z
+head: d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33
+branch: feat/research-agent-phase5
+--- dirty file list (paths only) ---
+   M .env.example
+   M .gitignore
+   M ARCHITECTURE_DESIGN/CygnusX_agent_tool_gateway.md
+   M ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+   M ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+   M ARCHITECTURE_DESIGN/CygnusX_frontend.md
+   M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+   M ARCHITECTURE_DESIGN/CygnusX_report_architecture.md
+   M ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md
+   M ARCHITECTURE_DESIGN/README.md
+   m Protocol/FlowFrame
+   M README.md
+   M data/ai/tools/research.yaml
+   M deploy/docker/Dockerfile.frontend
+   M deploy/docker/nginx/frontend.conf
+   M deploy/docker/nginx/nginx.conf
+   M deploy/docker/nginx/nginx.prod.conf
+   D docs/info/26.10.11/2026-10-12_15.20.10.png
+   D docs/info/26.10.11/CygnusX_Design_System_v1.md
+   D docs/info/26.10.11/CygnusX_Frontend_Issues_Backlog.md
+   D docs/info/26.10.11/CygnusX_Frontend_Optimization_Implementation_Report.md
+   D docs/info/26.10.11/CygnusX_UI_Regression_Checklist.md
+   D docs/info/26.10.11/CygnusX__v1.0_Codex.md
+   D docs/info/26.10.11/CygnusX_frontend_W00_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W01_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W02_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W03_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W04_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W05_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W06_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W07_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W08_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W09_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W10_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W11_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W12_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W13_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W14_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W15_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W16_report.md
+   D docs/info/26.10.11/CygnusX_frontend_W17_report.md
+   D "docs/info/26.10.11/CygnusX_\345\211\215\347\253\257\345\205\250\345\271\263\345\217\260\346\234\200\347\273\210\344\274\230\345\214\226\345\256\236\346\226\275\350\247\204\350\214\203_v2.0_Codex.md"
+   D docs/info/26.10.12/2026-10-13_01.50.30.png
+   D docs/info/26.10.12/2026-10-13_01.51.21.png
+   D docs/info/26.10.12/2026-10-13_14.09.13.png
+   D docs/info/26.10.12/2026-10-13_20.36.02.png
+   D docs/info/26.10.12/2026-10-13_21.44.25.png
+   D "docs/info/26.10.12/2026-10-13\342\200\224\342\200\22401.49.41.png"
+   D docs/info/26.10.12/2026-10-1_14.26.17.png
+   D docs/info/26.10.12/CygnusX_Phase1.md
+   D docs/info/26.10.12/CygnusX_Phase3__2026-10-15.md
+   D "docs/info/26.10.12/CygnusX_Phase4_\347\247\221\347\240\224\350\257\201\346\215\256\351\223\276\344\270\216\345\217\257\345\244\215\347\216\260\346\212\245\345\221\212\344\272\244\344\273\230.md"
+   D "docs/info/26.10.12/CygnusX\345\205\263\344\272\216\351\241\265\351\235\242\345\270\203\345\261\200\344\274\230\345\214\226\345\256\236\346\226\275\350\256\241\345\210\222.md"
+   D "docs/info/26.10.12/\345\205\261\344\272\253+Agent+\345\267\245\345\205\267\345\261\202\344\270\216\344\273\273\345\212\241\347\274\226\346\216\222.md"
+   D "docs/info/26.10.12/\345\217\257\345\244\215\347\216\260\346\212\245\345\221\212\345\212\237\350\203\275\350\256\276\350\256\241\346\241\206\346\236\266.md"
+   D docs/info/26.10.2/2026-10-03_13.45.25.png
+   D docs/info/26.10.2/2026-10-03_15.09.40.png
+   D "docs/info/26.10.2/\346\210\252\345\261\2172026-10-02 23.55.27.png"
+   D "docs/info/26.10.2/\346\210\252\345\261\2172026-10-02 23.55.39.png"
+   D "docs/info/26.10.2/\346\210\252\345\261\2172026-10-02 23.55.51.png"
+   D "docs/info/26.10.2/\346\210\252\345\261\2172026-10-02 23.56.01.png"
+   D "docs/info/26.10.2/\346\210\252\345\261\2172026-10-03 11.13.14.png"
+   D docs/info/26.10.3/2026-10-03_20.30.21.png
+   D docs/info/26.10.3/2026-10-03_22.45.42.png
+   D docs/info/26.10.3/agent-sandbox-audit-prompt.md
+   D docs/info/26.10.3/agent-sandbox-remediation-plan.md
+   D "docs/info/26.10.3/\344\270\252\344\272\272\347\251\272\351\227\264\347\233\256\345\275\225\346\262\273\347\220\206-\350\241\245\345\205\205\350\260\203\346\237\245\346\212\245\345\221\212.md"
+   D "docs/info/26.10.3/\344\270\252\344\272\272\347\251\272\351\227\264\347\233\256\345\275\225\346\262\273\347\220\206-\350\241\245\345\205\205\350\260\203\346\237\245\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.10.3/\345\255\230\345\202\250\345\261\202\344\274\230\345\214\226-Phase0\351\242\204\346\243\200\346\212\245\345\221\212.md"
+   D "docs/info/26.10.3/\345\255\230\345\202\250\345\261\202\344\274\230\345\214\226\345\256\236\346\226\275\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.10.3/\345\255\230\345\202\250\345\261\202\344\274\230\345\214\226\345\256\236\346\226\275\346\226\271\346\241\210.md"
+   D "docs/info/26.10.3/\346\225\260\346\215\256\347\256\241\347\220\206\345\211\215\347\253\257\344\274\230\345\214\226\346\226\271\346\241\210.md"
+   D "docs/info/26.10.3/\346\225\260\346\215\256\347\256\241\347\220\206\345\211\215\347\253\257\347\216\260\347\212\266\350\260\203\346\237\245.md"
+   D "docs/info/26.10.3/\346\225\260\346\215\256\347\256\241\347\220\206\345\211\215\347\253\257\350\241\245\345\205\205\350\260\203\346\237\245\346\212\245\345\221\212.md"
+   D "docs/info/26.10.3/\346\225\260\346\215\256\347\256\241\347\220\206\345\211\215\347\253\257\350\241\245\345\205\205\350\260\203\346\237\245\346\217\220\347\244\272\350\257\215.md"
+   D docs/info/26.10.9/CygnusX_model_routing_current_state.md
+   D docs/info/26.10.9/CygnusX_routing_implementation_merged.md
+   D "docs/info/26.8.19/L4\345\215\217\344\275\234\345\256\244\344\270\216\346\226\207\344\273\266\347\263\273\347\273\237\350\236\215\345\220\210\344\274\230\345\214\226\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.8.19/L4\346\204\277\346\231\257\350\220\275\345\234\260\345\256\236\346\226\275\350\256\241\345\210\222.md"
+   D "docs/info/26.8.19/\345\215\217\344\275\234\345\256\244\345\271\263\345\217\260\345\234\260\345\237\272\344\274\230\345\214\226\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.8.19/\345\215\217\344\275\234\345\256\244\345\271\263\345\217\260\345\274\202\345\270\270\346\216\222\346\237\245\344\273\243\347\240\201\345\256\241\346\237\245\346\212\245\345\221\212_2026-08-19.md"
+   D "docs/info/26.8.20/Manager\344\272\272\346\240\274\345\210\206\345\261\202\345\256\236\346\226\275\346\211\213\345\206\214-\351\200\232\347\224\250\345\212\251\346\211\213\344\270\216\351\203\250\351\227\250\347\273\217\347\220\206\345\205\261\345\255\230.md"
+   D "docs/info/26.8.20/image copy 10.png"
+   D "docs/info/26.8.20/image copy 11.png"
+   D "docs/info/26.8.20/image copy 12.png"
+   D "docs/info/26.8.20/image copy 13.png"
+   D "docs/info/26.8.20/image copy 14.png"
+   D "docs/info/26.8.20/image copy 15.png"
+   D "docs/info/26.8.20/image copy 16.png"
+   D "docs/info/26.8.20/image copy 17.png"
+   D "docs/info/26.8.20/image copy 18.png"
+   D "docs/info/26.8.20/image copy 19.png"
+   D "docs/info/26.8.20/image copy 2.png"
+   D "docs/info/26.8.20/image copy 20.png"
+   D "docs/info/26.8.20/image copy 3.png"
+   D "docs/info/26.8.20/image copy 4.png"
+   D "docs/info/26.8.20/image copy 5.png"
+   D "docs/info/26.8.20/image copy 6.png"
+   D "docs/info/26.8.20/image copy 7.png"
+   D "docs/info/26.8.20/image copy 8.png"
+   D "docs/info/26.8.20/image copy 9.png"
+   D "docs/info/26.8.20/image copy.png"
+   D docs/info/26.8.20/image.png
+   D "docs/info/26.8.20/\345\215\217\344\275\234\345\256\244Manager\345\217\215\345\244\215\350\277\275\351\227\256\346\225\260\346\215\256\346\235\245\346\272\220-\344\273\243\347\240\201\350\260\203\347\240\224\346\212\245\345\221\212_2026-08-20.md"
+   D "docs/info/26.8.20/\345\215\217\344\275\234\345\256\244Manager\345\217\215\345\244\215\350\277\275\351\227\256\346\225\260\346\215\256\346\235\245\346\272\220-\344\273\243\347\240\201\350\260\203\347\240\224\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.8.20/\345\215\217\344\275\234\345\256\244Manager\345\217\215\345\244\215\350\277\275\351\227\256\346\225\260\346\215\256\346\235\245\346\272\220-\350\260\203\347\240\224\346\240\270\345\257\271\344\270\216\344\277\256\345\244\215\345\256\236\346\226\275\350\256\241\345\210\222.md"
+   D "docs/info/26.8.21/CygnusXBioOps_\345\210\235\350\265\233_v1.pdf"
+   D "docs/info/26.8.21/F9_Manager\347\273\204\351\230\237\350\264\250\351\207\217\350\257\204\346\265\213\346\212\245\345\221\212.md"
+   D "docs/info/26.8.21/W0_\347\246\201\344\273\244\346\224\271\345\206\231\345\257\271\347\205\247\350\241\250.md"
+   D "docs/info/26.8.21/W0_\351\255\224\346\225\260\350\257\201\346\215\256\346\263\250\351\207\212\346\270\205\345\215\225.md"
+   D "docs/info/26.8.21/image copy 2.png"
+   D "docs/info/26.8.21/image copy.png"
+   D docs/info/26.8.21/image.png
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244L4\345\256\241\346\237\245\344\277\256\345\244\215\344\270\216\344\274\230\345\214\226\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244L4\346\204\277\346\231\257\347\254\246\345\220\210\345\272\246\345\256\241\346\237\245\346\212\245\345\221\212-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244L4\346\204\277\346\231\257\347\254\246\345\220\210\345\272\246\345\256\241\346\237\245\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244N1-N6\345\234\260\345\237\272\346\240\270\345\256\236\346\212\245\345\221\212-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\345\217\214\347\272\277\346\226\275\345\267\245\344\273\273\345\212\241\344\271\246-\344\270\211\344\273\266\345\245\227\345\256\236\347\216\260\344\270\216\345\234\260\345\237\272e2e\351\252\214\346\224\266.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\345\220\216\347\273\255\344\274\230\345\214\226\350\267\257\347\272\277\345\233\276-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\345\220\216\347\273\255\344\274\230\345\214\226\350\267\257\347\272\277\345\233\276-\346\211\247\350\241\214\346\200\273\347\273\223-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\345\267\245\344\275\234\346\240\221\345\257\271\350\264\246\344\270\216\345\210\206\347\273\204\346\217\220\344\272\244\350\256\241\345\210\222-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\346\210\277\351\227\264\344\272\213\344\273\266GC\344\270\216\345\275\222\346\241\243\345\217\243\345\276\204.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\346\236\266\346\236\204\345\215\207\347\272\247\346\226\271\346\241\210-MinIO\346\214\201\344\271\205\345\214\226\344\270\216Case\350\247\243\350\200\246\345\217\212L4\345\211\215\347\275\256\346\224\266\345\260\276.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\346\241\206\346\236\266\346\226\207\346\241\243v3\345\244\215\345\256\241\351\227\256\351\242\230\346\270\205\345\215\225.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\346\241\206\346\236\266\347\216\260\347\212\266\345\205\250\346\231\257\344\270\216\344\274\230\345\214\226\347\202\271_2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\346\265\213\350\257\225quarantine-burn-down-2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\350\203\275\345\212\233\345\222\250\350\257\242\350\257\257\345\205\245\346\216\245\345\215\225\346\265\201\347\250\213-\344\273\243\347\240\201\350\260\203\347\240\224\346\212\245\345\221\212_2026-08-21.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\350\203\275\345\212\233\345\222\250\350\257\242\350\257\257\345\205\245\346\216\245\345\215\225\346\265\201\347\250\213-\344\273\243\347\240\201\350\260\203\347\240\224\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\350\203\275\345\212\233\345\222\250\350\257\242\350\257\257\345\205\245\346\216\245\345\215\225\346\265\201\347\250\213-\350\260\203\347\240\224\346\240\270\345\257\271\344\270\216\344\277\256\345\244\215\345\256\236\346\226\275\350\256\241\345\210\222.md"
+   D "docs/info/26.8.21/\345\215\217\344\275\234\345\256\244\350\236\215\345\220\210ClaudeScience\350\256\276\350\256\241\347\220\206\345\277\265\350\257\204\344\274\260\344\270\216\345\256\236\346\226\275\346\226\271\346\241\210.md"
+   D "docs/info/26.8.22/CygnusX\350\256\260\345\277\206\346\250\241\345\235\227\344\274\230\345\214\226\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.8.22/Screenshot 2026-08-22 at 15.44.31.png"
+   D "docs/info/26.8.22/Screenshot 2026-08-22 at 18.43.49.png"
+   D "docs/info/26.8.22/agentteams/image copy.png"
+   D docs/info/26.8.22/agentteams/image.png
+   D "docs/info/26.8.22/agentteams/\345\215\217\344\275\234\345\256\244\344\270\244\351\241\271\351\234\200\346\261\202\346\226\275\345\267\245\344\273\273\345\212\241\344\271\246_2026-08-22 copy.md"
+   D "docs/info/26.8.22/agentteams/\345\215\217\344\275\234\345\256\244\344\270\244\351\241\271\351\234\200\346\261\202\346\226\275\345\267\245\344\273\273\345\212\241\344\271\246_2026-08-22.md"
+   D "docs/info/26.8.22/agentteams/\345\215\217\344\275\234\345\256\244\346\234\200\347\273\210\346\236\266\346\236\204\345\256\241\346\240\270\346\204\217\350\247\201_2026-08-22.md"
+   D "docs/info/26.8.22/agentteams/\345\215\217\344\275\234\345\256\244\351\202\200\350\257\267\346\210\220\345\221\230\344\270\216\345\210\206\346\236\220\350\277\207\347\250\213\350\256\260\345\275\225\345\244\215\347\216\260\350\260\203\347\240\224_2026-08-22.md"
+   D "docs/info/26.8.22/agentteams/\345\273\272\350\256\256\344\272\214\350\277\207\347\250\213\350\256\260\345\275\225\347\216\260\347\212\266\350\260\203\346\237\245\344\273\273\345\212\241\344\271\246_2026-08-22.md"
+   D "docs/info/26.8.22/agentteams/\345\273\272\350\256\256\344\272\214\350\277\207\347\250\213\350\256\260\345\275\225\347\216\260\347\212\266\350\260\203\346\237\245\346\212\245\345\221\212_2026-08-22.md"
+   D "docs/info/26.8.22/image copy 2.png"
+   D "docs/info/26.8.22/image copy 3.png"
+   D "docs/info/26.8.22/image copy 4.png"
+   D "docs/info/26.8.22/image copy 5.png"
+   D "docs/info/26.8.22/image copy 6.png"
+   D "docs/info/26.8.22/image copy 7.png"
+   D "docs/info/26.8.22/image copy.png"
+   D docs/info/26.8.22/image.png
+   D docs/info/26.8.22/pdf_fix.md
+   D docs/info/26.8.22/pdf_inspect.md
+   D docs/info/26.8.22/pdf_inspection_report_2026-08-22.md
+   D "docs/info/26.8.22/\345\210\206\346\236\220\350\256\241\345\210\222\345\215\241\347\211\207\350\247\206\350\247\211\344\270\216\344\272\244\344\272\222\344\274\230\345\214\226\345\256\236\347\216\260\350\256\241\345\210\222.md"
+   D "docs/info/26.8.22/\345\211\215\347\253\257\347\273\204\344\273\266\350\247\204\350\214\203-Plan\345\210\206\346\236\220\350\256\241\345\210\222\345\215\241\347\211\207.md"
+   D "docs/info/26.8.22/\345\215\217\344\275\234\345\256\244L4\350\256\260\345\277\206\346\216\245\345\205\245\347\216\260\347\212\266\350\260\203\347\240\224\346\212\245\345\221\212.md"
+   D "docs/info/26.8.22/\345\215\217\344\275\234\345\256\244L4\350\256\260\345\277\206\346\216\245\345\205\245\347\216\260\347\212\266\350\260\203\347\240\224\346\217\220\347\244\272\350\257\215.md"
+   D "docs/info/26.8.22/\345\215\217\344\275\234\345\256\244\346\241\206\346\236\266\346\226\207\346\241\243v4\345\244\215\345\256\241\347\273\223\350\256\272-2026-08-22.md"
+   D "docs/info/26.8.22/\350\256\260\345\277\206\347\263\273\347\273\237\347\273\210\351\252\214\344\270\216\346\224\266\345\217\243\345\276\205\345\212\236-2026-08-22.md"
+   D docs/info/26.8.23/APScheduler.md
+   D "docs/info/26.8.23/CygnusX\346\236\266\346\236\204\346\255\242\346\215\237\344\270\216Runtime\347\273\237\344\270\200\344\274\230\345\214\226\346\226\271\346\241\210_2026-08-23.md"
+   D "docs/info/26.8.23/CygnusX\346\236\266\346\236\204\346\255\242\346\215\237\344\270\216Runtime\347\273\237\344\270\200\344\274\230\345\214\226\346\226\271\346\241\210_\344\277\256\350\256\242\347\211\210_2026-08-23.md"
+   D "docs/info/26.8.23/CygnusX\346\236\266\346\236\204\350\260\203\346\237\245\346\212\245\345\221\212_AI\346\227\245\347\250\213\347\256\241\347\220\206\344\270\216\346\217\220\351\206\222\347\263\273\347\273\237_2026-08-23.md"
+   D "docs/info/26.8.23/CygnusX\346\262\231\347\256\261\345\256\211\345\205\250\345\212\240\345\233\272\345\256\236\346\226\275\346\211\213\345\206\214_Codex\346\226\275\345\267\245\347\211\210.md"
+   D docs/info/26.8.23/Explorer_desion.md
+   D "docs/info/26.8.23/Loop Engineering\344\270\216Skill\350\256\276\350\256\241\345\256\241\350\256\241\346\212\245\345\221\212_2026-08-23.md"
+   D "docs/info/26.8.23/Screenshot 2026-08-23 at 17.20.23.png"
+   D docs/info/26.8.23/sanbox.md
+   D docs/info/26.8.23/sanbox_update.md
+   D "docs/info/26.8.24/image copy 2.png"
+   D "docs/info/26.8.24/image copy 3.png"
+   D "docs/info/26.8.24/image copy 4.png"
+   D "docs/info/26.8.24/image copy 5.png"
+   D "docs/info/26.8.24/image copy 6.png"
+   D "docs/info/26.8.24/image copy 7.png"
+   D "docs/info/26.8.24/image copy 8.png"
+   D "docs/info/26.8.24/image copy 9.png"
+   D "docs/info/26.8.24/image copy.png"
+   D docs/info/26.8.24/image.png
+   D "docs/info/26.8.25/image copy 2.png"
+   D "docs/info/26.8.25/image copy 3.png"
+   D "docs/info/26.8.25/image copy 4.png"
+   D "docs/info/26.8.25/image copy 5.png"
+   D "docs/info/26.8.25/image copy.png"
+   D docs/info/26.8.25/image.png
+   D "docs/info/26.8.26/Screenshot 2026-08-26 at 20.41.03.png"
+   D docs/info/26.8.26/bug_1
+   D "docs/info/26.8.26/image copy 2.png"
+   D "docs/info/26.8.26/image copy 3.png"
+   D "docs/info/26.8.26/image copy 4.png"
+   D "docs/info/26.8.26/image copy.png"
+   D docs/info/26.8.26/image.png
+   D "docs/info/26.8.26/\345\215\217\344\275\234\345\256\244\350\267\250Agent\346\266\210\346\201\257\344\272\222\351\200\232\344\274\230\345\214\226\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.8.27/Screenshot 2026-08-27 at 09.16.55.png"
+   D "docs/info/26.8.27/image copy 2.png"
+   D "docs/info/26.8.27/image copy 3.png"
+   D "docs/info/26.8.27/image copy.png"
+   D docs/info/26.8.27/image.png
+   D "docs/info/26.9.11/image copy 2.png"
+   D "docs/info/26.9.11/image copy.png"
+   D docs/info/26.9.11/image.png
+   D "docs/info/26.9.15/image copy.png"
+   D docs/info/26.9.15/image.png
+   D "docs/info/26.9.16/agent\345\256\271\345\231\250\346\235\203\351\231\220\344\270\216\351\225\234\345\203\217\351\205\215\347\275\256\346\243\200\346\237\245\344\274\230\345\214\226\346\270\205\345\215\225.md"
+   D "docs/info/26.9.16/image copy 2.png"
+   D "docs/info/26.9.16/image copy 3.png"
+   D "docs/info/26.9.16/image copy 4.png"
+   D "docs/info/26.9.16/image copy.png"
+   D docs/info/26.9.16/image.png
+   D docs/info/26.9.17/2026-09-17_21.29.33.png
+   D docs/info/26.9.17/2026-09-17_21.34.54.png
+   D docs/info/26.9.17/2026-09-17_21.43.22.png
+   D "docs/info/26.9.17/image copy 2.png"
+   D "docs/info/26.9.17/image copy 3.png"
+   D "docs/info/26.9.17/image copy 4.png"
+   D "docs/info/26.9.17/image copy 5.png"
+   D "docs/info/26.9.17/image copy 6.png"
+   D "docs/info/26.9.17/image copy.png"
+   D docs/info/26.9.17/image.png
+   D docs/info/26.9.18/2026-09-18_10.11.32.png
+   D docs/info/26.9.18/2026-09-18_14.02.23.png
+   D "docs/info/26.9.18/OmicHub\347\247\221\347\240\224\351\227\255\347\216\257-\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D "docs/info/26.9.18/OmicHub\347\247\221\347\240\224\351\227\255\347\216\257-\347\216\260\347\212\266\350\260\203\346\237\245\344\273\273\345\212\241\344\271\246.md"
+   D "docs/info/26.9.18/OmicHub\347\247\221\347\240\224\351\227\255\347\216\257-\347\216\260\347\212\266\350\260\203\346\237\245\346\212\245\345\221\212.md"
+   D "docs/info/26.9.18/image copy 2.png"
+   D "docs/info/26.9.18/image copy 3.png"
+   D "docs/info/26.9.18/image copy 4.png"
+   D "docs/info/26.9.18/image copy 5.png"
+   D "docs/info/26.9.18/image copy.png"
+   D docs/info/26.9.18/image.png
+   D docs/info/26.9.18/omichub-vs-openai4s-comparison-report.md
+   D docs/info/26.9.18/remote-and-notebook-run-map.md
+   D docs/info/26.9.19/agent_execution_framework_update.md
+   D docs/info/26.9.19/ai_bug.md
+   D "docs/info/26.9.19/image copy 2.png"
+   D "docs/info/26.9.19/image copy 3.png"
+   D "docs/info/26.9.19/image copy 4.png"
+   D "docs/info/26.9.19/image copy 5.png"
+   D "docs/info/26.9.19/image copy 6.png"
+   D "docs/info/26.9.19/image copy 7.png"
+   D "docs/info/26.9.19/image copy 8.png"
+   D "docs/info/26.9.19/image copy.png"
+   D docs/info/26.9.19/image.png
+   D "docs/info/26.9.2/image copy 2.png"
+   D "docs/info/26.9.2/image copy 3.png"
+   D "docs/info/26.9.2/image copy 4.png"
+   D "docs/info/26.9.2/image copy 5.png"
+   D "docs/info/26.9.2/image copy 6.png"
+   D "docs/info/26.9.2/image copy 7.png"
+   D "docs/info/26.9.2/image copy.png"
+   D docs/info/26.9.2/image.png
+   D "docs/info/26.9.2/\346\210\252\345\261\2172026-09-04 09.24.09.png"
+   D docs/info/26.9.20/2026-09-20_18.42.12.png
+   D docs/info/26.9.20/2026-09-20_22.33.54.png
+   D "docs/info/26.9.20/2026-09-20\342\200\224\342\200\22414.45.27.png"
+   D "docs/info/26.9.20/image copy 10.png"
+   D "docs/info/26.9.20/image copy 11.png"
+   D "docs/info/26.9.20/image copy 2.png"
+   D "docs/info/26.9.20/image copy 3.png"
+   D "docs/info/26.9.20/image copy 4.png"
+   D "docs/info/26.9.20/image copy 5.png"
+   D "docs/info/26.9.20/image copy 6.png"
+   D "docs/info/26.9.20/image copy 7.png"
+   D "docs/info/26.9.20/image copy 8.png"
+   D "docs/info/26.9.20/image copy 9.png"
+   D "docs/info/26.9.20/image copy.png"
+   D docs/info/26.9.20/image.png
+   D "docs/info/26.9.21/MAS\345\256\236\346\226\275_\351\230\266\346\256\2650-4\345\256\214\346\210\220\346\212\245\345\221\212.md"
+   D "docs/info/26.9.21/MAS\345\256\236\346\226\275_\351\230\266\346\256\2650\345\267\256\345\274\202\346\270\205\345\215\225.md"
+   D "docs/info/26.9.21/image copy 2.png"
+   D "docs/info/26.9.21/image copy.png"
+   D docs/info/26.9.21/image.png
+   D docs/info/26.9.21/web_s.md
+   D "docs/info/26.9.21/\347\224\237\347\211\251\344\277\241\346\201\257\351\203\250\351\227\250\351\241\265\351\235\242_MAS\346\234\200\345\260\217\345\256\236\347\216\260\345\256\236\346\226\275\346\211\213\345\206\214.md"
+   D docs/info/26.9.22/2026-09-22_09.27.52.png
+   D docs/info/26.9.22/api_routes_full.tsv
+   D "docs/info/26.9.22/image copy 2.png"
+   D "docs/info/26.9.22/image copy.png"
+   D docs/info/26.9.22/image.png
+   D docs/info/26.9.23/context-pipeline-investigation-report.md
+   D docs/info/26.9.23/flowagent_mvp_implementation_plan.md
+   D docs/info/26.9.23/migration-spec-openai4s-to-omichub.md
+   D docs/info/26.9.23/prompt-omichub-investigation.md
+   D docs/info/26.9.23/session-management.md
+   D docs/info/26.9.23/snakemake_agent_integration_survey_prompt.md
+   D docs/info/26.9.23/snakemake_agent_integration_survey_report.md
+   D docs/info/26.9.25/image.png
+   D docs/info/26.9.25/openai4s-long-conversation-architecture.md
+   D "docs/info/26.9.29/image copy 2.png"
+   D "docs/info/26.9.29/image copy 3.png"
+   D "docs/info/26.9.29/image copy 4.png"
+   D "docs/info/26.9.29/image copy.png"
+   D docs/info/26.9.29/image.png
+   D "docs/info/26.9.29/\346\231\272\350\203\275\344\275\223\351\200\211\346\213\251\345\274\271\347\252\227\351\207\215\346\236\204-\345\256\236\347\216\260\350\256\241\345\210\222.md"
+   D docs/info/26.9.30/agent_governance_code_audit.md
+   D docs/info/26.9.30/image.png
+   D "docs/info/26.9.4/image copy 2.png"
+   D "docs/info/26.9.4/image copy.png"
+   D docs/info/26.9.4/image.png
+   D "docs/info/26.9.4/\345\273\272\350\256\256\350\277\275\351\227\256Chips\345\212\237\350\203\275\345\256\236\347\216\260\350\256\241\345\210\222.md"
+   D "docs/info/26.9.7/image copy 2.png"
+   D "docs/info/26.9.7/image copy.png"
+   D docs/info/26.9.7/image.png
+   M flows/atac_seq.yaml
+   M flows/rna_seq.yaml
+   M frontend/package.json
+   M frontend/src/api/agentTools.ts
+   M frontend/src/api/datasets.ts
+   M frontend/src/api/researchAgent.ts
+   M frontend/src/api/researchDelivery.ts
+   M frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts
+   M frontend/src/types/download.ts
+   M frontend/src/views/DownloadsView.vue
+   M frontend/src/views/ProjectDetailView.vue
+   M frontend/src/views/TreasureMouseView.vue
+   M frontend/vite.config.js
+   M frontend/vite.config.ts
+   M mcp-server/ARCHITECTURE.md
+   M mcp-server/client/api_client.py
+   M mcp-server/config.yaml
+   M mcp-server/core/config.py
+   M mcp-server/tools.yaml
+   M mcp-server/tools/analysis.py
+   M mcp-server/tools/downloads.py
+   M mcp-server/tools/flows.py
+   M mcp-server/tools/pipelines.py
+   m pipelines/ATACFlow
+   m pipelines/RNAFlow
+   m pipelines/Treasure-Seeking_Mouse
+   m pipelines/tools
+   M src/cygnusx/api/v1/ai.py
+   M src/cygnusx/api/v1/datasets.py
+   M src/cygnusx/api/v1/downloads.py
+   M src/cygnusx/api/v1/flows.py
+   M src/cygnusx/api/v1/mcp.py
+   M src/cygnusx/api/v1/mcp_builder.py
+   M src/cygnusx/api/v1/research_agent.py
+   M src/cygnusx/api/v1/research_delivery.py
+   M src/cygnusx/api/v1/router.py
+   M src/cygnusx/application/schemas/agent_tools.py
+   M src/cygnusx/application/schemas/chat.py
+   M src/cygnusx/application/schemas/download.py
+   M src/cygnusx/application/schemas/mcp.py
+   M src/cygnusx/application/schemas/report_delivery.py
+   M src/cygnusx/application/schemas/research_agent.py
+   M src/cygnusx/application/schemas/task.py
+   M src/cygnusx/application/services/agent_service.py
+   M src/cygnusx/application/services/agent_tool_delegation.py
+   M src/cygnusx/application/services/agent_tool_gateway.py
+   M src/cygnusx/application/services/analysis_flow_tool_service.py
+   M src/cygnusx/application/services/bioreport_adapter.py
+   M src/cygnusx/application/services/chat/chat_event_service.py
+   M src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py
+   M src/cygnusx/application/services/chat/utils.py
+   M src/cygnusx/application/services/chat_service.py
+   M src/cygnusx/application/services/dataset_analysis_service.py
+   M src/cygnusx/application/services/dataset_import_service.py
+   M src/cygnusx/application/services/download_service.py
+   M src/cygnusx/application/services/flow_service.py
+   M src/cygnusx/application/services/mcp_builder_service.py
+   M src/cygnusx/application/services/mcp_service.py
+   M src/cygnusx/application/services/pipeline_controller.py
+   M src/cygnusx/application/services/project_service.py
+   M src/cygnusx/application/services/report_audit_renderer.py
+   M src/cygnusx/application/services/report_service.py
+   M src/cygnusx/application/services/report_snapshot_builder.py
+   M src/cygnusx/application/services/research_delivery_service.py
+   M src/cygnusx/application/services/research_execution_binding.py
+   M src/cygnusx/application/services/research_provenance_service.py
+   M src/cygnusx/application/services/research_treasure_service.py
+   M src/cygnusx/application/services/task_service.py
+   M src/cygnusx/application/services/tool_bridge_service.py
+   M src/cygnusx/application/services/tool_confirmation_service.py
+   M src/cygnusx/core/config.py
+   M src/cygnusx/domain/flow/submission_validator.py
+   M src/cygnusx/domain/flow/value_objects.py
+   M src/cygnusx/domain/task/services.py
+   M src/cygnusx/infrastructure/celery_app/celery.py
+   M src/cygnusx/infrastructure/celery_app/tasks/analysis.py
+   M src/cygnusx/infrastructure/celery_app/tasks/download.py
+   M src/cygnusx/infrastructure/database/models/__init__.py
+   M src/cygnusx/infrastructure/database/models/mcp_builder.py
+   M src/cygnusx/infrastructure/database/models/report.py
+   M src/cygnusx/infrastructure/database/repositories/task_repository.py
+   M src/cygnusx/infrastructure/execution/base.py
+   M src/cygnusx/infrastructure/execution/binary.py
+   M src/cygnusx/infrastructure/mas/ebi.py
+   M src/cygnusx/infrastructure/mcp/builder/versioning.py
+   M src/cygnusx/infrastructure/mcp/client.py
+   M src/cygnusx/infrastructure/mcp/pipeline_preset.py
+   M src/cygnusx/infrastructure/mcp/presets.py
+   M src/cygnusx/main.py
+   M src/cygnusx/tools/download/config.py
+   M src/cygnusx/tools/flow_schema_compiler.py
+   M src/cygnusx/tools/schema_loader.py
+   M tests/unit/chat/test_langgraph_chat_runtime.py
+   M tests/unit/test_agent_tools_phase2.py
+   M tests/unit/test_dataset_gateway_phase3.py
+   M tests/unit/test_dataset_import_handoff.py
+   M tests/unit/test_dataset_phase3_review.py
+   M tests/unit/test_download_service.py
+   M tests/unit/test_langgraph_runtime.py
+   M tests/unit/test_mcp_builder_version_control.py
+   M tests/unit/test_report_service.py
+   M tool_configs/tools_schema.yaml
+  ?? ARCHITECTURE_DESIGN/CygnusX_download_architecture.md
+  ?? ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+  ?? ARCHITECTURE_DESIGN/CygnusX_treasure_mouse_architecture.md
+  ?? alembic/versions/bioopsphase5_research_plans.py
+  ?? alembic/versions/c1d2e3f4b5a6_add_contract_digest_to_mcp_versions.py
+  ?? alembic/versions/mcpdigestmerge01_merge_contract_digest_and_project_delivery.py
+  ?? alembic/versions/projectdelivery01_project_exports.py
+  ?? alembic/versions/projectreport01_project_report_jobs.py
+  ?? benchmarks/
+  ?? deploy/acceptance/
+  ?? docs/adr/download-transport-and-asset-registration.md
+  ?? docs/adr/phase5-governed-research-agent-orchestration.md
+  ?? docs/adr/treasure-agent-shared-tools-and-delivery.md
+  ?? docs/adr/treasure-native-entry-and-capabilities.md
+  ?? docs/adr/treasure-react-island-poc.md
+  ?? docs/audits/appendix-download-capability-matrix.yaml
+  ?? docs/audits/appendix-download-evidence-index.md
+  ?? docs/audits/cygnusx-phase5-acceptance.md
+  ?? docs/audits/cygnusx-phase5-changes.md
+  ?? docs/audits/cygnusx-phase5-entry-gates.md
+  ?? docs/audits/cygnusx-phase5-implementation-report.md
+  ?? docs/audits/cygnusx-platform-download-capability-and-agent-tool-readiness-audit-2026-10-16.md
+  ?? docs/audits/cygnusx-project-delivery-runtime-acceptance.md
+  ?? docs/audits/cygnusx-research-lifecycle-and-reproducibility-architecture-audit-2026-10-16.md
+  ?? docs/audits/cygnusx-ri095-real-runtime-gates.md
+  ?? docs/audits/cygnusx-ri095-runtime-e2e-investigation-2026-10-17.md
+  ?? docs/audits/cygnusx-ri095-runtime-e2e-results.md
+  ?? docs/audits/cygnusx-runtime-acceptance-environment.md
+  ?? docs/audits/cygnusx-treasure-mouse-ui-regression-and-mcp-integration-audit-2026-10-15.md
+  ?? docs/audits/treasure-e2e-release-gates.md
+  ?? docs/contracts/cygnusx-claim-provenance-request-v1.schema.json
+  ?? docs/contracts/cygnusx-claim-provenance-v1.schema.json
+  ?? docs/contracts/cygnusx-download-capabilities-v1.md
+  ?? docs/contracts/cygnusx-download-runtime-manifest-v1.md
+  ?? docs/contracts/cygnusx-download-worker-observation-v1.schema.json
+  ?? docs/contracts/cygnusx-execution-definition-v1.md
+  ?? docs/contracts/cygnusx-execution-definition-v1.schema.json
+  ?? docs/contracts/cygnusx-execution-definition-v2.schema.json
+  ?? docs/contracts/cygnusx-execution-evidence-v1.md
+  ?? docs/contracts/cygnusx-execution-evidence-v1.schema.json
+  ?? docs/contracts/cygnusx-project-delivery-v1.md
+  ?? docs/contracts/cygnusx-project-delivery-v1.schema.json
+  ?? docs/contracts/cygnusx-project-report-source-v1.md
+  ?? docs/contracts/cygnusx-project-report-source-v1.schema.json
+  ?? docs/contracts/cygnusx-project-verified-claim-selection-v1.md
+  ?? docs/contracts/cygnusx-project-verified-claim-selection-v1.schema.json
+  ?? docs/contracts/cygnusx-research-artifact-cell-v1.schema.json
+  ?? docs/contracts/cygnusx-research-claim-input-v1.schema.json
+  ?? docs/contracts/cygnusx-research-claim-v1.schema.json
+  ?? docs/contracts/cygnusx-research-plan-input-v1.schema.json
+  ?? docs/contracts/cygnusx-research-plan-v1.md
+  ?? docs/contracts/cygnusx-research-plan-v1.schema.json
+  ?? docs/contracts/treasure-research-actions-v1.md
+  ?? docs/contracts/treasure-research-event-projection-v1.md
+  ?? docs/contracts/treasure-research-message-v1.md
+  ?? docs/decisions/
+  ?? docs/design/cygnusx-project-scientific-summary-report.md
+  ?? docs/design/cygnusx-project-traceable-export-and-reproduction.md
+  ?? docs/implementation/CygnusX_TreasureMouse_End_to_End_Implementation_2026-10-16.md
+  ?? docs/implementation/cygnusx-download-runtime-admission.md
+  ?? docs/implementation/cygnusx-integration-runtime-enablement.md
+  ?? docs/implementation/cygnusx-lifecycle-stabilization-ri13-implementation.md
+  ?? docs/implementation/cygnusx-project-delivery-ri06-ri09-implementation.md
+  ?? docs/implementation/cygnusx-project-delivery-stabilization.md
+  ?? docs/implementation/cygnusx-research-lifecycle-integration-implementation-roadmap-2026-10-16.md
+  ?? docs/implementation/cygnusx-research-lifecycle-ri01-ri04-implementation.md
+  ?? docs/implementation/cygnusx-ri05-isolated-runtime-acceptance-plan.md
+  ?? docs/implementation/cygnusx-ri06-ri09-project-export-interface-proposal.md
+  ?? docs/implementation/cygnusx-ri095-project-scientific-report-phase1-4.md
+  ?? docs/implementation/cygnusx-ri095-runtime-stabilization.md
+  ?? docs/implementation/cygnusx-ri10-claim-provenance.md
+  ?? docs/implementation/download-compass.md
+  ?? docs/implementation/download-completed-work-summary-2026-10-16.md
+  ?? docs/implementation/download-s0-baseline-and-red-test.md
+  ?? docs/implementation/download-s1-file-registry-dataset-bridge.md
+  ?? docs/implementation/download-s2-worker-protocol-provenance.md
+  ?? docs/implementation/download-s3-closure-implementation.md
+  ?? docs/implementation/download-s3-e1-runtime-validation.md
+  ?? docs/implementation/download-s3-e1-trusted-execution-boundary.md
+  ?? docs/implementation/download-s3-network-budget-safety.md
+  ?? docs/implementation/download-s3-runtime-enforcement-closure.md
+  ?? docs/implementation/download-s4a-task-reliability-implementation.md
+  ?? docs/implementation/download-s4b0-reliability-hardening.md
+  ?? docs/implementation/download-s4b1-runtime-reliability-acceptance.md
+  ?? docs/implementation/download-s5a-capability-catalog.md
+  ?? docs/implementation/download-s5b-agent-capability-consumption.md
+  ?? docs/implementation/download-s5c-agent-runtime-acceptance.md
+  ?? docs/implementation/download-s5c1-agent-runtime-code-closure.md
+  ?? docs/implementation/download-s5c2-agent-runtime-acceptance.md
+  ?? docs/implementation/treasure-e2e-w0-baseline.md
+  ?? docs/implementation/treasure-full-presentation-migration.md
+  ?? docs/implementation/treasure-mouse-e2e-research-workflow-implementation.md
+  ?? docs/implementation/treasure-native-entry-reload-fix.md
+  ?? docs/implementation/treasure-native-p0-access-and-entry.md
+  ?? docs/implementation/treasure-native-refresh-404-fix.md
+  ?? docs/implementation/treasure-native-screenshot-style-alignment.md
+  ?? docs/implementation/treasure-react-island-poc.md
+  ?? docs/info/26.10.16/
+  ?? docs/info/26.10.17/
+  ?? docs/info/old_info/
+  ?? docs/runbooks/cygnusx-phase5-rollback.md
+  ?? "docs/\344\273\216\346\230\237\345\260\230\345\210\260\347\224\237\345\221\275.png"
+  ?? evidence/download-s0/
+  ?? evidence/download-s2/
+  ?? evidence/download-s3-closure/
+  ?? evidence/download-s3-e1-runtime-validation/
+  ?? evidence/download-s3-e1/
+  ?? evidence/download-s3-runtime-enforcement/
+  ?? evidence/download-s3/
+  ?? evidence/download-s4a/
+  ?? evidence/download-s4b0/
+  ?? evidence/download-s4b1/
+  ?? evidence/download-s5a/
+  ?? evidence/download-s5b/
+  ?? evidence/download-s5c/
+  ?? evidence/download-s5c1/
+  ?? evidence/download-s5c2/
+  ?? evidence/iat-20261017/
+  ?? evidence/lifecycle-audit-2026-10-16/
+  ?? evidence/lifecycle-ri01-ri04/
+  ?? evidence/lifecycle-stabilization-ri13/
+  ?? evidence/phase5/
+  ?? evidence/project-delivery-ri06-ri09/
+  ?? evidence/project-delivery-runtime-ri10/
+  ?? evidence/ri-env-01/
+  ?? evidence/ri095-project-report-phase1-4/
+  ?? evidence/runtime-acceptance/
+  ?? evidence/treasure-e2e/
+  ?? evidence/treasure-native/
+  ?? frontend/poc/
+  ?? frontend/scripts/
+  ?? frontend/src/api/claimProvenance.ts
+  ?? frontend/src/api/downloadCapabilities.ts
+  ?? frontend/src/api/projectDelivery.ts
+  ?? frontend/src/api/projectReport.ts
+  ?? frontend/src/api/researchPlans.ts
+  ?? frontend/src/components/ClaimEvidencePanel.vue
+  ?? frontend/src/components/ProjectResearchDelivery.vue
+  ?? frontend/src/components/ProjectScientificSummary.vue
+  ?? frontend/src/components/ResearchPlanWorkbench.vue
+  ?? frontend/src/components/__tests__/
+  ?? frontend/src/components/research/TreasureBrandMark.vue
+  ?? frontend/src/components/research/TreasureOriginalDisplay.vue
+  ?? frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
+  ?? frontend/src/components/research/__tests__/TreasureAccess.test.ts
+  ?? frontend/src/components/research/__tests__/TreasureOriginalEntry.test.ts
+  ?? frontend/src/components/research/adapters/
+  ?? frontend/src/components/research/treasureIslandLoader.ts
+  ?? frontend/src/types/treasureIsland.d.ts
+  ?? frontend/src/views/TreasureResearchWorkbench.vue
+  ?? frontend/src/views/__tests__/DownloadsCapabilities.test.ts
+  ?? frontend/src/views/__tests__/DownloadsTransportContract.test.ts
+  ?? frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+  ?? scripts/analyze_research_benchmark.py
+  ?? scripts/check_download_execution_boundary.py
+  ?? scripts/evaluate_research_benchmark.py
+  ?? scripts/export_research_plan_contracts.py
+  ?? scripts/inspect_download_runtime.py
+  ?? scripts/poc/check-treasure-island.sh
+  ?? scripts/poc/treasure-island-browser.mjs
+  ?? src/cygnusx/api/v1/research_claims.py
+  ?? src/cygnusx/api/v1/research_plans.py
+  ?? src/cygnusx/application/schemas/claim_provenance.py
+  ?? src/cygnusx/application/schemas/download_capability.py
+  ?? src/cygnusx/application/schemas/execution_definition.py
+  ?? src/cygnusx/application/schemas/execution_evidence.py
+  ?? src/cygnusx/application/schemas/project_delivery.py
+  ?? src/cygnusx/application/schemas/project_report.py
+  ?? src/cygnusx/application/schemas/research_claims.py
+  ?? src/cygnusx/application/schemas/research_plan.py
+  ?? src/cygnusx/application/services/execution_evidence_service.py
+  ?? src/cygnusx/application/services/project_delivery_service.py
+  ?? src/cygnusx/application/services/project_report_delivery.py
+  ?? src/cygnusx/application/services/project_report_publication.py
+  ?? src/cygnusx/application/services/project_report_renderer.py
+  ?? src/cygnusx/application/services/project_report_selection.py
+  ?? src/cygnusx/application/services/project_report_service.py
+  ?? src/cygnusx/application/services/research_claim_service.py
+  ?? src/cygnusx/application/services/research_plan_service.py
+  ?? src/cygnusx/domain/download_contract.py
+  ?? src/cygnusx/domain/download_security.py
+  ?? src/cygnusx/domain/flow/validation_plugins.py
+  ?? src/cygnusx/domain/project_delivery_archive.py
+  ?? src/cygnusx/domain/research/
+  ?? src/cygnusx/infrastructure/celery_app/tasks/project_exports.py
+  ?? src/cygnusx/infrastructure/celery_app/tasks/project_reports.py
+  ?? src/cygnusx/infrastructure/database/models/project_export.py
+  ?? src/cygnusx/infrastructure/database/models/project_report.py
+  ?? src/cygnusx/infrastructure/database/models/research_plan.py
+  ?? src/cygnusx/infrastructure/download/outputs.py
+  ?? src/cygnusx/infrastructure/download/policy.py
+  ?? src/cygnusx/infrastructure/download/provenance.py
+  ?? src/cygnusx/infrastructure/download/reliability.py
+  ?? src/cygnusx/infrastructure/download/trusted_execution.py
+  ?? tests/integration/test_download_trusted_http_boundary.py
+  ?? tests/integration/test_project_delivery_postgres.py
+  ?? tests/unit/test_claim_provenance_ri10.py
+  ?? tests/unit/test_download_history_projection.py
+  ?? tests/unit/test_download_log_security.py
+  ?? tests/unit/test_download_provenance.py
+  ?? tests/unit/test_download_registration_contract.py
+  ?? tests/unit/test_download_s3_closure.py
+  ?? tests/unit/test_download_s4a_reliability.py
+  ?? tests/unit/test_download_s4b0_reliability.py
+  ?? tests/unit/test_download_s5a_catalog.py
+  ?? tests/unit/test_download_s5b_consumption.py
+  ?? tests/unit/test_download_transport_contract.py
+  ?? tests/unit/test_download_trusted_execution_contract.py
+  ?? tests/unit/test_download_worker_protocol_gate.py
+  ?? tests/unit/test_execution_definition_contract.py
+  ?? tests/unit/test_execution_evidence_projection.py
+  ?? tests/unit/test_execution_evidence_ri13.py
+  ?? tests/unit/test_fixed_flow_tools_api.py
+  ?? tests/unit/test_flow_contract_drift.py
+  ?? tests/unit/test_flow_validation_parity.py
+  ?? tests/unit/test_legacy_pipeline_tools_gate.py
+  ?? tests/unit/test_lifecycle_download_security.py
+  ?? tests/unit/test_lifecycle_report_delivery.py
+  ?? tests/unit/test_lifecycle_stabilization.py
+  ?? tests/unit/test_mcp_budget_and_pagination.py
+  ?? tests/unit/test_mcp_builder_invoke_gate.py
+  ?? tests/unit/test_project_delivery.py
+  ?? tests/unit/test_project_delivery_stabilization.py
+  ?? tests/unit/test_project_report_selection.py
+  ?? tests/unit/test_project_summary_prototype.py
+  ?? tests/unit/test_research_benchmark_phase5.py
+  ?? tests/unit/test_research_claim_artifact_phase5.py
+  ?? tests/unit/test_research_plan_gateway_phase5.py
+  ?? tests/unit/test_research_plan_phase5.py
+  ?? tests/unit/test_research_plan_storage_phase5.py
+  ?? tests/unit/test_research_science_phase5.py
+  ?? tests/unit/test_treasure_native_access.py
+  ?? tests/unit/tools/test_fixed_flow_bridge.py
+--- submodules ---
+ 977ad657bbe7d49f2200a5f3f550b70f25234f3d Protocol/FlowFrame (heads/main)
+ 4a68b347ba3b9497a86eed2603b6577afc3c2f27 pipelines/ATACFlow (heads/main)
+ a41746e5712ea5898e2bf599356d86d5ed4e2711 pipelines/ATACFlow/container_env (a41746e)
+ 4b9f6254d7f967cb9d35391a92b684cb2b113ac1 pipelines/ATACFlow/report (remotes/origin/omichub/atac-report-2026-07-24)
+ 80e8ded2f958f2e26a8ada3587dffc0c8b54912f pipelines/ATACFlow/src (80e8ded)
+ b351e03dfc845d229102d90f9bd88d6ca731f0de pipelines/EBIDownload (v1.4.0-2-gb351e03)
+ 19f5068c4f9370ea27cb6fe554a3f061a1b62a51 pipelines/RNAFlow (heads/feat/result-manifest)
+ c4a0cae8e129918ccfbd4e031da808b85abffbb4 pipelines/RNAFlow/report (remotes/origin/omichub/rna-report-2026-07-24)
+ f973d5f86de11a0efa156b7ecd2aa6b02c7ee17f pipelines/RNAFlow/src (f973d5f)
+ 88dae95e7294dea5004330203f56e4211776fd74 pipelines/Treasure-Seeking_Mouse (heads/feat/paper-data-analysis)
+ b5066338fba47b1ed3fbee042f1cb43859cff882 pipelines/scrna (heads/main)
+ 24ecb6ce75657c5ce188603b54ac7bf10ffb6d46 pipelines/tools (heads/main)
+--- dirty worktree digest (tracked diff sha) ---
+ tests/unit/test_langgraph_runtime.py               |   16 +-
+ tests/unit/test_mcp_builder_version_control.py     |   84 +
+ tests/unit/test_report_service.py                  |   20 +
+ tool_configs/tools_schema.yaml                     |   37 +
+ 404 files changed, 4327 insertions(+), 31329 deletions(-)
+tracked_diff_sha256: 6698a6e578ccd4feae1569b3c39d45ac6458510164e1a81cc5f29dc72c721889
+untracked_list_sha256: 969eba0dca8fcc862e71584d6708ed94bc1273801bf67ecd8e53714f7c3be78b

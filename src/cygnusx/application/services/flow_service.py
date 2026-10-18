@@ -24,11 +24,16 @@ class FlowService:
     def __init__(self, repo: FileSystemFlowRepository | None = None):
         self._repo = repo or FileSystemFlowRepository()
 
-    def list_flows(self, category: str | None = None) -> FlowListResponse:
-        """获取流程列表（可按分类过滤）"""
+    def list_flows(
+        self, category: str | None = None, limit: int | None = None, offset: int = 0
+    ) -> FlowListResponse:
+        """获取流程列表（可按分类过滤；limit/offset 供目录分页，不传返回全量）。"""
         configs = [c for c in self._repo.list_flows(category) if self._enabled(c.meta.id)]
+        total = len(configs)
+        if limit is not None:
+            configs = configs[max(offset, 0) : max(offset, 0) + max(limit, 0)]
         items = [flow_config_to_list_item(c) for c in configs]
-        return FlowListResponse(items=items, total=len(items))
+        return FlowListResponse(items=items, total=total)
 
     def list_ai_enabled_flows(self) -> list[FlowConfig]:
         """获取所有启用 AI 助手的流程配置。"""
@@ -58,14 +63,21 @@ class FlowService:
             return export_flow_json_schema()
 
         config = self._get_or_404(flow_id)
-        # 返回该流程的参数 Schema（前端动态表单可据此校验）
+        # 返回该流程参数的严格 JSON Schema。
+        # 复用 FlowToolSchemaCompiler 的编译产物（真实类型/枚举/必填/条件），
+        # 替代历史 "type": "any" 占位（"any" 不是合法 JSON Schema 类型，严格校验器会报错）。
+        from cygnusx.domain.flow.value_objects import FlowAIConfig
+        from cygnusx.tools.flow_schema_compiler import FlowToolSchemaCompiler
+
+        ai = config.ai if (config.ai and config.ai.enabled) else FlowAIConfig(enabled=True)
+        compiled = FlowToolSchemaCompiler()._compile_parameters(config, ai)
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": f"Flow parameters: {config.meta.id}",
             "type": "object",
-            "properties": {
-                p.name: {"description": p.label, "type": "any"} for p in config.parameters
-            },
+            "description": "该流程参数定义的严格 JSON Schema（由 FlowToolSchemaCompiler 编译自 flows/*.yaml）",
+            "properties": compiled.get("properties", {}),
+            "required": compiled.get("required", []),
         }
 
     def reload(self) -> FlowReloadResponse:

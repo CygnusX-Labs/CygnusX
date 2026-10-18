@@ -1,0 +1,31 @@
+{
+  "environment_id": null,
+  "source_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+  "test_resource_presence": {
+    "TEST_DATABASE_URL": false,
+    "S4B1_DATABASE_URL": false,
+    "TEST_BROKER_URL": false,
+    "S4B1_BROKER_URL": false,
+    "TEST_REDIS_URL": false,
+    "DOCKER_HOST": false,
+    "RI_ENV_HOST": false,
+    "RI_ENV_ID": false
+  },
+  "probes": {
+    "loopback": {
+      "errno": 1,
+      "error": "Operation not permitted"
+    },
+    "docker_socket": {
+      "errno": 1,
+      "error": "Operation not permitted"
+    }
+  },
+  "template_sha256": {
+    "deploy/acceptance/README.md": "1eb4d252d1a4d9ce8f715e94e30cc7bded520b823ad3a3067255afe95d8c60ca",
+    "deploy/acceptance/compose.yml": "3c8aee3b839c4fd524852bb794ce2ce03479d2e351413be805643ca475b1e6e6",
+    "deploy/acceptance/acceptance.env.example": "dfbf6a0d495fe2ae6216ea77211b92d02ea7a08166c009939dbc3c9b48c81e87",
+    "deploy/docker/docker-compose.yml": "3be0c41dd269931dd41ca6b539550a718d41fcf85701383d484987a53a2aee81",
+    "deploy/docker/docker-compose.worker.yml": "1bd3afbbf164bb850b3d4bb7f6c68a441b9e08966b54ae24c17c3c3df07139fd"
+  }
+}

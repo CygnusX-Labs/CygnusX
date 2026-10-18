@@ -10,28 +10,58 @@ from __future__ import annotations
 
 import asyncio
 import glob
+import json
+import logging
 import os
 import re
+import time
+from collections.abc import Awaitable
 from datetime import datetime
 from ftplib import FTP
+from pathlib import Path
+from typing import Any, Protocol
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import UUID
 
 from celery import shared_task
+from pydantic import ValidationError as SchemaValidationError
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from cygnusx.core.config import get_settings
+from cygnusx.core.config import Settings, get_settings
 from cygnusx.core.exceptions import ValidationError
+from cygnusx.domain.download_security import redact_download_text
+from cygnusx.domain.task.entities import Task
+from cygnusx.domain.task.services import TaskDomainService
 from cygnusx.domain.task.value_objects import LogLevel, TaskStatus
 from cygnusx.infrastructure.cache.pubsub import publish_task_log
+from cygnusx.infrastructure.database.repositories.task_repository import TaskRepositoryImpl
 from cygnusx.infrastructure.execution.base import ExecutionContext
 from cygnusx.infrastructure.execution.registry import get_executor
-from cygnusx.tools.download.config import get_download_config
+from cygnusx.tools.download.config import ensure_download_available, get_download_config
 
 
-@shared_task(name="cygnusx.infrastructure.celery_app.tasks.download.run_download")
-def run_download(task_id: str) -> dict:
+class DownloadLog(Protocol):
+    def __call__(self, level: LogLevel, message: str, source: str = "") -> Awaitable[None]: ...
+
+
+@shared_task(name="cygnusx.infrastructure.celery_app.tasks.download.run_download")  # type: ignore[untyped-decorator]
+def run_download(task_id: str) -> dict[str, Any]:
     """执行数据下载（外部二进制）。"""
     return asyncio.run(_execute_download(task_id))
+
+
+@shared_task(name="cygnusx.infrastructure.celery_app.tasks.download.reconcile_downloads")  # type: ignore[untyped-decorator]
+def reconcile_downloads() -> dict[str, int]:
+    return asyncio.run(_reconcile_downloads())
+
+
+async def _reconcile_downloads() -> dict[str, int]:
+    from cygnusx.infrastructure.database.session import get_session_factory
+    from cygnusx.infrastructure.download.reliability import reconcile_download_tasks
+
+    async with get_session_factory()() as db:
+        return await reconcile_download_tasks(db)
 
 
 def _count_metadata_records(work_dir: str) -> int:
@@ -79,7 +109,7 @@ _CLOUD_PROVIDER_LABELS = {
 }
 
 
-def _cloud_binary_path(settings, provider: str) -> str:
+def _cloud_binary_path(settings: Settings, provider: str) -> str:
     config = get_download_config()
     return {
         "aliyun": config.binaries.ossutil or settings.cloud_ossutil_binary,
@@ -142,7 +172,7 @@ def _parse_cloud_storage_progress(message: str) -> float | None:
         return None
 
 
-async def _execute_download(task_id: str) -> dict:
+async def _execute_download(task_id: str) -> dict[str, Any]:
     from cygnusx.domain.task.services import TaskDomainService
     from cygnusx.infrastructure.database.repositories.task_repository import (
         TaskRepositoryImpl,
@@ -155,13 +185,31 @@ async def _execute_download(task_id: str) -> dict:
         domain = TaskDomainService(repo)
 
         task_uuid = UUID(task_id)
-        task = await repo.get_by_id(task_uuid)
-        if task is None:
+        candidate = await repo.get_by_id(task_uuid)
+        if candidate is None:
             return {"status": "failed", "message": f"任务 {task_id} 不存在"}
+        from cygnusx.infrastructure.database.models.task import TaskModel
 
+        if candidate.flow_id != "ebi_download":
+            return {"status": "rejected", "task_id": task_id}
+        claimed = await session.execute(
+            update(TaskModel).where(
+                TaskModel.id == task_uuid, TaskModel.status == "queued"
+            ).values(status="running", started_at=datetime.now())
+        )
+        await session.commit()
+        if getattr(claimed, "rowcount", 0) != 1:
+            logging.getLogger(__name__).info("download.claim task_id=%s outcome=not_claimed", task_id)
+            return {"status": "duplicate_or_reconciliation_required", "task_id": task_id}
+        logging.getLogger(__name__).info("download.claim task_id=%s outcome=claimed", task_id)
+        candidate = await repo.get_by_id(task_uuid)
+        assert candidate is not None
+
+        task: Task = candidate
         params = task.parameters or {}
 
         async def _add_and_publish_log(level: LogLevel, message: str, source: str = "") -> None:
+            message = redact_download_text(message)
             await domain.add_log(task_uuid, level, message, source=source)
             await publish_task_log(
                 task_id=task_id,
@@ -202,8 +250,53 @@ async def _execute_download(task_id: str) -> dict:
                 )
 
         await _add_and_publish_log(LogLevel.INFO, "开始执行数据下载任务", source="celery")
-        task = await domain.transition_status(task, TaskStatus.RUNNING)
         await session.commit()
+
+        try:
+            from cygnusx.application.schemas.download import DownloadRequest
+
+            # Queued parameters are not proof of current protocol support/configuration.
+            request = DownloadRequest.model_validate(
+                {
+                    key: value
+                    for key, value in params.items()
+                    if not key.startswith("_download_") and key != "project_id"
+                }
+            )
+            ensure_download_available(
+                request.source, len(request.links), get_download_config(), get_settings()
+            )
+            from cygnusx.infrastructure.download.policy import require_download_runtime
+
+            require_download_runtime(request.source)
+            await _prepare_download_registration(
+                session, task_uuid, task.user_id, task.work_dir or ""
+            )
+            await session.commit()
+            prepared_task = await repo.get_by_id(task_uuid)
+            if prepared_task is not None:
+                task.parameters = prepared_task.parameters
+        except Exception as exc:
+            reason = getattr(exc, "code", None) or "DOWNLOAD_REGISTRATION_FAILED"
+            if isinstance(exc, SchemaValidationError) and exc.errors():
+                reason = str(exc.errors()[0]["type"])
+            task = await domain.transition_status(task, TaskStatus.FAILED)
+            task.error_message = f"下载准入或产物需对账: {reason}"
+            task.parameters = {
+                **(task.parameters or {}),
+                "_download_registration": {
+                    "state": "RECONCILIATION_REQUIRED",
+                    "scientific_ready": False,
+                    "reason_code": reason,
+                },
+            }
+            await repo.save(task)
+            await session.commit()
+            return {
+                "status": "failed",
+                "task_id": task_id,
+                "registration_state": "RECONCILIATION_REQUIRED",
+            }
 
         source = str(params.get("source", "sra") or "sra")
         if source == "cloud_storage":
@@ -267,6 +360,7 @@ async def _execute_download(task_id: str) -> dict:
 
         ctx = ExecutionContext(
             engine="binary",
+            log_filter=redact_download_text,
             work_dir=work_dir,
             binary=get_download_config().binaries.ebi or settings.ebi_download_binary,
             binary_args=binary_args,
@@ -382,39 +476,52 @@ async def _execute_download(task_id: str) -> dict:
         poller_task = asyncio.create_task(_progress_poll())
 
         try:
+            from cygnusx.infrastructure.download.policy import require_download_runtime
+
+            require_download_runtime("sra")
             executor = get_executor("binary")
             result = await executor.execute(ctx)
+            # Stop progress writers before committing registration metadata on the same Task.
+            poll_cancel.set()
+            poller_task.cancel()
+            sampler.cancel()
+            await asyncio.gather(sampler, poller_task, return_exceptions=True)
 
-            if result.status == "success":
+            files_ok = await _finalize_download_files(
+                session,
+                task_uuid,
+                task.user_id,
+                work_dir,
+                str(params.get("target_directory", "") or ""),
+                settings.storage_path,
+                result.status == "success",
+            )
+            registered_task = await repo.get_by_id(task_uuid)
+            if registered_task is not None:
+                task.parameters = registered_task.parameters
+            if result.status == "success" and files_ok:
                 task.progress = 1.0
                 task.result_path = work_dir
                 await repo.save(task)
-                # 下载产物入库为 FileRecord，directory=target_directory，使文件出现在数据管理
-                directory = str(params.get("target_directory", "") or "")
-                await _register_downloaded_files(
-                    session=session,
-                    user_id=task.user_id,
-                    work_dir=work_dir,
-                    directory=directory,
-                    storage_root=settings.storage_path,
-                )
                 task = await domain.transition_status(task, TaskStatus.SUCCESS)
                 await _add_and_publish_log(LogLevel.INFO, "数据下载完成", source="binary")
-                return_status = "success"
             else:
                 task = await domain.transition_status(task, TaskStatus.FAILED)
-                task.error_message = (result.stderr or result.stdout)[:2000]
+                task.error_message = (
+                    redact_download_text(result.stderr or result.stdout)[:2000]
+                    if result.status != "success"
+                    else "DOWNLOAD_REGISTRATION_RECONCILIATION_REQUIRED"
+                )
                 await repo.save(task)
                 await _add_and_publish_log(
                     LogLevel.ERROR,
                     f"数据下载失败 (returncode={result.returncode})",
                     source="binary",
                 )
-                return_status = "failed"
 
             await session.commit()
             return {
-                "status": return_status,
+                "status": task.status.value,
                 "task_id": task_id,
                 "returncode": result.returncode,
             }
@@ -422,7 +529,7 @@ async def _execute_download(task_id: str) -> dict:
         except Exception as exc:  # noqa: BLE001
             await _add_and_publish_log(LogLevel.ERROR, f"执行异常: {exc}", source="celery")
             task = await domain.transition_status(task, TaskStatus.FAILED)
-            task.error_message = str(exc)[:2000]
+            task.error_message = redact_download_text(str(exc))[:2000]
             await repo.save(task)
             await session.commit()
             return {"status": "failed", "task_id": task_id, "error": str(exc)}
@@ -445,14 +552,18 @@ async def _execute_cloud_storage_download(
     *,
     task_id: str,
     task_uuid: UUID,
-    task,
-    params: dict,
-    session,
-    repo,
-    domain,
-    add_and_publish_log,
-) -> dict:
+    task: Task,
+    params: dict[str, Any],
+    session: AsyncSession,
+    repo: TaskRepositoryImpl,
+    domain: TaskDomainService,
+    add_and_publish_log: DownloadLog,
+) -> dict[str, Any]:
     """执行云存储对象下载，复用 Task 日志/进度/文件入库链路。"""
+    from cygnusx.domain.download_contract import validate_transport
+    from cygnusx.infrastructure.download.policy import require_download_runtime
+
+    require_download_runtime("cloud_storage")
     settings = get_settings()
     provider = str(params.get("cloud_provider", ""))
     object_uri = str(params.get("object_uri", ""))
@@ -462,16 +573,16 @@ async def _execute_cloud_storage_download(
     label = _CLOUD_PROVIDER_LABELS.get(provider, provider)
 
     try:
+        validate_transport("cloud_storage", cloud_provider=provider, object_uri=object_uri)
         binary = _cloud_binary_path(settings, provider)
         binary_args = _build_cloud_storage_args(provider, object_uri, work_dir, recursive)
     except Exception as exc:  # noqa: BLE001
         task = await domain.transition_status(task, TaskStatus.FAILED)
-        task.error_message = str(exc)[:2000]
+        task.error_message = redact_download_text(str(exc))[:2000]
         await repo.save(task)
         await add_and_publish_log(LogLevel.ERROR, f"云存储下载配置错误: {exc}", source="celery")
         await session.commit()
         return {"status": "failed", "task_id": task_id, "error": str(exc)}
-
 
     binary_exists = bool(binary) and await asyncio.to_thread(os.path.exists, binary)
     if not binary_exists:
@@ -489,6 +600,7 @@ async def _execute_cloud_storage_download(
 
     async def _on_cloud_log(level: str, message: str, source: str = "binary") -> None:
         nonlocal last_progress, task
+        message = redact_download_text(message)
         parsed_progress = _parse_cloud_storage_progress(message)
         async with db_lock:
             if parsed_progress is not None:
@@ -519,6 +631,7 @@ async def _execute_cloud_storage_download(
 
     ctx = ExecutionContext(
         engine="binary",
+        log_filter=redact_download_text,
         work_dir=work_dir,
         binary=binary,
         binary_args=binary_args,
@@ -526,40 +639,50 @@ async def _execute_cloud_storage_download(
     )
 
     try:
+        from cygnusx.infrastructure.download.policy import require_download_runtime
+
+        require_download_runtime("cloud_storage")
         executor = get_executor("binary")
         result = await executor.execute(ctx)
 
-        if result.status == "success":
+        files_ok = await _finalize_download_files(
+            session,
+            task_uuid,
+            task.user_id,
+            work_dir,
+            directory,
+            settings.storage_path,
+            result.status == "success",
+        )
+        registered_task = await repo.get_by_id(task_uuid)
+        if registered_task is not None:
+            task.parameters = registered_task.parameters
+        if result.status == "success" and files_ok:
             task.progress = 1.0
             task.result_path = work_dir
             await repo.save(task)
-            await _register_downloaded_files(
-                session=session,
-                user_id=task.user_id,
-                work_dir=work_dir,
-                directory=directory,
-                storage_root=settings.storage_path,
-            )
             task = await domain.transition_status(task, TaskStatus.SUCCESS)
             await add_and_publish_log(LogLevel.INFO, "云存储下载完成，文件已入库", source="binary")
-            return_status = "success"
         else:
             task = await domain.transition_status(task, TaskStatus.FAILED)
-            task.error_message = (result.stderr or result.stdout)[:2000]
+            task.error_message = (
+                redact_download_text(result.stderr or result.stdout)[:2000]
+                if result.status != "success"
+                else "DOWNLOAD_REGISTRATION_RECONCILIATION_REQUIRED"
+            )
             await repo.save(task)
             await add_and_publish_log(
                 LogLevel.ERROR,
                 f"云存储下载失败 (returncode={result.returncode})",
                 source="binary",
             )
-            return_status = "failed"
 
         await session.commit()
-        return {"status": return_status, "task_id": task_id, "returncode": result.returncode}
+        return {"status": task.status.value, "task_id": task_id, "returncode": result.returncode}
     except Exception as exc:  # noqa: BLE001
         await add_and_publish_log(LogLevel.ERROR, f"云存储下载执行异常: {exc}", source="celery")
         task = await domain.transition_status(task, TaskStatus.FAILED)
-        task.error_message = str(exc)[:2000]
+        task.error_message = redact_download_text(str(exc))[:2000]
         await repo.save(task)
         await session.commit()
         return {"status": "failed", "task_id": task_id, "error": str(exc)}
@@ -571,14 +694,29 @@ def _build_direct_link_args(
     """构造 aria2c 直链参数；URL 作为独立参数传入，避免 shell 拼接注入。"""
     aria2 = get_download_config().aria2
     args = [
-        "--dir", work_dir, "--continue=true",
-        "--max-tries", str(aria2.max_tries), "--retry-wait", str(aria2.retry_wait),
-        "--connect-timeout", str(aria2.connect_timeout), "--timeout", str(aria2.timeout),
-        "--file-allocation", aria2.file_allocation,
-        "--check-integrity", str(aria2.check_integrity).lower(),
-        "--max-concurrent-downloads", str(aria2.max_concurrent_downloads),
-        "--split", str(threads), "--max-connection-per-server", str(threads),
-        "--ftp-reuse-connection", str(aria2.ftp_reuse_connection).lower(),
+        "--dir",
+        work_dir,
+        "--continue=true",
+        "--max-tries",
+        str(aria2.max_tries),
+        "--retry-wait",
+        str(aria2.retry_wait),
+        "--connect-timeout",
+        str(aria2.connect_timeout),
+        "--timeout",
+        str(aria2.timeout),
+        "--file-allocation",
+        aria2.file_allocation,
+        "--check-integrity",
+        str(aria2.check_integrity).lower(),
+        "--max-concurrent-downloads",
+        str(aria2.max_concurrent_downloads),
+        "--split",
+        str(threads),
+        "--max-connection-per-server",
+        str(threads),
+        "--ftp-reuse-connection",
+        str(aria2.ftp_reuse_connection).lower(),
     ]
     if overwrite_policy == "overwrite":
         args.extend(["--allow-overwrite=true", "--auto-file-renaming=false"])
@@ -590,56 +728,101 @@ def _build_direct_link_args(
 
 
 def _expand_ftp_directories(links: list[str], recursive: bool) -> list[str]:
-    """展开以 / 结尾的匿名 FTP 目录；普通文件链接原样返回。"""
-    if not recursive:
-        return links
+    """Bound anonymous FTP traversal; actual CLI egress remains runtime-blocked."""
+    from cygnusx.domain.download_security import validate_download_url
+
+    limits = get_download_config().validation
     expanded: list[str] = []
+    max_outputs = min(limits.max_ftp_files, limits.max_links_per_task)
+    deadline = time.monotonic() + limits.ftp_timeout_seconds
     for link in links:
+        validate_download_url(link)
         parsed = urlsplit(link)
-        if parsed.scheme.lower() != "ftp" or not parsed.path.endswith("/"):
+        if not recursive or parsed.scheme.lower() != "ftp" or not parsed.path.endswith("/"):
             expanded.append(link)
-            continue
-        ftp = FTP(parsed.hostname or "", timeout=30)
-        try:
-            ftp.login()
-            root = unquote(parsed.path)
-            files: list[str] = []
+        else:
+            from cygnusx.infrastructure.download.policy import require_download_runtime
 
-            def walk(path: str) -> None:
-                current = ftp.pwd()
-                ftp.cwd(path)
-                for name in ftp.nlst():
-                    child = f"{path.rstrip('/')}/{name.rsplit('/', 1)[-1]}"
-                    try:
-                        ftp.cwd(child)
-                    except Exception:
-                        files.append(child)
-                    else:
-                        ftp.cwd(current)
-                        walk(child)
-                ftp.cwd(current)
-
-            walk(root)
-            for path in files:
-                expanded.append(urlunsplit(("ftp", parsed.netloc, quote(path), "", "")))
-        finally:
+            require_download_runtime("direct_link")
+            ftp = FTP(parsed.hostname or "", timeout=limits.ftp_timeout_seconds)
+            visited: set[str] = set()
             try:
-                ftp.quit()
-            except Exception:
-                ftp.close()
+                ftp.login()
+
+                def walk(
+                    path: str,
+                    depth: int,
+                    ftp: FTP = ftp,
+                    visited: set[str] = visited,
+                    netloc: str = parsed.netloc,
+                ) -> None:
+                    if time.monotonic() > deadline:
+                        raise ValidationError("FTP遍历超时", code="DOWNLOAD_FTP_LIMIT")
+                    if depth > limits.max_ftp_depth:
+                        raise ValidationError("FTP递归深度超限", code="DOWNLOAD_FTP_LIMIT")
+                    ftp.cwd(path)
+                    current = ftp.pwd()
+                    if current in visited:
+                        raise ValidationError("FTP目录循环", code="DOWNLOAD_FTP_LIMIT")
+                    visited.add(current)
+                    if len(visited) > limits.max_ftp_files:
+                        raise ValidationError("FTP目录数量超限", code="DOWNLOAD_FTP_LIMIT")
+                    for name in ftp.nlst():
+                        basename = name.rsplit("/", 1)[-1]
+                        if basename in {"", ".", ".."} or "\\" in basename:
+                            raise ValidationError("FTP目录名称非法", code="DOWNLOAD_FTP_LIMIT")
+                        child = current.rstrip("/") + "/" + basename
+                        try:
+                            ftp.cwd(child)
+                        except Exception:
+                            expanded.append(urlunsplit(("ftp", netloc, quote(child), "", "")))
+                            if len(expanded) > max_outputs:
+                                raise ValidationError(
+                                    "FTP文件数量超限", code="DOWNLOAD_FTP_LIMIT"
+                                ) from None
+                        else:
+                            walk(child, depth + 1)
+                        finally:
+                            ftp.cwd(current)
+
+                walk(unquote(parsed.path), 0)
+            finally:
+                try:
+                    ftp.quit()
+                except Exception:
+                    ftp.close()
+        if len(expanded) > max_outputs:
+            raise ValidationError("下载文件数量超限", code="DOWNLOAD_FTP_LIMIT")
     return expanded
 
 
 async def _execute_direct_link_download(
-    *, task_id: str, task_uuid: UUID, task, params: dict, session, repo, domain, add_and_publish_log
-) -> dict:
+    *,
+    task_id: str,
+    task_uuid: UUID,
+    task: Task,
+    params: dict[str, Any],
+    session: AsyncSession,
+    repo: TaskRepositoryImpl,
+    domain: TaskDomainService,
+    add_and_publish_log: DownloadLog,
+) -> dict[str, Any]:
     """使用 aria2c 下载 HTTP/HTTPS/FTP 直链，并复用文件入库链路。"""
+    from cygnusx.infrastructure.download.policy import require_download_runtime
+
+    require_download_runtime("direct_link")
     settings = get_settings()
     config = get_download_config()
     links = [str(link).strip() for link in params.get("links", []) if str(link).strip()]
     work_dir = task.work_dir or ""
     directory = str(params.get("target_directory", "") or "")
-    threads = max(1, min(config.aria2.max_threads, int(params.get("download_threads", config.aria2.default_threads))))
+    threads = max(
+        1,
+        min(
+            config.aria2.max_threads,
+            int(params.get("download_threads", config.aria2.default_threads)),
+        ),
+    )
     overwrite_policy = str(params.get("overwrite_policy", "auto_rename"))
     recursive = bool(params.get("recursive", False))
     binary = config.binaries.aria2c or settings.direct_download_binary
@@ -662,10 +845,15 @@ async def _execute_direct_link_download(
 
     os.makedirs(work_dir, exist_ok=True)
     try:
+        from cygnusx.domain.download_contract import validate_transport
+
+        validate_transport(
+            "direct_link", links=links, allowed_schemes=config.validation.allowed_schemes
+        )
         links = await asyncio.to_thread(_expand_ftp_directories, links, recursive)
     except Exception as exc:  # noqa: BLE001
         task = await domain.transition_status(task, TaskStatus.FAILED)
-        task.error_message = f"FTP 目录解析失败: {exc}"[:2000]
+        task.error_message = redact_download_text(f"FTP 目录解析失败: {exc}")[:2000]
         await repo.save(task)
         await add_and_publish_log(LogLevel.ERROR, task.error_message, source="aria2c")
         await session.commit()
@@ -681,12 +869,15 @@ async def _execute_direct_link_download(
 
     async def _on_direct_log(level: str, message: str, source: str = "aria2c") -> None:
         nonlocal last_progress, task
+        message = redact_download_text(message)
         parsed = _parse_cloud_storage_progress(message)
         if parsed is not None and (parsed - last_progress >= 0.02 or parsed >= 1.0):
             last_progress = parsed
             task.progress = parsed
             await repo.save(task)
-            await add_and_publish_log(LogLevel.INFO, f"直链下载进度 {parsed * 100:.0f}%", source=source)
+            await add_and_publish_log(
+                LogLevel.INFO, f"直链下载进度 {parsed * 100:.0f}%", source=source
+            )
             await session.commit()
             return
         try:
@@ -703,138 +894,454 @@ async def _execute_direct_link_download(
     )
     await session.commit()
     ctx = ExecutionContext(
-        engine="binary", work_dir=work_dir, binary=binary,
+        engine="binary",
+        log_filter=redact_download_text,
+        work_dir=work_dir,
+        binary=binary,
         binary_args=_build_direct_link_args(links, work_dir, threads, overwrite_policy),
         on_log=_on_direct_log,
     )
     try:
+        from cygnusx.infrastructure.download.policy import require_download_runtime
+
+        require_download_runtime(str(params.get("source", "sra")))
+        if any(urlsplit(link).scheme.lower() in {"http", "https"} for link in links):
+            raise ValidationError(
+                "受信 HTTP Supervisor 尚未接入 Worker", code="DOWNLOAD_TRUSTED_EXECUTOR_UNAVAILABLE"
+            )
         result = await get_executor("binary").execute(ctx)
-        if result.status == "success":
+        files_ok = await _finalize_download_files(
+            session,
+            task_uuid,
+            task.user_id,
+            work_dir,
+            directory,
+            settings.storage_path,
+            result.status == "success",
+        )
+        registered_task = await repo.get_by_id(task_uuid)
+        if registered_task is not None:
+            task.parameters = registered_task.parameters
+        if result.status == "success" and files_ok:
             task.progress = 1.0
             task.result_path = work_dir
             await repo.save(task)
-            await _register_downloaded_files(
-                session=session, user_id=task.user_id, work_dir=work_dir,
-                directory=directory, storage_root=settings.storage_path,
-            )
             task = await domain.transition_status(task, TaskStatus.SUCCESS)
             await add_and_publish_log(LogLevel.INFO, "直链下载完成，文件已入库", source="aria2c")
-            status = "success"
         else:
             task = await domain.transition_status(task, TaskStatus.FAILED)
-            task.error_message = (result.stderr or result.stdout)[:2000]
+            task.error_message = (
+                redact_download_text(result.stderr or result.stdout)[:2000]
+                if result.status != "success"
+                else "DOWNLOAD_REGISTRATION_RECONCILIATION_REQUIRED"
+            )
             await repo.save(task)
             await add_and_publish_log(LogLevel.ERROR, "直链下载失败", source="aria2c")
-            status = "failed"
         await session.commit()
-        return {"status": status, "task_id": task_id, "returncode": result.returncode}
+        return {"status": task.status.value, "task_id": task_id, "returncode": result.returncode}
     except Exception as exc:  # noqa: BLE001
         task = await domain.transition_status(task, TaskStatus.FAILED)
-        task.error_message = str(exc)[:2000]
+        task.error_message = redact_download_text(str(exc))[:2000]
         await repo.save(task)
         await add_and_publish_log(LogLevel.ERROR, f"直链下载执行异常: {exc}", source="aria2c")
         await session.commit()
         return {"status": "failed", "task_id": task_id, "error": str(exc)}
 
 
+async def _prepare_download_registration(
+    session: AsyncSession, task_id: UUID, user_id: UUID, work_dir: str
+) -> None:
+    """Persist a pre-transfer inventory; unknown old files are never claimed by this task."""
+    from cygnusx.infrastructure.database.models.file import FileRecordModel
+    from cygnusx.infrastructure.database.models.task import TaskModel
+    from cygnusx.infrastructure.download.outputs import (
+        controlled_paths,
+        inspect_output,
+        is_control_file,
+    )
+    from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
+
+    if get_storage_backend().name != "local":
+        raise ValidationError("下载文件登记仅支持受管本地存储", code="DOWNLOAD_STORAGE_UNVERIFIED")
+    task = await session.get(TaskModel, task_id)
+    if task is None or task.user_id != user_id or task.work_dir != work_dir:
+        raise ValidationError("下载登记任务上下文不匹配", code="DOWNLOAD_TASK_MISMATCH")
+    factory = get_path_factory()
+    owner_root = factory.user_root(str(user_id)).absolute()
+    paths = await asyncio.to_thread(
+        controlled_paths,
+        await asyncio.to_thread(Path(work_dir).absolute),
+        owner_root,
+        get_download_config().validation.max_registration_entries,
+    )
+    duplicate = await session.scalar(
+        select(TaskModel.id).where(TaskModel.work_dir == work_dir, TaskModel.id != task_id).limit(1)
+    )
+    if duplicate is not None:
+        raise ValidationError(
+            "下载目录被其他任务引用，请人工对账", code="DOWNLOAD_DIRECTORY_SHARED"
+        )
+    # A shared/old work directory must not be overwritten and then claimed after transfer.
+    for path in paths:
+        if is_control_file(path, Path(work_dir)):
+            continue
+        record = (
+            await session.execute(
+                select(FileRecordModel).where(
+                    FileRecordModel.storage_path == path.relative_to(factory.data_root).as_posix()
+                )
+            )
+        ).scalar_one_or_none()
+        if (
+            record is None
+            or record.task_id != task_id
+            or record.user_id != user_id
+            or record.source != "download"
+            or not record.checksum
+        ):
+            raise ValidationError("下载前已有未归属当前任务的文件", code="DOWNLOAD_LEGACY_UNLINKED")
+        output = await asyncio.to_thread(
+            inspect_output,
+            path,
+            owner_root,
+            get_download_config().validation.max_registration_bytes,
+        )
+        if record.checksum != output.sha256 or record.size != output.size:
+            raise ValidationError("下载前已有文件内容变化", code="DOWNLOAD_RECORD_CONFLICT")
+    if "_download_output_baseline" not in (task.parameters or {}):
+        task.parameters = {
+            **(task.parameters or {}),
+            "_download_output_baseline": [p.relative_to(Path(work_dir)).as_posix() for p in paths],
+        }
+        await session.flush()
+
+
+async def _check_download_project_binding(
+    session: AsyncSession, task_id: UUID, owner: UUID
+) -> None:
+    """Recheck explicit ingestion relations only; never derive project identity from a path."""
+    from sqlalchemy import String, cast
+
+    from cygnusx.infrastructure.database.models.dataset import DatasetIngestionModel
+    from cygnusx.infrastructure.database.repositories.dataset_repository import DatasetRepository
+
+    rows = (
+        (
+            await session.execute(
+                select(DatasetIngestionModel).where(
+                    cast(DatasetIngestionModel.task_ids, String).contains(str(task_id))
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    bound = [row for row in rows if str(task_id) in row.task_ids]
+    if len(bound) > 1:
+        raise ValidationError("下载任务有冲突的导入关系", code="DOWNLOAD_PROJECT_MISMATCH")
+    for row in bound:
+        if row.user_id != owner:
+            raise ValidationError("下载任务归属与导入不符", code="DOWNLOAD_PROJECT_MISMATCH")
+        await DatasetRepository(session).project(owner, row.project_id)
+
+
+async def _verify_http_download_publication_receipt(
+    session: AsyncSession,
+    task: Any,
+    work_dir: Path,
+    outputs: list[Any],
+    *,
+    complete: bool,
+) -> None:
+    """Require signed supervisor evidence before HTTP outputs enter FileRegistry."""
+    params = task.parameters or {}
+    links = params.get("links", [])
+    if params.get("source") != "direct_link" or not isinstance(links, list):
+        return
+    schemes = {urlsplit(str(link).strip()).scheme.lower() for link in links}
+    if not schemes:
+        return
+    if schemes != {"http"}:
+        if schemes & {"http", "https"}:
+            raise ValidationError(
+                "当前受信执行范围只认证明文 HTTP", code="DOWNLOAD_PROTOCOL_NOT_CERTIFIED"
+            )
+        return
+    if not complete:
+        raise ValidationError(
+            "HTTP 部分产物不能发布到文件登记表", code="DOWNLOAD_PUBLICATION_RECEIPT_REJECTED"
+        )
+
+    from cygnusx.infrastructure.database.repositories.download_execution_receipt import (
+        verify_publishable_execution_receipt_in_transaction,
+    )
+    from cygnusx.infrastructure.download.trusted_execution import (
+        ExecutionPublicationContext,
+        artifact_manifest_sha256,
+        decode_supervisor_public_key,
+    )
+
+    settings = get_settings()
+    supervisor_id = getattr(settings, "download_execution_supervisor_id", None)
+    encoded_key = getattr(settings, "download_execution_supervisor_public_key_b64", None)
+    execution = params.get("_download_execution")
+    try:
+        if not isinstance(supervisor_id, str) or not supervisor_id or not isinstance(
+            encoded_key, str
+        ):
+            raise ValueError("DOWNLOAD_SUPERVISOR_KEY_MISSING")
+        context = ExecutionPublicationContext.model_validate_json(json.dumps(execution))
+        public_key = decode_supervisor_public_key(encoded_key)
+        manifest_hash = artifact_manifest_sha256(
+            [
+                (output.path.relative_to(work_dir).as_posix(), output.sha256, output.size)
+                for output in outputs
+            ]
+        )
+        await verify_publishable_execution_receipt_in_transaction(
+            session,
+            context.receipt,
+            supervisor_public_key=public_key,
+            expected_supervisor_id=supervisor_id,
+            expected_task_id=task.id,
+            expected_attempt_id=context.attempt_id,
+            expected_execution_id=context.execution_id,
+            expected_scope_ref=context.scope_ref,
+            expected_execution_epoch=context.execution_epoch,
+            expected_policy_revision=context.policy_revision,
+            expected_environment_id=context.environment_id,
+            expected_binary_sha256=context.binary_sha256,
+            expected_artifact_manifest_sha256=manifest_hash,
+        )
+    except (SchemaValidationError, ValueError) as exc:
+        raise ValidationError(
+            "受信执行回执无效，产物需对账", code="DOWNLOAD_PUBLICATION_RECEIPT_REJECTED"
+        ) from exc
+
+
 async def _register_downloaded_files(
     *,
-    session,
-    user_id,
+    session: AsyncSession,
+    user_id: UUID,
+    task_id: UUID,
     work_dir: str,
     directory: str,
     storage_root: str,
-) -> None:
-    """下载产物入库为 FileRecord，并在 user_directories 登记 accession 子文件夹。
+    complete: bool = True,
+) -> dict[str, Any]:
+    """Register this task's bounded, verified outputs through the existing FileRegistry.
 
-    扫描 work_dir 下的 .sra/.fastq.gz 等文件，每个 FileRecord 的 storage_path 为相对
-    storage_root 的路径。directory 字段（数据管理页的逻辑归属）由实际工作目录相对
-    ``users/<user_id>`` 的路径派生，避免与物理落盘路径脱节。
-    并自动创建缺失的 Directory 记录（含父级），使文件以 accession 文件夹形式出现在数据管理页。
-    幂等：同 storage_path 的 FileRecord 已存在则跳过（且不计配额）；Directory 已存在则跳过。
-    新增文件累加进用户 used_storage。
+    Registration is a savepoint: no partial SQL/quota commit if one file fails.
+    Legacy/unrelated same-path records are not relinked. The caller owns commit.
     """
-    import uuid as _uuid
-    from pathlib import Path
-
-    from sqlalchemy import select
-
     from cygnusx.application.services.file_service import (
         canonical_original_name,
         ensure_directory_chain,
     )
-    from cygnusx.domain.file.entities import DataFile
-    from cygnusx.domain.file.value_objects import FileType
+    from cygnusx.domain.file.value_objects import FileSource
     from cygnusx.infrastructure.database.models.file import FileRecordModel
-    from cygnusx.infrastructure.database.repositories.file_repository import (
-        FileRepositoryImpl,
+    from cygnusx.infrastructure.database.models.task import TaskModel
+    from cygnusx.infrastructure.database.models.user import UserModel
+    from cygnusx.infrastructure.download.outputs import (
+        controlled_paths,
+        inspect_output,
+        is_control_file,
     )
-    from cygnusx.infrastructure.database.repositories.user_repository import (
-        SqlAlchemyUserRepository,
+    from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
+    from cygnusx.infrastructure.storage.file_registry import FileRegistry
+
+    factory = get_path_factory()
+    root = factory.data_root.absolute()
+    owner_root = factory.user_root(str(user_id)).absolute()
+    work = await asyncio.to_thread(Path(work_dir).absolute)
+    if await asyncio.to_thread(root.resolve) != await asyncio.to_thread(Path(storage_root).resolve):
+        raise ValidationError("下载存储根与注册器不一致", code="DOWNLOAD_STORAGE_MISMATCH")
+    task = await session.get(TaskModel, task_id)
+    if (
+        task is None
+        or task.user_id != user_id
+        or task.work_dir != work_dir
+        or task.flow_id != "ebi_download"
+    ):
+        raise ValidationError("下载登记任务不匹配", code="DOWNLOAD_TASK_MISMATCH")
+    await _check_download_project_binding(session, task_id, user_id)
+    baseline = (task.parameters or {}).get("_download_output_baseline")
+    if not isinstance(baseline, list) or any(not isinstance(p, str) for p in baseline):
+        raise ValidationError("缺少下载前文件清单，请对账", code="DOWNLOAD_BASELINE_MISSING")
+    limits = get_download_config().validation
+    paths = await asyncio.to_thread(
+        controlled_paths, work, owner_root, limits.max_registration_entries
     )
-
-    work_path = await asyncio.to_thread(Path(work_dir).resolve)
-    root_path = await asyncio.to_thread(Path(storage_root).resolve)
-    owner_root = root_path / "users" / str(user_id)
-    if not work_path.is_relative_to(owner_root):
-        raise ValidationError("下载产物目录不属于当前用户")
-    if not await asyncio.to_thread(work_path.exists):
-        return
-
-    try:
-        logical_dir = work_path.relative_to(root_path / "users" / str(user_id)).as_posix()
-    except ValueError:
-        return
-
-    # 确保 Directory 记录链存在（含父级），使数据管理页目录树能展示该 accession 文件夹
-    await ensure_directory_chain(session, user_id, logical_dir)
-
-    # 下载产物类型识别
-    def _ftype(name: str) -> FileType:
-        n = name.lower()
-        if n.endswith((".fastq", ".fastq.gz", ".fq", ".fq.gz")):
-            return FileType.FASTQ
-        if n.endswith(".sra"):
-            return FileType.OTHER  # SRA 原始格式，转 fastq 后才是 FASTQ
-        if n.endswith(".bam"):
-            return FileType.BAM
-        return FileType.OTHER
-
-    files = await asyncio.to_thread(
-        lambda: [
-            f for f in work_path.rglob("*")
-            if f.is_file() and not f.is_symlink() and f.resolve().is_relative_to(owner_root)
-        ]
+    candidates = [p for p in paths if not is_control_file(p, work)]
+    # aria2 sidecar identifies an incomplete payload even when the payload looks ordinary.
+    incomplete = await asyncio.to_thread(
+        lambda: [p for p in candidates if p.with_name(p.name + ".aria2").exists()]
     )
-
+    candidates = [p for p in candidates if p not in incomplete]
+    if len(candidates) > limits.max_registration_files:
+        raise ValidationError("下载文件数量超过登记预算", code="DOWNLOAD_REGISTRATION_LIMIT")
+    if complete and (not candidates or incomplete):
+        raise ValidationError("成功下载没有完整产物", code="DOWNLOAD_OUTPUT_INCOMPLETE")
+    outputs = []
+    total = 0
+    for path in candidates:
+        output = await asyncio.to_thread(
+            inspect_output, path, owner_root, limits.max_registration_bytes - total
+        )
+        total += output.size
+        outputs.append(output)
+    await _verify_http_download_publication_receipt(
+        session, task, work, outputs, complete=complete
+    )
+    registry = FileRegistry(session, path_factory=factory, backend=get_storage_backend())
+    ids: list[str] = []
     new_size = 0
-    for f in files:
-        try:
-            rel = str(f.relative_to(root_path))
-        except ValueError:
-            continue
-        # 幂等：同 storage_path 已存在则跳过（不重复计配额）
-        exists = await session.scalar(
-            select(FileRecordModel.id).where(FileRecordModel.storage_path == rel)
+    async with session.begin_nested():
+        user = (
+            await session.execute(
+                select(UserModel)
+                .where(UserModel.id == user_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if user.status != "active" or (
+            user.role != "admin" and "downloads" in (user.disabled_modules or [])
+        ):
+            raise ValidationError("下载用户或模块权限已失效", code="DOWNLOAD_OWNER_UNAVAILABLE")
+        duplicate = await session.scalar(
+            select(TaskModel.id)
+            .where(TaskModel.work_dir == work_dir, TaskModel.id != task_id)
+            .limit(1)
         )
-        if exists:
-            continue
-        size = f.stat().st_size
-        original_name = canonical_original_name(f.name)
-        record = DataFile(
-            id=_uuid.uuid4(),
-            user_id=user_id,
-            path=rel,
-            original_name=original_name,
-            size=size,
-            checksum="",
-            file_type=_ftype(original_name),
-            status="active",
-            directory=logical_dir,
-        )
-        await FileRepositoryImpl(session).save(record)
-        new_size += size
+        if duplicate is not None:
+            raise ValidationError("下载目录有其他任务，需对账", code="DOWNLOAD_DIRECTORY_SHARED")
+        for output in outputs:
+            rel = output.path.relative_to(root).as_posix()
+            existing = (
+                (
+                    await session.execute(
+                        select(FileRecordModel).where(FileRecordModel.storage_path == rel)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if existing:
+                if len(existing) != 1:
+                    raise ValidationError("同路径有多个文件记录", code="DOWNLOAD_RECORD_CONFLICT")
+                record = existing[0]
+                if (
+                    record.user_id != user_id
+                    or record.task_id != task_id
+                    or record.source != FileSource.DOWNLOAD.value
+                    or record.checksum != output.sha256
+                    or record.size != output.size
+                    or record.status != "active"
+                    or record.lifecycle_status != "active"
+                    or record.owner_scope != "personal"
+                    or record.team_id is not None
+                ):
+                    raise ValidationError(
+                        "文件归属或内容需人工对账", code="DOWNLOAD_RECORD_CONFLICT"
+                    )
+            else:
+                if output.path.relative_to(work).as_posix() in baseline:
+                    raise ValidationError(
+                        "下载前已存在的文件不可自动认领", code="DOWNLOAD_LEGACY_UNLINKED"
+                    )
+                logical_dir = output.path.parent.relative_to(owner_root).as_posix()
+                await ensure_directory_chain(session, user_id, logical_dir)
+                record = await registry.register(
+                    user_id,
+                    output.path,
+                    source=FileSource.DOWNLOAD,
+                    task_id=task_id,
+                    checksum=output.sha256,
+                    directory=logical_dir,
+                    display_name=canonical_original_name(output.path.name),
+                )
+                if record.size != output.size or record.task_id != task_id:
+                    raise ValidationError("下载登记期间产物变化", code="DOWNLOAD_OUTPUT_CHANGED")
+                new_size += output.size
+            verified = await asyncio.to_thread(
+                inspect_output,
+                output.path,
+                owner_root,
+                limits.max_registration_bytes,
+            )
+            if verified != output:
+                raise ValidationError("登记期间文件内容变化", code="DOWNLOAD_OUTPUT_CHANGED")
+            ids.append(str(record.id))
+        if user.used_storage + new_size > user.storage_quota:
+            raise ValidationError("下载登记超过用户配额", code="QUOTA_EXCEEDED")
+        if new_size:
+            # Same transaction as FileRegistry; the legacy repository helper commits early.
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(used_storage=UserModel.used_storage + new_size)
+            )
+        summary = {
+            "state": "FILES_REGISTERED"
+            if complete
+            else ("PARTIAL" if ids else "RECONCILIATION_REQUIRED"),
+            "file_ids": ids,
+            "file_count": len(ids),
+            "bytes": total,
+            "new_bytes": new_size,
+            "excluded_entries": len(paths) - len(candidates),
+            "scientific_ready": False,
+        }
+        task.parameters = {**task.parameters, "_download_registration": summary}
+        await session.flush()
+    return summary
 
-    # 新增产物累加进配额（与上传 merge 一致：原子累加并提交）
-    if new_size > 0:
-        await SqlAlchemyUserRepository(session).add_used_storage(user_id, new_size)
+
+async def _finalize_download_files(
+    session: AsyncSession,
+    task_id: UUID,
+    user_id: UUID,
+    work_dir: str,
+    directory: str,
+    storage_root: str,
+    complete: bool,
+) -> bool:
+    """Persist a recovery projection without converting a registration failure into success."""
+    from cygnusx.infrastructure.database.models.task import TaskModel
+
+    current = (await session.execute(
+        select(TaskModel).where(TaskModel.id == task_id)
+        .execution_options(populate_existing=True).with_for_update()
+    )).scalar_one_or_none()
+    if current is not None and current.status == "cancelled":
+        current.parameters = {**current.parameters, "_download_recovery": {
+            "state": "RECONCILIATION_REQUIRED", "process_tree_stopped": False,
+            "egress_revoked": False, "scientific_ready": False,
+        }}
+        await session.flush()
+        return False
+    try:
+        await _register_downloaded_files(
+            session=session,
+            task_id=task_id,
+            user_id=user_id,
+            work_dir=work_dir,
+            directory=directory,
+            storage_root=storage_root,
+            complete=complete,
+        )
+    except Exception as exc:
+        task = await session.get(TaskModel, task_id)
+        if task is not None:
+            task.parameters = {
+                **(task.parameters or {}),
+                "_download_registration": {
+                    "state": "RECONCILIATION_REQUIRED",
+                    "scientific_ready": False,
+                    "reason_code": getattr(exc, "code", None) or "DOWNLOAD_REGISTRATION_FAILED",
+                },
+            }
+            await session.flush()
+        return False
+    return complete

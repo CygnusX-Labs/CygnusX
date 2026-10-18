@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "EvidenceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "SOURCE",
+            "DATASET_VERSION",
+            "RESULT_MANIFEST",
+            "ARTIFACT",
+            "ARTICLE"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "resource_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "resource_id"
+      ],
+      "title": "EvidenceReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "claim_id": {
+      "pattern": "^[a-z][a-z0-9_]{0,47}$",
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "claim_text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Claim Text",
+      "type": "string"
+    },
+    "claim_type": {
+      "enum": [
+        "DATASET_FACT",
+        "COMPUTATIONAL_RESULT",
+        "LITERATURE_CONTEXT",
+        "HYPOTHESIS"
+      ],
+      "title": "Claim Type",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "$ref": "#/$defs/EvidenceReference"
+      },
+      "maxItems": 20,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "alternative_explanations": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Alternative Explanations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "claim_id",
+    "claim_text",
+    "claim_type"
+  ],
+  "title": "ClaimDraft",
+  "type": "object"
+}

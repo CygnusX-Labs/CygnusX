@@ -75,9 +75,10 @@ class DatasetImportService:
         self.geo = geo or metadata_adapter()
         self.confirmations = get_tool_confirmation_service()
 
-    async def discover(self, owner: uuid.UUID, project_id: uuid.UUID, value: str) -> dict[str, Any]:
+    async def discover(self, owner: uuid.UUID, project_id: uuid.UUID | None, value: str) -> dict[str, Any]:
         require_dataset_read()
-        await self.repo.project(owner, project_id)
+        if project_id is not None:
+            await self.repo.project(owner, project_id)
         candidate = await self.geo.resolve(value)
         from cygnusx.application.services.geo_processed_data_service import GeoProcessedDataService
 
@@ -407,9 +408,11 @@ class DatasetImportService:
                 version.source_snapshot = bound["candidate"]
                 row.version_id = version.id
                 await self.db.commit()
-            for request in bound["requests"]:
+            for index, request in enumerate(bound["requests"]):
                 task = await DownloadService(self.db).submit(
-                    str(owner), DownloadRequest.model_validate(request)
+                    str(owner), DownloadRequest.model_validate({
+                        **request, "request_key": f"ingestion:{row.id}:{index}"
+                    }), project_id=project_id,
                 )
                 row.task_ids = [*row.task_ids, str(task.id)]
                 await self.db.commit()

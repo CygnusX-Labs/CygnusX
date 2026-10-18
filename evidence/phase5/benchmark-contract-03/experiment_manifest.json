@@ -1,0 +1,42 @@
+{
+  "run_ids": [
+    "7f2e23e8-fd06-4535-aef9-7178bc58fae0"
+  ],
+  "head": "51011118535f782f5282f638b4a54649c79bf6d6",
+  "file_sha256": {
+    "benchmarks/research_agent/v1/cases/discovery_01.json": "dd546047980a311dcb63ae43006d9d1404e3d9ec4ecf1bacdfb2068a6f6b2ab8",
+    "benchmarks/research_agent/v1/cases/discovery_02.json": "472313dce4ad8e99a2b9aa1f8ad4ca5f77023aa87836313dab2d3e6c3d943816",
+    "benchmarks/research_agent/v1/cases/discovery_03.json": "3923b344a1faacdc064501ef9d0b16804294957ad4fbd7ef69b710d4a8ee7f86",
+    "benchmarks/research_agent/v1/cases/discovery_04.json": "dfd58ad086c93900e60d49c21623e107fc2cd291a9fdcbe3c868040f9216bc7a",
+    "benchmarks/research_agent/v1/cases/planning_01.json": "8740949c152ef04ffcd8143083d4c6d6af977a266e168d78144b61907dd4efe9",
+    "benchmarks/research_agent/v1/cases/planning_02.json": "ff7e69e570ead3e7488c33f722859170c8dd02a9ed07b017e0f909c5cee4509d",
+    "benchmarks/research_agent/v1/cases/planning_03.json": "eede02d178fe3e48897ee6d385038da5c2d41ec39c4bc41a00abfbd4785087a7",
+    "benchmarks/research_agent/v1/cases/planning_04.json": "c6dc338b651a36ebc2a4783e007592fa81d58db69be133f99d060a94af06f58c",
+    "benchmarks/research_agent/v1/cases/safety_01.json": "e69c97bf54e2435ec809db79c1078a80fb098798d684250ef0d427571116fd9d",
+    "benchmarks/research_agent/v1/cases/safety_02.json": "df153c8c3f3db0b868d8e08702a7f1d06485525b064f1f29ce6351d0afb014b8",
+    "benchmarks/research_agent/v1/cases/safety_03.json": "66fa858da0c801b59af6a41adfeeb9f2fe4cc58f6c6a096d9c090bf2f171e1ef",
+    "benchmarks/research_agent/v1/cases/safety_04.json": "080e63e7e97d9979d691a7c22a65206bb5da741589bbcd4610689fca4d47b73b",
+    "pyproject.toml": "183717398585ce8f1240bddde481f3a06ba78efb78de354b2ffaf53630b7213b",
+    "scripts/evaluate_research_benchmark.py": "034fe6b80f8132626b254e92480c9a1a443bb0981ba28e63792c638ac97c4ed8",
+    "src/cygnusx/application/schemas/agent_tools.py": "53eca1d27dfba1420cc7591c7a3bad14339f65d988c96ee669fd73ee94c1dc55",
+    "src/cygnusx/application/schemas/dataset.py": "5aaa84619c1294441e62bbfbb10fb9bfbb80f8c83771916700bb0a232cb826ab",
+    "src/cygnusx/application/schemas/research_claims.py": "74c901eab1e935a91ff6773a800847c4e37f7c4a0ba2ff756a56b9396c37fdb7",
+    "src/cygnusx/application/schemas/research_plan.py": "058c9ade640c5e116427d7b065814e99333e84d523ca41c9d1b09ac9207b7bde",
+    "src/cygnusx/domain/research/__init__.py": "9b0ce5dd927e3f9c6855accab1ad29cbc4b837b692b8ab818affb1ef02aab466",
+    "src/cygnusx/domain/research/benchmark.py": "10fa75f20a566d996a3e3b2678eecaa0794bebf8010609372e16cedb8d66e6ce",
+    "src/cygnusx/domain/research/plan_state.py": "e2baa85f6f2a78a1b1110c65a827bf521bfd971a6a3772d1a516e0e33383c29c",
+    "src/cygnusx/domain/research/scientific_validation.py": "700f92241795451e9e90f7188b870e0bcfc5888fa32f907d2145f8c5ba068552",
+    "uv.lock": "dcc3f7155380e3fc852a29b50974e053ec1393e70b68ac248ae9ce0da68e2c2e"
+  },
+  "model_id": null,
+  "prompt_hash": null,
+  "temperature": null,
+  "random_seed": null,
+  "cache": "not_used",
+  "max_retries": 0,
+  "live_execution": false,
+  "baseline_status": {
+    "manual": "NOT_MEASURED",
+    "existing_assistant": "NOT_MEASURED"
+  }
+}

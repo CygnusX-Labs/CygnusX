@@ -24,6 +24,8 @@ flowchart LR
 
 新增七张表由 `bioopsphase3` 迁移定义，前驱 `bioopsphase2`。旧 FileRecord、Sample、Task、Project 不重建、不回填；Dataset 只建立引用。项目采用当前代码可证明的 owner-only 权限，不能推测共享 ACL。每次挂接、审阅、manifest、提交重查 owner/project/模块/文件生命周期。历史未关联文件继续走原文件服务。
 
+> 下载模块（传输实现、Worker/CLI 分发、FileRegistry 登记、源码写门禁）**详见 [平台下载模块架构](CygnusX_download_architecture.md)**；本文只描述 Dataset 与下载的交接面（Asset→FileRecord 引用、task_id/SHA 关联断点）。
+
 版本冻结后不能编辑。新版本复制来源和关联，重置资产校验，保留旧版本和人工审阅历史。人工用途与实验类型独立于源数据；人工选择不能把未知矩阵直接提升为 raw counts。Handoff 固定排序并对规范化 JSON 计算 SHA-256，包含来源、文件实测 SHA-256、样本映射、人工审阅与缺口。数据库不提供防管理员篡改保证，真实执行前仍须复验文件；不是数字签名。
 
 ## 一次导入
@@ -63,3 +65,15 @@ FASTQ 走现有 RNAFlow，显式参考/物种/链特异性、样本前缀和配�
 ## 受保护的科研交付关联
 
 Phase4 为 AnalysisLink 增加 prepare 时的执行绑定，最终 TaskService 与 Worker 复核输入/Flow 摘要；Task/link 在队列可见前提交。结果采集、FileRegistry、双报告与项目只读投影见 [科研交付架构](CygnusX_research_delivery_architecture.md)。该扩展没有解除 Phase3 的运行/写门禁；实际 Worker 与公开案例仍 BLOCKED，旧版本、文件和任务不补造历史。
+
+## 寻宝鼠卡片只读与 Prepare 接线
+
+原 DatasetCard 通过 typed ResearchAction 与 Vue useResearchWorkflow 进入同一 AgentToolGateway；公开 dataset.discover 可以没有project，仍要求Gateway/module/Dataset read开关。其余 Dataset 持久操作继续要求当前会话获授权项目。Dialog 选择权威 Run/附件、预算，复用 ImportPrepare 稳定request_key，无下载Task；已有版本的Handoff/兼容Flow与分析Prepare复用原服务。分析预案 REST 增加 JWT reject，复用原ConfirmationStore、hash与owner验证；view返回安全dataset/version/expiry用于恢复。
+
+任务与报告只读恢复不推断成功；原站检索ToolTrace不当作Task。WRITE_RUNTIME_ACCEPTED和worker_paths_verified未更改，当前Gateway/Dataset read本地配置仍关闭。实施与隔离/运行状态分别见 docs/implementation/treasure-mouse-e2e-research-workflow-implementation.md；真实运行RG-01–12仍BLOCKED。
+
+## RI01–RI03 增量边界
+
+下载登记复用既有FileRegistry写FileRecord.task_id/source/SHA；不新增关系表、不从目录猜Task。存在显式Ingestion.task_ids关联时，登记前重查当前owner/Project；下载用户/模块撤权、旧路径身份或字节冲突拒绝。真实临时文件经生产登记与SQLite到原reconcile的测试成立，仍不证明网络传输或Worker挂载已认证。
+
+DownloadRequest拒绝调用方task_id/owner/project/二进制等未声明字段；下载能力描述由REST/Gateway/Vue共用。外部CLI最终目的地与传输硬预算未认证，新增源码运输门禁保持false，与原WRITE_RUNTIME_ACCEPTED/worker_paths_verified共同保留，不开放真实导入或分析。

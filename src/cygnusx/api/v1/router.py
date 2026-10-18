@@ -33,7 +33,9 @@ from cygnusx.api.v1 import (
     reminders,
     reports,
     research_agent,
+    research_claims,
     research_delivery,
+    research_plans,
     runs,
     sandbox,
     schedules,
@@ -69,6 +71,8 @@ from cygnusx.reference_genomes.api import router as reference_genomes_router
 from cygnusx.tools import register_tool_routers
 
 api_router = APIRouter()
+api_router.include_router(research_plans.router, tags=["ResearchPlans"])
+api_router.include_router(research_claims.router, tags=["ResearchEvidence"])
 api_router.include_router(agent_tools.router, prefix="/agent-tools", tags=["AgentTools"])
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])

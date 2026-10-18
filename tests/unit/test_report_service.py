@@ -1,5 +1,6 @@
 """报告服务单元测试。"""
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -21,6 +22,25 @@ def _tmp_path_factory(tmp_path: Path):
     return lambda: StoragePathFactory(
         StorageConfig(data_root=str(tmp_path), users_subdir="users")
     )
+
+
+@pytest.fixture(autouse=True)
+async def filesystem_thread_wakeup():
+    """Observe real filesystem futures even when sandbox denies self-pipe notifications."""
+    from contextlib import suppress
+
+    async def tick():
+        while True:  # noqa: ASYNC110 - bounded-sleep timer for sandbox event-loop wakeups.
+            await asyncio.sleep(0.01)
+
+    ticker = asyncio.create_task(tick())
+    try:
+        yield
+    finally:
+        await asyncio.get_running_loop().shutdown_default_executor()
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
 
 
 @pytest.mark.unit

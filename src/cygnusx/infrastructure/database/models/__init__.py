@@ -61,6 +61,9 @@ from cygnusx.infrastructure.database.models.dataset import (
     DatasetSourceModel,
     DatasetVersionModel,
 )
+from cygnusx.infrastructure.database.models.download_execution import (
+    DownloadExecutionReceiptNonceModel,
+)
 from cygnusx.infrastructure.database.models.festival import FestivalClaimModel
 from cygnusx.infrastructure.database.models.file import (
     DirectoryModel,
@@ -111,12 +114,21 @@ from cygnusx.infrastructure.database.models.overdrive import (
     OverdriveTaskResultModel,
 )
 from cygnusx.infrastructure.database.models.project import ProjectModel
+from cygnusx.infrastructure.database.models.project_export import (
+    ProjectExportJobModel,
+    ProjectExportRequestModel,
+)
+from cygnusx.infrastructure.database.models.project_report import (
+    ProjectReportJobModel,
+    ProjectReportRequestModel,
+)
 from cygnusx.infrastructure.database.models.report import (
     ReportFileModel,
     ReportGenerationJobModel,
     ReportModel,
     ReportSnapshotModel,
 )
+from cygnusx.infrastructure.database.models.research_plan import ResearchPlanModel
 from cygnusx.infrastructure.database.models.result_observation import ResultObservationModel
 from cygnusx.infrastructure.database.models.run import RunModel
 from cygnusx.infrastructure.database.models.run_event import RunEventModel
@@ -143,12 +155,12 @@ __all__ = [
     "ResultObservationModel",
     "DatasetModel",
     "DatasetVersionModel",
+    "DownloadExecutionReceiptNonceModel",
     "DatasetSourceModel",
     "DatasetAssetModel",
     "DatasetSampleModel",
     "DatasetIngestionModel",
     "DatasetAnalysisLinkModel",
-
     "AgentToolInvocationModel",
     "AgentTemplateModel",
     "UserAgentCapabilityModel",
@@ -222,6 +234,7 @@ __all__ = [
     "MASRoomMessageModel",
     "MASRoomRunModel",
     "MASRoomEventModel",
+    "ResearchPlanModel",
     "ReportModel",
     "ReportFileModel",
     "ReportSnapshotModel",
@@ -243,6 +256,10 @@ __all__ = [
     "SampleModel",
     "DirectoryModel",
     "ProjectModel",
+    "ProjectExportJobModel",
+    "ProjectExportRequestModel",
+    "ProjectReportJobModel",
+    "ProjectReportRequestModel",
     "ScheduleModel",
     "ScheduleOccurrenceModel",
     "ReminderDeliveryModel",

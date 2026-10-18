@@ -58,6 +58,10 @@ class TaskDomainService:
 
     async def transition_status(self, task: Task, new_status: TaskStatus) -> Task:
         """执行状态转换（含合法性校验）"""
+        if task.flow_id == "ebi_download" and task.status == TaskStatus.CANCELLED:
+            # Late download callbacks cannot turn cancellation into another terminal state.
+            current = await self._repo.get_by_id(task.id)
+            return current or task
         if not task.can_transition_to(new_status):
             raise ValidationError(f"非法状态转换: {task.status} → {new_status}")
         task.status = new_status

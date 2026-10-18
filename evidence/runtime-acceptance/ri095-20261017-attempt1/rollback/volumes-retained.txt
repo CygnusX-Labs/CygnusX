@@ -1,0 +1,3 @@
+cygnusx-ri095-acceptance_postgres-data
+cygnusx-ri095-acceptance_private-storage
+cygnusx-ri095-acceptance_redis-data

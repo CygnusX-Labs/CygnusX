@@ -746,14 +746,14 @@ class ProviderManager:
     """
 
     _instance: ProviderManager | None = None
-    _providers: dict[str, OpenAICompatibleProvider] = {}
+    _providers: dict[str, Any] = {}
 
     def __new__(cls) -> ProviderManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def get_or_create(self, config: AIProviderConfigModel) -> OpenAICompatibleProvider:
+    def get_or_create(self, config: AIProviderConfigModel) -> Any:
         """获取或创建 Provider（带缓存）
 
         缓存命中时也会用最新 config 刷新可变字段（尤其 API Key / model / base_url）：
@@ -762,7 +762,22 @@ class ProviderManager:
         """
         cache_key = str(config.id)
         provider = self._providers.get(cache_key)
-        if provider is None:
+        if getattr(config, "provider_type", "") == "deterministic_test":
+            settings = get_settings()
+            if (
+                settings.app_env not in {"test", "acceptance"}
+                or not settings.deterministic_test_provider_enabled
+            ):
+                raise RuntimeError("DETERMINISTIC_TEST_PROVIDER_DISABLED")
+            from cygnusx.infrastructure.ai_provider.testing import DeterministicTestProvider
+
+            if not isinstance(provider, DeterministicTestProvider):
+                provider = DeterministicTestProvider(config)
+                self._providers[cache_key] = provider
+            else:
+                provider.update_config(config)
+            return provider
+        if not isinstance(provider, OpenAICompatibleProvider):
             provider = OpenAICompatibleProvider(config)
             self._providers[cache_key] = provider
             return provider

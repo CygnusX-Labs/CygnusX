@@ -8,37 +8,65 @@ from client.api_client import CygnusXAPIClient, CygnusXAPIError
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
-    async def cygnusx_list_flows(category: str = "") -> dict:
-        """列出平台可用的分析流程。可按类别过滤：rna_seq/atac_seq/scrna 等。
+    async def cygnusx_list_flows(category: str = "", limit: int = 20, offset: int = 0) -> dict:
+        """列出平台当前已开放、可提交的分析流程目录（仅含简要字段，分页返回）。
+
+        输出与门控后的"可提交流程集合"同源同判定：默认关闭的流程
+        （如 counts_deg，受 counts_deg_flow_enabled 配置门控）不会出现。
+        只读工具，无副作用。目录不随流程数膨胀：默认每页 20 条、最多 50 条，
+        完整契约按需走 cygnusx_get_flow_detail。
 
         :param category: 流程类别过滤（可选）："rna_seq"/"atac_seq"/"scrna"等，留空返回全部
-        :return: JSON 格式结果，含 success、summary、data、next_steps
+        :param limit: 每页条数（默认 20，最大 50）
+        :param offset: 分页偏移（默认 0）
+        :return: JSON 格式结果，含 success、summary、data（items/total/next_offset）、next_steps
 
         示例:
             await cygnusx_list_flows("scrna")
-            # 返回所有单细胞 RNA 分析流程
+            # 返回已开放的单细胞 RNA 分析流程第一页
         """
+        limit = max(1, min(limit, 50))
+        offset = max(0, offset)
         try:
-            data = await api.list_flows(category=category or None)
+            data = await api.list_flows(category=category or None, limit=limit, offset=offset)
             flows = data.get("flows", data) if isinstance(data, dict) else data
+            items = data.get("items", flows) if isinstance(data, dict) else flows
+            total = data.get("total", len(items)) if isinstance(data, dict) else len(items)
             lines = []
-            for f in (flows if isinstance(flows, list) else []):
+            for f in (items if isinstance(items, list) else []):
                 lines.append(
-                    f"- {f.get('id', '?')}: {f.get('name', '?')} "
+                    f"- {f.get('id', f.get('flow_id', '?'))}: {f.get('name', '?')} "
                     f"(v{f.get('version', '?')}, {f.get('parameter_count', 0)} 参数)"
                 )
+            next_offset = offset + limit
+            has_more = next_offset < total
             return {
                 "success": True,
-                "summary": f"可用流程:\n" + "\n".join(lines),
-                "data": data,
-                "next_steps": ["使用 cygnusx_get_flow_detail 查看具体流程的参数配置"],
+                "summary": (
+                    f"可用流程（{offset + 1}-{min(next_offset, total)}/{total}）:\n"
+                    + "\n".join(lines)
+                ),
+                "data": {
+                    "items": items,
+                    "total": total,
+                    "next_offset": next_offset if has_more else None,
+                    "has_more": has_more,
+                },
+                "next_steps": (
+                    ["使用 cygnusx_get_flow_detail 查看具体流程的参数配置"]
+                    + ([f"调用 cygnusx_list_flows(offset={next_offset}) 获取下一页"]
+                       if has_more else [])
+                ),
             }
         except CygnusXAPIError as e:
             return {"success": False, "summary": f"获取流程列表失败: {e.detail}"}
 
     @mcp.tool()
     async def cygnusx_get_flow_detail(flow_id: str) -> dict:
-        """获取分析流程详情：描述、参数列表、样本表定义、执行配置。
+        """获取分析流程的完整输入契约：描述、参数列表、样本表定义、执行配置。
+
+        这是固定工具目录中的 describe 工具：配合 cygnusx_list_flows（目录）
+        使用，按需拉取单个流程的完整契约。对未开放流程（门控关闭）返回"不存在"。
 
         :param flow_id: 流程 ID（如："scrna_v2"）
         :return: JSON 格式流程详情，含 meta、parameters、sample_sheet

@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     app_name: str = "CygnusX"
     app_env: str = "development"
     app_debug: bool = True
+    deterministic_test_provider_enabled: bool = False
+    download_execution_supervisor_id: str | None = None
+    download_execution_supervisor_public_key_b64: str | None = Field(default=None, repr=False)
+    download_execution_supervisor_url: str | None = None
+    download_execution_supervisor_ca_file: str | None = None
+    download_execution_client_cert_file: str | None = None
+    download_execution_client_key_file: str | None = Field(default=None, repr=False)
+    download_execution_supervisor_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     # 部署版本可观测：由镜像构建期 ARG/ENV 注入（APP_VERSION/APP_GIT_SHA/APP_BUILD_TIME），
     # /health 对外暴露，缺省 unknown 表示未经规范构建流程产出。
     app_version: str = "0.1.0"
@@ -72,8 +80,26 @@ class Settings(BaseSettings):
     tool_gateway_read_enabled: bool = False
     # Phase3 data assets: all external execution remains subject to Phase0B/2 gates.
     research_report_python_executable: str | None = None
+    research_plan_enabled: bool = False
+    research_plan_review_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    research_plan_max_events: int = Field(default=256, ge=20, le=1024)
+    research_plan_max_steps: int = Field(default=20, ge=1, le=20)
+    research_plan_max_payload_bytes: int = Field(default=65536, ge=1024, le=262144)
+    research_plan_max_tool_calls: int = Field(default=20, ge=1, le=100)
+    research_plan_tool_timeout_seconds: int = Field(default=30, ge=1, le=120)
     research_delivery_read_enabled: bool = False
     research_delivery_write_enabled: bool = False
+    # Independent project packaging only; never unlocks download/analysis execution.
+    project_export_enabled: bool = False
+    # Formal project scientific reports require separate human/runtime admission.
+    project_report_write_enabled: bool = False
+    project_report_pdf_enabled: bool = False
+    project_export_max_files: int = Field(default=500, ge=2, le=1000)
+    project_export_max_bytes: int = Field(default=64 * 1024**2, ge=1024, le=64 * 1024**2)
+    project_export_file_max_bytes: int = Field(default=16 * 1024**2, ge=1024, le=16 * 1024**2)
+    project_export_archive_max_bytes: int = Field(default=80 * 1024**2, ge=1024, le=128 * 1024**2)
+    project_export_max_attempts: int = Field(default=3, ge=1, le=10)
+    project_export_timeout_seconds: int = Field(default=300, ge=10, le=540)
     research_manifest_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
     research_artifact_max_files: int = Field(default=2000, ge=1, le=10000)
     research_artifact_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
@@ -82,6 +108,11 @@ class Settings(BaseSettings):
     dataset_import_write: bool = False
     analysis_submit_from_dataset: bool = False
     counts_deg_flow_enabled: bool = False
+    # MCP 工具固定化（阶段 3）：旧 RNA/ATAC 四件套 + Chat 自动生成 per-flow prepare
+    # 工具的发现开关。true=旧工具保持可见（现状/回退）；false=默认清单只剩固定工具
+    # （cygnusx_list_flows / describe / prepare / submit + 通用任务工具）。
+    # 默认 true 保持现状；灰度验收通过后翻转为 false。
+    legacy_pipeline_tools: bool = True
     dataset_archive_max_files: int = Field(default=100, ge=1, le=1000)
     dataset_archive_max_file_bytes: int = Field(default=16 * 1024 * 1024, ge=1)
     dataset_archive_max_ratio: int = Field(default=100, ge=1, le=1000)
@@ -732,6 +763,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """生产环境强制校验关键密钥，避免使用默认值或空值上线。"""
+        if self.is_production and self.deterministic_test_provider_enabled:
+            raise ValueError("生产环境禁止启用确定性测试 Provider")
         if not self.workflow_monitor_ingest_token and self.cygnusx_workflow_monitor_token:
             self.workflow_monitor_ingest_token = self.cygnusx_workflow_monitor_token
         if not self.is_production:

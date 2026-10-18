@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -30,7 +30,7 @@ class DiscoveryProposal(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=64)
     provenance: dict[str, Any] = Field(default_factory=dict)
     next_actions: list[Literal["inspect_metadata", "refine_search", "review_evidence"]] = Field(
-        default_factory=lambda: ["inspect_metadata", "refine_search"]
+        default=["inspect_metadata", "refine_search"]
     )
 
 
@@ -44,12 +44,22 @@ class ResearchAgentMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=12000)
     model_id: UUID | None = None
     lang: Literal["zh", "en"] = "zh"
+    request_id: UUID = Field(default_factory=uuid4)
 
 
 class ResearchAgentCapabilities(BaseModel):
     native_ui_enabled: bool
+    enabled: bool = False
+    read_discovery: bool = False
+    read_sessions: bool = False
+    prepare_import: bool = False
+    prepare_analysis: bool = False
+    project_required_for_prepare: Literal[True] = True
+    write_execution: Literal[False] = False
+    reason_code: str | None = None
+    cancellation_mode: Literal["browser_abort_only"] = "browser_abort_only"
     read_only: bool = True
-    write_tools_enabled: bool = False
+    write_tools_enabled: Literal[False] = False
     supported_events: list[str] = Field(
         default_factory=lambda: ["delta", "tool", "cards", "polariseq", "grounding", "end", "error", "cancel"]
     )
@@ -59,3 +69,13 @@ class ResearchAgentSessionView(BaseModel):
     session: Any
     messages: list[Any] = Field(default_factory=list)
 
+
+
+class ResearchSessionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    status: Literal["archived"] | None = None
+
+
+class ResearchLiteratureRequest(BaseModel):
+    kind: Literal["geo_series", "geo_sample", "go_term", "pubmed"]
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_:.-]+$")

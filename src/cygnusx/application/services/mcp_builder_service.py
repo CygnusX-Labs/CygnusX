@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
@@ -25,7 +26,12 @@ from cygnusx.application.schemas.mcp_builder import (
 )
 from cygnusx.application.services.mcp_service import next_patch_version
 from cygnusx.core.config import get_settings
-from cygnusx.core.exceptions import AuthorizationError, NotFoundError, ValidationError
+from cygnusx.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from cygnusx.domain.mcp.entities import MCPServer, MCPToolRegistry
 from cygnusx.domain.mcp.value_objects import (
     BuildStatus,
@@ -54,6 +60,7 @@ from cygnusx.infrastructure.mcp.client import (
     validate_working_dir,
 )
 from cygnusx.infrastructure.mcp.builder.versioning import (
+    compute_contract_digest,
     CONFIG_SNAPSHOT_FIELDS,
     determine_version,
     extract_config_snapshot,
@@ -66,6 +73,31 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 def _slugify(text: str, fallback: str = "tool") -> str:
     slug = _SLUG_RE.sub("-", text.lower()).strip("-")
     return slug[:40] or fallback
+
+
+# 实验工具单次调用输出限额（UTF-8 字节）：超限截断并附引用说明，
+# 防止实验代码的大输出直接冲击响应与模型上下文（架构审查 §6.2 缺口补齐）。
+_EXPERIMENTAL_RESULT_MAX_BYTES = 16_384
+
+
+def _clamp_experimental_result(result: dict[str, Any]) -> dict[str, Any]:
+    """实验工具输出限额：超限整包替换为截断说明（保留 success 语义）。"""
+    try:
+        encoded = json.dumps(result, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return result
+    size = len(encoded.encode("utf-8"))
+    if size <= _EXPERIMENTAL_RESULT_MAX_BYTES:
+        return result
+    return {
+        "success": result.get("success", False),
+        "is_error": result.get("is_error", False),
+        "truncated": True,
+        "summary": (
+            f"结果被截断：原始输出约 {size} 字节，超出实验工具单次调用 "
+            f"{_EXPERIMENTAL_RESULT_MAX_BYTES} 字节限额；请将大结果写入工作区文件后读取。"
+        ),
+    }
 
 
 def _build_to_dto(b: MCPBuildModel) -> MCPBuildDTO:
@@ -508,12 +540,22 @@ class MCPBuilderService:
         user_id: str,
         is_admin: bool = False,
     ) -> dict[str, Any]:
-        """经沙箱桥接调用实验 MCP 工具（宿主 → UDS → 容器内 STDIO 子进程）."""
+        """经沙箱桥接调用实验 MCP 工具（宿主 → UDS → 容器内 STDIO 子进程）.
+
+        调用前强制校验（P0 执行权限闭环，与 Agent 装配口径一致，防止绕过
+        目录直接 invoke 未审核 / 已驳回 / 已下线的实验能力）：
+        归属 → 审核状态（APPROVED）→ 启用开关 → TTL。输出按
+        ``_EXPERIMENTAL_RESULT_MAX_BYTES`` 限额截断。
+        """
         from cygnusx.infrastructure.studio.manager import studio_sandbox_manager
 
         server = await self._require_experimental(UUID(str(server_id)))
         if not is_admin and str(server.created_by) != str(user_id):
             raise AuthorizationError("无权调用该实验 MCP")
+        if server.review_status != ReviewStatus.APPROVED:
+            raise ValidationError("该实验 MCP 尚未通过审核，禁止调用")
+        if not server.is_enabled:
+            raise ValidationError("该实验 MCP 已被驳回或下线，禁止调用")
         if server.is_expired():
             raise ValidationError("该实验 MCP 已过期，请续期后调用")
 
@@ -538,7 +580,7 @@ class MCPBuilderService:
             except Exception:  # noqa: BLE001
                 pass
         await self._log(server.id, "info", f"工具调用: {tool}", UUID(str(user_id)))
-        return result
+        return _clamp_experimental_result(result)
 
     async def promote_server(self, server_id: str, actor_id: str) -> dict[str, Any]:
         """实验 MCP 转正：pool experimental → production.
@@ -640,6 +682,7 @@ class MCPBuilderService:
                 "source": v.source,
                 "has_config_snapshot": bool(v.config_snapshot),
                 "has_code_snapshot": bool(v.code_snapshot),
+                "contract_digest": v.contract_digest or None,
                 "build_id": str(v.build_id) if v.build_id else None,
                 "changelog": v.changelog,
                 "created_by": str(v.created_by) if v.created_by else None,
@@ -648,8 +691,14 @@ class MCPBuilderService:
             for v in result.scalars().all()
         ]
 
-    async def rollback(self, server_id: str, target_version: str, user_id: str,
-                       is_admin: bool = False) -> dict[str, Any]:
+    async def rollback(
+        self,
+        server_id: str,
+        target_version: str,
+        user_id: str,
+        is_admin: bool = False,
+        expected_current_version: str | None = None,
+    ) -> dict[str, Any]:
         """回滚实验 MCP 到指定版本.
 
         与 admin 路径对齐的完整回滚：
@@ -660,10 +709,20 @@ class MCPBuilderService:
            把对应 ``code_snapshot`` 写回沙箱再启动，回滚后的代码真实生效；
         4. 回滚本身记一条 ``source=rollback`` 新版本行（版本号在最大版本上
            bump patch，保证唯一），与 admin 回滚口径一致。
+
+        ``expected_current_version`` 提供 generation 式乐观锁（架构审查 §8.4）：
+        与读取时不一致即拒绝，防止并发发布/回退互相覆盖。
         """
         server = await self._require_experimental(UUID(str(server_id)))
         if not is_admin and str(server.created_by) != str(user_id):
             raise AuthorizationError("无权回滚该实验 MCP")
+        if (
+            expected_current_version is not None
+            and server.current_version != expected_current_version
+        ):
+            raise ConflictError(
+                f"并发冲突：当前版本已变为 {server.current_version}，请重新读取后重试"
+            )
         result = await self._db.execute(
             select(MCPVersionModel).where(
                 MCPVersionModel.mcp_server_id == server.id,
@@ -716,6 +775,8 @@ class MCPBuilderService:
                 for t in server.tools
             ],
             config_snapshot=extract_config_snapshot(server),
+            contract_digest=target.contract_digest
+            or compute_contract_digest(target.tools_snapshot, target.config_snapshot),
             source="rollback",
             changelog=f"回滚到 v{target_version}",
             created_by=UUID(str(user_id)),
@@ -824,6 +885,7 @@ class MCPBuilderService:
             for t in server.tools
         ]
         config_snapshot = extract_config_snapshot(server)
+        contract_digest = compute_contract_digest(tools_snapshot, config_snapshot)
         result = await self._db.execute(
             select(MCPVersionModel).where(
                 MCPVersionModel.mcp_server_id == server.id,
@@ -837,6 +899,8 @@ class MCPBuilderService:
             if tools_snapshot:
                 existing.tools_snapshot = tools_snapshot
             existing.config_snapshot = config_snapshot
+            if contract_digest:
+                existing.contract_digest = contract_digest
             if changelog and not existing.changelog:
                 existing.changelog = changelog
             await self._db.flush()
@@ -854,6 +918,7 @@ class MCPBuilderService:
             code_snapshot=build.generated_code or "",
             tools_snapshot=tools_snapshot,
             config_snapshot=config_snapshot,
+            contract_digest=contract_digest,
             source=source,
             changelog=changelog or build.requirement[:300],
             created_by=build.user_id,

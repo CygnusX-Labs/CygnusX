@@ -1,0 +1,8 @@
+{
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "e5b83d49c0f24fb0fcb2ca35ec6169fd89dc4b1381e3ed06760a3b4085b84d89",
+  "src/cygnusx/tools/download/config.py": "dfda4cbf49329c655ba2833525037531b26bd6b398b9aae8d861b45168424c6a",
+  "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md": "9985019403109bbc9d40ef99d3df37ba5293add25a463fee82635a9fcc7c33e6",
+  "src/cygnusx/application/services/dataset_import_service.py": "afcbaddf4ad6ff94016af026f6e56d67b994b55f753c321a437e24cb4437046e",
+  "src/cygnusx/application/services/agent_tool_gateway.py": "8136e4d1f1a5dd4fc424553dfabbd8b01a9458c18b42e847e91d15a05d34a374",
+  "src/cygnusx/infrastructure/storage/file_registry.py": "2e54d6ccffa66221bd74f6dea9cf971d35f28a4506d21ddd5064f8e34d592dcb"
+}

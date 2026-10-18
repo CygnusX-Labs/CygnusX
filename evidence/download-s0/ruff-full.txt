@@ -1,0 +1,291 @@
+src/cygnusx/api/v1/admin/skills.py:188:24: B008 Do not perform function call `File` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src/cygnusx/api/v1/admin/skills.py:207:24: B008 Do not perform function call `File` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable
+src/cygnusx/api/v1/cookies.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/api/v1/files.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/api/v1/files.py:36:33: F401 [*] `cygnusx.core.config.get_settings` imported but unused
+src/cygnusx/api/v1/files.py:38:58: F401 [*] `cygnusx.infrastructure.config.storage_config.get_storage_config` imported but unused
+src/cygnusx/api/v1/mas_rooms.py:103:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/api/v1/mas_rooms.py:116:24: UP041 [*] Replace aliased errors with `TimeoutError`
+src/cygnusx/api/v1/mas_rooms.py:128:13: F841 Local variable `unsubscribe_room` is assigned to but never used
+src/cygnusx/api/v1/plot_stats.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/api/v1/runs.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/schemas/run_plan.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agent_consultation_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agent_consultation_service.py:51:33: F811 [*] Redefinition of unused `get_settings` from line 28: `get_settings` redefined here
+src/cygnusx/application/services/agent_consultation_service.py:831:16: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/agent_consultation_service.py:862:30: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/agent_memory_tool_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agentteams_data_tool_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agentteams_data_tool_service.py:263:28: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/agentteams_interruption_coordinator.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agentteams_qc_verification_service.py:137:39: UP012 [*] Unnecessary UTF-8 `encoding` argument to `encode`
+src/cygnusx/application/services/agentteams_room_service.py:15:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/agentteams_room_service.py:29:24: F401 [*] `sqlalchemy.delete` imported but unused
+src/cygnusx/application/services/agentteams_room_service.py:802:13: B007 Loop control variable `event` not used within loop body
+src/cygnusx/application/services/agentteams_usage_service.py:14:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/ai_tools.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/auth_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat/configuration.py:7:63: F401 [*] `cygnusx.application.services.network_request_tool.NETWORK_REQUEST_TOOL_SCHEMA` imported but unused
+src/cygnusx/application/services/chat/context_compaction.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat/context_compaction.py:59:7: N818 Exception name `CompactionCancelled` should be named with an Error suffix
+src/cygnusx/application/services/chat/context_estimate.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat/golden_records.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat/overdrive_control.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat/runtimes/direct_chat_runtime.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/chat_archive_service.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/execution_events.py:113:13: SIM114 [*] Combine `if` branches using logical `or` operator
+src/cygnusx/application/services/mas/mas_graph.py:15:29: F401 [*] `langgraph.types.Command` imported but unused
+src/cygnusx/application/services/mas/mas_room_service.py:262:37: F401 [*] `langgraph.types.Command` imported but unused
+src/cygnusx/application/services/mas/mas_room_service.py:264:61: F401 [*] `cygnusx.infrastructure.database.session.get_session_factory` imported but unused
+src/cygnusx/application/services/mas/mas_room_service.py:265:67: F401 [*] `cygnusx.infrastructure.execution.checkpointer.postgres_checkpointer` imported but unused
+src/cygnusx/application/services/mas/mas_room_service.py:281:9: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/mas/mas_room_service.py:287:56: F401 [*] `cygnusx.domain.execution.mas_state.FINISH_SENTINEL` imported but unused
+src/cygnusx/application/services/mas/mas_room_service.py:288:61: F401 [*] `cygnusx.infrastructure.database.session.get_session_factory` imported but unused
+src/cygnusx/application/services/mas/mas_worker_executor.py:74:13: F841 Local variable `stripped_features` is assigned to but never used
+src/cygnusx/application/services/mas/mas_worker_executor.py:119:9: SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+src/cygnusx/application/services/mcp_builder_service.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/mcp_builder_service.py:233:37: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/mcp_builder_service.py:379:13: SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+src/cygnusx/application/services/mcp_builder_service.py:518:42: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/mcp_builder_service.py:578:13: SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+src/cygnusx/application/services/mcp_builder_service.py:649:28: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/network_request_tool.py:133:16: UP041 [*] Replace aliased errors with `TimeoutError`
+src/cygnusx/application/services/overdrive_execution_service.py:275:9: F841 Local variable `workspace_rel` is assigned to but never used
+src/cygnusx/application/services/overdrive_run_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/parallel_subagent_service.py:751:37: B023 Function definition does not bind loop variable `text`
+src/cygnusx/application/services/parallel_subagent_service.py:752:40: B023 Function definition does not bind loop variable `round_reasoning_text`
+src/cygnusx/application/services/parallel_subagent_service.py:753:36: B023 Function definition does not bind loop variable `tool_calls`
+src/cygnusx/application/services/parallel_subagent_service.py:754:31: B023 Function definition does not bind loop variable `usage`
+src/cygnusx/application/services/parallel_subagent_service.py:755:63: B023 Function definition does not bind loop variable `turn_started`
+src/cygnusx/application/services/parallel_subagent_service.py:756:39: B023 Function definition does not bind loop variable `finish_reason`
+src/cygnusx/application/services/parallel_subagent_service.py:761:24: B023 Function definition does not bind loop variable `agentteams_token`
+src/cygnusx/application/services/parallel_subagent_service.py:762:50: B023 Function definition does not bind loop variable `agentteams_token`
+src/cygnusx/application/services/pipeline_result_service.py:351:25: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/run_event_service.py:45:38: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/run_plan_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/run_plan_service.py:107:41: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/schedule_service.py:10:24: F401 [*] `sqlalchemy.Select` imported but unused
+src/cygnusx/application/services/schedule_tool_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/search_provider_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/skill_import_service.py:192:12: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:195:34: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:232:44: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:269:13: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:308:24: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:327:47: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/skill_import_service.py:341:54: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/skill_import_service.py:355:13: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:371:47: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/skill_import_service.py:379:54: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/skill_import_service.py:454:44: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/application/services/skill_import_service.py:603:80: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/skill_import_service.py:604:35: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/application/services/stats_service.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/studio_loop_guard.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/studio_loop_guard.py:7:1: UP035 [*] Import from `collections.abc` instead: `Awaitable`, `Callable`
+src/cygnusx/application/services/studio_skill_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/application/services/studio_task_service.py:66:9: UP012 [*] Unnecessary UTF-8 `encoding` argument to `encode`
+src/cygnusx/application/services/studio_task_service.py:132:13: SIM102 Use a single `if` statement instead of nested `if` statements
+src/cygnusx/application/services/workspace_references.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/core/agentteams_context.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/core/ai_metrics.py:98:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/core/telemetry.py:181:17: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/domain/ai/value_objects.py:6:7: UP042 Class RoleType inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/ai/value_objects.py:15:7: UP042 Class ToolCallStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/ai/value_objects.py:24:7: UP042 Class ToolName inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/cookie/value_objects.py:6:7: UP042 Class TransactionType inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/cookie/value_objects.py:17:7: UP042 Class AccountStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/cookie/value_objects.py:25:7: UP042 Class PricingType inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/cookie/value_objects.py:34:7: UP042 Class PricingUnit inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/cookie/value_objects.py:47:7: UP042 Class BillingItem inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/file/value_objects.py:6:7: UP042 Class FileType inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/file/value_objects.py:21:7: UP042 Class FileSource inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/file/value_objects.py:39:7: UP042 Class OwnerScope inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/file/value_objects.py:46:7: UP042 Class LifecycleStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/file/value_objects.py:54:7: UP042 Class UploadStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/flow/condition.py:126:13: SIM102 Use a single `if` statement instead of nested `if` statements
+src/cygnusx/domain/flow/condition.py:189:25: F841 Local variable `merged` is assigned to but never used
+src/cygnusx/domain/flow/services.py:135:17: F841 Local variable `cycle_start` is assigned to but never used
+src/cygnusx/domain/flow/services.py:152:13: SIM102 Use a single `if` statement instead of nested `if` statements
+src/cygnusx/domain/flow/services.py:184:5: F841 Local variable `service` is assigned to but never used
+src/cygnusx/domain/flow/value_objects.py:20:7: UP042 Class ParameterTypeEnum inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/flow/value_objects.py:33:7: UP042 Class ConditionOperatorEnum inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/flow/value_objects.py:49:7: UP042 Class FileAcceptType inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/flow/value_objects.py:130:22: F821 Undefined name `Parameter`
+src/cygnusx/domain/flow/value_objects.py:144:22: F821 Undefined name `Parameter`
+src/cygnusx/domain/mas/__init__.py:37:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/domain/mcp/value_objects.py:6:7: UP042 Class Transport inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:15:7: UP042 Class ServerStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:24:7: UP042 Class ServerPool inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:32:7: UP042 Class BuildStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:45:7: UP042 Class ReviewStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:54:7: UP042 Class ReviewDecision inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/mcp/value_objects.py:62:7: UP042 Class AccessLevel inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/sandbox/value_objects.py:6:7: UP042 Class SandboxStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/sandbox/value_objects.py:18:7: UP042 Class ExecutionStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/task/value_objects.py:6:7: UP042 Class TaskStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/task/value_objects.py:17:7: UP042 Class ExecutionMode inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/task/value_objects.py:24:7: UP042 Class LogLevel inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/team/value_objects.py:6:7: UP042 Class TeamRole inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/terminal/value_objects.py:6:7: UP042 Class TerminalStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/user/value_objects.py:6:7: UP042 Class Role inherits from both `str` and `enum.Enum`
+src/cygnusx/domain/user/value_objects.py:13:7: UP042 Class UserStatus inherits from both `str` and `enum.Enum`
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:179:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:187:9: F401 [*] `cygnusx.domain.mas.models.ArtifactKind` imported but unused
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:189:9: F401 [*] `cygnusx.domain.mas.models.MASArtifact` imported but unused
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:643:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:806:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/celery_app/tasks/mas.py:973:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/celery_app/tasks/schedules.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/celery_app/tasks/schedules.py:12:32: F401 [*] `sqlalchemy.update` imported but unused
+src/cygnusx/infrastructure/config/runtime_image_loader.py:6:1: UP035 [*] Import from `collections.abc` instead: `Mapping`
+src/cygnusx/infrastructure/database/models/agent_memory.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/database/models/blast.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/database/models/mas.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/database/models/mas_room.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/database/models/mcp_builder.py:6:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/database/retry.py:39:13: SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
+src/cygnusx/infrastructure/download/progress_crypto.py:17:7: N818 Exception name `ProgressKeyTimeout` should be named with an Error suffix
+src/cygnusx/infrastructure/download/progress_crypto.py:59:50: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/execution/langgraph_nodes.py:18:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/mas/rnaflow.py:5:21: F401 [*] `pathlib.Path` imported but unused
+src/cygnusx/infrastructure/mas/volcano.py:66:27: B905 `zip()` without an explicit `strict=` parameter
+src/cygnusx/infrastructure/mcp/builder/__init__.py:14:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/mcp/builder/__init__.py:21:32: F401 `.generator.GenerationResult` imported but unused
+src/cygnusx/infrastructure/mcp/builder/__init__.py:21:50: F401 `.generator.MCPCodeGenerator` imported but unused
+src/cygnusx/infrastructure/mcp/builder/__init__.py:21:68: F401 `.generator.extract_python_code` imported but unused
+src/cygnusx/infrastructure/mcp/builder/__init__.py:24:36: F401 `.doc_generator.generate_architecture_doc` imported but unused
+src/cygnusx/infrastructure/mcp/builder/__init__.py:24:63: F401 `.doc_generator.generate_build_doc` imported but unused
+src/cygnusx/infrastructure/mcp/builder/safety.py:471:36: B905 `zip()` without an explicit `strict=` parameter
+src/cygnusx/infrastructure/mcp/builder/safety.py:482:13: SIM114 [*] Combine `if` branches using logical `or` operator
+src/cygnusx/infrastructure/mcp/presets.py:509:14: ASYNC230 Async functions should not open files with blocking methods like `open`
+src/cygnusx/infrastructure/mcp/presets.py:1021:14: ASYNC230 Async functions should not open files with blocking methods like `open`
+src/cygnusx/infrastructure/mcp/presets.py:1470:5: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/mcp/presets.py:1473:5: N806 Variable `BASE_URL` in function should be lowercase
+src/cygnusx/infrastructure/mcp/presets.py:1477:9: SIM108 Use ternary operator `raw_items = data.get("results", data.get("hits", data)) if isinstance(data, dict) else data` instead of `if`-`else`-block
+src/cygnusx/infrastructure/mcp/presets.py:1499:9: SIM108 Use ternary operator `samples_list = data.get("samples", data.get("data", [])) if isinstance(data, dict) else data` instead of `if`-`else`-block
+src/cygnusx/infrastructure/mcp/presets.py:1529:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1533:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1537:21: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/infrastructure/mcp/presets.py:1538:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/infrastructure/mcp/presets.py:1540:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/infrastructure/mcp/presets.py:1542:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/infrastructure/mcp/presets.py:1548:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1552:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1556:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1566:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1570:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1574:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1578:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1582:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1586:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1590:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1594:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1598:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1602:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1604:91: W291 [*] Trailing whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1607:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1611:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1615:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1619:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1623:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1627:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1631:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1635:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1639:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1643:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1647:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1651:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1655:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/mcp/presets.py:1658:1: W293 [*] Blank line contains whitespace
+src/cygnusx/infrastructure/skills/skillmd.py:93:47: UP037 [*] Remove quotes from type annotation
+src/cygnusx/infrastructure/storage/scratch_volume.py:25:20: F401 [*] `typing.Any` imported but unused
+src/cygnusx/infrastructure/studio/audit.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/studio/manager.py:902:13: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/infrastructure/studio/manager.py:1334:9: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1344:54: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1355:9: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1365:9: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1374:57: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1415:9: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/infrastructure/studio/manager.py:1480:9: ASYNC109 Async function definition with a `timeout` parameter
+src/cygnusx/reference_genomes/api.py:12:20: F401 [*] `typing.Annotated` imported but unused
+src/cygnusx/reference_genomes/api.py:14:32: F401 [*] `fastapi.Depends` imported but unused
+src/cygnusx/reference_genomes/indexer.py:51:5: F401 [*] `cygnusx.reference_genomes.config.SpeciesConfig` imported but unused
+src/cygnusx/reference_genomes/indexer.py:276:24: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:316:25: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:445:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:446:9: F841 Local variable `header` is assigned to but never used
+src/cygnusx/reference_genomes/indexer.py:468:13: SIM114 [*] Combine `if` branches using logical `or` operator
+src/cygnusx/reference_genomes/indexer.py:510:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:649:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:810:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:851:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:885:22: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/indexer.py:1048:24: UP017 [*] Use `datetime.UTC` alias
+src/cygnusx/reference_genomes/sequence.py:57:25: UP015 [*] Unnecessary mode argument
+src/cygnusx/reference_genomes/service.py:8:1: I001 [*] Import block is un-sorted or un-formatted
+src/cygnusx/reference_genomes/service.py:221:13: SIM105 Use `contextlib.suppress(OSError)` instead of `try`-`except`-`pass`
+src/cygnusx/reference_genomes/service.py:293:17: F841 Local variable `m_path` is assigned to but never used
+src/cygnusx/reference_genomes/service.py:658:51: SIM118 Use `key in dict` instead of `key in dict.keys()`
+src/cygnusx/reference_genomes/service.py:852:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:865:21: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:867:21: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:883:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:885:17: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:959:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:963:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/reference_genomes/service.py:965:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/cygnusx/tools/gsea/api.py:57:12: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/tools/gsea/tasks.py:89:28: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/tools/gsea/tasks.py:89:71: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+src/cygnusx/tools/synteny/api.py:60:12: ASYNC240 Async functions should not use pathlib.Path methods, use trio.Path or anyio.path
+tests/e2e/agentteams/test_default_bridge_e2e.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/e2e/agentteams/test_default_bridge_e2e.py:16:1: E402 Module level import not at top of file
+tests/e2e/agentteams/test_default_bridge_e2e.py:17:1: E402 Module level import not at top of file
+tests/integration/test_chat_upload.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/chat/test_chat_messages_preserve_compaction.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/chat/test_context_compaction.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/chat/test_context_estimate.py:74:5: F841 Local variable `model` is assigned to but never used
+tests/unit/chat/test_direct_chat_entrypoint.py:6:19: F401 [*] `types.SimpleNamespace` imported but unused
+tests/unit/chat/test_dual_run.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/chat/test_langgraph_context_view.py:114:60: B905 `zip()` without an explicit `strict=` parameter
+tests/unit/chat/test_runtime_golden_baselines.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/domain/mas/test_apptainer.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_agent_context_builder.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_annotation_skill_packages.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_dataset_phase3_review.py:49:5: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_domain_pack_regression.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_domain_pack_regression.py:5:53: F401 [*] `cygnusx.application.services.chat_service` imported but unused
+tests/unit/test_download_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_export_agentteams_evidence.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_export_agentteams_evidence.py:35:13: F541 [*] f-string without any placeholders
+tests/unit/test_export_agentteams_evidence.py:43:13: F541 [*] f-string without any placeholders
+tests/unit/test_export_agentteams_evidence.py:44:13: F541 [*] f-string without any placeholders
+tests/unit/test_export_agentteams_evidence.py:45:13: F541 [*] f-string without any placeholders
+tests/unit/test_export_agentteams_evidence.py:46:13: F541 [*] f-string without any placeholders
+tests/unit/test_file_service.py:583:5: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_file_service.py:584:23: N814 Camelcase `SimpleNamespace` imported as constant `NS`
+tests/unit/test_file_service.py:589:5: F841 Local variable `now` is assigned to but never used
+tests/unit/test_file_service_presigned.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_knowledge_search_chat.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_mas_plan_approval_gate.py:54:33: UP017 [*] Use `datetime.UTC` alias
+tests/unit/test_mcp_builder_approval_and_safety.py:16:8: F401 [*] `uuid` imported but unused
+tests/unit/test_mcp_builder_approval_and_safety.py:19:18: F401 [*] `uuid.UUID` imported but unused
+tests/unit/test_mcp_builder_approval_and_safety.py:215:12: F541 [*] f-string without any placeholders
+tests/unit/test_overdrive_chat.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_reference_genomes_indexer.py:19:61: F401 [*] `cygnusx.reference_genomes.config.gene_index_path` imported but unused
+tests/unit/test_security_round2.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_security_round2.py:3:21: F401 [*] `pathlib.Path` imported but unused
+tests/unit/test_security_round2.py:134:9: F841 Local variable `executor` is assigned to but never used
+tests/unit/test_skill_candidate_promote.py:6:8: F401 [*] `shutil` imported but unused
+tests/unit/test_skill_candidate_promote.py:10:8: F401 [*] `yaml` imported but unused
+tests/unit/test_skill_candidate_promote.py:12:51: F401 [*] `cygnusx.infrastructure.skills.skillmd.SkillParseError` imported but unused
+tests/unit/test_studio_context_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/test_web_search_service.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/tools/test_deg_tool.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+tests/unit/tools/test_deg_tool.py:123:29: UP012 [*] Unnecessary call to `encode` as UTF-8
+tests/unit/tools/test_deg_tool.py:192:5: N802 Function name `test_parse_results_edgeR_layout` should be lowercase
+tests/unit/tools/test_enrichment_examples.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+Found 289 errors.
+[*] 170 fixable with the `--fix` option (51 hidden fixes can be enabled with the `--unsafe-fixes` option).

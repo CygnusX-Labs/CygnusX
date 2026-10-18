@@ -1,0 +1,16 @@
+{
+  "src/cygnusx/application/services/download_service.py": "0bde13828fff339e1af33a3f46c2bed1ed29d3d3fed80331c1ee95f7130bf0d7",
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "e5b83d49c0f24fb0fcb2ca35ec6169fd89dc4b1381e3ed06760a3b4085b84d89",
+  "src/cygnusx/application/services/dataset_import_service.py": "afcbaddf4ad6ff94016af026f6e56d67b994b55f753c321a437e24cb4437046e",
+  "src/cygnusx/application/services/research_execution_binding.py": "2bf47bf13c90c52425e6585f4132ec325a602bc76329bc3fc6f4046ff462b9e0",
+  "src/cygnusx/application/services/research_provenance_service.py": "0d8ed055d84f5b7231a1e67e98186c31252678e2b9ec91a942a604cb7dcd089e",
+  "src/cygnusx/application/services/research_plan_service.py": "6e76bd89b28565c64de5bcf705e9045fd96f531b0974610fd560b1ee14310069",
+  "src/cygnusx/application/services/research_claim_service.py": "429a16910d6eee44edd33029cdcbebe0f34934d13c90030558a66f410a34c18e",
+  "src/cygnusx/domain/research/benchmark.py": "6639586f9ac5b6641a2a49764f39b7d589e9a3c52f5c997fe74e79e85cc23f72",
+  "src/cygnusx/application/services/report_service.py": "b2c3e6e007a893b181c050675ca49b46606f94b5b2d19bb6fa9c7522564150e0",
+  "src/cygnusx/application/services/research_delivery_service.py": "50bcc2deeb0542b3273f230175e5923191838a7b26e67efa8f144b5988d97f7e",
+  "src/cygnusx/application/schemas/agent_tools.py": "53eca1d27dfba1420cc7591c7a3bad14339f65d988c96ee669fd73ee94c1dc55",
+  "Protocol/FlowFrame/FlowAgent/src/tools/platform.ts": "bf75e31f8b009372e6d299eec1fcefe9250a76e3a2a21216f2c45f1d22050d68",
+  "pipelines/EBIDownload/crates/ebidownload-core/src/lib.rs": "7064da445f3fe185e9da0daaee68b26a2b5767d4328738ee395d98dceca123b0",
+  "/home/zj/zj_code_libarary/EBIDownload/crates/polariseq-core/src/lib.rs": "14652d65d427b46863449dabf7400a0ee6c91e70669840a08d3df55d12e7194c"
+}

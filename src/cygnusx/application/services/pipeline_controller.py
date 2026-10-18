@@ -147,6 +147,8 @@ class PipelineController:
         return available
 
     async def check_workspace_data(self, analysis_type: str, data_path: str) -> dict[str, Any]:
+        from cygnusx.domain.flow.validation_plugins import check_workspace_fastq
+
         self._get_pipeline(analysis_type)
         resolved = self._resolve_workspace_path(data_path)
         if not resolved.exists() or not resolved.is_dir():
@@ -158,32 +160,19 @@ class PipelineController:
                 "warnings": [],
             }
 
-        fastq_files = sorted(
-            path
-            for path in resolved.rglob("*")
-            if path.is_file()
-            and path.name.lower().endswith((".fastq", ".fq", ".fastq.gz", ".fq.gz"))
-        )
-        r1 = [path for path in fastq_files if any(token in path.name for token in ("_R1", "_1."))]
-        r2 = [path for path in fastq_files if any(token in path.name for token in ("_R2", "_2."))]
-        warnings: list[str] = []
-        if not fastq_files:
-            warnings.append("未发现 FASTQ 文件")
-        if (r1 or r2) and len(r1) != len(r2):
-            warnings.append(f"双端文件数量不匹配：R1={len(r1)}，R2={len(r2)}")
-        total_size = sum(path.stat().st_size for path in fastq_files)
+        report = check_workspace_fastq(resolved)
         return {
-            "valid": bool(fastq_files) and not any("不匹配" in item for item in warnings),
+            "valid": report["valid"],
             "analysis_type": analysis_type,
             "data_path": data_path,
-            "fastq_count": len(fastq_files),
-            "paired_end": bool(r1 and r2),
-            "r1_count": len(r1),
-            "r2_count": len(r2),
-            "total_size_bytes": total_size,
-            "estimated_samples": max(len(r1), len(r2), len(fastq_files)),
-            "warnings": warnings,
-            "errors": [],
+            "fastq_count": report["fastq_count"],
+            "paired_end": report["paired_end"],
+            "r1_count": report["r1_count"],
+            "r2_count": report["r2_count"],
+            "total_size_bytes": report["total_size_bytes"],
+            "estimated_samples": report["estimated_samples"],
+            "warnings": report["warnings"],
+            "errors": report["errors"],
         }
 
     def _resolve_workspace_path(self, data_path: str) -> Path:
@@ -204,18 +193,9 @@ class PipelineController:
     def _missing_sample_files(
         data_path: Path, sample_sheet: list[dict[str, Any]]
     ) -> list[str]:
-        fastq_names = [
-            path.name.lower()
-            for path in data_path.rglob("*")
-            if path.is_file()
-            and path.name.lower().endswith((".fastq", ".fq", ".fastq.gz", ".fq.gz"))
-        ]
-        missing: list[str] = []
-        for row in sample_sheet:
-            sample = str(row.get("sample") or row.get("sample_name") or "").strip()
-            if sample and not any(name.startswith(sample.lower()) for name in fastq_names):
-                missing.append(sample)
-        return missing
+        from cygnusx.domain.flow.validation_plugins import missing_sample_fastq_files
+
+        return missing_sample_fastq_files(data_path, sample_sheet)
 
     def _get_pipeline(self, pipeline_type: str) -> RNASeqPipeline | ATACSeqPipeline:
         pipeline = self._pipelines.get(pipeline_type)

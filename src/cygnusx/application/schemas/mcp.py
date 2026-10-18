@@ -90,12 +90,17 @@ class MCPServerVersionDTO(CygnusXBaseSchema):
     created_by: UUID | None = None
     created_at: datetime | None = None
     has_config_snapshot: bool = False
+    # 契约指纹（"v1:<hex>"，见 versioning.compute_contract_digest）
+    contract_digest: str | None = None
 
 
 class RollbackMCPServerDTO(CygnusXBaseSchema):
     """回滚 MCP Server 到指定版本"""
 
     version: str
+    # 乐观锁（架构审查 §8.4）：读取时看到的当前版本号，提供时若与现值
+    # 不一致即拒绝，防止并发发布/回退互相覆盖
+    expected_current_version: str | None = None
 
 
 class MCPLogEntryDTO(CygnusXBaseSchema):

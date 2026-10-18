@@ -1,0 +1,372 @@
+{
+  "$defs": {
+    "DeliveryFile": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "pattern": "^[A-Za-z0-9_./-]{1,240}$",
+          "title": "Path",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "report_file",
+            "file_record",
+            "report_snapshot",
+            "instructions",
+            "verifier"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "source_kind",
+        "size",
+        "sha256"
+      ],
+      "title": "DeliveryFile",
+      "type": "object"
+    },
+    "DeliveryReference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "dataset_version",
+            "file_record",
+            "task",
+            "run",
+            "result_observation",
+            "report",
+            "report_snapshot",
+            "evidence_manifest",
+            "historical_association"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "status": {
+          "default": "VERIFIED_ASSOCIATION",
+          "enum": [
+            "VERIFIED_ASSOCIATION",
+            "PARTIAL_ASSOCIATION",
+            "NOT_RECORDED",
+            "UNAVAILABLE",
+            "ACCESS_DENIED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "disposition": {
+          "default": "reference_only",
+          "enum": [
+            "reference_only",
+            "missing",
+            "unverified",
+            "excluded"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "snapshot_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Id"
+        },
+        "result_observation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Observation Id"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        },
+        "dataset_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Version Id"
+        },
+        "analysis_link_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Analysis Link Id"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "DeliveryReference",
+      "type": "object"
+    },
+    "ExportSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "evidence",
+          "enum": [
+            "evidence",
+            "results",
+            "reproduction_materials"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "task_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Task Ids",
+          "type": "array"
+        },
+        "report_ids": {
+          "default": [],
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Report Ids",
+          "type": "array"
+        }
+      },
+      "title": "ExportSelection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.project_delivery.v1",
+      "default": "cygnusx.project_delivery.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "digest_policy": {
+      "const": "sorted_utf8_json.v1",
+      "default": "sorted_utf8_json.v1",
+      "title": "Digest Policy",
+      "type": "string"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "selection": {
+      "$ref": "#/$defs/ExportSelection"
+    },
+    "files": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DeliveryFile"
+      },
+      "maxItems": 1000,
+      "title": "Files",
+      "type": "array"
+    },
+    "references": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DeliveryReference"
+      },
+      "maxItems": 4000,
+      "title": "References",
+      "type": "array"
+    },
+    "gaps": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "evidence_status": {
+      "default": "partial",
+      "enum": [
+        "partial",
+        "complete"
+      ],
+      "title": "Evidence Status",
+      "type": "string"
+    },
+    "reproduction_status": {
+      "const": "NOT_RUN",
+      "default": "NOT_RUN",
+      "title": "Reproduction Status",
+      "type": "string"
+    },
+    "association_scope": {
+      "const": "explicit_dataset_links_only",
+      "default": "explicit_dataset_links_only",
+      "title": "Association Scope",
+      "type": "string"
+    },
+    "redaction_policy": {
+      "const": "project_delivery_allowlist.v1",
+      "default": "project_delivery_allowlist.v1",
+      "title": "Redaction Policy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "owner_id",
+    "selection"
+  ],
+  "title": "ProjectDeliveryManifest",
+  "type": "object"
+}

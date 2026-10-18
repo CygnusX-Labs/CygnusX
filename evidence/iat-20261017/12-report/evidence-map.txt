@@ -1,0 +1,13 @@
+command_evidence_map (test_id -> evidence file)
+ENV-01 -> 00-authority/authorization.md
+ENV-02 -> 01-baseline/env-02-manifest.txt
+ENV-03,05,06 -> 03-env-runtime/env-03-06-runtime-identity.log
+ENV-04 -> 03-env-runtime/env-04-ipc.log
+ENV-07 -> 03-env-runtime/env-07-frozen-gate.log
+P1 suites -> 04-isolated-regression/*.log + *.exit
+PG/REC/MQ/FR(05,06) -> 05-s4-postgres/p2-pg-run.log (harness 05-s4-postgres/p2_harness.py)
+FR-01..04 -> 07-s4-files/p2-fr-run.log (harness 07-s4-files/p2_fr_harness.py)
+AG-02..16 -> 08-s5-agent/p3-s5-run.log (harness 08-s5-agent/p3_s5_harness.py)
+AG-01 -> 08-s5-agent/ag01-run.log (harness 08-s5-agent/ag01_http_callback.py)
+BR -> 09-s5-browser/p4-br-run.log + p4-br-auth-run.log + /tmp/iat-shots/*.png
+G3 -> 10-g3-security/BLOCKED-determination.md + 04-isolated-regression/p1-g3-boundary.log

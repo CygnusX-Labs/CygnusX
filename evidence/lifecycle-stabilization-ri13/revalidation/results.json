@@ -1,0 +1,45 @@
+{
+  "verified_at": "2026-10-16T12:22:07.822513+00:00",
+  "source_hashes_match_prior_evidence": true,
+  "python": {
+    "targeted": {
+      "tests": 151,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "tests": 341,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  },
+  "frontend": {
+    "files": 2,
+    "tests": 5
+  },
+  "ruff_selected": "PASS",
+  "mypy_evidence_boundary": "PASS_3_FILES",
+  "schema_parity": "PASS_V1_V2_EVIDENCE",
+  "source_gates": "CLOSED",
+  "diff_check": "PASS",
+  "runtime": "NOT_RUN",
+  "full_repository_gates": "NOT_CLAIMED",
+  "source_sha256": {
+    "src/cygnusx/application/schemas/execution_definition.py": "c63f57827e5964a09feb6986ffbb81e1340750aaca138d3cff10a9f6a7b03b50",
+    "docs/contracts/cygnusx-execution-definition-v1.schema.json": "4e85b03f97e257b5d9c354f9fb1d6174bb52f8a49b4e338dca11a461d8b55753",
+    "src/cygnusx/application/services/task_service.py": "ab0940189217f01a88c4ca889916edf40dc0a9c4526a7bca9d485e7d9a7b35bf",
+    "src/cygnusx/application/services/research_execution_binding.py": "1f27c2361cc452d331924b47b8bd7c0141fff13abc7d0a934b4a58f6a6d6fe5a",
+    "src/cygnusx/infrastructure/celery_app/tasks/analysis.py": "257a05645f0ac2ba42a8d8cfe0e5d91317eb043a3ed6260e32340843cefc3755",
+    "src/cygnusx/application/services/research_provenance_service.py": "988cede90b8c826e0d4a7d87d1a293a5e6f0ac08e3651d743beed944f986c27b",
+    "src/cygnusx/application/services/report_snapshot_builder.py": "246f3fe58a9ef379fbfadbac2ab991a53ea1ea53114a56c36c9ca0f51a85ccc9",
+    "src/cygnusx/application/schemas/download_capability.py": "25b8cd0224270794dc7e282e88bf15a12a3bb50896a8e6a7d7453ffc6c5067dd",
+    "src/cygnusx/tools/download/config.py": "2c9a3191df4716ffc1ae606c36c46a96a8eff1569137839ddd7bfb70cd4a74e8",
+    "src/cygnusx/application/schemas/execution_evidence.py": "cfc39812685b764a978f32b99fb30c9a257dd4cb93a46ec204fbd8babdb05245",
+    "src/cygnusx/application/services/execution_evidence_service.py": "82940730f8722f881ad2b767d4f5f70d6552ecab95b0264ef2110d191521e43f",
+    "tests/unit/test_execution_evidence_ri13.py": "a61e8e0f2ec264202e39b35808b8bdf52027a690ad7752c4291c4f24155c1bb0",
+    "tests/unit/test_execution_evidence_projection.py": "2337bbbd6c0b5583fde2a41d6d22a617ab74612643e0c4a4dcc932f9a0ad995d",
+    "tests/unit/test_lifecycle_stabilization.py": "4038d44d2d731b1792b7d6034d854a03ee6571a0e53ae5a7296e09b324ace12a"
+  }
+}

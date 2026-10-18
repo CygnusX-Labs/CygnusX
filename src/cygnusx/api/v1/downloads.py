@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 
 from cygnusx.api.deps import CurrentUserId, DbSession, require_human_or_confirmation
 from cygnusx.application.schemas.download import DownloadRequest
+from cygnusx.application.schemas.download_capability import DownloadCapabilities
 from cygnusx.application.schemas.download_progress import (
     DownloadProgressResponse,
     RunProgressDTO,
@@ -22,7 +23,7 @@ from cygnusx.application.services.tool_confirmation_service import (
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import ValidationError
 from cygnusx.infrastructure.cache.redis_client import get_redis
-from cygnusx.tools.download.config import get_download_config
+from cygnusx.tools.download.config import ensure_download_available, get_download_config
 
 router = APIRouter()
 
@@ -37,22 +38,14 @@ DownloadServiceDep = Annotated[DownloadService, Depends(get_download_service)]
 
 def _ensure_enabled(req: DownloadRequest) -> None:
     """按下载来源检查对应运行时是否启用。"""
-    settings = get_settings()
-    config = get_download_config()
-    if req.source == "direct_link":
-        if not (config.features.direct_link or settings.enable_direct_download):
-            raise ValidationError("直链与 FTP 下载功能未启用")
-        if len(req.links) > config.validation.max_links_per_task:
-            raise ValidationError(
-                f"单次最多提交 {config.validation.max_links_per_task} 个下载链接"
-            )
-        return
-    if req.source == "cloud_storage":
-        if not (config.features.cloud_storage or settings.enable_cloud_storage_download):
-            raise ValidationError("云存储下载功能未启用")
-        return
-    if not (config.features.ebi or settings.enable_ebi_download):
-        raise ValidationError("数据下载功能未启用")
+    ensure_download_available(req.source, len(req.links), get_download_config(), get_settings())
+
+
+@router.get("/capabilities", response_model=DownloadCapabilities, summary="下载能力与运行限制")
+async def download_capabilities(current_user_id: CurrentUserId) -> dict[str, object]:
+    from cygnusx.tools.download.config import describe_download_capabilities
+
+    return describe_download_capabilities()
 
 
 @router.post("", response_model=TaskResponse, summary="提交数据下载任务")

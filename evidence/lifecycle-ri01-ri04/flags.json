@@ -1,0 +1,16 @@
+{
+  "flags": {
+    "tool_gateway_read_enabled": false,
+    "dataset_discovery_readonly": false,
+    "dataset_import_write": false,
+    "analysis_submit_from_dataset": false,
+    "counts_deg_flow_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "research_plan_enabled": false,
+    "agent_download_write_enabled": false,
+    "agent_analysis_write_enabled": false
+  },
+  "WRITE_RUNTIME_ACCEPTED": false,
+  "DOWNLOAD_TRANSPORT_RUNTIME_ACCEPTED": false
+}

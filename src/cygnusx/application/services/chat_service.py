@@ -105,7 +105,7 @@ from cygnusx.application.services.chat.utils import (
     _code_cell_envelope_fields,
     _extract_route_json,
     _fanout_ask_request,
-    _invocation_payload_hash,
+    _finalize_invocation_envelope,
     _is_route_execution_confirmation,
     _max_persisted_cell_index,
     _normalize_ask_questions,
@@ -5515,9 +5515,7 @@ class ChatService(
                     }
                     if _cell_fields["cell_index"] is not None:
                         code_cell_next += 1
-                    _invocation_envelope["payload_hash"] = _invocation_payload_hash(
-                        _invocation_envelope
-                    )
+                    _invocation_envelope = _finalize_invocation_envelope(_invocation_envelope)
                     persisted_tool_invocations.append(_invocation_envelope)
                     await self.update_message_content(
                         ai_message.message_id,

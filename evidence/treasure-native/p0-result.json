@@ -1,0 +1,102 @@
+{
+  "gate": "G-P0",
+  "isolated_functionality": "PASS",
+  "overall": "CONDITIONAL_NOT_RELEASE_READY",
+  "incident_root_cause": "Suspected",
+  "backend_tests": {
+    "passed": 32
+  },
+  "frontend_focused": {
+    "passed": 12
+  },
+  "frontend_full": {
+    "passed": 541,
+    "failed": 7
+  },
+  "ruff_full_errors": 295,
+  "backend_full": {
+    "exit_code": 124,
+    "timeout_seconds": 90,
+    "completed": false
+  },
+  "live_verified": false,
+  "write_execution": false,
+  "later_stages": "NOT_STARTED",
+  "changes": [
+    {
+      "path": "deploy/docker/nginx/nginx.prod.conf",
+      "sha256": "22163e3c773f3c3802af99fdbeed289cefd54ad32095114bec88d5e14c689f03",
+      "baseline_sha256": "14deb483b456cc9156216e211fe4175dfdd4b8af2e94accde85ad1872f9d038c"
+    },
+    {
+      "path": "deploy/docker/nginx/nginx.conf",
+      "sha256": "70288f675d8a4fac4ba536f50354be52bc0c0384921277ac334aa2f1e862dc05",
+      "baseline_sha256": "6d7999e83dcd9c7173445572877b84a2c562798a055a7253318c6e818ae9af69"
+    },
+    {
+      "path": "src/cygnusx/application/schemas/research_agent.py",
+      "sha256": "b256dca2d3793a65b09588a608a0d6b4b823a3ece87a4a1b1cfa25de20b9ea3b",
+      "baseline_sha256": "b8f995028f498e4100dff300db9c8f885be9386e01ddae96287dfce2ef37528c"
+    },
+    {
+      "path": "src/cygnusx/application/services/research_treasure_service.py",
+      "sha256": "28e7aac3027d182026d527cef4be44018b1965474e2c751150801167499ac92d",
+      "baseline_sha256": "1c99157d2f73c489274db30107c138d40e86ca003bffc8260bb30e0b6c6bef73"
+    },
+    {
+      "path": "src/cygnusx/api/v1/research_agent.py",
+      "sha256": "50a9d6a2bfe950ab51af0db9a8b98f0d9e507008f8df396f5cee3fed92b5d64e",
+      "baseline_sha256": "cc35db8a9c41cc57a04dc2eceeb1a2fabc0923ff0397f89fefe78303b461b12c"
+    },
+    {
+      "path": "frontend/src/views/TreasureResearchWorkbench.vue",
+      "sha256": "69966942f71b9d5123770d1507db862d1103353deda4a6e2f208cd1640f41ce4",
+      "baseline_sha256": "be8ca4298680742168483640d547691c650393da4e1571e8b721c877295b5b5f"
+    },
+    {
+      "path": "frontend/src/views/TreasureMouseView.vue",
+      "sha256": "5c39cd2324157f7c5d2440697f5e74b0980e7a22eb7acb136da668f445d02afb",
+      "baseline_sha256": "e5eddc033fbbad8319c2a616c77b34a11f552bab2205bc92ab21106216b2dc09"
+    },
+    {
+      "path": "frontend/src/components/research/__tests__/TreasureSessionIsolation.test.ts",
+      "sha256": "939d3199a452f06ab285d866b5fe585ba2cc52534c552e72cf579abb113e5a77",
+      "baseline_sha256": "9fc3b2bd7c1fbc76e2a255c587eae492270d4da0b24a2db889c762dc32d23b5d"
+    },
+    {
+      "path": "frontend/src/components/research/__tests__/TreasureOriginalEntry.test.ts",
+      "sha256": "d16110809aa220a87bfa68e31b058cae7b356c7a41581c88463fb58091b1b834",
+      "baseline_sha256": "35838836f7e4453bb0b806a431475bdb23ac3d417912a4b28d7666466b70c78b"
+    },
+    {
+      "path": "frontend/src/api/researchAgent.ts",
+      "sha256": "c176e768b9030fd4d0f4bb65d14bcf1bb4ad379d5abda14d9ed5dc107778e824",
+      "baseline_sha256": "068855069d1ecf123221cd691a0e944a6097eff0bcbc9f6929f89ada811d508b"
+    },
+    {
+      "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "sha256": "cc8f8a8920ae4a559c86920a8537d1f96832299d7a4bd6a2036798ad82596f01",
+      "baseline_sha256": "e44db2311ed55b6f58c57d829f05d6fcf2d6bb6c7d46a5114a1b1db42e88fa69"
+    },
+    {
+      "path": "tests/unit/test_treasure_native_access.py",
+      "sha256": "e6400f8ae7963d32410df622862aae27b1594d007a75b1f650daf8d45cae0cdb",
+      "new_in_p0": true
+    },
+    {
+      "path": "frontend/src/components/research/__tests__/TreasureAccess.test.ts",
+      "sha256": "06c4e2f44cf030ffbe8fe33b44bc9eddc40998b0a5f547df4c21afac202441c2",
+      "new_in_p0": true
+    },
+    {
+      "path": "docs/adr/treasure-native-entry-and-capabilities.md",
+      "sha256": "8c2e5c005261f6c62227be5b381c1fd2326753b1e473ab6ae79a0c7a0d96d71c",
+      "new_in_p0": true
+    },
+    {
+      "path": "docs/implementation/treasure-native-p0-access-and-entry.md",
+      "sha256": "513e50ed4bd94dec4dde6f11cd91d18dc01448ab3ab32b0cdd1fe0ba462612fc",
+      "new_in_p0": true
+    }
+  ]
+}

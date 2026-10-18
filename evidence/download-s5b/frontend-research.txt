@@ -1,0 +1,35 @@
+
+ RUN  v4.1.10 /home/zj/zj_code_libarary/OmicHub/frontend
+
+ ❯ src/components/research/__tests__/TreasureSessionIsolation.test.ts (2 tests | 1 failed) 39ms
+     × late restore from previous session cannot replace current messages or tool records 34ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/research/__tests__/TreasureSessionIsolation.test.ts > treasure session isolation > late restore from previous session cannot replace current messages or tool records
+AssertionError: expected last "vi.fn()" call to have been called with [ 'session-b' ]
+
+- Expected:
+[
+  "session-b",
+]
+
++ Received:
+undefined
+
+ ❯ src/components/research/__tests__/TreasureSessionIsolation.test.ts:45:29
+     43|       expect(host.textContent).toContain('B 的真实记录')
+     44|       expect(host.textContent).not.toContain('A 的迟到记录')
+     45|       expect(calls.related).toHaveBeenLastCalledWith('session-b')
+       |                             ^
+     46|     } finally { app.unmount(); host.remove(); vi.clearAllMocks() }
+     47|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 46 passed (47)
+   Start at  23:11:50
+   Duration  2.08s (transform 1.47s, setup 0ms, import 7.31s, tests 805ms, environment 5.45s)
+

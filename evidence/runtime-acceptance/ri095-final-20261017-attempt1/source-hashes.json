@@ -1,0 +1,8 @@
+{
+  "frontend/package-lock.json": "2d2506dd68961b8a7c37b8690d028941054c30214fe03bbf22a8adac4bf140d6",
+  "deploy/acceptance/compose.yml": "33542929a65c5437efe2dbdaaa2b92a075b47dcead7d4eafbe2872250b595f14",
+  "deploy/acceptance/control.py": "2509442b1b02a1ea6dcba2601ff65bbcfc25ee610aa402ab838b77895ca451ab",
+  "deploy/acceptance/runtime.py": "be125d89ce5f1633778899d6da70c3091f8ea0f26a9eeee6b5be6b2f707e5cc5",
+  "deploy/acceptance/audit_migrations.py": "1bdd80affe16b75c5ee7cd3599a4d02f64b2b8c299bc13dd00460dd56b968b81",
+  "alembic/versions/c1d2e3f4b5a6_add_contract_digest_to_mcp_versions.py": "c1a3a95b76c24aeb3f157e1dc4b6525aa42a5b37bf8ba86c2d5d117e05a6ecaa"
+}

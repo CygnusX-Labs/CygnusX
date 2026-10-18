@@ -1,0 +1,6 @@
+{
+  ".env.example": true,
+  "uv.lock": true,
+  "frontend/package-lock.json": true,
+  "submodule_pointers_unchanged": true
+}

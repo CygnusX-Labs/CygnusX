@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BioReportRenderRequest(BaseModel):
@@ -41,13 +41,13 @@ class DeliveryFile(BaseModel):
 class EvidenceManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    manifest_schema_version: Literal["cygnusx.evidence_manifest.v1"] = (
-        "cygnusx.evidence_manifest.v1"
-    )
+    manifest_schema_version: Literal[
+        "cygnusx.evidence_manifest.v1", "cygnusx.evidence_manifest.v1.1"
+    ] = "cygnusx.evidence_manifest.v1"
     package_id: UUID
     task_id: UUID
-    snapshot_id: UUID
-    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_id: UUID | None
+    snapshot_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     package_version: str
     source_artifacts: tuple[str, ...] = ()
     renderer_version: str
@@ -59,3 +59,18 @@ class EvidenceManifest(BaseModel):
     validation_status: Literal["validated", "invalid"]
     generated_at: datetime
 
+    @model_validator(mode="after")
+    def coherent_snapshot_and_missing_state(self) -> EvidenceManifest:
+        if (
+            self.manifest_schema_version == "cygnusx.evidence_manifest.v1"
+            and self.snapshot_id is None
+        ):
+            raise ValueError("v1快照必填；缺快照交付必须使用v1.1")
+        if (self.snapshot_id is None) != (self.snapshot_digest is None):
+            raise ValueError("快照身份与摘要必须同时存在或同时缺失")
+        absent = {item.logical_name for item in self.files if item.availability == "missing"}
+        if absent != set(self.missing_files):
+            raise ValueError("缺失文件声明不一致")
+        if self.evidence_status == "complete" and (absent or self.snapshot_id is None):
+            raise ValueError("缺少文件或快照时不能声明完整交付")
+        return self

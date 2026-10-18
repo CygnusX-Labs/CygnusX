@@ -1,0 +1,40 @@
+{
+  "test_addresses_present": {
+    "TEST_DATABASE_URL": false,
+    "E2E_DATABASE_URL": false,
+    "TEST_REDIS_URL": false,
+    "REDIS_TEST_URL": false,
+    "TEST_BROKER_URL": false,
+    "CELERY_TEST_BROKER_URL": false,
+    "S4B1_DATABASE_URL": false,
+    "S4B1_BROKER_URL": false
+  },
+  "programs": {
+    "postgres": null,
+    "redis-server": null,
+    "rabbitmq-server": null,
+    "celery": "/home/zj/.pyenv/shims/celery",
+    "docker": "/usr/bin/docker"
+  },
+  "client_versions": {
+    "SQLAlchemy": "2.0.51",
+    "celery": "5.6.3",
+    "asyncpg": "0.31.0",
+    "redis": "5.3.1"
+  },
+  "ipc": {
+    "tcp_loopback": {
+      "errno": 1,
+      "error": "Operation not permitted"
+    },
+    "unix_bind": {
+      "errno": 1,
+      "error": "Operation not permitted"
+    }
+  },
+  "authorization": {
+    "dedicated_environment_manifest_provided": false,
+    "worker_beat_revision_verified": false,
+    "test_owner_project_and_cleanup_scope_provided": false
+  }
+}

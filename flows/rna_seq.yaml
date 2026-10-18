@@ -24,6 +24,7 @@ ai:
     输入为原始数据目录（FASTQ），输出包含 QC 报告、差异表达基因列表和可视化报告。
   requires_confirmation: true
   allowed_execution_modes: [local]
+  validation_plugins: [fastq_workspace]  # 提交前校验插件（工作区数据 + 样本-FASTQ 匹配）
   allowed_parameters:
     - project_name
     - Genome_Version

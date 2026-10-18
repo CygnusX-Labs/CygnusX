@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton, NCard, NDataTable, NDescriptions, NDescriptionsItem, NEmpty, NInput, NModal,
@@ -8,6 +8,8 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline } from '@vicons/ionicons5'
 import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
+import ProjectResearchDelivery from '@/components/ProjectResearchDelivery.vue'
+import ResearchPlanWorkbench from '@/components/ResearchPlanWorkbench.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { chatApi } from '@/api/chat'
 import {
@@ -23,6 +25,7 @@ const router = useRouter()
 const message = useMessage()
 
 const projectId = computed(() => String(route.params.projectId || ''))
+const requestedPlanId = computed(() => typeof route.query.planId === 'string' ? route.query.planId : undefined)
 /** 首次加载整页骨架；切换会话状态分组只对会话表区域 NSpin 局部刷新（§5.4） */
 const initialLoading = ref(true)
 const sessionsLoading = ref(false)
@@ -331,35 +334,47 @@ const sessionEmptyText: Record<ProjectSessionStatus, string> = {
   deleted: '回收站为空',
 }
 
+let overviewGeneration = 0
+let sessionsGeneration = 0
 async function loadOverview() {
-  if (!projectId.value) return
+  const project = projectId.value, current = ++overviewGeneration
+  sessionsGeneration++
+  overview.value = null
+  if (!project) { initialLoading.value = false; return }
   initialLoading.value = true
   try {
-    overview.value = await projectsApi.getProjectOverview(projectId.value, {
+    const data = await projectsApi.getProjectOverview(project, {
       session_limit: 100,
       session_status: sessionStatus.value,
     })
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail || '加载项目总览失败')
+    if (current === overviewGeneration && project === projectId.value && data.project.id === project) {
+      overview.value = data
+    }
+  } catch {
+    if (current === overviewGeneration && project === projectId.value) message.error('加载项目总览失败')
   } finally {
-    initialLoading.value = false
+    if (current === overviewGeneration) initialLoading.value = false
   }
 }
 
-/** 会话状态分组切换：只局部刷新 sessions 段，不重载路由、不重置项目信息（§5.4） */
+/** 会话状态分组切换只更新当前项目最新响应，避免旧分组或旧项目覆盖。 */
 async function loadSessions() {
-  if (!projectId.value || !overview.value) return
+  const project = projectId.value, current = ++sessionsGeneration
+  if (!project || !overview.value) return
   sessionsLoading.value = true
   try {
-    const data = await projectsApi.getProjectOverview(projectId.value, {
+    const data = await projectsApi.getProjectOverview(project, {
       session_limit: 100,
       session_status: sessionStatus.value,
     })
-    overview.value.sessions = data.sessions
-  } catch (e: any) {
-    message.error(e?.response?.data?.detail || '加载会话列表失败')
+    if (current === sessionsGeneration && project === projectId.value &&
+        data.project.id === project && overview.value?.project.id === project) {
+      overview.value.sessions = data.sessions
+    }
+  } catch {
+    if (current === sessionsGeneration && project === projectId.value) message.error('加载会话列表失败')
   } finally {
-    sessionsLoading.value = false
+    if (current === sessionsGeneration) sessionsLoading.value = false
   }
 }
 
@@ -368,7 +383,14 @@ function handleSessionStatusChange(value: string | number) {
   void loadSessions()
 }
 
-onMounted(loadOverview)
+watch(projectId, () => {
+  sessionStatus.value = 'active'
+  sessionsLoading.value = false
+  renameTarget.value = null
+  projectResearchDefault.value = false
+  void loadOverview()
+}, { immediate: true })
+onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
 </script>
 
 <template>
@@ -530,7 +552,9 @@ onMounted(loadOverview)
       </template>
     </n-modal>
   </div>
+  <ResearchPlanWorkbench v-if="overview" :project-id="projectId" :plan-id="requestedPlanId" :sessions="overview.sessions.items" />
   <ResearchDeliveryChain v-if="overview" :project-id="projectId" />
+  <ProjectResearchDelivery v-if="overview" :project-id="projectId" />
 </template>
 
 <style scoped>

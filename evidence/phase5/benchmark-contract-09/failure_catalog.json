@@ -1,0 +1,11 @@
+[
+  {
+    "case_id": "planning_01",
+    "run_id": "dfcf64e9-8b50-41c0-906d-72d6a24f79c9",
+    "system": "contract_candidate",
+    "codes": [
+      "EXPECTED_CONTRACT_OUTCOME_MISMATCH"
+    ],
+    "task_success": false
+  }
+]

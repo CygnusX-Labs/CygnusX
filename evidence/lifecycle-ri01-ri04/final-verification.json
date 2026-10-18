@@ -1,0 +1,92 @@
+{
+  "status": "IMPLEMENTED_WITH_RUNTIME_BLOCKED",
+  "schema_parity": "PASS",
+  "targeted_python": {
+    "passed": 199,
+    "log": "targeted-tests.log",
+    "junit": "targeted.xml"
+  },
+  "related_regression": {
+    "passed": 270,
+    "log": "regression-tests.log"
+  },
+  "frontend_targeted": {
+    "passed": 43,
+    "files": 10,
+    "log": "frontend-tests.log"
+  },
+  "node": {
+    "passed_files": 12,
+    "log": "node-tests.log"
+  },
+  "frontend_typecheck": "PASS_EXIT_0",
+  "frontend_build": "PASS_EXIT_0",
+  "targeted_ruff": "PASS",
+  "targeted_mypy": {
+    "status": "PASS",
+    "source_files": 12
+  },
+  "migration_chain_static": "PASS",
+  "full_ruff": {
+    "status": "FAIL",
+    "recorded_errors": 289
+  },
+  "full_mypy": {
+    "status": "FAIL",
+    "recorded_errors": 1023,
+    "files_with_errors": 224
+  },
+  "runtime": "BLOCKED",
+  "no_claims": [
+    "true end-to-end download",
+    "real BioReport analysis",
+    "project export",
+    "historical reproduction execution",
+    "full repository PASS"
+  ],
+  "actions_not_performed": [
+    "commit",
+    "push",
+    "deploy",
+    "migration",
+    "dependency upgrade",
+    "feature flag enabling",
+    "real download or analysis"
+  ],
+  "source_hashes_at_verification": {
+    "tests/unit/test_download_transport_contract.py": "1402e3bcf44650093ca389965ee4789e3d253e5f6057e4470e800eae40bbe3e5",
+    "tests/unit/test_download_service.py": "b526ecc5a9ac71948b2c9ad0e0566ce808b3fa943fcf88934597a366d124b27e",
+    "tests/unit/test_download_registration_contract.py": "c961d61d288b251979d450faca1d33e2cbe9854480b1c9843afcdd0d7ac291e9",
+    "tests/unit/test_report_service.py": "b07efa9197416dce6429a16e9729fb6c3ff9222089d5a6ddcb84f61295d5b1e3",
+    "tests/unit/test_agent_tools_phase2.py": "6c33974dc3c13e8a8eabe9493b0692df6baf91cd0aa080eb38958bb4487c716f",
+    "pipelines/Treasure-Seeking_Mouse/functions/seqout-chat/index.ts": "140563885aa4cba4a1f6fd5cccc08c0b59304806d52f4c49932c2700e1abde38",
+    "pipelines/Treasure-Seeking_Mouse/functions/seqout-chat/tests/validateSearchQuery.test.ts": "8feec19432c8114b45c30b6878c3ec1b2262ea03e29cef93f88240888c3e3d7b",
+    "src/cygnusx/domain/download_contract.py": "d97bad5a2dab99272821c484b6cca87fa46e8240cfd95380caa1e7c94618d309",
+    "src/cygnusx/domain/file/entities.py": "26fee890e8cb3a0ed48c7ce3c7860e4430daa95fc2e51e83f53917c91d846156",
+    "src/cygnusx/application/schemas/download.py": "100f1b11fd7f1c99f01d3f61e6d9a40df3c9d4af99c3c3122abb9f92e16b53fb",
+    "src/cygnusx/application/services/agent_tool_gateway.py": "e1fc3113a299df83c5c40bc922937a3c73c3658e7cb57686c671d35e3c9d4e05",
+    "src/cygnusx/application/services/dataset_import_service.py": "afcbaddf4ad6ff94016af026f6e56d67b994b55f753c321a437e24cb4437046e",
+    "src/cygnusx/application/services/report_service.py": "0df66e8f8a8f2074d4ba82e1295aea65191db31bd023de163320bf5cd5ee2f1e",
+    "src/cygnusx/application/services/research_delivery_service.py": "a590313385bc00f630e72eccb98f634a31bae6888e6de5fcbaf1e8d05fed49aa",
+    "src/cygnusx/application/services/download_service.py": "e65a74af165b7fc288ce90ff4944cbe69656db1cae00bf11861aa004f8f439db",
+    "src/cygnusx/api/v1/downloads.py": "7c5eaf7231f0845c4fd9c2178dea8138f42c3350c0bb6ffb5cb646b671f6accb",
+    "src/cygnusx/tools/download/config.py": "2c9a3191df4716ffc1ae606c36c46a96a8eff1569137839ddd7bfb70cd4a74e8",
+    "src/cygnusx/infrastructure/download/outputs.py": "54c5914d287a333e04d53edbd88fdddf18bacab0a2083a66c11d2c357ae405cd",
+    "src/cygnusx/infrastructure/celery_app/tasks/download.py": "20be036ad9b093d679022beba357cdac31671ccc902d1d56594d1ff6a7bdb646",
+    "src/cygnusx/infrastructure/database/repositories/file_repository.py": "c45734e6c72123756009a8999c25348df81cd81bee004f7d0d6e99f0aa3491d2",
+    "frontend/src/types/download.ts": "f5a695e439e4020b0259b424443c27e75c952fca2506c7e4590ccf0df9a99604",
+    "frontend/src/views/DownloadsView.vue": "cb6f02224aba89bc68eba5a9966f0c2f64521cf1aecfc9ce92a9305a48451943",
+    "src/cygnusx/domain/download_security.py": "a2a63e74804d20bf18aa331b2fa8997dac71ce940c0928e1aaabe60d24c1b71c",
+    "src/cygnusx/infrastructure/download/policy.py": "28a4d314ef120f3b40d64f0e233d360d9ffe56ad9f43154b8ef174e022f3b7fc",
+    "src/cygnusx/application/schemas/execution_definition.py": "c63f57827e5964a09feb6986ffbb81e1340750aaca138d3cff10a9f6a7b03b50",
+    "src/cygnusx/application/schemas/download_capability.py": "25b8cd0224270794dc7e282e88bf15a12a3bb50896a8e6a7d7453ffc6c5067dd",
+    "docs/implementation/cygnusx-research-lifecycle-ri01-ri04-implementation.md": "18b972a60735615c2a701d2093c0c8ec9a7d39a881ec6b566153960bde6316ba",
+    "docs/contracts/cygnusx-execution-definition-v1.md": "e6cfa4b62abde20cf6dace5356a3b66568bd56e34e682cf1b656f3dec9f49b50"
+  },
+  "notes": [
+    "Uses existing FileRegistry direct ORM persistence, no invented FileRepository wrapper",
+    "Runtime probes are connect-only PermissionError observations",
+    "Default uv cache read-only; final selected checks rerun using existing .venv tools",
+    "Baseline inherited dirty source is preserved; no attribution of all HEAD diff to this task"
+  ]
+}

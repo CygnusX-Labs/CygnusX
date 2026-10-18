@@ -1,0 +1,20 @@
+Read-only G3 visible-prerequisite preflight
+
+Command:
+UV_CACHE_DIR=/tmp/uv-cache uv run python scripts/check_download_execution_boundary.py --workdir-root /tmp --cgroup-root /sys/fs/cgroup --output evidence/g3-e2-20261018/host-preflight-visible-gate-20261018.json --require-visible-prerequisites
+
+Exit code: 2 (expected; required visible prerequisites are missing)
+Missing:
+- writable_cgroup_subtree_hint
+- cgroup_kill_visible
+- workdir_project_quota_mount_option_visible
+
+The probe did not create cgroups/namespaces, change mounts or network policy, start a process, consume quota, contact a download origin, or access a database. It reports visible prerequisites only and never certifies enforcement.
+
+Focused tests:
+UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/unit/test_download_execution_boundary_probe.py -q -m unit
+5 passed, 1 existing Pydantic deprecation warning
+
+Static checks:
+ruff check scripts/check_download_execution_boundary.py tests/unit/test_download_execution_boundary_probe.py: passed
+mypy scripts/check_download_execution_boundary.py: passed

@@ -910,3 +910,40 @@ tools:
     input_schema: {type: object, properties: {delivery_id: {type: string}}, required: [delivery_id]}
     llm_result_fields: [delivery_id, status]
     ui_result_fields: [delivery_id, status]
+
+  # ===== 固定分析工具（MCP 工具固定化）：清单不随 Flow 数增长 =====
+  # 与外部 mcp-server（tools/analysis.py）同名同定义；flow 特定参数一律走 arguments 对象。
+  - key: analysis-flow-prepare
+    name: cygnusx_prepare
+    description: 预检任意已开放分析流程的参数（固定工具，不随流程数变化）。对 flow_id 与 arguments 做全量服务端校验（参数类型/枚举、样本表、比较组、资源约束），通过后冻结参数快照并创建待确认记录（默认 30 分钟有效）。流程特定参数一律放入 arguments 对象，字段以 describe_flow 返回的契约为准。任务不会立即提交——须用户在平台网页确认后，再由 cygnusx_submit 凭 confirmation_id 提交。
+    keywords: [prepare, 预检, 分析流程, flow, fixed tool]
+    category: workflow
+    invocation_mode: analysis_flow
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: false, openWorld: false, idempotent: false}
+    extra: {tool_role: prepare_fixed}
+    input_schema:
+      type: object
+      properties:
+        flow_id: {type: string, description: 流程 ID（先调 list/describe 固定工具确认流程已开放）}
+        arguments: {type: object, description: 该流程的完整参数对象，字段与类型以 describe_flow 契约为准}
+      required: [flow_id, arguments]
+    llm_result_fields: [valid, flow_id, confirmation_id, expires_at, errors, warnings]
+    ui_result_fields: [valid, flow_id, flow_name, sample_count, comparison_count, resource_hint, parameter_preview, confirmation_id, expires_at, errors, warnings]
+
+  - key: analysis-flow-submit
+    name: cygnusx_submit
+    description: 提交已预检并经由用户在平台网页确认的分析任务（固定工具）。仅接受服务端确认记录 ID：服务端校验归属、有效期与消费状态，原子单次消费防并发重放；同一 confirmation_id 重复调用幂等返回既有 task_id，不新建任务。严禁用布尔值自证已确认。
+    keywords: [submit, 提交, confirmation, 确认记录, fixed tool]
+    category: workflow
+    invocation_mode: analysis_flow
+    requires_confirm: false
+    annotations: {readOnlyHint: false, destructiveHint: true, openWorld: false, idempotent: true}
+    extra: {tool_role: submit_fixed}
+    input_schema:
+      type: object
+      properties:
+        confirmation_id: {type: string, description: cygnusx_prepare 返回、且已由用户在平台网页批准的确认记录 ID}
+      required: [confirmation_id]
+    llm_result_fields: [task_id, status, task_url, task_card]
+    ui_result_fields: [task_id, status, task_url, task_card]

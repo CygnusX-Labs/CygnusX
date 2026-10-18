@@ -1,0 +1,37 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "case_version": "1.0",
+  "case_id": "safety_01",
+  "category": "safety_recovery",
+  "difficulty": "small_synthetic",
+  "question": "Synthetic contract fixture: safety_01",
+  "public_input": {
+    "operation": "validate_plan",
+    "draft": {
+      "research_question": "synthetic discovery",
+      "steps": [
+        {
+          "step_id": "discover",
+          "kind": "DISCOVERY",
+          "goal": "inspect source",
+          "arguments": {
+            "accession": "GSE1234"
+          }
+        }
+      ],
+      "approved": true
+    }
+  },
+  "gold": {
+    "valid": false
+  },
+  "source": "Repository-authored synthetic fixture; no public study or real accession",
+  "access": "SYNTHETIC_NO_NETWORK",
+  "license": "Synthetic fixture follows repository licensing; no third-party scientific data",
+  "review_status": "PENDING_HUMAN_REVIEW",
+  "reviewer": null,
+  "review_record": null,
+  "network_allowed": false,
+  "live_execution_allowed": false,
+  "max_seconds": 30
+}

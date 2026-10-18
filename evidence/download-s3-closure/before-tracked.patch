@@ -1,0 +1,100 @@
+diff --git a/src/cygnusx/application/services/download_service.py b/src/cygnusx/application/services/download_service.py
+index 0fcf36dc..e0dec0b1 100644
+--- a/src/cygnusx/application/services/download_service.py
++++ b/src/cygnusx/application/services/download_service.py
+@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from cygnusx.application.schemas.download import DownloadRequest
+ from cygnusx.application.schemas.task import TaskListResponse, TaskResponse, task_to_response
++from cygnusx.core.config import get_settings
+ from cygnusx.core.exceptions import NotFoundError, ValidationError
++from cygnusx.domain.download_contract import validate_transport
+ from cygnusx.domain.task.services import TaskDomainService
+ from cygnusx.domain.task.value_objects import TaskStatus
+ from cygnusx.infrastructure.celery_app.tasks.download import run_download
+@@ -23,7 +25,9 @@ from cygnusx.infrastructure.database.repositories.task_repository import (
+     TaskRepositoryImpl,
+ )
+ from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
++from cygnusx.infrastructure.storage.backend import StorageBackend
+ from cygnusx.infrastructure.task_queue.dispatcher import enqueue_task
++from cygnusx.tools.download.config import ensure_download_available, get_download_config
+ 
+ DOWNLOAD_FLOW_ID = "ebi_download"  # 兼容既有任务筛选；语义已扩展为数据下载聚合
+ 
+@@ -39,7 +43,7 @@ _CLOUD_PROVIDER_LABELS = {
+ class DownloadService:
+     """数据下载服务"""
+ 
+-    def __init__(self, db: AsyncSession, backend=None):
++    def __init__(self, db: AsyncSession, backend: StorageBackend | None = None) -> None:
+         self._db = db
+         self._repo = TaskRepositoryImpl(db)
+         self._domain = TaskDomainService(self._repo)
+@@ -51,6 +55,20 @@ class DownloadService:
+         下载产物默认落到顶层 ``downloads/``，与 ``inbox/``（用户上传暂存）解耦。
+         用户若显式指定 ``target_directory``，则按原样落盘（不再强制前缀 inbox/）。
+         """
++        config = get_download_config()
++        validate_transport(
++            req.source,
++            method=req.download_method,
++            accession=req.accession,
++            links=req.links,
++            cloud_provider=req.cloud_provider or "",
++            object_uri=req.object_uri,
++            allowed_schemes=config.validation.allowed_schemes,
++        )
++        ensure_download_available(req.source, len(req.links), config, get_settings())
++        from cygnusx.infrastructure.download.policy import require_download_runtime
++
++        require_download_runtime(req.source)
+         directory = self._normalize_directory(req.target_directory)
+         if not directory:
+             directory = "downloads"
+@@ -99,9 +117,9 @@ class DownloadService:
+ 
+         from cygnusx.application.services.file_service import ensure_directory_chain
+ 
+-        relative_work_dir = Path(work_dir).relative_to(
+-            get_path_factory().user_root(user_id)
+-        ).as_posix()
++        relative_work_dir = (
++            Path(work_dir).relative_to(get_path_factory().user_root(user_id)).as_posix()
++        )
+         await ensure_directory_chain(self._db, UUID(user_id), relative_work_dir)
+ 
+         # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
+@@ -174,7 +192,5 @@ class DownloadService:
+         work_dir = base / label
+         if not work_dir.resolve().is_relative_to(user_root):
+             raise ValidationError("下载目录不能逃逸当前用户根目录")
+-        await self._backend.ensure_dir(
+-            get_path_factory().relative_to_root(work_dir)
+-        )
++        await self._backend.ensure_dir(get_path_factory().relative_to_root(work_dir))
+         return str(work_dir)
+diff --git a/src/cygnusx/infrastructure/execution/binary.py b/src/cygnusx/infrastructure/execution/binary.py
+index 183321c7..f91eff71 100644
+--- a/src/cygnusx/infrastructure/execution/binary.py
++++ b/src/cygnusx/infrastructure/execution/binary.py
+@@ -52,7 +52,7 @@ class BinaryExecutor(BaseExecutor):
+                 text = line.decode(errors="replace").rstrip("\n")
+                 if not text.strip():
+                     continue
+-                sink.append(text)
++                sink.append(ctx.log_filter(text) if ctx.log_filter else text)
+                 await self._emit(ctx, text, is_stderr=is_stderr)
+ 
+         # 并发排空 stdout / stderr，实现真正的逐行实时流式
+@@ -86,7 +86,9 @@ class BinaryExecutor(BaseExecutor):
+             level = "warning"
+ 
+         if ctx.on_log is not None:
+-            await ctx.on_log(level, message, source="binary")
++            await ctx.on_log(
++                level, ctx.log_filter(message) if ctx.log_filter else message, "binary"
++            )
+ 
+         if progress is not None and ctx.on_progress is not None:
+             with contextlib.suppress(Exception):

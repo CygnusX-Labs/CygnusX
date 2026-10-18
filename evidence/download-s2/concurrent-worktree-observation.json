@@ -1,0 +1,11 @@
+{
+  "note": "Observed during S2; these files contain changes beyond S2 authored hunks. Presence/hash is not ownership or release approval.",
+  "files": {
+    "src/cygnusx/domain/download_security.py": "bf59c471cf97ab5787a805c4231cb453cb5f6dabe5c9805a34daff564d7f569e",
+    "src/cygnusx/infrastructure/download/policy.py": "28a4d314ef120f3b40d64f0e233d360d9ffe56ad9f43154b8ef174e022f3b7fc",
+    "src/cygnusx/application/schemas/download_capability.py": "25b8cd0224270794dc7e282e88bf15a12a3bb50896a8e6a7d7453ffc6c5067dd",
+    "tests/unit/test_download_service.py": "b526ecc5a9ac71948b2c9ad0e0566ce808b3fa943fcf88934597a366d124b27e",
+    "tests/unit/test_download_registration_contract.py": "d6ba4a98c7a00dfa8e6bbb5c95cb26bd1d0edb1bcd60fa865d8bd8612f8dbb48",
+    "frontend/src/views/DownloadsView.vue": "cb6f02224aba89bc68eba5a9966f0c2f64521cf1aecfc9ce92a9305a48451943"
+  }
+}

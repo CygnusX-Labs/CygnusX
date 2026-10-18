@@ -1,0 +1,531 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 25 items / 21 deselected / 4 selected
+
+tests/unit/test_download_s5b_consumption.py F
+
+=================================== FAILURES ===================================
+__________________ test_full_shared_tool_round[False-legacy] ___________________
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlite3.OperationalError: no such table: site_settings
+
+The above exception was the direct cause of the following exception:
+src/cygnusx/application/services/site_settings_service.py:104: in _get_or_create
+    model = await self._db.get(SiteSettingModel, self._SINGLETON_ID)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_agent_tools_phase2.py:52: in get
+    return self.sync.get(model, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:3702: in get
+    return self._get_impl(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:3881: in _get_impl
+    return db_load_fn(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py:695: in load_on_pk_identity
+    session.execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:2373: in execute
+    return self._execute_internal(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:2271: in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/context.py:306: in orm_execute_statement
+    result = conn.execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1421: in execute
+    return meth(
+.venv/lib/python3.11/site-packages/sqlalchemy/sql/elements.py:526: in _execute_on_connection
+    return connection._execute_clauseelement(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1643: in _execute_clauseelement
+    ret = self._execute_context(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1848: in _execute_context
+    return self._exec_single_context(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: site_settings
+E   [SQL: SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_settings.totp_policy AS site_settings_totp_policy, site_settings.subagent_fanout_enabled AS site_settings_subagent_fanout_enabled, site_settings.agentteams_chat_entry_enabled AS site_settings_agentteams_chat_entry_enabled, site_settings.collaboration_preset AS site_settings_collaboration_preset, site_settings.multi_expert_consultation_enabled AS site_settings_multi_expert_consultation_enabled, site_settings.unified_intent_router_enabled AS site_settings_unified_intent_router_enabled, site_settings.agent_memory_enabled AS site_settings_agent_memory_enabled, site_settings.collaboration_degradation_locale AS site_settings_collaboration_degradation_locale, site_settings.collaboration_degradation_template_zh AS site_settings_collaboration_degradation_template_zh, site_settings.collaboration_degradation_template_en AS site_settings_collaboration_degradation_template_en, site_settings.home_quick_entries AS site_settings_home_quick_entries, site_settings.created_at AS site_settings_created_at, site_settings.updated_at AS site_settings_updated_at 
+E   FROM site_settings 
+E   WHERE site_settings.id = ?]
+E   [parameters: (1,)]
+E   (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+The above exception was the direct cause of the following exception:
+tests/unit/test_download_s5b_consumption.py:371: in test_full_shared_tool_round
+    chunks = [c async for c in service._stream_agent_chat_inner(env.owner, 'fixture',
+tests/unit/test_download_s5b_consumption.py:371: in <listcomp>
+    chunks = [c async for c in service._stream_agent_chat_inner(env.owner, 'fixture',
+src/cygnusx/application/services/chat_service.py:3636: in _stream_agent_chat_inner
+    await SiteSettingsService(self._db).get_settings()
+src/cygnusx/application/services/site_settings_service.py:121: in get_settings
+    model = await self._get_or_create()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/site_settings_service.py:118: in _get_or_create
+    raise BusinessError("读取平台配置失败，请稍后重试") from exc
+E   cygnusx.core.exceptions.BusinessError: 读取平台配置失败，请稍后重试
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 00:55:39.695[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 00:55:40.029[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 00:55:40.033[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 00:55:40.046[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 00:55:40.058[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 00:55:40.062[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 00:55:40.074[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 00:55:40.086[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 00:55:40.090[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 00:55:40.102[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 00:55:40.118[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 00:55:40.122[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 00:55:40.134[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 00:55:40.146[0m | [31m[1mERROR   [0m | [36mapp[0m | [36mcygnusx.application.services.chat_service[0m:[36m_stream_agent_chat_inner[0m:[36m3630[0m | [31m[1mAgent 长期记忆召回失败，已跳过: %s[0m
+[32m2026-10-17 00:55:40.148[0m | [31m[1mERROR   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [31m[1m读取站点设置数据库错误: (sqlite3.OperationalError) no such table: site_settings
+[SQL: SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_settings.totp_policy AS site_settings_totp_policy, site_settings.subagent_fanout_enabled AS site_settings_subagent_fanout_enabled, site_settings.agentteams_chat_entry_enabled AS site_settings_agentteams_chat_entry_enabled, site_settings.collaboration_preset AS site_settings_collaboration_preset, site_settings.multi_expert_consultation_enabled AS site_settings_multi_expert_consultation_enabled, site_settings.unified_intent_router_enabled AS site_settings_unified_intent_router_enabled, site_settings.agent_memory_enabled AS site_settings_agent_memory_enabled, site_settings.collaboration_degradation_locale AS site_settings_collaboration_degradation_locale, site_settings.collaboration_degradation_template_zh AS site_settings_collaboration_degradation_template_zh, site_settings.collaboration_degradation_template_en AS site_settings_collaboration_degradation_template_en, site_settings.home_quick_entries AS site_settings_home_quick_entries, site_settings.created_at AS site_settings_created_at, site_settings.updated_at AS site_settings_updated_at 
+FROM site_settings 
+WHERE site_settings.id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)[0m
+[33m[1mTraceback (most recent call last):[0m
+
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    │    │       └ <function DefaultDialect.do_execute at 0x7eefab48eac0>
+    │    └ <sqlalchemy.dialects.sqlite.pysqlite.SQLiteDialect_pysqlite object at 0x7eef36b96050>
+    └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    │      │       │          └ (1,)
+    │      │       └ 'SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_...
+    │      └ <method 'execute' of 'sqlite3.Cursor' objects>
+    └ <sqlite3.Cursor object at 0x7eef36637740>
+
+[31m[1msqlite3.OperationalError[0m:[1m no such table: site_settings[0m
+
+
+[1mThe above exception was the direct cause of the following exception:[0m
+
+
+[33m[1mTraceback (most recent call last):[0m
+
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/bin/pytest", line 10, in <module>
+    sys.exit(_console_main())
+    │   │    └ <function _console_main at 0x7eefae14c680>
+    │   └ <built-in function exit>
+    └ <module 'sys' (built-in)>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 253, in _console_main
+    code = _main(prog=_get_prog_name(sys.argv))
+           │          │              │   └ ['.venv/bin/pytest', 'tests/unit/test_download_s5b_consumption.py', '-k', 'full_shared_tool', '-q', '-x']
+           │          │              └ <module 'sys' (built-in)>
+           │          └ <function _get_prog_name at 0x7eefae14c4a0>
+           └ <function _main at 0x7eefae14c5e0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 229, in _main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+         │                │      │    │                          └ <_pytest.config.Config object at 0x7eefae069150>
+         │                │      │    └ <HookCaller 'pytest_cmdline_main'>
+         │                │      └ <pluggy._hooks.HookRelay object at 0x7eefae2420c0>
+         │                └ <_pytest.config.Config object at 0x7eefae069150>
+         └ <enum 'ExitCode'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'config': <_pytest.config.Config object at 0x7eefae069150>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_cmdline_main'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_cmdline_main'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_cmdline_main'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'config': <_pytest.config.Config object at 0x7eefae069150>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/sit...
+           │    │               └ 'pytest_cmdline_main'
+           │    └ <function _multicall at 0x7eefae5a2ac0>
+           └ <_pytest.config.PytestPluginManager object at 0x7eefaedf3c50>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<_pytest.config.Config object at 0x7eefae069150>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 377, in pytest_cmdline_main
+    return wrap_session(config, _main)
+           │            │       └ <function _main at 0x7eefae23b420>
+           │            └ <_pytest.config.Config object at 0x7eefae069150>
+           └ <function wrap_session at 0x7eefae23b2e0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 330, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+    │       │            │    │       └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>
+    │       │            │    └ <_pytest.config.Config object at 0x7eefae069150>
+    │       │            └ <function _main at 0x7eefae23b420>
+    │       └ <ExitCode.OK: 0>
+    └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 384, in _main
+    config.hook.pytest_runtestloop(session=session)
+    │      │    │                          └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>
+    │      │    └ <HookCaller 'pytest_runtestloop'>
+    │      └ <pluggy._hooks.HookRelay object at 0x7eefae2420c0>
+    └ <_pytest.config.Config object at 0x7eefae069150>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtestloop'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtestloop'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtestloop'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/sit...
+           │    │               └ 'pytest_runtestloop'
+           │    └ <function _multicall at 0x7eefae5a2ac0>
+           └ <_pytest.config.PytestPluginManager object at 0x7eefaedf3c50>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=4>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 408, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+    │    │                                        │              └ <Coroutine test_full_shared_tool_round[False-langgraph]>
+    │    │                                        └ <Coroutine test_full_shared_tool_round[False-legacy]>
+    │    └ <member 'config' of 'Node' objects>
+    └ <Coroutine test_full_shared_tool_round[False-legacy]>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_full_shared_tool_round[False-legacy]>, 'nextitem': <Coroutine test_full_shared_tool_round[False-lang...
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_protocol'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_protocol'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_protocol'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'item': <Coroutine test_full_shared_tool_round[False-legacy]>, 'nextitem': <Coroutine test_full_shared_tool_round[False-lang...
+           │    │               │          └ [<HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11...
+           │    │               └ 'pytest_runtest_protocol'
+           │    └ <function _multicall at 0x7eefae5a2ac0>
+           └ <_pytest.config.PytestPluginManager object at 0x7eefaedf3c50>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_full_shared_tool_round[False-legacy]>, <Coroutine test_full_shared_tool_round[False-langgraph]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+    │               │              └ <Coroutine test_full_shared_tool_round[False-langgraph]>
+    │               └ <Coroutine test_full_shared_tool_round[False-legacy]>
+    └ <function runtestprotocol at 0x7eefae23a480>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 139, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+    │       │      │               │             └ True
+    │       │      │               └ <Coroutine test_full_shared_tool_round[False-legacy]>
+    │       │      └ <function call_and_report at 0x7eefae23a8e0>
+    │       └ <method 'append' of 'list' objects>
+    └ [<TestReport 'tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[False-legacy]' when='setup' outcome='p...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 249, in call_and_report
+    call = CallInfo.from_call(
+           │        └ <classmethod(<function CallInfo.from_call at 0x7eefae23aca0>)>
+           └ <class '_pytest.runner.CallInfo'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 361, in from_call
+    result: TResult | None = func()
+            │                └ <function call_and_report.<locals>.<lambda> at 0x7eef36c99440>
+            └ +TResult
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 250, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            │                 │       └ {}
+            │                 └ <Coroutine test_full_shared_tool_round[False-legacy]>
+            └ <HookCaller 'pytest_runtest_call'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ False
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_full_shared_tool_round[False-legacy]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_call'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ False
+           │    │               │          │        └ {'item': <Coroutine test_full_shared_tool_round[False-legacy]>}
+           │    │               │          └ [<HookImpl plugin_name='threadexception', plugin=<module '_pytest.threadexception' from '/home/zj/zj_code_libarary/OmicHub/.v...
+           │    │               └ 'pytest_runtest_call'
+           │    └ <function _multicall at 0x7eefae5a2ac0>
+           └ <_pytest.config.PytestPluginManager object at 0x7eefaedf3c50>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_full_shared_tool_round[False-legacy]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 184, in pytest_runtest_call
+    item.runtest()
+    │    └ <function PytestAsyncioFunction.runtest at 0x7eefada4f060>
+    └ <Coroutine test_full_shared_tool_round[False-legacy]>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 569, in runtest
+    super().runtest()
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1707, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    │    │                                   └ <Coroutine test_full_shared_tool_round[False-legacy]>
+    │    └ <property object at 0x7eefae1faac0>
+    └ <Coroutine test_full_shared_tool_round[False-legacy]>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'pyfuncitem': <Coroutine test_full_shared_tool_round[False-legacy]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_pyfunc_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_pyfunc_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_pyfunc_call'>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'pyfuncitem': <Coroutine test_full_shared_tool_round[False-legacy]>}
+           │    │               │          └ [<HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11...
+           │    │               └ 'pytest_pyfunc_call'
+           │    └ <function _multicall at 0x7eefae5a2ac0>
+           └ <_pytest.config.PytestPluginManager object at 0x7eefaedf3c50>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_full_shared_tool_round[False-legacy]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/...
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/python.py", line 167, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+             │              └ {'env': namespace(db=<tests.unit.test_agent_tools_phase2.OfflineDB object at 0x7eef3777be10>, engine=Engine(sqlite://), owner...
+             └ <function test_full_shared_tool_round at 0x7eef36c993a0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 905, in inner
+    runner.run(coro, context=context)
+    │      │   │             └ <_contextvars.Context object at 0x7eef36b1d200>
+    │      │   └ <coroutine object test_full_shared_tool_round at 0x5d69b492d240>
+    │      └ <function Runner.run at 0x7eefadbd2a20>
+    └ <asyncio.runners.Runner object at 0x7eef37557a10>
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-1' coro=<test_full_shared_tool_round() running at /home/zj/zj_code_libarary/OmicHub/tests/unit/test_...
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x7eefadbd0540>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x7eef37557a10>
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x7eefadbd04a0>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x7eefadbd22a0>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x7eefadd2a0c0>
+    └ <Handle <TaskStepMethWrapper object at 0x7eef3682aa40>()>
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle <TaskStepMethWrapper object at 0x7eef3682aa40>()>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle <TaskStepMethWrapper object at 0x7eef3682aa40>()>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle <TaskStepMethWrapper object at 0x7eef3682aa40>()>
+
+  File "[32m/home/zj/zj_code_libarary/OmicHub/tests/unit/[0m[32m[1mtest_download_s5b_consumption.py[0m", line [33m371[0m, in [35mtest_full_shared_tool_round[0m
+    [1mchunks[0m [35m[1m=[0m [1m[[0m[1mc[0m [35m[1masync[0m [35m[1mfor[0m [1mc[0m [35m[1min[0m [1mservice[0m[35m[1m.[0m[1m_stream_agent_chat_inner[0m[1m([0m[1menv[0m[35m[1m.[0m[1mowner[0m[1m,[0m [36m'fixture'[0m[1m,[0m
+    [36m                           │       │                        │   └ [0m[36m[1m'00a59108-c13e-4c15-ad4a-68cd069dda80'[0m
+    [36m                           │       │                        └ [0m[36m[1mnamespace(db=<tests.unit.test_agent_tools_phase2.OfflineDB object at 0x7eef3777be10>, engine=Engine(sqlite://), owner='00a591...[0m
+    [36m                           │       └ [0m[36m[1m<function ChatService._stream_agent_chat_inner at 0x7eefa210ca40>[0m
+    [36m                           └ [0m[36m[1m<cygnusx.application.services.chat_service.ChatService object at 0x7eef37035950>[0m
+
+  File "[32m/home/zj/zj_code_libarary/OmicHub/tests/unit/[0m[32m[1mtest_download_s5b_consumption.py[0m", line [33m371[0m, in [35m<listcomp>[0m
+    [1mchunks[0m [35m[1m=[0m [1m[[0m[1mc[0m [35m[1masync[0m [35m[1mfor[0m [1mc[0m [35m[1min[0m [1mservice[0m[35m[1m.[0m[1m_stream_agent_chat_inner[0m[1m([0m[1menv[0m[35m[1m.[0m[1mowner[0m[1m,[0m [36m'fixture'[0m[1m,[0m
+    [36m                                                            └ [0m[36m[1m<pytest_fixture(<function env at 0x7eef36c4e3e0>)>[0m
+
+  File "[32m/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/[0m[32m[1mchat_service.py[0m", line [33m3636[0m, in [35m_stream_agent_chat_inner[0m
+    [35m[1mawait[0m [1mSiteSettingsService[0m[1m([0m[1mself[0m[35m[1m.[0m[1m_db[0m[1m)[0m[35m[1m.[0m[1mget_settings[0m[1m([0m[1m)[0m
+    [36m      │                   │    └ [0m[36m[1m<tests.unit.test_agent_tools_phase2.OfflineDB object at 0x7eef3777be10>[0m
+    [36m      │                   └ [0m[36m[1m<cygnusx.application.services.chat_service.ChatService object at 0x7eef37035950>[0m
+    [36m      └ [0m[36m[1m<class 'cygnusx.application.services.site_settings_service.SiteSettingsService'>[0m
+
+  File "[32m/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/[0m[32m[1msite_settings_service.py[0m", line [33m121[0m, in [35mget_settings[0m
+    [1mmodel[0m [35m[1m=[0m [35m[1mawait[0m [1mself[0m[35m[1m.[0m[1m_get_or_create[0m[1m([0m[1m)[0m
+    [36m              │    └ [0m[36m[1m<function SiteSettingsService._get_or_create at 0x7eefa96ad260>[0m
+    [36m              └ [0m[36m[1m<cygnusx.application.services.site_settings_service.SiteSettingsService object at 0x7eef368fb310>[0m
+
+> File "[32m/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/[0m[32m[1msite_settings_service.py[0m", line [33m104[0m, in [35m_get_or_create[0m
+    [1mmodel[0m [35m[1m=[0m [35m[1mawait[0m [1mself[0m[35m[1m.[0m[1m_db[0m[35m[1m.[0m[1mget[0m[1m([0m[1mSiteSettingModel[0m[1m,[0m [1mself[0m[35m[1m.[0m[1m_SINGLETON_ID[0m[1m)[0m
+    [36m              │    │   │   │                 │    └ [0m[36m[1m1[0m
+    [36m              │    │   │   │                 └ [0m[36m[1m<cygnusx.application.services.site_settings_service.SiteSettingsService object at 0x7eef368fb310>[0m
+    [36m              │    │   │   └ [0m[36m[1m<class 'cygnusx.infrastructure.database.models.site_settings.SiteSettingModel'>[0m
+    [36m              │    │   └ [0m[36m[1m<function OfflineDB.get at 0x7eef36c4ea20>[0m
+    [36m              │    └ [0m[36m[1m<tests.unit.test_agent_tools_phase2.OfflineDB object at 0x7eef3777be10>[0m
+    [36m              └ [0m[36m[1m<cygnusx.application.services.site_settings_service.SiteSettingsService object at 0x7eef368fb310>[0m
+
+  File "[32m/home/zj/zj_code_libarary/OmicHub/tests/unit/[0m[32m[1mtest_agent_tools_phase2.py[0m", line [33m52[0m, in [35mget[0m
+    [35m[1mreturn[0m [1mself[0m[35m[1m.[0m[1msync[0m[35m[1m.[0m[1mget[0m[1m([0m[1mmodel[0m[1m,[0m [1mkey[0m[1m)[0m
+    [36m       │    │    │   │      └ [0m[36m[1m1[0m
+    [36m       │    │    │   └ [0m[36m[1m<class 'cygnusx.infrastructure.database.models.site_settings.SiteSettingModel'>[0m
+    [36m       │    │    └ [0m[36m[1m<function Session.get at 0x7eefab1d5f80>[0m
+    [36m       │    └ [0m[36m[1m<sqlalchemy.orm.session.Session object at 0x7eef37065110>[0m
+    [36m       └ [0m[36m[1m<tests.unit.test_agent_tools_phase2.OfflineDB object at 0x7eef3777be10>[0m
+
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3702, in get
+    return self._get_impl(
+           │    └ <function Session._get_impl at 0x7eefab1d60c0>
+           └ <sqlalchemy.orm.session.Session object at 0x7eef37065110>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3881, in _get_impl
+    return db_load_fn(
+           └ <function load_on_pk_identity at 0x7eefab1dfec0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 695, in load_on_pk_identity
+    session.execute(
+    │       └ <function Session.execute at 0x7eefab1d40e0>
+    └ <sqlalchemy.orm.session.Session object at 0x7eef37065110>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2373, in execute
+    return self._execute_internal(
+           │    └ <function Session._execute_internal at 0x7eefab1cfe20>
+           └ <sqlalchemy.orm.session.Session object at 0x7eef37065110>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2271, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                   │      │                 └ <classmethod(<function AbstractORMCompileState.orm_execute_statement at 0x7eefab416160>)>
+                   │      └ <class 'sqlalchemy.orm.context.ORMSelectCompileState'>
+                   └ typing.Any
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             │    └ <function Connection.execute at 0x7eefab5d6660>
+             └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+           └ <bound method ClauseElement._execute_on_connection of <sqlalchemy.sql.selectable.Select object at 0x7eef3689df50>>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           │          └ <function Connection._execute_clauseelement at 0x7eefab5d6980>
+           └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+          │    └ <function Connection._execute_context at 0x7eefab5d6b60>
+          └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           │    └ <function Connection._exec_single_context at 0x7eefab5d6c00>
+           └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    │    └ <function Connection._handle_dbapi_exception at 0x7eefab5d6e80>
+    └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+          │                    │              │                 └ OperationalError('no such table: site_settings')
+          │                    │              └ (<class 'sqlite3.OperationalError'>, OperationalError('no such table: site_settings'), <traceback object at 0x7eef368fb240>)
+          │                    └ <method 'with_traceback' of 'BaseException' objects>
+          └ OperationalError('(sqlite3.OperationalError) no such table: site_settings')
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    │    │       └ <function DefaultDialect.do_execute at 0x7eefab48eac0>
+    │    └ <sqlalchemy.dialects.sqlite.pysqlite.SQLiteDialect_pysqlite object at 0x7eef36b96050>
+    └ <sqlalchemy.engine.base.Connection object at 0x7eef368f06d0>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    │      │       │          └ (1,)
+    │      │       └ 'SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_...
+    │      └ <method 'execute' of 'sqlite3.Cursor' objects>
+    └ <sqlite3.Cursor object at 0x7eef36637740>
+
+[31m[1msqlalchemy.exc.OperationalError[0m:[1m (sqlite3.OperationalError) no such table: site_settings
+[SQL: SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_settings.totp_policy AS site_settings_totp_policy, site_settings.subagent_fanout_enabled AS site_settings_subagent_fanout_enabled, site_settings.agentteams_chat_entry_enabled AS site_settings_agentteams_chat_entry_enabled, site_settings.collaboration_preset AS site_settings_collaboration_preset, site_settings.multi_expert_consultation_enabled AS site_settings_multi_expert_consultation_enabled, site_settings.unified_intent_router_enabled AS site_settings_unified_intent_router_enabled, site_settings.agent_memory_enabled AS site_settings_agent_memory_enabled, site_settings.collaboration_degradation_locale AS site_settings_collaboration_degradation_locale, site_settings.collaboration_degradation_template_zh AS site_settings_collaboration_degradation_template_zh, site_settings.collaboration_degradation_template_en AS site_settings_collaboration_degradation_template_en, site_settings.home_quick_entries AS site_settings_home_quick_entries, site_settings.created_at AS site_settings_created_at, site_settings.updated_at AS site_settings_updated_at 
+FROM site_settings 
+WHERE site_settings.id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)[0m
+------------------------------ Captured log call -------------------------------
+ERROR    cygnusx.application.services.site_settings_service:site_settings_service.py:116 读取站点设置数据库错误: (sqlite3.OperationalError) no such table: site_settings
+[SQL: SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_settings.totp_policy AS site_settings_totp_policy, site_settings.subagent_fanout_enabled AS site_settings_subagent_fanout_enabled, site_settings.agentteams_chat_entry_enabled AS site_settings_agentteams_chat_entry_enabled, site_settings.collaboration_preset AS site_settings_collaboration_preset, site_settings.multi_expert_consultation_enabled AS site_settings_multi_expert_consultation_enabled, site_settings.unified_intent_router_enabled AS site_settings_unified_intent_router_enabled, site_settings.agent_memory_enabled AS site_settings_agent_memory_enabled, site_settings.collaboration_degradation_locale AS site_settings_collaboration_degradation_locale, site_settings.collaboration_degradation_template_zh AS site_settings_collaboration_degradation_template_zh, site_settings.collaboration_degradation_template_en AS site_settings_collaboration_degradation_template_en, site_settings.home_quick_entries AS site_settings_home_quick_entries, site_settings.created_at AS site_settings_created_at, site_settings.updated_at AS site_settings_updated_at 
+FROM site_settings 
+WHERE site_settings.id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such table: site_settings
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/site_settings_service.py", line 104, in _get_or_create
+    model = await self._db.get(SiteSettingModel, self._SINGLETON_ID)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/tests/unit/test_agent_tools_phase2.py", line 52, in get
+    return self.sync.get(model, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3702, in get
+    return self._get_impl(
+           ^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3881, in _get_impl
+    return db_load_fn(
+           ^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 695, in load_on_pk_identity
+    session.execute(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2373, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2271, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+           ^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: site_settings
+[SQL: SELECT site_settings.id AS site_settings_id, site_settings.registration_enabled AS site_settings_registration_enabled, site_settings.totp_policy AS site_settings_totp_policy, site_settings.subagent_fanout_enabled AS site_settings_subagent_fanout_enabled, site_settings.agentteams_chat_entry_enabled AS site_settings_agentteams_chat_entry_enabled, site_settings.collaboration_preset AS site_settings_collaboration_preset, site_settings.multi_expert_consultation_enabled AS site_settings_multi_expert_consultation_enabled, site_settings.unified_intent_router_enabled AS site_settings_unified_intent_router_enabled, site_settings.agent_memory_enabled AS site_settings_agent_memory_enabled, site_settings.collaboration_degradation_locale AS site_settings_collaboration_degradation_locale, site_settings.collaboration_degradation_template_zh AS site_settings_collaboration_degradation_template_zh, site_settings.collaboration_degradation_template_en AS site_settings_collaboration_degradation_template_en, site_settings.home_quick_entries AS site_settings_home_quick_entries, site_settings.created_at AS site_settings_created_at, site_settings.updated_at AS site_settings_updated_at 
+FROM site_settings 
+WHERE site_settings.id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[False-legacy]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+================= 1 failed, 21 deselected, 1 warning in 1.05s ==================

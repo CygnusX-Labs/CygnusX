@@ -1,0 +1,29 @@
+ M docs/ARC/architecture-2026-10-06.md
+ M functions/seqout-chat/index.ts
+ M functions/seqout-chat/tests/validateSearchQuery.test.ts
+ M server/.env.example
+ M server/local.mjs
+ M src/components/chat/Composer.tsx
+ M src/components/chat/DatasetCard.tsx
+ M src/components/chat/EmptyState.tsx
+ M src/components/chat/IdLink.tsx
+ M src/components/chat/Leaderboard.tsx
+ M src/components/chat/LiteratureCard.tsx
+ M src/components/chat/SessionSidebar.tsx
+ M src/components/chat/UsageStatsDialog.tsx
+ M src/components/pet/PetSettingsPanel.tsx
+ M src/components/pet/TreasureMouse.tsx
+ M src/components/ui/dialog.tsx
+ M src/components/ui/popover.tsx
+ M src/i18n/locales/en.ts
+ M src/i18n/locales/zh.ts
+ M src/i18n/provider.tsx
+ M src/lib/treasureBurst.ts
+?? functions/seqout-chat/platform-tools.ts
+?? functions/seqout-chat/tests/platform-tools.test.ts
+?? island-reference.html
+?? src/island/
+?? src/presentation-context.tsx
+?? tsconfig.island.json
+?? vite.island-reference.config.ts
+?? vite.island.config.ts

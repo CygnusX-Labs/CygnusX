@@ -1,0 +1,12 @@
+{
+  "chromium_version": {
+    "returncode": 46,
+    "stdout": "",
+    "stderr": "internal error, please report: running \"chromium\" failed: cannot create XDG_RUNTIME_DIR folder \"/run/user/1000/snap.chromium\": mkdir /run/user/1000/snap.chromium: read-only file system\n"
+  },
+  "chromium_headless": {
+    "returncode": 46,
+    "stdout": "",
+    "stderr": "internal error, please report: running \"chromium\" failed: cannot create XDG_RUNTIME_DIR folder \"/run/user/1000/snap.chromium\": mkdir /run/user/1000/snap.chromium: read-only file system\n"
+  }
+}

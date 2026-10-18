@@ -1,5 +1,7 @@
 """数据下载工具 — 公共数据库（SRA/GEO）高速下载 + 多云存储下载 + 直链下载"""
 
+from typing import Literal
+
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
 from fastmcp import FastMCP
 
@@ -10,7 +12,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def cygnusx_submit_download(
         source: str = "sra",
         accession: str = "",
-        download_method: str = "aws",
+        download_method: Literal["aws", "ftp"] = "aws",
         multithreads: int = 4,
         aws_threads: int = 8,
         cloud_provider: str = "",
@@ -22,13 +24,13 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         confirmation_id: str = "",
         user_confirmed: bool = False,
     ) -> dict:
-        """提交数据下载任务，产物落到用户工作区 raw_data 目录（可选子目录）。
+        """提交数据下载任务，产物落到用户工作区 downloads 目录（可选子目录）。
 
         支持三类来源（source）：
         1. "sra"（默认）— 公共数据库高速下载，走 EBIDownload 引擎：
-           - 支持 NCBI SRA/GEO 系列登录号：项目号（PRJNA/PRJEB/PRJ 开头，如 PRJNA1285930）、
-             测序 run（SRR/ERR/DRR 开头）、GEO 样本（GSM 开头）等；
-           - download_method: "aws"（推荐，S3 全球镜像最快）/ "aspera" / "ftp"；
+           - 提交单个 ENA/SRA 登录号：项目号（PRJNA/PRJEB 开头，如 PRJNA1285930）、
+             测序 run（SRR/ERR/DRR 开头）；GSE/GSM 需先经数据集解析；
+           - download_method: "aws"（推荐，SRA 公共镜像）/ "ftp"；
            - multithreads: 并发下载 run 数（1-32），aws_threads: 单文件 AWS 并发线程（1-64）；
            - dry_run=True 可先试跑验证登录号，不实际下载。
         2. "cloud_storage" — 云服务商对象存储高速下载：
@@ -38,22 +40,22 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
            - links 传下载链接列表（禁止内网地址）。
 
         :param source: 下载来源："sra"（公共数据库）/"cloud_storage"（云存储）/"direct_link"（直链）
-        :param accession: 公共数据库登录号（PRJNA…/PRJEB…/SRR…/ERR…/DRR…/GSM…），source="sra" 时必填
-        :param download_method: SRA 下载方式 "aws"（默认，最快）/"aspera"/"ftp"，仅 source="sra" 有效
+        :param accession: 公共数据库登录号（PRJNA…/PRJEB…/SRR…/ERR…/DRR…），source="sra" 时必填
+        :param download_method: SRA 下载方式 "aws"（默认，最快）/"ftp"，仅 source="sra" 有效
         :param multithreads: 并发下载 run 数，默认 4
         :param aws_threads: 单文件 AWS 并发线程数，默认 8
         :param cloud_provider: 云商 "aliyun"/"volc"/"huawei"，source="cloud_storage" 时必填
         :param object_uri: 对象路径（oss:// / tos:// / obs:// 前缀），source="cloud_storage" 时必填
         :param recursive: 云存储目录是否递归下载，默认 True
         :param links: HTTP/HTTPS/FTP 下载链接列表，source="direct_link" 时必填
-        :param target_directory: 下载到用户 raw_data 下的子目录（如 "project_x"），留空=raw_data 根目录
+        :param target_directory: 下载到用户根目录下的子目录（如 "project_x"），留空=downloads 目录
         :param dry_run: True 时仅模拟下载（仅 SRA），用于校验登录号
         :param user_confirmed: 设为 True 确认提交（提交任务前必须经用户确认）
         :return: JSON 格式结果，含 success、summary、data、next_steps
 
         示例:
-            await cygnusx_submit_download("sra", "GSE12345", "aws", aws_threads=16)
-            # 提交 GSE12345 的 AWS 高速下载任务
+            await cygnusx_submit_download("sra", "SRR12345", "aws", aws_threads=16)
+            # 提交 SRR12345 的 AWS 高速下载任务
         """
         if user_confirmed:
             return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请使用服务端 confirmation_id。"}
@@ -66,7 +68,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
                 desc = f"{cloud_provider}: {object_uri}"
             else:
                 desc = f"{len(links or [])} 个直链"
-            target = f" -> raw_data/{target_directory}" if target_directory else " -> raw_data"
+            target = f" -> downloads/{target_directory}" if target_directory else " -> downloads"
             confirmation_payload = {
                 "source": source,
                 "links": normalized_links,
@@ -140,7 +142,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
                 "success": True,
                 "summary": (
                     f"下载任务已提交! 任务 ID: {task_id}\n"
-                    f"产物目录: 用户 raw_data/{target_directory or ''}（完成后自动登记到数据管理）"
+                    f"产物目录: 用户 downloads/{target_directory or ''}（完成后自动登记到数据管理）"
                 ),
                 "data": result,
                 "next_steps": [

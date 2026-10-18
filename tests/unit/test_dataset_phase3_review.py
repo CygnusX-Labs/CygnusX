@@ -46,6 +46,20 @@ async def test_human_review_freeze_is_stable_and_revision_preserves_source(regis
     frozen = await handoffs.manifest(owner, project, ds.id, version.id, freeze=True)
     assert frozen["provenance"]["review_annotations"]["assay_type"] == "bulk_rnaseq"
     assert frozen == await handoffs.manifest(owner, project, ds.id, version.id, freeze=True)
+    from cygnusx.application.services.agent_tool_gateway import AgentToolGateway
+    from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
+    from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
+
+    context = ToolInvocationContext(
+        user_id=str(owner), session_id="inspection", db=db,
+        extra={"project_id": str(project)},
+    )
+    gateway = AgentToolGateway(db)
+    inspected = await gateway._dataset_tool(
+        context, AgentToolInvocationModel(), "dataset.inspect",
+        {"dataset_id": str(ds.id), "version_id": str(version.id)},
+    )
+    assert inspected["handoff_frozen"] is True
     with pytest.raises(ValidationError):
         await service.review_version(owner, project, ds.id, version.id, "scrna", "new evidence")
     revision = await service.new_version(owner, project, ds.id, "new evidence")
@@ -57,6 +71,11 @@ async def test_human_review_freeze_is_stable_and_revision_preserves_source(regis
         sa.select(DatasetAssetModel).where(DatasetAssetModel.version_id == revision.id)
     )
     assert cloned.file_record_id == files[0].id and cloned.checksum_status == "PENDING"
+    live = await gateway._dataset_tool(
+        context, AgentToolInvocationModel(), "dataset.inspect",
+        {"dataset_id": str(ds.id), "version_id": str(revision.id)},
+    )
+    assert live["manifest_hash"] and live["handoff_frozen"] is False
 
 
 async def test_permission_and_quota_revoked_after_approval_prevent_submit(
@@ -334,6 +353,16 @@ async def test_verified_counts_metadata_human_groups_prepare_real_flow(
     assert "analysis_proposal_id" in prepared, prepared
     assert prepared["parameters"]["count_matrix"].startswith("file://")
     assert not prepared["write_enabled"]
+    rejected = await analysis.decide(
+        owner, project, ds.id, version.id, UUID(prepared["analysis_proposal_id"]), False
+    )
+    assert rejected["state"] == "REJECTED" and not rejected["write_enabled"]
+    restored = await analysis.view(
+        owner, project, ds.id, version.id, UUID(prepared["analysis_proposal_id"])
+    )
+    assert restored["dataset_id"] == str(ds.id)
+    assert restored["dataset_version_id"] == str(version.id)
+    assert restored["expires_at"]
     with pytest.raises(ValidationError):
         await analysis.prepare(
             owner,

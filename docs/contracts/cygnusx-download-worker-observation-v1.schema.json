@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "BinaryObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "ebi",
+            "aria2c",
+            "ossutil",
+            "tosutil",
+            "obsutil",
+            "wget",
+            "fasterq_dump",
+            "prefetch"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9 ._+()/-]+$",
+          "title": "Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "help_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Help Sha256",
+          "type": "string"
+        },
+        "download_methods": {
+          "items": {
+            "enum": [
+              "ftp",
+              "aws",
+              "prefetch",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "title": "Download Methods",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "version",
+        "sha256",
+        "help_sha256"
+      ],
+      "title": "BinaryObservation",
+      "type": "object"
+    },
+    "MountObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        },
+        "target_path": {
+          "title": "Target Path",
+          "type": "string"
+        },
+        "read_only": {
+          "title": "Read Only",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_path",
+        "target_path",
+        "read_only"
+      ],
+      "title": "MountObservation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Only trusted operators may supply this offline record; not accepted via REST/LLM.",
+  "properties": {
+    "source_sha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "title": "Source Sha",
+      "type": "string"
+    },
+    "downloader_sha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "title": "Downloader Sha",
+      "type": "string"
+    },
+    "worker_code_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Worker Code Sha256"
+    },
+    "image_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Image Digest",
+      "type": "string"
+    },
+    "uid": {
+      "minimum": 1,
+      "title": "Uid",
+      "type": "integer"
+    },
+    "gid": {
+      "minimum": 1,
+      "title": "Gid",
+      "type": "integer"
+    },
+    "rust_toolchain": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9 ._+()/-]+$",
+      "title": "Rust Toolchain",
+      "type": "string"
+    },
+    "binaries": {
+      "items": {
+        "$ref": "#/$defs/BinaryObservation"
+      },
+      "title": "Binaries",
+      "type": "array"
+    },
+    "mounts": {
+      "items": {
+        "$ref": "#/$defs/MountObservation"
+      },
+      "title": "Mounts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_sha",
+    "downloader_sha",
+    "image_digest",
+    "uid",
+    "gid",
+    "rust_toolchain",
+    "binaries",
+    "mounts"
+  ],
+  "title": "WorkerObservation",
+  "type": "object"
+}

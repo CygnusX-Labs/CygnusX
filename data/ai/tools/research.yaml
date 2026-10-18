@@ -9,3 +9,14 @@ platform_tools:
   - platform_list_agent_skills
 builtin_tools:
   - cygnusx_run_kegg_enrichment
+  # Shared schemas come from CAPABILITY_MODELS; runtime read flags/scopes still apply.
+  - bioops_downloads_describe_capabilities
+  - bioops_dataset_discover
+  - bioops_dataset_list_project_assets
+  - bioops_dataset_inspect
+  - bioops_dataset_list_files
+  - bioops_tasks_get_status
+  - bioops_tasks_list_related
+  # Prepare only: existing human confirmation, never transfer or task execution.
+  - bioops_downloads_prepare
+  - bioops_dataset_prepare_import

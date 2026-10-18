@@ -491,7 +491,14 @@ def create_app() -> FastAPI:
 
         raw_errors = exc.errors()
         safe_errors = _sanitize(raw_errors)
-        logger.warning(f"Validation error on {request.method} {request.url.path}: {safe_errors}")
+        log_path = request.url.path
+        if request.url.path.startswith("/api/v1/downloads"):
+            from cygnusx.application.schemas.download import DownloadRequest
+            from cygnusx.domain.download_security import download_validation_errors
+
+            safe_errors = download_validation_errors(raw_errors, set(DownloadRequest.model_fields))
+            log_path = "/api/v1/downloads/[route]"
+        logger.warning(f"Validation error on {request.method} {log_path}: {safe_errors}")
         return JSONResponse(
             status_code=422,
             content={"detail": "请求参数校验失败", "errors": safe_errors},

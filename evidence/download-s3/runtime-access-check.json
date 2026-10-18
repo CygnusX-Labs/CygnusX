@@ -1,0 +1,21 @@
+{
+  "docker_socket_exists": true,
+  "binaries": {
+    "/data/omichub/bin/EBIDownload": {
+      "exists": true,
+      "executable": true
+    },
+    "/usr/bin/aria2c": {
+      "exists": false,
+      "executable": false
+    },
+    "/usr/bin/docker": {
+      "exists": true,
+      "executable": true
+    }
+  },
+  "docker_socket_connect": {
+    "errno": 1,
+    "error": "PermissionError"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "src/cygnusx/domain/download_security.py": "bf59c471cf97ab5787a805c4231cb453cb5f6dabe5c9805a34daff564d7f569e",
+  "src/cygnusx/infrastructure/download/policy.py": "28a4d314ef120f3b40d64f0e233d360d9ffe56ad9f43154b8ef174e022f3b7fc",
+  "src/cygnusx/infrastructure/execution/base.py": "6c0b41def7e9071988483704875fb16a9c6baea75a3074150f570fa0d4bcaa65",
+  "src/cygnusx/infrastructure/execution/binary.py": "3d6a63d3e79701e2861986834d5dd88a337c723b827e2369526c54d41616d3cc",
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "6abb63802987dc754979ff02c53dce905753f60c87a03e8aecda084aae16c271",
+  "src/cygnusx/application/schemas/download.py": "d4c004501fd10302a64ec3fe87fd23ae8f7a3d5e13b1b1d79d7f344191254b1d",
+  "src/cygnusx/main.py": "9e93640acfa37042b69f11d03f3517b7285a1bb5b20df167656911798f80de2e",
+  "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md": "64404f95ce4277573f9cb3655dd0eb3d019e97f1810218b008fc55770ee899bc"
+}

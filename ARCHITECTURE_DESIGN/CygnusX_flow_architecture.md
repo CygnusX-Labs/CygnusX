@@ -162,15 +162,15 @@ pipeline_mapping: # PipelineMappingConfig — 见 §5.2
 
 位置：`application/services/task_service.py`。两条通道（表单 POST `/api/v1/tasks`、AI 确认后提交）在此汇合，步骤：
 
-1. `FlowService` 读取 Flow 定义（get_flow_config / get_flow）；
-2. 预生成 task UUID + 按用户隔离的工作目录（`_make_work_dir`：`users/{uid}/projects/{project}/runs/{flow}-{timestamp}/work/`，走 `StoragePathFactory` + `ensure_directory_chain` 登记）；
-3. 幂等键查重（`idempotency_key`）；
-4. 锁定提交参数快照；
-5. **`GenericFlowBuilder.build_project_files()`** 生成底层流程输入文件（§5.2）；
-6. 写 per-task `monitor_config.yaml`（workflow monitor 推送配置，`workflow_monitor_enabled` 时；失败不阻断提交）；
-7. 创建并持久化标准 Task 记录；
-8. 投递 Celery `run_snakemake`（参数全部来自 YAML `execution` 段：snakefile/config_file/config_file_param/cores）；
-9. 状态推进 QUEUED（+ 启用时饼干预扣等提交侧逻辑）。
+1. 校验既有 counts/Dataset 写门禁、批准绑定与输入；
+2. 幂等键按 owner 查重，已存在任务不重复提交；
+3. 运行权威 `FlowSubmissionValidator`，取得规范化请求与 Flow 定义；
+4. 预生成 task UUID，按用户隔离创建运行目录并登记目录链；
+5. 锁定参数，使用 **`GenericFlowBuilder.build_project_files()`** 生成原流程输入文件；
+6. 写 Dataset 身份及 monitor 配置，冻结定义、Task绑定与生成文件摘要；
+7. 创建标准 Task，保存参数证据及工作目录；
+8. 启用时调用原计费预扣，保存内部参数，推进 QUEUED 并提交事务；
+9. 投递原 Celery `run_snakemake`（snakefile/config/cores 来自受信 Flow 配置）；未知投递需对账，不能自动重放。
 
 之后 Snakemake 日志、任务状态、结果路径和监控围绕 Task 记录流转；长任务状态机见 `CygnusX_platform_architecture.md` §10.2。
 
@@ -210,17 +210,38 @@ pipeline_mapping: # PipelineMappingConfig — 见 §5.2
 
 **结论**：若接入目标只是"分析中心表单 + AI 助手聊天"，编辑/新增 `flows/*.yaml` 即可；上述通道按需另改。
 
-## 8. 新流程接入清单（L1 + AI 聊天通道）
+## 8. 新流程接入清单（L1 + AI 聊天通道 · 工具固定化后）
+
+> 2026-10-16 起，MCP 工具已固定化（见 `CygnusX_mcp_architecture.md` §11）：
+> **新增 Flow 只注册流程契约，全程零新增 MCP 工具**。AI 通道统一走固定工具
+> `cygnusx_list_flows` → `cygnusx_get_flow_detail` → `cygnusx_prepare` →
+> `cygnusx_submit`（Chat 内置与外部 MCP 同名单），旧 per-flow 自动生成工具
+> 已 `[DEPRECATED]` 并纳入 `LEGACY_PIPELINE_TOOLS` 下线路径。
 
 1. 按 `Protocol/FlowFrame/flow-framework` v2.0 编写流程仓库，放入 `pipelines/`（子模块）；
 2. Worker 侧确认挂载：`data/worker_config.yaml` 的 `WORKER_PIPELINE_DIR` 覆盖新流程目录，容器内路径 `/opt/cygnusx/pipelines/<X>Flow/snakefile` 可达（`test -f` 验证，见 `CygnusX_worker_images_plan.md`）；
 3. 新增 `flows/<flow_id>.yaml`（六段 schema；flow_id 用下划线规范）；参数键与流程 analysisyaml 对齐（§6）；
+   - **AI 接入段**（`ai:`）：`enabled: true` + `tool_slug` + `assistant_summary` +
+     `allowed_parameters` 白名单 + `requires_confirmation`；
+   - **可选校验插件**：`ai.validation_plugins: [<插件名>]`（注册表
+     `src/cygnusx/domain/flow/validation_plugins.py`；内置 `fastq_workspace`
+     供 FASTQ 类流程复用；新插件实现 `FlowValidationPlugin` 协议后在
+     `_REGISTRY` 登记——插件是代码扩展点，**不增加 MCP 工具**）；
+   - **可选灰度门控**：仿 `counts_deg` 模式在 `core/config.py` 加
+     `<flow>_flow_enabled: bool = False` 开关 + `FlowService._enabled` 特例
+     （list/detail/prepare 三口径同源判定）。
 4. 验证：
    - `uv run python -c "from cygnusx.application.services.flow_service import FlowService; FlowService().reload()"` 加载无误；
    - web 容器内 `GET /api/v1/flows` 出现新流程（flows 目录 bind mount 只读，无需重启）；
    - 前端分析中心表单渲染 + 一次真实 dry-run 提交；
-   - `ai.enabled: true` 时，聊天中确认 `cygnusx_prepare_<flow_id>_submission` 工具可被发现并完成 prepare → 确认 → submit 闭环；
+   - AI 通道（Chat 内置或外部 MCP 任一）走固定工具完成闭环：
+     `list_flows` 目录含新流程 → `describe` 契约完整 → `prepare` 非法输入被
+     全量校验拒绝、合法输入返回 confirmation_id → 用户网页确认 → `submit`
+     幂等提交成功。工具发现清单数量不变（新增 Flow 不新增工具）；
 5. 如需 Agent 人设/协作室通道，另走 `data/ai/` 体系（不在本清单，见 `CygnusX_agent_execution_framework.md`）。
+
+**红线**：禁止为新 Flow 新增 MCP 工具或复活 per-flow 自动生成工具；提交必须经
+固定 `prepare → 人类确认 → submit` 凭证链（`CygnusX_mcp_architecture.md` §11.3）。
 
 ## 9. 关键文件索引
 
@@ -250,3 +271,11 @@ Phase 1 已接入独立报告 Job、不可变快照持久化、八模块 HTML �
 | API | `src/cygnusx/api/v1/flows.py`、`api/v1/tasks.py` |
 | 监控推送 | `src/cygnusx/application/services/workflow_monitor_service.py` + FlowFrame §13.5 logger 插件 |
 | 流程 YAML 实例 | `flows/rna_seq.yaml`、`flows/atac_seq.yaml` |
+
+### RI13 最小执行证据接线（代码/隔离层）
+
+原 `TaskService.submit` 在权威validator之后，使用原builder生成输入文件，再将v2定义、独立Task绑定和生成文件SHA写入既有 `Task.parameters._execution_evidence`；Task/证据及启用时的原预扣参数以QUEUED在队列可见前持久化。QUEUED是投递意图，投递不明必须对账，不证明broker已ACK。
+
+原analysis Worker持Task行锁领取QUEUED、推进RUNNING，再做前后证据核验和队列执行参数比对；已运行/终态重复投递不会启动执行器。输入字节仍复用ResearchExecutionBinding/check_inputs；没有替代FlowFrame或新增执行引擎。PG并发、实际队列和挂载尚未验收。
+
+v1定义摘要规则不变；v2定义不含Task，Task/owner与生成文件摘要进入独立execution_binding_digest。实际release/image/tools/reference缺可信来源时NOT_OBSERVED，不能从当前环境补写历史。参见 `docs/contracts/cygnusx-execution-evidence-v1.md`。源码写执行门禁未开启，真实运行仍BLOCKED。

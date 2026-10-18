@@ -54,6 +54,23 @@ class TaskRepositoryImpl(ITaskRepository):
         """保存任务（插入或更新）"""
         existing = await self._session.get(TaskModel, task.id)
         if existing:
+            if existing.flow_id == "ebi_download":
+                # Serialize against cancellation and refuse stale Worker resurrection.
+                existing = (await self._session.execute(
+                    select(TaskModel).where(TaskModel.id == task.id)
+                    .with_for_update().execution_options(populate_existing=True)
+                )).scalar_one()
+                if existing.status == "cancelled" or (
+                    existing.status in {"success", "failed"} and existing.status != task.status.value
+                ):
+                    return self._to_entity(existing)
+                # Worker entities can predate alias writes, registration or recovery scans.
+                # These facts are maintained directly on the locked Task row.
+                facts = {key: value for key, value in (existing.parameters or {}).items()
+                         if key in {"_download_request_keys", "_download_reliability",
+                                    "_download_registration", "_download_recovery",
+                                    "_download_cancellation"}}
+                task.parameters = {**task.parameters, **facts}
             model = self._update_model(existing, task)
         else:
             model = self._to_model(task)

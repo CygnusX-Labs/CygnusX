@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
-from cygnusx.core.exceptions import ValidationError
+from cygnusx.core.exceptions import AuthorizationError, ValidationError
 from cygnusx.infrastructure.mcp.workspace_file_refs import resolve_workspace_file_refs
 from cygnusx.infrastructure.storage import get_path_factory, get_storage_backend
 from cygnusx.tools.errors import ToolErrorCode, code_from_exception, is_retryable
@@ -59,15 +59,58 @@ class ToolBridgeService:
 
             if context is None or context.user_id != user_id:
                 return self._error("共享工具需要可信上下文")
-            capability = next((c for c in capability_catalog(include_write=True)
-                               if c.tool_name == tool_name), None)
+            capability = next(
+                (
+                    c
+                    for c in capability_catalog(
+                        include_write=True,
+                        include_dataset=True,
+                        include_research=True,
+                        include_plans=True,
+                    )
+                    if c.tool_name == tool_name
+                ),
+                None,
+            )
             if capability is None:
                 return self._error("未知共享工具")
             try:
                 gateway = AgentToolGateway(context.db)
+                if "scopes" not in context.extra:
+                    # Chat runtimes provide a trusted session, not delegated scopes.
+                    # Derive authority here; never expand an existing scoped context.
+                    derived = (
+                        await gateway.context(
+                            user_id, context.session_id, expected_agent="platform_ai"
+                        )
+                    ).model_copy(update={"request_id": context.request_id})
+                    for binding in ("project_id", "agent_kind"):
+                        if (
+                            binding in context.extra
+                            and context.extra[binding] != derived.extra[binding]
+                        ):
+                            raise AuthorizationError("工具上下文绑定不匹配")
+                    context = derived
                 result = await gateway.invoke(context, capability.capability_id, arguments)
-                return {"success": True, "is_error": False,
-                        "llm_payload": result, "ui_payload": {"bioops": result}}
+                llm_result = result
+                if capability.capability_id == "downloads.describe_capabilities":
+                    # Runtime text limits must retain the server-owned execution gate.
+                    catalog = result["result"]
+                    llm_result = {
+                        **result,
+                        "result": {
+                            "runtime_status": catalog["runtime_status"],
+                            "write_enabled": catalog["write_enabled"],
+                            "available_tools": catalog["available_tools"],
+                            **catalog,
+                        },
+                    }
+                return {
+                    "success": True,
+                    "is_error": False,
+                    "llm_payload": llm_result,
+                    "ui_payload": {"bioops": result},
+                }
             except Exception as exc:
                 return self._error(str(exc), code=code_from_exception(exc))
         schema = self._loader.get_tool(tool_name)
@@ -165,7 +208,9 @@ class ToolBridgeService:
                     confirmation_id,
                     tool_name,
                     args,
-                    human_confirmed=bool(context.extra.get("human_confirmed")) if context else False,
+                    human_confirmed=bool(context.extra.get("human_confirmed"))
+                    if context
+                    else False,
                 )
             except ConfirmationError as e:
                 return self._error(
@@ -386,19 +431,29 @@ class ToolBridgeService:
         )
 
         service = AnalysisFlowToolService(context=context)
-        flow_id = schema.extra.get("flow_id") if schema.extra else None
-        if not flow_id:
-            return self._error("analysis_flow schema 缺少 flow_id")
+        role = schema.extra.get("tool_role") if schema.extra else None
 
         try:
-            if schema.extra and schema.extra.get("tool_role") == "status":
+            if role == "status":
                 task_id = arguments.get("task_id", "")
                 result = await service.get_task_status(task_id)
-            elif schema.extra and schema.extra.get("tool_role") == "summary":
+            elif role == "summary":
                 task_id = arguments.get("task_id", "")
                 result = await service.get_task_summary(task_id)
+            elif role == "prepare_fixed":
+                # 固定工具 cygnusx_prepare：flow_id 来自 arguments，非 schema.extra
+                flow_id = str(arguments.get("flow_id") or "")
+                result = await service.prepare(flow_id, dict(arguments.get("arguments") or {}))
+            elif role == "submit_fixed":
+                # 固定工具 cygnusx_submit：仅接受服务端确认记录 ID（人类批准 + 幂等由服务层保证）
+                result = await service.confirm_and_submit(
+                    str(arguments.get("confirmation_id") or "")
+                )
             else:
-                result = await service.prepare(flow_id, arguments)
+                schema_flow_id = schema.extra.get("flow_id") if schema.extra else None
+                if not schema_flow_id:
+                    return self._error("analysis_flow schema 缺少 flow_id")
+                result = await service.prepare(schema_flow_id, arguments)
         except Exception as e:  # noqa: BLE001
             return self._error(str(e), code=code_from_exception(e))
 
@@ -407,13 +462,34 @@ class ToolBridgeService:
     def _package_analysis_flow_result(self, raw: dict[str, Any]) -> dict[str, Any]:
         """打包 analysis_flow 结果为双通道格式。"""
         if raw.get("valid") is False:
+            errors = raw.get("errors", [])
+            warnings = raw.get("warnings", [])
+            # 错误清单限额：首 10 条 + 计数，防止超大错误列表直接灌入模型上下文
+            if len(errors) > 10:
+                errors = [
+                    *errors[:10],
+                    {
+                        "field": "...",
+                        "code": "TRUNCATED",
+                        "message": f"其余 {len(raw.get('errors', [])) - 10} 条错误见确认卡",
+                    },
+                ]
+            if len(warnings) > 10:
+                warnings = [
+                    *warnings[:10],
+                    {
+                        "field": "...",
+                        "code": "TRUNCATED",
+                        "message": f"其余 {len(raw.get('warnings', [])) - 10} 条警告见确认卡",
+                    },
+                ]
             return {
                 "success": True,
                 "is_error": False,
                 "llm_payload": {
                     "valid": False,
-                    "errors": raw.get("errors", []),
-                    "warnings": raw.get("warnings", []),
+                    "errors": errors,
+                    "warnings": warnings,
                     "summary": "参数校验未通过，请根据错误信息补充或修正。",
                 },
                 "ui_payload": {
@@ -438,10 +514,8 @@ class ToolBridgeService:
             }
 
         # prepare 成功返回确认预览
-        return {
-            "success": True,
-            "is_error": False,
-            "llm_payload": {
+        llm_payload = self._fit_llm_payload(
+            {
                 "valid": True,
                 "confirmation_id": raw.get("confirmation_id"),
                 "flow_id": raw.get("flow_id"),
@@ -456,7 +530,12 @@ class ToolBridgeService:
                     f"样本数 {raw.get('sample_count')}，比较组数 {raw.get('comparison_count')}。"
                     "请用户在确认卡上确认后正式提交。"
                 ),
-            },
+            }
+        )
+        return {
+            "success": True,
+            "is_error": False,
+            "llm_payload": llm_payload,
             "ui_payload": {
                 "type": "confirmation_card",
                 **raw,
@@ -471,6 +550,36 @@ class ToolBridgeService:
                     },
                 },
             },
+        }
+
+    @staticmethod
+    def _fit_llm_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """llm_payload 独立字节限额（防膨胀红线，与 _package 的 3000B 标准一致）。
+
+        超限先裁剪大字段（parameter_preview → resource_hint），仍超限退化为
+        最小摘要；完整数据始终在 ui_payload（确认卡）中不受此限额影响。
+        """
+
+        def _size(p: dict[str, Any]) -> int:
+            return len(json.dumps(p, ensure_ascii=False, default=str).encode("utf-8"))
+
+        if _size(payload) <= ToolBridgeService._MAX_LLM_PAYLOAD_BYTES:
+            return payload
+        fitted = dict(payload)
+        if "parameter_preview" in fitted:
+            preview = fitted.pop("parameter_preview")
+            fitted["parameter_preview_note"] = (
+                f"参数预览已省略（约 {_size({'parameter_preview': preview})} 字节），详见确认卡。"
+            )
+        if _size(fitted) <= ToolBridgeService._MAX_LLM_PAYLOAD_BYTES:
+            return fitted
+        fitted.pop("resource_hint", None)
+        if _size(fitted) <= ToolBridgeService._MAX_LLM_PAYLOAD_BYTES:
+            return fitted
+        return {
+            "valid": payload.get("valid"),
+            "confirmation_id": payload.get("confirmation_id"),
+            "summary": "预检完成，详情见确认卡。",
         }
 
     async def _submit_async_arq(

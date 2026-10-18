@@ -1,0 +1,442 @@
+{
+  "$defs": {
+    "DefinitionParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,79}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "value_json": {
+          "maxLength": 16384,
+          "title": "Value Json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value_json"
+      ],
+      "title": "DefinitionParameter",
+      "type": "object"
+    },
+    "ExecutionDefinitionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "cygnusx.execution_definition.v2",
+          "default": "cygnusx.execution_definition.v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "digest_policy": {
+          "const": "canonical_definition.v2",
+          "default": "canonical_definition.v2",
+          "title": "Digest Policy",
+          "type": "string"
+        },
+        "workflow_id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Workflow Id",
+          "type": "string"
+        },
+        "flow_config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Flow Config Sha256",
+          "type": "string"
+        },
+        "parameters_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Parameters Sha256",
+          "type": "string"
+        },
+        "sample_design_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sample Design Digest",
+          "type": "string"
+        },
+        "dataset_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Version Id"
+        },
+        "handoff_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handoff Digest"
+        },
+        "workflow_release_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow Release Digest"
+        },
+        "container_image_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Container Image Digest"
+        },
+        "input_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExecutionFileRef"
+          },
+          "title": "Input Refs",
+          "type": "array"
+        },
+        "reference_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExecutionFileRef"
+          },
+          "title": "Reference Refs",
+          "type": "array"
+        },
+        "normalized_parameters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DefinitionParameter"
+          },
+          "title": "Normalized Parameters",
+          "type": "array"
+        },
+        "resource_specification": {
+          "$ref": "#/$defs/ExecutionResources",
+          "default": {
+            "cores": null,
+            "memory_bytes": null,
+            "time_seconds": null
+          }
+        },
+        "provenance_status": {
+          "const": "DECLARED",
+          "default": "DECLARED",
+          "title": "Provenance Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow_id",
+        "flow_config_sha256",
+        "parameters_sha256",
+        "sample_design_digest"
+      ],
+      "title": "ExecutionDefinitionV2",
+      "type": "object"
+    },
+    "ExecutionFileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "file_record_id": {
+          "format": "uuid",
+          "title": "File Record Id",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "role": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Role",
+          "type": "string"
+        },
+        "status": {
+          "default": "UNKNOWN",
+          "enum": [
+            "DECLARED",
+            "UNKNOWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_record_id",
+        "role"
+      ],
+      "title": "ExecutionFileRef",
+      "type": "object"
+    },
+    "ExecutionResources": {
+      "additionalProperties": false,
+      "properties": {
+        "cores": {
+          "anyOf": [
+            {
+              "maximum": 1024,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cores"
+        },
+        "memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Bytes"
+        },
+        "time_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Seconds"
+        }
+      },
+      "title": "ExecutionResources",
+      "type": "object"
+    },
+    "ExecutionTaskBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "cygnusx.execution_task_binding.v1",
+          "default": "cygnusx.execution_task_binding.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_id": {
+          "format": "uuid",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "owner_id": {
+          "format": "uuid",
+          "title": "Owner Id",
+          "type": "string"
+        },
+        "definition_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Definition Digest",
+          "type": "string"
+        },
+        "generated_files_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Generated Files Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "owner_id",
+        "definition_digest",
+        "generated_files_digest"
+      ],
+      "title": "ExecutionTaskBinding",
+      "type": "object"
+    },
+    "GeneratedExecutionFile": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "title": "GeneratedExecutionFile",
+      "type": "object"
+    },
+    "WorkerEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "PREFLIGHT",
+            "POSTFLIGHT",
+            "FAILED"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "input_integrity": {
+          "enum": [
+            "VERIFIED",
+            "NOT_OBSERVED",
+            "FAILED"
+          ],
+          "title": "Input Integrity",
+          "type": "string"
+        },
+        "workflow_release_status": {
+          "const": "NOT_OBSERVED",
+          "default": "NOT_OBSERVED",
+          "title": "Workflow Release Status",
+          "type": "string"
+        },
+        "image_status": {
+          "const": "NOT_OBSERVED",
+          "default": "NOT_OBSERVED",
+          "title": "Image Status",
+          "type": "string"
+        },
+        "tools_status": {
+          "const": "NOT_OBSERVED",
+          "default": "NOT_OBSERVED",
+          "title": "Tools Status",
+          "type": "string"
+        },
+        "reference_status": {
+          "const": "NOT_OBSERVED",
+          "default": "NOT_OBSERVED",
+          "title": "Reference Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "enum": [
+                "INPUT_OR_BINDING_CHANGED",
+                "EXECUTION_FAILED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        }
+      },
+      "required": [
+        "recorded_at",
+        "phase",
+        "input_integrity"
+      ],
+      "title": "WorkerEvidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.execution_evidence.v1",
+      "default": "cygnusx.execution_evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "definition": {
+      "$ref": "#/$defs/ExecutionDefinitionV2"
+    },
+    "definition_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Definition Digest",
+      "type": "string"
+    },
+    "binding": {
+      "$ref": "#/$defs/ExecutionTaskBinding"
+    },
+    "execution_binding_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Execution Binding Digest",
+      "type": "string"
+    },
+    "frozen_at": {
+      "format": "date-time",
+      "title": "Frozen At",
+      "type": "string"
+    },
+    "generated_files": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/GeneratedExecutionFile"
+      },
+      "maxItems": 16,
+      "title": "Generated Files",
+      "type": "array"
+    },
+    "observations": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/WorkerEvidence"
+      },
+      "maxItems": 256,
+      "title": "Observations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "definition",
+    "definition_digest",
+    "binding",
+    "execution_binding_digest",
+    "frozen_at"
+  ],
+  "title": "ExecutionEvidence",
+  "type": "object"
+}

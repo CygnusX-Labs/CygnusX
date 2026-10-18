@@ -103,6 +103,9 @@ class MCPVersionModel(Base, TimestampMixin):
     # 快照来源：builder（构建发布）/ admin（手工更新）/ rollback（回滚产生）/ publish（转正发布）
     source: Mapped[str] = mapped_column(String(20), default="builder")
     changelog: Mapped[str] = mapped_column(Text, default="")
+    # 契约指纹（架构审查 §7.3）：工具 schema/描述 + 语义配置的规范化 SHA-256，
+    # 格式 "v1:<hex>"；版本详情/差异比较/回退兼容性校验据此而非仅比版本号
+    contract_digest: Mapped[str] = mapped_column(String(80), default="")
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 

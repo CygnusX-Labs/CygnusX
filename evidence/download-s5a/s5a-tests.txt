@@ -1,0 +1,83 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 16 items
+
+tests/unit/test_download_s5a_catalog.py F..............F                 [100%]
+
+=================================== FAILURES ===================================
+_____ test_twelve_capabilities_distinguish_code_configuration_and_runtime ______
+tests/unit/test_download_s5a_catalog.py:50: in test_twelve_capabilities_distinguish_code_configuration_and_runtime
+    assert not env.gateway.confirmations._store._records
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute '_records'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 22:45:28.756[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_______________ test_existing_assets_have_scoped_version_handles _______________
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:2127: in _exec_insertmany_context
+    dialect.do_execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlite3.IntegrityError: NOT NULL constraint failed: dataset_versions.initiated_by
+
+The above exception was the direct cause of the following exception:
+tests/unit/test_download_s5a_catalog.py:146: in test_existing_assets_have_scoped_version_handles
+    await env.db.flush()
+tests/unit/test_agent_tools_phase2.py:61: in flush
+    self.sync.flush()
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:4353: in flush
+    self._flush(objects)
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:4488: in _flush
+    with util.safe_reraise():
+.venv/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py:122: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py:4449: in _flush
+    flush_context.execute()
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/unitofwork.py:465: in execute
+    rec.execute(self)
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/unitofwork.py:641: in execute
+    util.preloaded.orm_persistence.save_obj(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/persistence.py:94: in save_obj
+    _emit_insert_statements(
+.venv/lib/python3.11/site-packages/sqlalchemy/orm/persistence.py:1144: in _emit_insert_statements
+    result = connection.execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1421: in execute
+    return meth(
+.venv/lib/python3.11/site-packages/sqlalchemy/sql/elements.py:526: in _execute_on_connection
+    return connection._execute_clauseelement(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1643: in _execute_clauseelement
+    ret = self._execute_context(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:1846: in _execute_context
+    return self._exec_insertmany_context(dialect, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:2135: in _exec_insertmany_context
+    self._handle_dbapi_exception(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py:2127: in _exec_insertmany_context
+    dialect.do_execute(
+.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: dataset_versions.initiated_by
+E   [SQL: INSERT INTO dataset_versions (id, dataset_id, number, status, source_snapshot, validation, review_annotations, asset_fingerprint, revision_reason, initiated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING created_at, updated_at, id]
+E   [parameters: ('f832491fccb74990bf2412cc188c0710', '0c99530d0a1e44e5bdf967766669d44c', 1, 'DRAFT', '{}', '{}', '{}', None, '', None, '40333c6f286f46729fe89d331b381b7e', '07dbefbf871d461cbe071d5b90b2ad54', 1, 'DRAFT', '{}', '{}', '{}', None, '', None, '1d511df06e3b4dea99f816bd94ab41c2', '5bb960df35ca4d53865fbfd9dcc54edc', 1, 'DRAFT', '{}', '{}', '{}', None, '', None)]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 22:45:29.458[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s5a_catalog.py::test_twelve_capabilities_distinguish_code_configuration_and_runtime
+FAILED tests/unit/test_download_s5a_catalog.py::test_existing_assets_have_scoped_version_handles
+=================== 2 failed, 14 passed, 1 warning in 0.97s ====================

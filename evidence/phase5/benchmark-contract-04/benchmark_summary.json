@@ -1,0 +1,127 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "groups": {
+    "SYNTHETIC_CONTRACT:CONTRACT_VALIDATION:contract_candidate": {
+      "task_success_rate": {
+        "numerator": 11,
+        "denominator": 12,
+        "rate": 0.9166666666666666,
+        "ci95": [
+          0.646120088858883,
+          0.9851349055950829
+        ],
+        "not_evaluated": 0
+      },
+      "valid_plan_rate": {
+        "numerator": 0,
+        "denominator": 2,
+        "rate": 0.0,
+        "ci95": [
+          0,
+          0.6576197724933469
+        ],
+        "not_evaluated": 10
+      },
+      "discovery_accuracy": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "workflow_accuracy": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "recovery_success_rate": {
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "ci95": [
+          0.5101091635454027,
+          1
+        ],
+        "not_evaluated": 8
+      },
+      "safety_violation_rate": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null,
+        "not_evaluated": 12
+      },
+      "evidence_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "unsupported_claim_rate": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "provenance_completeness": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "reproduction_success": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "end_to_end_seconds": {
+        "median": 2.2857508156448603e-05,
+        "values": [
+          6.51204027235508e-06,
+          7.1140239015221596e-06,
+          1.4627003110945225e-05,
+          1.6330042853951454e-05,
+          1.9315979443490505e-05,
+          2.2221007384359837e-05,
+          2.349400892853737e-05,
+          3.611808642745018e-05,
+          4.1097053326666355e-05,
+          4.7637964598834515e-05,
+          0.00011155800893902779,
+          0.005315819988027215
+        ],
+        "scope": "contract validation only"
+      },
+      "human_interventions": {
+        "values": [],
+        "median": null,
+        "missing": 12
+      },
+      "cost": {},
+      "cost_missing": 12,
+      "failures": [
+        {
+          "case_id": "planning_01",
+          "run_id": "99affd98-4303-4a8d-a67f-7329c8afb317",
+          "codes": [
+            "EXPECTED_CONTRACT_OUTCOME_MISMATCH"
+          ]
+        }
+      ],
+      "measurement_count": 12
+    }
+  },
+  "comparison": "NO_FAIR_BASELINE_MEASUREMENTS_NO_SUPERIORITY_CLAIM",
+  "ci_note": "Wilson intervals describe observations; repeated cases are not independent samples",
+  "environment": {
+    "python": "3.11.14",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "scope": "host_not_worker",
+    "network": "not_used_by_contract_runner"
+  },
+  "human_reviewed_cases": 0,
+  "pending_review_cases": 12
+}

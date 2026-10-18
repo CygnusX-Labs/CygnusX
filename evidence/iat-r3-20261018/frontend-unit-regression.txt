@@ -1,0 +1,23 @@
+IAT-R3 focused frontend isolated regression
+started_at=2026-10-17T19:17:12Z
+
+ RUN  v4.1.10 /home/zj/zj_code_libarary/OmicHub/frontend
+
+
+ Test Files  13 passed (13)
+      Tests  60 passed (60)
+   Start at  03:17:12
+   Duration  2.61s (transform 2.32s, setup 0ms, import 11.81s, tests 1.26s, environment 9.17s)
+
+vitest_exit_code=0
+vue_tsc_exit_code=0
+
+Full frontend regression rerun: 2026-10-18
+command: cd frontend && npm test -- --run
+Test Files 88 passed (88)
+Tests 597 passed (597)
+vitest_exit_code=0
+command: cd frontend && npm run type-check
+vue_tsc_exit_code=0
+
+Focused cases fixed and rerun: 3 files, 14 tests passed. Updates align token expectations with cachedOutput, room send assertions with the current five-argument API, workspace references with their path IDs, and test cleanup with mounted app lifetimes.

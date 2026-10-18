@@ -1,0 +1,22 @@
+=== os ===
+Linux zj 6.8.0-147-generic #147-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep 24 11:33:16 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.3 LTS (Noble Numbat)"
+=== identity ===
+uid=1000(zj) gid=1000(zj) groups=1000(zj),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),101(lxd),986(ollama),987(docker)
+=== kernel tunables ===
+kernel.apparmor_restrict_unprivileged_userns = 1
+kernel.unprivileged_userns_clone = 1
+=== docker ===
+28.3.3 client / 28.3.3 server
+default
+DOCKER_HOST=<unset>
+=== compose ===
+Docker Compose version v2.39.1
+=== node/npm ===
+v24.11.0
+11.6.1
+=== npm registry ===
+https://registry.npmmirror.com

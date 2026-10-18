@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/unit/test_download_history_projection.py ....F                     [100%]
+
+=================================== FAILURES ===================================
+____ test_download_output_without_name_is_filtered_by_stream_local_call_id _____
+tests/unit/test_download_history_projection.py:95: in test_download_output_without_name_is_filtered_by_stream_local_call_id
+    assert "HISTORY_CANARY" not in str(stream.before_send(output))
+E   assert 'HISTORY_CANARY' not in "ChatChunk(t...RY_CANARY'})"
+E     
+E     'HISTORY_CANARY' is contained here:
+E       'password=HISTORY_CANARY', metadata={'tool_call_id': 'call-one', 'data': 'https://example.org/f?token=HISTORY_CANARY'})
+E     ?           ++++++++++++++
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_history_projection.py::test_download_output_without_name_is_filtered_by_stream_local_call_id
+==================== 1 failed, 4 passed, 1 warning in 0.29s ====================

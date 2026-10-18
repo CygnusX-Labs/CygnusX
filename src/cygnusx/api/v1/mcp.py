@@ -106,7 +106,12 @@ async def rollback_server(
     server_id: UUID,
     req: RollbackMCPServerDTO,
 ) -> MCPServerDTO:
-    return await service.rollback_server(server_id, req.version, actor_id=current_user_id)
+    return await service.rollback_server(
+        server_id,
+        req.version,
+        actor_id=current_user_id,
+        expected_current_version=req.expected_current_version,
+    )
 
 
 @router.get("/servers/{server_id}", response_model=MCPServerDTO, summary="Server 详情")

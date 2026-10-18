@@ -37,6 +37,9 @@ export interface ToolLink {
 
 const base = (session: string) => `/agent-tools/sessions/${encodeURIComponent(session)}`
 export const agentToolsApi = {
+  async capabilities(session: string): Promise<{ tools: { capability_id: string }[]; write_enabled: false; gate: string }> {
+    return (await apiClient.get(`${base(session)}/capabilities`)).data
+  },
   async invoke(session: string, capability_id: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
     return (await apiClient.post(`${base(session)}/invoke`, { capability_id, arguments: args })).data
   },

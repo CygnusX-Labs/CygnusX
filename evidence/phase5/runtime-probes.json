@@ -1,0 +1,17 @@
+{
+  "docker": {
+    "connected": false,
+    "error_type": "PermissionError",
+    "errno": 1
+  },
+  "postgres": {
+    "connected": false,
+    "error_type": "PermissionError",
+    "errno": 1
+  },
+  "redis": {
+    "connected": false,
+    "error_type": "PermissionError",
+    "errno": 1
+  }
+}

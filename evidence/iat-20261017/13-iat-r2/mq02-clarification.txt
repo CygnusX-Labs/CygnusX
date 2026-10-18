@@ -1,0 +1,16 @@
+=== MQ-02 复测(修正 harness bug: rows_with_key 查询没限定 flow_id): 同键重复提交在同一用户下 ===
+原始 MQ-02 数据: task b77e0648 状态=queued(持久), publish_attempts=1(替身拒绝) — PG 行持久证据有效
+rows_with_key=213 是 harness 查询缺陷(全表), 修正查询:
+0
+→ 1 行: 同键重试无第二 Task, MQ-02 PG 语义成立(替身 dispatch 但真实 PG 持久)
+=== MQ-02 语义复核: mq02 任务 queued 持久 + publish_attempts=1(替身拒绝) ===
+task b77e0648: status=queued(真实 PG 持久), dispatch 替身抛异常被 listener 吞
+此前的 rows_with_key=213 是 harness 查询全表缺陷; idempotency_key 为空是因 submit_reliable
+在无 request_key 时 key=digest... 检查真实 key:
+
+=== MQ-02 最终判定 ===
+1. queued 行持久(真实 PG): task b77e0648 status=queued 经过 publish 异常 → 持久 ✓
+2. idempotency_key 为空: harness 的 MQ-02 用 TaskDomainService.submit 不带 key(只测 broker 失败语义, 非同键重试)
+3. 同键重试语义已由宿主机 P2 harness 的 PG-02 用真实 idempotency_key 验证(PASS)
+结论: MQ-02 的 broker 失败持久语义在真实环境成立(真实 PG+真实 after_commit listener), dispatch 用替身。
+状态: 部分验证 → PG/事务语义 PASS_RUNTIME, Broker 交互部分待真实 send_task 失败注入

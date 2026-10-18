@@ -1,0 +1,102 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 88 items
+
+tests/unit/test_download_service.py F....FF.                             [  9%]
+tests/unit/test_download_registration_contract.py ...................... [ 34%]
+.......                                                                  [ 42%]
+tests/unit/test_dataset_import_handoff.py ...FFF                         [ 48%]
+tests/unit/test_download_s3_closure.py ................................. [ 86%]
+............                                                             [100%]
+
+=================================== FAILURES ===================================
+_______________ test_submit_creates_download_task_and_dispatches _______________
+tests/unit/test_download_service.py:74: in test_submit_creates_download_task_and_dispatches
+    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1446: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1419: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'cygnusx.application.services.download_service' from '/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/download_service.py'> does not have the attribute 'enqueue_task'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:51.997[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________________ test_submit_cloud_storage_task_and_dispatches _________________
+tests/unit/test_download_service.py:168: in test_submit_cloud_storage_task_and_dispatches
+    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1446: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1419: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'cygnusx.application.services.download_service' from '/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/download_service.py'> does not have the attribute 'enqueue_task'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:52.289[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_____________ test_submit_direct_link_task_persists_batch_options ______________
+tests/unit/test_download_service.py:207: in test_submit_direct_link_task_persists_batch_options
+    with patch("cygnusx.application.services.download_service.enqueue_task") as mock_enqueue:
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1446: in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:1419: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'cygnusx.application.services.download_service' from '/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/download_service.py'> does not have the attribute 'enqueue_task'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:52.568[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+__ test_isolated_import_task_link_file_integrity_partial_and_restore[success] __
+tests/unit/test_dataset_import_handoff.py:234: in test_isolated_import_task_link_file_integrity_partial_and_restore
+    queued = await service.execute(owner, project, iid)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/dataset_import_service.py:423: in execute
+    raise ConflictError(
+E   cygnusx.core.exceptions.ConflictError: 投递结果需人工对账，禁止自动重放
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:55.997[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+__ test_isolated_import_task_link_file_integrity_partial_and_restore[failed] ___
+tests/unit/test_dataset_import_handoff.py:234: in test_isolated_import_task_link_file_integrity_partial_and_restore
+    queued = await service.execute(owner, project, iid)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/dataset_import_service.py:423: in execute
+    raise ConflictError(
+E   cygnusx.core.exceptions.ConflictError: 投递结果需人工对账，禁止自动重放
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:56.028[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_______ test_ambiguous_submit_not_replayed_and_source_change_invalidates _______
+tests/unit/test_dataset_import_handoff.py:278: in test_ambiguous_submit_not_replayed_and_source_change_invalidates
+    assert calls == [1]
+E   assert [] == [1]
+E     
+E     Right contains one more item: 1
+E     Use -v to get more diff
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:35:56.052[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_service.py::test_submit_creates_download_task_and_dispatches
+FAILED tests/unit/test_download_service.py::test_submit_cloud_storage_task_and_dispatches
+FAILED tests/unit/test_download_service.py::test_submit_direct_link_task_persists_batch_options
+FAILED tests/unit/test_dataset_import_handoff.py::test_isolated_import_task_link_file_integrity_partial_and_restore[success]
+FAILED tests/unit/test_dataset_import_handoff.py::test_isolated_import_task_link_file_integrity_partial_and_restore[failed]
+FAILED tests/unit/test_dataset_import_handoff.py::test_ambiguous_submit_not_replayed_and_source_change_invalidates
+=================== 6 failed, 82 passed, 1 warning in 4.21s ====================

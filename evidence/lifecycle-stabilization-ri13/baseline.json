@@ -1,0 +1,14 @@
+{
+  "head": "51011118535f782f5282f638b4a54649c79bf6d6",
+  "files": {
+    "src/cygnusx/application/schemas/execution_definition.py": "c63f57827e5964a09feb6986ffbb81e1340750aaca138d3cff10a9f6a7b03b50",
+    "docs/contracts/cygnusx-execution-definition-v1.schema.json": "4e85b03f97e257b5d9c354f9fb1d6174bb52f8a49b4e338dca11a461d8b55753",
+    "src/cygnusx/application/services/task_service.py": "1004632d5c36e1badcf3e93c35cbbafdc0018690e893c69d769e83e9c4b92922",
+    "src/cygnusx/application/services/research_execution_binding.py": "2bf47bf13c90c52425e6585f4132ec325a602bc76329bc3fc6f4046ff462b9e0",
+    "src/cygnusx/infrastructure/celery_app/tasks/analysis.py": "4ea5b6aa2d69c6173595255866e55d90ab777d30d6417cbfe1031a0d5d0f79c3",
+    "src/cygnusx/application/services/research_provenance_service.py": "0d8ed055d84f5b7231a1e67e98186c31252678e2b9ec91a942a604cb7dcd089e",
+    "src/cygnusx/application/services/report_snapshot_builder.py": "7b865afa0c8d91627389d137a0e59d8e06336672939f07a3a262be00b4ff3644",
+    "src/cygnusx/application/schemas/download_capability.py": "25b8cd0224270794dc7e282e88bf15a12a3bb50896a8e6a7d7453ffc6c5067dd",
+    "src/cygnusx/tools/download/config.py": "2c9a3191df4716ffc1ae606c36c46a96a8eff1569137839ddd7bfb70cd4a74e8"
+  }
+}

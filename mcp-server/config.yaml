@@ -40,3 +40,8 @@ tool_groups:
   platform: true     # 平台信息 (user_info/platform_status)
   pipelines: true    # 完整分析流程 (RNA-seq/ATAC-seq prepare/submit/status/results)
   seqout: true       # 公共数据库检索 (seqout_search/project_detail/sample_manifest/resolve)
+
+# MCP 工具固定化（阶段 3）：旧 RNA/ATAC 四件套发现开关。
+# true=旧工具可用（默认，现状/回退）；false=同名工具变为迁移 stub，
+# 返回明确"已迁移"提示。灰度验收通过后再翻转为 false（与后端 LEGACY_PIPELINE_TOOLS 同步）。
+legacy_pipeline_tools: true

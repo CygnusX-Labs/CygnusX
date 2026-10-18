@@ -7,13 +7,15 @@ import json
 import re
 from pathlib import Path
 
+from cygnusx.domain.download_contract import SRA_METHODS
+
 
 class EBIDownloadError(ValueError):
     """Raised when an MAS download request falls outside the fixed public-data contract."""
 
 
 _ACCESSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-_DOWNLOAD_METHODS = frozenset({"aws", "aspera", "ftp"})
+_DOWNLOAD_METHODS = SRA_METHODS
 
 
 def build_ebi_download_command(

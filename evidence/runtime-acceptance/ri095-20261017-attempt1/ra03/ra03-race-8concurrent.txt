@@ -1,0 +1,10 @@
+=== 8 concurrent creates, distinct request_key, same source (RA03 race) ===
+window_seconds=1
+req1   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"queued","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cd
+req2   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"queued","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cd
+req3   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"validating","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26
+req4   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"queued","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cd
+req5   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"publishing","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26
+req6   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"ready","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cdd
+req7   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"ready","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cdd
+req8   HTTP/1.1 200 OK  {"id":"99323137-44f8-4bea-ad62-b65ad10d3962","status":"ready","source_digest":"987ad8e82d0262dc645b0a5214b273a0a4b18781796e26f3cdd

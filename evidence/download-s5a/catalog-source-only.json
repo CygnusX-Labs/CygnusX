@@ -1,0 +1,629 @@
+{
+  "schema_version": "cygnusx.download_capabilities.v1",
+  "sources": [
+    {
+      "source_type": "sra",
+      "supported_methods": [
+        "aws",
+        "ftp"
+      ],
+      "method_parameters": [
+        {
+          "name": "multithreads",
+          "minimum": 1,
+          "maximum": 32
+        },
+        {
+          "name": "aws_threads",
+          "minimum": 1,
+          "maximum": 64
+        }
+      ],
+      "input_accession_types": [
+        "SRR",
+        "ERR",
+        "DRR",
+        "SRP",
+        "ERP",
+        "DRP",
+        "PRJNA",
+        "PRJEB",
+        "PRJDB"
+      ],
+      "protocols": [
+        "https",
+        "ftp"
+      ],
+      "binary_name": "EBIDownload",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": true,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GSE/GSM require metadata resolution",
+        "Dataset raw import selects resolved SRR only"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "CONFIGURED",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "direct_link",
+      "supported_methods": [
+        "ftp",
+        "http",
+        "https"
+      ],
+      "method_parameters": [
+        {
+          "name": "download_threads",
+          "minimum": 1,
+          "maximum": 16
+        }
+      ],
+      "input_accession_types": [],
+      "protocols": [
+        "ftp",
+        "http",
+        "https"
+      ],
+      "binary_name": "aria2c",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GEO supplementary requires authoritative source selection"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "cloud_storage",
+      "supported_methods": [
+        "aliyun",
+        "volc",
+        "huawei"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "oss",
+        "tos",
+        "obs"
+      ],
+      "binary_name": "ossutil/tosutil/obsutil",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "existing_project_file",
+      "supported_methods": [
+        "attach_file_record"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [],
+      "binary_name": null,
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "authorized FileRecord only; no transport",
+        "Dataset validation and human review remain required"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "source_type": "geo_metadata",
+      "supported_methods": [
+        "geo_soft",
+        "ena_filereport"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "https"
+      ],
+      "binary_name": null,
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "bounded_metadata_only_not_scientific_file_download",
+        "DATASET_READ_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": false,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:datasets",
+      "requires_project": false,
+      "query_tools": [
+        "dataset.discover"
+      ],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN"
+      ]
+    },
+    {
+      "source_type": "ncbi_sra",
+      "supported_methods": [
+        "sra.aws"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "sra.aws"
+      ],
+      "binary_name": "EBIDownload",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": true,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GSE/GSM require metadata resolution",
+        "Dataset raw import selects resolved SRR only",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [
+        "dataset.discover"
+      ],
+      "states": [
+        "CODE_AVAILABLE",
+        "CONFIGURED",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "ena_fastq",
+      "supported_methods": [
+        "sra.ftp"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "sra.ftp"
+      ],
+      "binary_name": "EBIDownload",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": true,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GSE/GSM require metadata resolution",
+        "Dataset raw import selects resolved SRR only",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [
+        "dataset.discover"
+      ],
+      "states": [
+        "CODE_AVAILABLE",
+        "CONFIGURED",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "geo_supplementary",
+      "supported_methods": [
+        "https"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "https"
+      ],
+      "binary_name": "aria2c",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GEO supplementary requires authoritative source selection",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [
+        "dataset.discover"
+      ],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "http_direct_link",
+      "supported_methods": [
+        "http"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "http"
+      ],
+      "binary_name": "aria2c",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GEO supplementary requires authoritative source selection",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "https_direct_link",
+      "supported_methods": [
+        "https"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "https"
+      ],
+      "binary_name": "aria2c",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GEO supplementary requires authoritative source selection",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "ftp",
+      "supported_methods": [
+        "ftp"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "ftp"
+      ],
+      "binary_name": "aria2c",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "GEO supplementary requires authoritative source selection",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "oss",
+      "supported_methods": [
+        "oss"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "oss"
+      ],
+      "binary_name": "ossutil/tosutil/obsutil",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "tos",
+      "supported_methods": [
+        "tos"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "tos"
+      ],
+      "binary_name": "ossutil/tosutil/obsutil",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "obs",
+      "supported_methods": [
+        "obs"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [
+        "obs"
+      ],
+      "binary_name": "ossutil/tosutil/obsutil",
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "final_dns_redirect_egress_not_runtime_accepted",
+        "transfer_time_hard_budget_not_runtime_accepted",
+        "binary_version_not_verified_on_worker",
+        "TRANSPORT_RUNTIME_UNVERIFIED",
+        "TRANSPORT_RELEASE_GATE_CLOSED",
+        "DOWNLOAD_SOURCE_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "cloud_drive",
+      "supported_methods": [],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [],
+      "binary_name": null,
+      "binary_version": null,
+      "verification_status": "NOT_IMPLEMENTED",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "PROTOCOL_UNSUPPORTED",
+        "UI_PLACEHOLDER_ONLY"
+      ],
+      "code_available": false,
+      "transport_required": true,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:discovery",
+      "requires_project": false,
+      "query_tools": [],
+      "states": [
+        "NOT_IMPLEMENTED",
+        "UNKNOWN",
+        "EXECUTION_BLOCKED"
+      ]
+    },
+    {
+      "source_type": "existing_dataset_assets",
+      "supported_methods": [
+        "file_record"
+      ],
+      "method_parameters": [],
+      "input_accession_types": [],
+      "protocols": [],
+      "binary_name": null,
+      "binary_version": null,
+      "verification_status": "SUPPORTED_BY_CODE",
+      "runtime_readiness": "BLOCKED",
+      "enabled_by_configuration": false,
+      "limitations": [
+        "owned_project_only",
+        "scientific_review_is_independent",
+        "DATASET_READ_DISABLED"
+      ],
+      "code_available": true,
+      "transport_required": false,
+      "runtime_verification": "UNKNOWN",
+      "execution_allowed": false,
+      "required_scope": "read:datasets",
+      "requires_project": true,
+      "query_tools": [
+        "dataset.list_project_assets",
+        "dataset.inspect",
+        "dataset.list_files"
+      ],
+      "states": [
+        "CODE_AVAILABLE",
+        "UNKNOWN"
+      ]
+    }
+  ],
+  "runtime_status": "BLOCKED",
+  "write_enabled": false,
+  "candidate_accessions": [
+    "SRR",
+    "PRJNA"
+  ],
+  "runtime_verified_accessions": [],
+  "limits": {
+    "max_links": 100,
+    "max_ftp_depth": 8,
+    "max_ftp_files": 1000,
+    "ftp_timeout_seconds": 30,
+    "registration_max_files": 10000,
+    "registration_max_bytes": 1099511627776,
+    "transfer_max_bytes": null,
+    "transfer_budget_enforced": false
+  },
+  "legacy_method_policy": "aws/ftp retained; aspera/prefetch/auto refused; no silent remapping"
+}

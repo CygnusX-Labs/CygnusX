@@ -1,0 +1,1382 @@
+# 调查附录；不是应用配置，不由平台加载。
+baseline: '2026-10-16'
+evidence_index: appendix-download-evidence-index.md
+capabilities:
+- capability_id: D01
+  ui_label: NCBI SRA reads
+  source_family: sra
+  input_identifiers:
+  - SRR/ERR/DRR，SRX/SRP/PRJNA 需 ENA 展开
+  resolver:
+    file: pipelines/EBIDownload/crates/ebidownload-core/src/lib.rs
+    function: fetch_ena_data
+    evidence: E01,E02,E04,E05,E30,E31
+  transport_protocols_declared:
+  - ENA metadata HTTPS
+  - AWS公共SRA镜像
+  - ENA FTP URL/wget
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: accession 未约束；Aspera 枚举漂移；Worker 未认证
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: EBIDownload；子进程wget/fasterq-dump/压缩依赖
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: EBIDownload；子进程wget/fasterq-dump/压缩依赖
+    version: 宿主 EBIDownload 1.4.0；Worker UNKNOWN
+    sha256: 6628ad8fd489eee68b9ebd58299f32c021812b386435a82193911c4494e219c4 (HOST_ONLY)
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/download_service.py
+    lines: 48,124,133,143,167
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-cli/src/main.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-core/src/lib.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - accession 未约束；Aspera 枚举漂移；Worker 未认证
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: ENA filereport → EBIDownload；AWS SRA→fasterq-dump→压缩；FTP→wget
+    FASTQ；非 GEO resolver
+- capability_id: D02
+  ui_label: ENA FASTQ
+  source_family: sra
+  input_identifiers:
+  - study/experiment/run；权威 fastq_ftp/md5/bytes
+  resolver:
+    file: pipelines/EBIDownload/crates/ebidownload-core/src/lib.rs
+    function: fetch_ena_data
+    evidence: E16,E30,E31,E32
+  transport_protocols_declared:
+  - ENA metadata HTTPS
+  - AWS公共SRA镜像
+  - ENA FTP URL/wget
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: Dataset raw 仅 SRR；ERR/DRR 不获 import 准入；多文件/配对需审阅
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: EBIDownload；子进程wget/fasterq-dump/压缩依赖
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: EBIDownload；子进程wget/fasterq-dump/压缩依赖
+    version: 宿主 EBIDownload 1.4.0；Worker UNKNOWN
+    sha256: 6628ad8fd489eee68b9ebd58299f32c021812b386435a82193911c4494e219c4 (HOST_ONLY)
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/infrastructure/geo/adapter.py
+    lines: 40,101,148,183,269
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-cli/src/main.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-core/src/lib.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-core/src/ftp.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - Dataset raw 仅 SRR；ERR/DRR 不获 import 准入；多文件/配对需审阅
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: Rust filereport + process_ena_records；最多前两条 FASTQ 映射；direct
+    URL 则走 aria2
+- capability_id: D03
+  ui_label: GEO metadata
+  source_family: metadata
+  input_identifiers:
+  - GSE/GSM/GPL + SRA 关联
+  resolver:
+    file: src/cygnusx/infrastructure/geo/adapter.py
+    function: GeoMetadataAdapter.resolve
+    evidence: E16,E15,E39
+  transport_protocols_declared:
+  - HTTPS metadata only
+  transport_protocols_verified: []
+  api:
+    method: GET discovery / POST prepare
+    path: /api/v1/projects/{project_id}/dataset-discovery/{accession}；/api/v1/projects/{project_id}/import-proposals
+    auth: CurrentUserId + Dataset read开关 + owner项目；持久预案需downloads模块
+    schema: accession / ImportPrepare
+  service:
+    file: src/cygnusx/application/services/dataset_import_service.py
+    method: discover / prepare（D03不下载文件）
+    validation: 本地只读开关关闭；来源 license/access_status UNKNOWN；不是下载
+  worker:
+    task: NOT_APPLICABLE（当前步骤不调下载Worker）
+    queue: NOT_APPLICABLE
+    image: NOT_APPLICABLE；若后续下载则运行未知
+    binary: 不适用：仅Python httpx元数据
+    mounts: NOT_APPLICABLE；文件验证使用受管owner存储路径
+  execution_binary:
+    name: 不适用：仅Python httpx元数据
+    version: NOT_APPLICABLE（Python服务或UI占位）
+    sha256: NOT_APPLICABLE
+    verified_in_worker: false
+  output:
+    task: 当前步骤不创建远程下载Task
+    file_record: D14复用已有FileRecord；D15按上传服务登记；元数据/预案不产科研文件
+    dataset_asset: 显式attach/verify；D10没有产出
+    checksum: D03 response_sha256为元数据摘要；D14/15 Handoff.verify实算文件SHA；D10无
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 只读发现/已有资产查询无需批准；人工资产/上传写走JWT授权；Agent prepare产确认，execute仍禁用
+    ttl: 仅prepare确认默认1800秒；其余不适用
+    parameter_hash: 仅预案绑定SHA-256；其余不适用
+    one_time: 仅确认消费使用CAS；非这些只读/上传动作统一语义
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: D03 metadata响应2MiB/samples24/runs100；D14复用文件并独立内容验证；D15走上传配额；D10无执行；D16按具体prepare预算
+  retry_resume_cancel: 不适用下载Worker；上传分片由独立UploadSession管理，Agent预案按既有TTL恢复
+  partial_failure_recovery: 发现返回明确缺口；资产验证保留未知；非下载Task partial
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/infrastructure/geo/adapter.py
+    lines: 40,101,148,183,269
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_import_service.py
+    lines: 136,343,426
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/api/v1/datasets.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: VERIFIED
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 本地只读开关关闭；来源 license/access_status UNKNOWN；不是下载
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: GeoMetadataAdapter.resolve：SOFT→GSM→相关 accession→ENA；不传输数据文件
+- capability_id: D04
+  ui_label: GEO supplementary
+  source_family: direct_link
+  input_identifiers:
+  - 权威 SOFT 列出的附件 URL
+  resolver:
+    file: src/cygnusx/infrastructure/geo/adapter.py
+    function: GeoMetadataAdapter.resolve
+    evidence: E16,E15,E05,E37
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: GET discovery / POST prepare
+    path: /api/v1/projects/{project_id}/dataset-discovery/{accession}；/api/v1/projects/{project_id}/import-proposals
+    auth: CurrentUserId + Dataset read开关 + owner项目；持久预案需downloads模块
+    schema: accession / ImportPrepare
+  service:
+    file: src/cygnusx/application/services/dataset_import_service.py
+    method: discover / prepare（D03不下载文件）
+    validation: 无真实传输；task_id 登记断链；来源/科学审阅待做
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+    archive: GeoProcessedDataService.expand保留原archive，子资产classification保存parent_archive_file_record_id/parent_sha256；运行禁用
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/infrastructure/geo/adapter.py
+    lines: 40,101,148,183,269
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_import_service.py
+    lines: 136,343,426
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/domain/dataset/archives.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/geo_processed_data_service.py
+    lines: 65 expand / 74 register；见E46/E47
+    test: I05真实FileRegistry+合成archive，无下载
+    layer: S/I
+  - path: src/cygnusx/infrastructure/storage/file_registry.py
+    lines: 65 expand / 74 register；见E46/E47
+    test: I05真实FileRegistry+合成archive，无下载
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 无真实传输；task_id 登记断链；来源/科学审阅待做
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: ImportPrepare processed→trusted HTTPS→direct_link→后续解压验证
+- capability_id: D05
+  ui_label: GEO Series Matrix
+  source_family: direct_link
+  input_identifiers:
+  - 仅真实来源 URL/附件候选
+  resolver:
+    file: src/cygnusx/infrastructure/geo/adapter.py
+    function: GeoMetadataAdapter.resolve
+    evidence: E16,E15,E38
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: GET discovery / POST prepare
+    path: /api/v1/projects/{project_id}/dataset-discovery/{accession}；/api/v1/projects/{project_id}/import-proposals
+    auth: CurrentUserId + Dataset read开关 + owner项目；持久预案需downloads模块
+    schema: accession / ImportPrepare
+  service:
+    file: src/cygnusx/application/services/dataset_import_service.py
+    method: discover / prepare（D03不下载文件）
+    validation: 不能推造 URL；Series Matrix 不认 raw counts
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+    archive: GeoProcessedDataService.expand保留原archive，子资产classification保存parent_archive_file_record_id/parent_sha256；运行禁用
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/infrastructure/geo/adapter.py
+    lines: 40,101,148,183,269
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_import_service.py
+    lines: 136,343,426
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/domain/dataset/validation.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/geo_processed_data_service.py
+    lines: 65 expand / 74 register；见E46/E47
+    test: I05真实FileRegistry+合成archive，无下载
+    layer: S/I
+  - path: src/cygnusx/infrastructure/storage/file_registry.py
+    lines: 65 expand / 74 register；见E46/E47
+    test: I05真实FileRegistry+合成archive，无下载
+    layer: S/I
+  ui_entry: 'NO'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 不能推造 URL；Series Matrix 不认 raw counts
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: 没有专用 Series Matrix URL 生成器；显式权威候选可经 processed
+- capability_id: D06
+  ui_label: HTTPS 直链
+  source_family: direct_link
+  input_identifiers:
+  - https:// 文件 URL
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E01,E02,E05
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: 无每跳 DNS/重定向准入、实际字节硬预算、来源 SHA
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 无每跳 DNS/重定向准入、实际字节硬预算、来源 SHA
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: aria2c argv 批量下载
+- capability_id: D07
+  ui_label: HTTP 直链
+  source_family: direct_link
+  input_identifiers:
+  - http:// 文件 URL
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E01,E02,E05
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: 不默认拒绝 HTTP；整数地址与域名解析缺口
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 不默认拒绝 HTTP；整数地址与域名解析缺口
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: aria2c；DTO 接受明文 HTTP
+- capability_id: D08
+  ui_label: FTP / FTPS
+  source_family: direct_link
+  input_identifiers:
+  - ftp:// 文件或尾 / 目录；ftps:// 被拒绝
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E02,E05
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: 无登录参数；URL 账户拒绝；无 FTP_TLS；数据连接/目录预算未验
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 无登录参数；URL 账户拒绝；无 FTP_TLS；数据连接/目录预算未验
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: 匿名 FTP 目录 ftplib.FTP→nlst 递归，文件 aria2c
+- capability_id: D09
+  ui_label: 对象存储
+  source_family: cloud_storage
+  input_identifiers:
+  - oss://、tos://、obs://；HTTPS presigned 属 D06
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E02,E05,E09
+  transport_protocols_declared:
+  - oss
+  - tos
+  - obs
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: 凭据/region/endpoint/CLI 版本未知；不能以平台 S3 存储适配器证明远程拉取
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: ossutil / tosutil / obsutil
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: ossutil / tosutil / obsutil
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: tool_configs/download/download_config.yaml
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 凭据/region/endpoint/CLI 版本未知；不能以平台 S3 存储适配器证明远程拉取
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: ossutil cp / tosutil cp / obsutil cp；无通用 s3:// 或 COS provider
+- capability_id: D10
+  ui_label: 云盘极速提取
+  source_family: none
+  input_identifiers:
+  - 百度/123 分享链接与提取码
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E01,E02
+  transport_protocols_declared: []
+  transport_protocols_verified: []
+  api:
+    method: NOT_FOUND
+    path: NOT_FOUND
+    auth: NOT_APPLICABLE
+    schema: DownloadSource无cloud_drive
+  service:
+    file: NOT_FOUND
+    method: NOT_FOUND；前端handleSubmit return
+    validation: 仅UI表单
+  worker:
+    task: NOT_APPLICABLE（当前步骤不调下载Worker）
+    queue: NOT_APPLICABLE
+    image: NOT_APPLICABLE；若后续下载则运行未知
+    binary: NOT_FOUND
+    mounts: NOT_APPLICABLE；文件验证使用受管owner存储路径
+  execution_binary:
+    name: NOT_FOUND
+    version: NOT_APPLICABLE（Python服务或UI占位）
+    sha256: NOT_APPLICABLE
+    verified_in_worker: false
+  output:
+    task: 当前步骤不创建远程下载Task
+    file_record: D14复用已有FileRecord；D15按上传服务登记；元数据/预案不产科研文件
+    dataset_asset: 显式attach/verify；D10没有产出
+    checksum: D03 response_sha256为元数据摘要；D14/15 Handoff.verify实算文件SHA；D10无
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: 无后端预案或执行；只有UI return
+  confirmation:
+    mechanism: 只读发现/已有资产查询无需批准；人工资产/上传写走JWT授权；Agent prepare产确认，execute仍禁用
+    ttl: 仅prepare确认默认1800秒；其余不适用
+    parameter_hash: 仅预案绑定SHA-256；其余不适用
+    one_time: 仅确认消费使用CAS；非这些只读/上传动作统一语义
+  url_network_policy: NOT_APPLICABLE；没有提取请求
+  quota_size_limits: D03 metadata响应2MiB/samples24/runs100；D14复用文件并独立内容验证；D15走上传配额；D10无执行；D16按具体prepare预算
+  retry_resume_cancel: 不适用下载Worker；上传分片由独立UploadSession管理，Agent预案按既有TTL恢复
+  partial_failure_recovery: 发现返回明确缺口；资产验证保留未知；非下载Task partial
+  agent_registration:
+    gateway: NOT_FOUND（无云盘业务能力）
+    builtin_mcp: NOT_FOUND（无云盘业务能力）
+    external_mcp: NOT_FOUND（无云盘业务能力）
+    node: NOT_FOUND（无云盘业务能力）
+    flow_agent: NOT_FOUND（无云盘业务能力）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: NOT_FOUND
+  backend_impl: STUB
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 保持人工展示，禁止 Agent 宣称可提取
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: handleSubmit 直接 warning return；不存在 cloud_drive DownloadSource
+- capability_id: D11
+  ui_label: EBI/Ensembl/UCSC 公共文件
+  source_family: direct_link
+  input_identifiers:
+  - 显式 URL；非任意 accession resolver
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E01,E02,E16
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: 无各数据库专用资源解析与授权 catalog
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/download.py
+    lines: 12,21,46,95
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/geo/adapter.py
+    lines: 40,101,148,183,269
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 无各数据库专用资源解析与授权 catalog
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: 普通 URL 可走 aria2；Dataset 可信主机仅四个，不覆盖任意 Ensembl/UCSC
+- capability_id: D12
+  ui_label: 批量直链
+  source_family: direct_link
+  input_identifiers:
+  - links[]；UI 换行/逗号拆分去重
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E01,E03,E05
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: CLI 失败不登记部分文件；无 per-file 状态/内容去重
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c；FTP目录展开为Python ftplib
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c；FTP目录展开为Python ftplib
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: frontend/src/views/DownloadsView.vue
+    lines: 193,217,258
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/api/v1/downloads.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - CLI 失败不登记部分文件；无 per-file 状态/内容去重
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: 一个请求一个 Task，aria2 多 URL；API 最多100；FTP 展开后未再限量
+- capability_id: D13
+  ui_label: 断点续传/并发
+  source_family: mixed
+  input_identifiers:
+  - 原 work_dir/CLI checkpoint
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E05,E30,E32,E35
+  transport_protocols_declared:
+  - http
+  - https
+  - ftp
+  - AWS公共SRA镜像
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/downloads
+    auth: CurrentUserId；人类 JWT 或 API Key；Agent 写入另受 gate
+    schema: DownloadRequest
+  service:
+    file: src/cygnusx/application/services/download_service.py
+    method: DownloadService.submit
+    validation: CLI 特性不等于 Worker crash 恢复；cancel 不见子进程终止连接
+  worker:
+    task: run_download
+    queue: analysis (默认 Celery；dispatcher 可切 RocketMQ)
+    image: 声明 cygnusx-worker:v0.0.2dev；运行未知
+    binary: aria2c / EBIDownload / wget / cloud CLI
+    mounts: E28 shared_data_dir→STORAGE_PATH；真实挂载未知
+  execution_binary:
+    name: aria2c / EBIDownload / wget / cloud CLI
+    version: UNKNOWN/不适用
+    sha256: UNKNOWN/不适用
+    verified_in_worker: false
+  output:
+    task: 人工 submit 返回 owner Task；prepare 不建 Task
+    file_record: Worker 扫描登记；task_id 未写/source 默认 upload/checksum 空
+    dataset_asset: 需 Dataset 显式挂接或 gated reconcile
+    checksum: 源 MD5/实际 SHA/manifest hash 不等价
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 服务端记录；人类 JWT 审批；人工直接下载可不携带确认
+    ttl: 默认 1800 秒
+    parameter_hash: 规范 JSON SHA-256
+    one_time: Redis Lua CAS；本轮仅 fake/memory 验证，无真实Redis两进程
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: API links<=100；Dataset prepare预算+配额；实际 Worker 字节硬限未接入
+  retry_resume_cancel: CLI 局部续传；Task取消/Worker重启实证缺失
+  partial_failure_recovery: Task 无 partial；Dataset 有 PARTIAL/RECONCILIATION_REQUIRED；不可据此自动重投
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/infrastructure/celery_app/tasks/download.py
+    lines: 145,245,444,568,592,633,740
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-cli/src/main.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: pipelines/EBIDownload/crates/ebidownload-core/src/ftp.rs
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/task_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - CLI 特性不等于 Worker crash 恢复；cancel 不见子进程终止连接
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: aria2 --continue；wget -c；Rust ResumableDownloader；TOS checkpoint
+- capability_id: D14
+  ui_label: 已有项目 FileRecord
+  source_family: existing
+  input_identifiers:
+  - owner-scoped FileRecord ID
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E18,E19,E17
+  transport_protocols_declared: []
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/assets
+    auth: CurrentJwtUserId + Dataset read开关 + owner项目
+    schema: AssetAttach
+  service:
+    file: src/cygnusx/application/services/dataset_service.py
+    method: attach_asset / DatasetHandoffService.verify
+    validation: DatasetRepository.file + owner/project/lifecycle/path
+  worker:
+    task: NOT_APPLICABLE（当前步骤不调下载Worker）
+    queue: NOT_APPLICABLE
+    image: NOT_APPLICABLE；若后续下载则运行未知
+    binary: 不适用：不传输
+    mounts: NOT_APPLICABLE；文件验证使用受管owner存储路径
+  execution_binary:
+    name: 不适用：不传输
+    version: NOT_APPLICABLE（Python服务或UI占位）
+    sha256: NOT_APPLICABLE
+    verified_in_worker: false
+  output:
+    task: 当前步骤不创建远程下载Task
+    file_record: D14复用已有FileRecord；D15按上传服务登记；元数据/预案不产科研文件
+    dataset_asset: 显式attach/verify；D10没有产出
+    checksum: D03 response_sha256为元数据摘要；D14/15 Handoff.verify实算文件SHA；D10无
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 只读发现/已有资产查询无需批准；人工资产/上传写走JWT授权；Agent prepare产确认，execute仍禁用
+    ttl: 仅prepare确认默认1800秒；其余不适用
+    parameter_hash: 仅预案绑定SHA-256；其余不适用
+    one_time: 仅确认消费使用CAS；非这些只读/上传动作统一语义
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: D03 metadata响应2MiB/samples24/runs100；D14复用文件并独立内容验证；D15走上传配额；D10无执行；D16按具体prepare预算
+  retry_resume_cancel: 不适用下载Worker；上传分片由独立UploadSession管理，Agent预案按既有TTL恢复
+  partial_failure_recovery: 发现返回明确缺口；资产验证保留未知；非下载Task partial
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/application/services/dataset_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/database/repositories/dataset_repository.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_handoff_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: VERIFIED
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 旧文件允许显式关联，跨已知项目拒绝；运行开关关闭
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: DatasetService.attach_asset→Handoff.verify；不重复网络下载
+- capability_id: D15
+  ui_label: 本地上传/导入
+  source_family: upload
+  input_identifiers:
+  - chunk/upload/presigned/file ID
+  resolver:
+    file: NOT_APPLICABLE / 无专用resolver
+    function: NOT_APPLICABLE
+    evidence: E40,E45,E18,E17
+  transport_protocols_declared:
+  - HTTP multipart/chunk
+  - platform storage presigned
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/files/upload/init；/upload/chunk；/upload/merge；/presigned-upload
+    auth: CurrentUserId；现有文件权限与配额
+    schema: UploadInitRequest / UploadMergeRequest / presigned DTO
+  service:
+    file: src/cygnusx/application/services/upload_service.py
+    method: init_upload / save_chunk / merge_upload；另见FileService presigned
+    validation: 上传与owner文件登记；不是远程下载
+  worker:
+    task: NOT_APPLICABLE（当前步骤不调下载Worker）
+    queue: NOT_APPLICABLE
+    image: NOT_APPLICABLE；若后续下载则运行未知
+    binary: 不适用：UploadService/StorageBackend
+    mounts: NOT_APPLICABLE；文件验证使用受管owner存储路径
+  execution_binary:
+    name: 不适用：UploadService/StorageBackend
+    version: NOT_APPLICABLE（Python服务或UI占位）
+    sha256: NOT_APPLICABLE
+    verified_in_worker: false
+  output:
+    task: 当前步骤不创建远程下载Task
+    file_record: D14复用已有FileRecord；D15按上传服务登记；元数据/预案不产科研文件
+    dataset_asset: 显式attach/verify；D10没有产出
+    checksum: D03 response_sha256为元数据摘要；D14/15 Handoff.verify实算文件SHA；D10无
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 只读发现/已有资产查询无需批准；人工资产/上传写走JWT授权；Agent prepare产确认，execute仍禁用
+    ttl: 仅prepare确认默认1800秒；其余不适用
+    parameter_hash: 仅预案绑定SHA-256；其余不适用
+    one_time: 仅确认消费使用CAS；非这些只读/上传动作统一语义
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: D03 metadata响应2MiB/samples24/runs100；D14复用文件并独立内容验证；D15走上传配额；D10无执行；D16按具体prepare预算
+  retry_resume_cancel: 不适用下载Worker；上传分片由独立UploadSession管理，Agent预案按既有TTL恢复
+  partial_failure_recovery: 发现返回明确缺口；资产验证保留未知；非下载Task partial
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/api/v1/files.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/upload_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/dataset_handoff_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'YES'
+  api_contract: VERIFIED
+  backend_impl: VERIFIED
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 不是远程下载；presigned 平台存储上传不等于云商直拉
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: FileService/UploadService→FileRecord→显式 Dataset attach/verify
+- capability_id: D16
+  ui_label: Agent 外部 URL 获取
+  source_family: agent
+  input_identifiers:
+  - DiscoveryRef/accession/受控文件引用
+  resolver:
+    file: src/cygnusx/infrastructure/geo/adapter.py
+    function: GeoMetadataAdapter.resolve
+    evidence: E11,E12,E13,E14,E25,E26,E27,E33
+  transport_protocols_declared:
+  - GEO/ENA权威HTTPS元数据及附件（prepare）
+  transport_protocols_verified: []
+  api:
+    method: POST
+    path: /api/v1/agent-tools/sessions/{session_id}/invoke；/api/v1/agent-tools/delegated/invoke
+    auth: Gateway context / 有限委托；read开关；scope交集；批准仅JWT
+    schema: AgentToolCall + DownloadPrepareArgs / DatasetImportArgs
+  service:
+    file: src/cygnusx/application/services/agent_tool_gateway.py
+    method: invoke / _download_proposal / _dataset_tool
+    validation: 任意URL不受旧downloads.prepare支持；dataset必须权威候选
+  worker:
+    task: NOT_APPLICABLE（当前步骤不调下载Worker）
+    queue: NOT_APPLICABLE
+    image: NOT_APPLICABLE；若后续下载则运行未知
+    binary: 只prepare；gated下游复用既有下载器
+    mounts: NOT_APPLICABLE；文件验证使用受管owner存储路径
+  execution_binary:
+    name: 只prepare；gated下游复用既有下载器
+    version: NOT_APPLICABLE（Python服务或UI占位）
+    sha256: NOT_APPLICABLE
+    verified_in_worker: false
+  output:
+    task: 当前步骤不创建远程下载Task
+    file_record: D14复用已有FileRecord；D15按上传服务登记；元数据/预案不产科研文件
+    dataset_asset: 显式attach/verify；D10没有产出
+    checksum: D03 response_sha256为元数据摘要；D14/15 Handoff.verify实算文件SHA；D10无
+  access_control:
+    owner: Task/文件 owner；Gateway active user/session
+    project: 人工下载无项目 FK；Dataset/Gateway 查真实 owner project
+    modules: downloads/files + Agent 入口动态裁剪
+    scopes: read:discovery/read:tasks/read:datasets/prepare:download；执行禁用
+  prepare_execution_boundary: prepare 持久预案/确认不是无 DB 副作用；无 Task/目录；真实执行 BLOCKED
+  confirmation:
+    mechanism: 只读发现/已有资产查询无需批准；人工资产/上传写走JWT授权；Agent prepare产确认，execute仍禁用
+    ttl: 仅prepare确认默认1800秒；其余不适用
+    parameter_hash: 仅预案绑定SHA-256；其余不适用
+    one_time: 仅确认消费使用CAS；非这些只读/上传动作统一语义
+  url_network_policy: GEO exact hosts HTTPS 禁跳转；通用 DTO 仅浅层校验；Worker 未统一复验
+  quota_size_limits: D03 metadata响应2MiB/samples24/runs100；D14复用文件并独立内容验证；D15走上传配额；D10无执行；D16按具体prepare预算
+  retry_resume_cancel: 不适用下载Worker；上传分片由独立UploadSession管理，Agent预案按既有TTL恢复
+  partial_failure_recovery: 发现返回明确缺口；资产验证保留未知；非下载Task partial
+  agent_registration:
+    gateway: 现有 typed schema（条件关闭）
+    builtin_mcp: bioops_ 投影；旧 platform_* 并存且写 gate
+    external_mcp: legacy REST + confirmation；未统一 Gateway
+    node: 固定 callback + 限定委托，无 approve/execute
+    flow_agent: 未找到下载 Gateway 接入（E33）
+  evidence:
+  - path: src/cygnusx/application/services/agent_tool_gateway.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/schemas/agent_tools.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/api/v1/agent_tools.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/agent_tool_delegation.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/application/services/tool_bridge_service.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: src/cygnusx/infrastructure/mcp/presets.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: mcp-server/tools/downloads.py
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  - path: Protocol/FlowFrame/FlowAgent/src/tools/platform.ts
+    lines: 见证据索引函数实际行号；非运行证据
+    test: I01/I02；无真实传输
+    layer: S/I
+  ui_entry: 'NO'
+  api_contract: PARTIAL
+  backend_impl: PARTIAL
+  deployed: UNKNOWN
+  runtime_tested: NOT_TESTED
+  agent_ready: BLOCKED
+  blockers:
+  - 任意 URL 无 Gateway prepare；源码写门禁；FlowAgent 未接下载 Gateway
+  - 无真实 Worker 协议证据；本地 read/prepare 开关关闭
+  implementation_notes: dataset.prepare_import 接受权威候选；downloads.prepare 只 SRR/PRJNA

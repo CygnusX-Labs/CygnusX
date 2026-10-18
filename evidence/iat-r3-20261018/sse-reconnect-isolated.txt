@@ -1,0 +1,48 @@
+IAT-R3 same-generation SSE resume implementation evidence
+Date: 2026-10-18 (workspace local time)
+Scope: disposable SQLite/API ASGI tests and frontend unit tests only.
+
+Backend command:
+  UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/unit/test_treasure_native_access.py -q -m unit
+Result: 37 passed, 1 Pydantic deprecation warning, exit code 0.
+Assertions cover request_id-bound generation identity, durable monotonic event
+sequence, Last-Event-ID replay, no duplicate Agent invocation, request fingerprint
+conflict rejection, canceled partial snapshot persistence, cancellation from a
+separate service instance in the same process, and generation continuation after
+the replay consumer closes. A reconnect receives only later events and does not
+invoke the Agent again. The producer is an in-process asyncio task using a separate
+database session; this does not prove recovery after process exit.
+
+Combined backend regression command:
+  UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/unit/test_treasure_native_access.py tests/unit/test_download_s5b_consumption.py tests/unit/test_deterministic_test_provider.py -q -m unit
+Result: 69 passed, 1 Pydantic deprecation warning, exit code 0. Pytest reported
+success; an OpenTelemetry/Loguru closed-stream logging error occurred at interpreter
+shutdown after the result.
+
+Frontend command:
+  cd frontend && npm test -- --run src/components/research/adapters/__tests__/researchPresentation.test.ts
+Result: 6 tests passed, exit code 0. The parser resumes at an ID cursor and skips
+frames already covered by that cursor.
+
+Full frontend suite was also attempted with `cd frontend && npm test`:
+85 test files passed and 3 failed; 590 tests passed and 7 failed. Failures were in
+`ai-chat` deep-thinking/live-stream expectations and `agent-teams-room-send` cases,
+outside the changed Research Agent files. No pre-change full-suite baseline was
+captured, so these are reported as unrelated failures, not asserted to be pre-existing.
+
+Static checks (all exit code 0):
+  UV_CACHE_DIR=/tmp/uv-cache uv run ruff check src/cygnusx/api/v1/research_agent.py src/cygnusx/application/schemas/research_agent.py src/cygnusx/application/services/research_treasure_service.py src/cygnusx/infrastructure/database/models/chat.py tests/unit/test_treasure_native_access.py alembic/versions/resstream01_add_research_request_event_resume.py
+  UV_CACHE_DIR=/tmp/uv-cache uv run mypy src/cygnusx/application/services/research_treasure_service.py src/cygnusx/api/v1/research_agent.py src/cygnusx/application/schemas/research_agent.py
+  UV_CACHE_DIR=/tmp/uv-cache uv run python scripts/check_migrations.py
+  UV_CACHE_DIR=/tmp/uv-cache uv run alembic heads
+  cd frontend && npm run type-check
+Migration topology: resstream01 is the unique Alembic head. No migration was applied.
+  cd frontend && npm run build
+Production build exited 0; Vite reported its existing >500 KiB chunk-size warning.
+
+Limitations: SQLite and in-process ASGI do not prove PostgreSQL transaction/index
+semantics. No deployed API, Node, PostgreSQL, Redis, Chromium, or actual network
+interruption was used. Generation ownership is process-local; process restart
+recovery and cross-process cancellation are not implemented. Real browser reconnect
+and persistence remain BLOCKED. This evidence does not promote the BR-08 parent or
+S5 product workflow.

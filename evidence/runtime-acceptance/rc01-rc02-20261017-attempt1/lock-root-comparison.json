@@ -1,0 +1,10 @@
+{
+  "name": {
+    "manifest": "cygnusx-frontend",
+    "lock": "omichub-frontend"
+  },
+  "differences": {
+    "dependencies": {},
+    "devDependencies": {}
+  }
+}

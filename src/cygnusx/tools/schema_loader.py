@@ -176,6 +176,7 @@ class ToolsSchemaLoader:
     def _load_flow_tools(self) -> list[ToolSchema]:
         """动态编译 ai.enabled 的 Flow 为 ToolSchema。"""
         from cygnusx.application.services.flow_service import FlowService
+        from cygnusx.core.config import get_settings
         from cygnusx.tools.flow_schema_compiler import FlowToolSchemaCompiler
 
         try:
@@ -188,8 +189,15 @@ class ToolsSchemaLoader:
             logging.getLogger(__name__).warning("加载 Flow 列表失败", exc_info=True)
             return []
 
+        # 阶段 3（MCP 工具固定化）：LEGACY_PIPELINE_TOOLS=false 时 per-flow prepare
+        # 工具从默认清单移除（Chat 提交改走固定 cygnusx_prepare / cygnusx_submit），
+        # 编译器保留契约编译职责（describe / 参数 Schema 仍复用其产物）。
+        legacy = get_settings().legacy_pipeline_tools
+
         tools: list[ToolSchema] = []
         for flow in flows:
+            if not legacy:
+                break
             if not (flow.ai and flow.ai.enabled):
                 continue
             try:

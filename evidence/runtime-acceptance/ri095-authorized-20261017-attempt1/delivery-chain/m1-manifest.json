@@ -1,0 +1,108 @@
+{
+  "schema_version": "cygnusx.project_delivery.v2",
+  "digest_policy": "sorted_utf8_json.v1",
+  "owner_id": "3ee28976-6009-4f1e-ac6b-a3daacb53f19",
+  "project_id": "a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6",
+  "selection": {
+    "kind": "evidence",
+    "task_ids": [],
+    "report_ids": [],
+    "source_manifest_job_id": "36df0530-351c-4b4f-bb04-5e64dbfbb76e",
+    "project_report_job_ids": [
+      "c3698987-6f04-4a66-b3d2-b31379a65607"
+    ]
+  },
+  "source_manifest_digest": "aa54d9be8a15e228cd3155f96d17a47a5e82b0eef5b1dd15d0a9b04ab7f56338",
+  "report_artifacts": [
+    {
+      "project_report_job_id": "c3698987-6f04-4a66-b3d2-b31379a65607",
+      "source_digest": "a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f",
+      "report_file_id": "12648917-6215-4f9e-8b3b-786821bda070",
+      "file_record_id": "80a62287-2996-4153-b66c-5342c0616e8b",
+      "format": "html",
+      "sha256": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b",
+      "size": 6635
+    },
+    {
+      "project_report_job_id": "c3698987-6f04-4a66-b3d2-b31379a65607",
+      "source_digest": "a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f",
+      "report_file_id": "600873c4-765a-4752-a859-482ac8cfed97",
+      "file_record_id": "f465f5c4-f09a-4c38-b794-585682788761",
+      "format": "pdf",
+      "sha256": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83",
+      "size": 44369
+    }
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "source_kind": "instructions",
+      "source_id": null,
+      "task_id": null,
+      "size": 668,
+      "sha256": "48000b73399a85995276e79797ba07341d301259c03b1671dcb480bdd1d4ff66"
+    },
+    {
+      "path": "verify_project_delivery.py",
+      "source_kind": "verifier",
+      "source_id": null,
+      "task_id": null,
+      "size": 4401,
+      "sha256": "511c1a400f24c79a4ba42c18cf4815be68749379a02b99d37da29bfc2c6f642e"
+    },
+    {
+      "path": "project_reports/c3698987-6f04-4a66-b3d2-b31379a65607/report.html",
+      "source_kind": "report_file",
+      "source_id": "12648917-6215-4f9e-8b3b-786821bda070",
+      "task_id": null,
+      "size": 6635,
+      "sha256": "35cc6c13289b46c128588b4054119efaba2247f33da28bde555a4c438c39161b"
+    },
+    {
+      "path": "project_reports/c3698987-6f04-4a66-b3d2-b31379a65607/report.pdf",
+      "source_kind": "report_file",
+      "source_id": "600873c4-765a-4752-a859-482ac8cfed97",
+      "task_id": null,
+      "size": 44369,
+      "sha256": "e829440a2ca232726b34b7ca2a2cf0d413583337db0036d4ac8f79d60c7a7e83"
+    }
+  ],
+  "references": [
+    {
+      "kind": "project",
+      "id": "a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6",
+      "task_id": null,
+      "status": "VERIFIED_ASSOCIATION",
+      "disposition": "reference_only",
+      "reason": null,
+      "digest": null,
+      "version": null,
+      "snapshot_id": null,
+      "result_observation_id": null,
+      "parent_id": null,
+      "dataset_version_id": null,
+      "analysis_link_id": null
+    },
+    {
+      "kind": "historical_association",
+      "id": null,
+      "task_id": null,
+      "status": "NOT_RECORDED",
+      "disposition": "unverified",
+      "reason": "NO_PROJECT_FK_NO_BACKFILL",
+      "digest": null,
+      "version": null,
+      "snapshot_id": null,
+      "result_observation_id": null,
+      "parent_id": null,
+      "dataset_version_id": null,
+      "analysis_link_id": null
+    }
+  ],
+  "gaps": [
+    "HISTORICAL_ASSOCIATION_COVERAGE_NOT_RECORDED",
+    "REPRODUCTION_NOT_RUN"
+  ],
+  "evidence_status": "partial",
+  "reproduction_status": "NOT_RUN"
+}

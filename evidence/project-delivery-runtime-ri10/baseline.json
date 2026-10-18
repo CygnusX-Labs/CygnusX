@@ -1,0 +1,14 @@
+{
+  "branch": "feat/research-agent-phase5",
+  "head": "51011118535f782f5282f638b4a54649c79bf6d6",
+  "files": {
+    "src/cygnusx/application/services/project_delivery_service.py": "0a8a2b93e4fad3bef3a08583f4e570064f4ace61f33e25698caa9627cfa137f4",
+    "src/cygnusx/application/services/research_claim_service.py": "429a16910d6eee44edd33029cdcbebe0f34934d13c90030558a66f410a34c18e",
+    "src/cygnusx/application/schemas/research_claims.py": "74c901eab1e935a91ff6773a800847c4e37f7c4a0ba2ff756a56b9396c37fdb7",
+    "src/cygnusx/api/v1/research_claims.py": "7e5005869f1559c340c9d5f2a49390b1f07fdad56b4ad4eddb2e6f7de0d0619c",
+    "frontend/src/components/ProjectResearchDelivery.vue": "166aa47b89d639c87cfc14a634fe5a5587e89b77596e4817aa9d640838e315e1",
+    "frontend/src/api/projectDelivery.ts": "4a070d1849a78807c039aaff1867c9dfb4f2b4b97152836bacf1c7709ad87207",
+    "ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md": "c2fe8914602897d4f4950687342e90d6fd9f62bb16a4ed534c712e588b7daed7",
+    "ARCHITECTURE_DESIGN/CygnusX_report_architecture.md": "e3ecb0ea4c7c5747015ddf9d7326c15bf854ec14fe24c564afa8e40283b16508"
+  }
+}

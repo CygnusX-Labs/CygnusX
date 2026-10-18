@@ -104,5 +104,6 @@ async def verify_delegation(
     except (RedisError, OSError, TimeoutError) as exc:
         raise DependencyUnavailableError("委托防重放服务不可用") from exc
     if not claimed:
-        raise ConflictError("工具调用已处理，禁止自动重放")
+        raise ConflictError("工具调用已处理，禁止自动重放", code="DELEGATION_REPLAY_BLOCKED")
+    context.extra["scopes"] = sorted(set(context.extra["scopes"]).intersection(claims["scopes"]))
     return context

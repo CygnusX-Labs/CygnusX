@@ -1,0 +1,23 @@
+=== MQ 真实消息链 DB 终态证据 (2026-10-17T14:06:47Z) ===
+   name   | status |          started_at           |          finished_at          
+----------+--------+-------------------------------+-------------------------------
+ mq01     | queued |                               | 
+ mq0304   | failed | 2026-10-17 13:44:34.807019+00 | 2026-10-17 13:44:34.844993+00
+ mq02     | queued |                               | 
+ rec-beat | queued |                               | 
+ mq06-0   | failed | 2026-10-17 13:54:30.104716+00 | 2026-10-17 13:54:30.136063+00
+ mq06-1   | failed | 2026-10-17 13:53:06.575635+00 | 2026-10-17 13:53:06.611533+00
+(6 rows)
+
+=== FileRegistry 对账(mq0304 任务的 registration) ===
+  name  |        reg_state        |             reason             
+--------+-------------------------+--------------------------------
+ mq0304 | RECONCILIATION_REQUIRED | DOWNLOAD_ACCESSION_UNSUPPORTED
+ mq06-0 | RECONCILIATION_REQUIRED | DOWNLOAD_ACCESSION_UNSUPPORTED
+ mq06-1 | RECONCILIATION_REQUIRED | DOWNLOAD_ACCESSION_UNSUPPORTED
+ mq01   |                         | 
+ mq02   |                         | 
+(5 rows)
+
+=== broker 最终深度 ===
+0

@@ -83,15 +83,17 @@ class AgentToolGateway:
     ) -> ToolInvocationContext:
         if not get_settings().tool_gateway_read_enabled:
             raise AuthorizationError("共享工具入口未启用", code="FEATURE_DISABLED")
-        user = await self.db.get(UserModel, uuid.UUID(user_id))
+        user = await self.db.get(UserModel, uuid.UUID(user_id), populate_existing=True)
         if user is None or user.status != "active":
             raise AuthorizationError("用户不可用")
         result = await self.db.execute(
-            select(ChatSessionModel).where(
+            select(ChatSessionModel)
+            .where(
                 ChatSessionModel.session_id == session_id,
                 ChatSessionModel.user_id == user_id,
                 ChatSessionModel.status == "active",
             )
+            .execution_options(populate_existing=True)
         )
         session = result.scalar_one_or_none()
         if session is None:
@@ -105,7 +107,9 @@ class AgentToolGateway:
             raise AuthorizationError("Agent 上下文不匹配")
         project = None
         if session.project_id:
-            project = await self.db.get(ProjectModel, uuid.UUID(session.project_id))
+            project = await self.db.get(
+                ProjectModel, uuid.UUID(session.project_id), populate_existing=True
+            )
             if project is None or str(project.user_id) != user_id:
                 raise AuthorizationError("项目不存在或授权已撤销")
         denied = set(user.disabled_modules or []) if user.role != "admin" else set()
@@ -151,8 +155,13 @@ class AgentToolGateway:
             for c in capability_catalog(
                 include_dataset=dataset_enabled,
                 include_research=getattr(get_settings(), "research_delivery_read_enabled", False),
+                include_plans=getattr(get_settings(), "research_plan_enabled", False),
             )
             if c.scope in context.extra["scopes"]
+            and context.extra.get("agent_kind") in c.agents
+            and (
+                c.capability_id != "dataset.discover" or "read:discovery" in context.extra["scopes"]
+            )
             and (
                 dataset_enabled
                 or not (
@@ -170,7 +179,18 @@ class AgentToolGateway:
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         # Even builtin callers get a fresh user/session/project check at execution.
-        context = await self.context(context.user_id, context.session_id)
+        original_scopes = set(context.extra.get("scopes", ()))
+        original_project = context.extra.get("project_id")
+        original_kind = context.extra.get("agent_kind")
+        context = (await self.context(context.user_id, context.session_id)).model_copy(
+            update={"request_id": context.request_id}
+        )
+        if (
+            context.extra.get("project_id") != original_project
+            or context.extra.get("agent_kind") != original_kind
+        ):
+            raise AuthorizationError("工具会话或项目上下文已变化", code="FORBIDDEN")
+        context.extra["scopes"] = sorted(original_scopes.intersection(context.extra["scopes"]))
         if capability_id not in CAPABILITY_MODELS:
             raise ValidationError("未注册工具", code="VALIDATION_ERROR")
         if capability_id == "dataset.execute_import":
@@ -182,7 +202,7 @@ class AgentToolGateway:
         allowed = {c["capability_id"] for c in self.catalog(context)}
         if capability_id not in allowed:
             raise AuthorizationError("工具未获授权", code="FORBIDDEN")
-        args = CAPABILITY_MODELS[capability_id].model_validate(arguments).model_dump()
+        args = CAPABILITY_MODELS[capability_id].model_validate(arguments).model_dump(mode="json")
         invocation = AgentToolInvocationModel(
             id=uuid.uuid4(),
             owner_id=context.user_id,
@@ -202,14 +222,24 @@ class AgentToolGateway:
         )
         analysis = AnalysisFlowToolService(analysis_context)
         if capability_id == "downloads.describe_capabilities":
-            result: Any = {
-                "candidate_accessions": ["SRR", "PRJNA"],
-                "runtime_verified_accessions": [],
-                "runtime_status": "BLOCKED",
-                "write_enabled": False,
-                "unsupported": ["GSE", "GSM", "direct_link", "processed_matrix"],
-                "limits": {"bytes_estimate": None, "quota_enforced_for_preview": False},
-            }
+            from cygnusx.tools.download.config import describe_download_capabilities
+
+            result: Any = describe_download_capabilities()
+            tools = {c["capability_id"] for c in self.catalog(context)}
+            result["capabilities"] = [
+                {
+                    **entry,
+                    "query_tools": [tool for tool in entry["query_tools"] if tool in tools],
+                    "project_context_available": bool(context.extra["project_id"]),
+                }
+                for entry in result["capabilities"]
+                if entry["required_scope"] in context.extra["scopes"]
+                and (
+                    entry["source_type"] != "geo_metadata"
+                    or "read:discovery" in context.extra["scopes"]
+                )
+            ]
+            result["available_tools"] = sorted(tools)
         elif capability_id == "downloads.prepare":
             result = await self._download_proposal(context, invocation, args)
         elif capability_id == "analysis.list_workflows":
@@ -237,6 +267,8 @@ class AgentToolGateway:
             "analysis.prepare_from_dataset",
         }:
             result = await self._dataset_tool(context, invocation, capability_id, args)
+        elif capability_id.startswith("research.plan."):
+            result = await self._plan_tool(context, capability_id, args)
         elif capability_id.startswith("research."):
             result = await self._research_tool(context, capability_id, args)
         elif capability_id == "tasks.get_status":
@@ -246,6 +278,60 @@ class AgentToolGateway:
         self.db.add(invocation)
         await self.db.flush()
         return GatewayResult(invocation_id=str(invocation.id), result=result).model_dump()
+
+    async def _plan_tool(
+        self, context: ToolInvocationContext, capability: str, args: dict[str, Any]
+    ) -> dict[str, Any]:
+        from cygnusx.application.schemas.research_plan import PlanPrepare, ResearchPlanDraft
+        from cygnusx.application.services.research_plan_service import ResearchPlanService
+
+        if not context.extra["project_id"]:
+            raise AuthorizationError("Select an authorized project")
+        owner, project = uuid.UUID(context.user_id), uuid.UUID(context.extra["project_id"])
+        service = ResearchPlanService(self.db)
+        if capability in {"research.plan.assess_claim", "research.plan.artifact_cell"}:
+            from cygnusx.application.schemas.research_claims import ArtifactCellRequest, ClaimDraft
+            from cygnusx.application.services.research_claim_service import ResearchClaimService
+
+            claims = ResearchClaimService(self.db)
+            if capability == "research.plan.assess_claim":
+                return (
+                    await claims.assessment(
+                        owner,
+                        project,
+                        uuid.UUID(args["task_id"]),
+                        ClaimDraft.model_validate(args["claim"]),
+                    )
+                ).model_dump(mode="json")
+            return await claims.cell(
+                owner, project, ArtifactCellRequest.model_validate(args["request"])
+            )
+        if capability == "research.plan.prepare":
+            return (
+                await service.prepare(owner, project, PlanPrepare.model_validate(args["request"]))
+            ).model_dump(mode="json")
+        if capability == "research.plan.validate":
+            gaps = await service.validate_resources(
+                owner, project, ResearchPlanDraft.model_validate(args["draft"])
+            )
+            return {
+                "schema_valid": True,
+                "mode": "PLAN_ONLY",
+                "gaps": gaps,
+                "execution_enabled": False,
+            }
+        plan_id = uuid.UUID(args["plan_id"])
+        view = await service.view(owner, project, plan_id)
+        if capability == "research.plan.get_evidence":
+            row = await service.owned(owner, project, plan_id)
+            return {
+                "plan_id": str(plan_id),
+                "version": view.version,
+                "events": row.events,
+                "steps": [step.model_dump(mode="json") for step in view.steps],
+                "gaps": view.gaps,
+            }
+        return view.model_dump(mode="json")
 
     async def _research_tool(
         self, context: ToolInvocationContext, capability: str, args: dict[str, Any]
@@ -260,6 +346,15 @@ class AgentToolGateway:
             raise AuthorizationError("Select an authorized project")
         owner, project = uuid.UUID(context.user_id), uuid.UUID(context.extra["project_id"])
         service = ResearchProvenanceService(self.db)
+        if capability in {"research.project_inventory", "research.project_export_status"}:
+            from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
+
+            delivery = ProjectDeliveryService(self.db)
+            if capability == "research.project_inventory":
+                return await delivery.inventory(owner, project)
+            return delivery.status(
+                await delivery.job(owner, project, uuid.UUID(str(args["job_id"])))
+            ).model_dump(mode="json")
         if capability == "research.project_delivery":
             return await service.project(owner, project)
         if capability == "research.dataset_provenance":
@@ -291,16 +386,49 @@ class AgentToolGateway:
         from cygnusx.application.services.dataset_import_service import DatasetImportService
         from cygnusx.application.services.dataset_service import DatasetService
 
-        if not context.extra["project_id"]:
-            raise ValidationError("Dataset 工具需要当前获授权项目")
-        owner, project = uuid.UUID(context.user_id), uuid.UUID(context.extra["project_id"])
+        owner = uuid.UUID(context.user_id)
         if capability == "dataset.discover":
-            return await DatasetImportService(self.db).discover(owner, project, args["accession"])
+            project_id = context.extra["project_id"]
+            return await DatasetImportService(self.db).discover(
+                owner, uuid.UUID(project_id) if project_id else None, args["accession"]
+            )
+        if not context.extra["project_id"]:
+            raise ValidationError("Dataset 工具需要当前获授权项目", code="PROJECT_REQUIRED")
+        project = uuid.UUID(context.extra["project_id"])
         if capability == "dataset.list_project_assets":
+            from cygnusx.infrastructure.database.models.dataset import DatasetVersionModel
+
             dataset_service = DatasetService(self.db)
+            datasets = await dataset_service.repo.list(owner, project)
+            versions = (
+                (
+                    (
+                        await self.db.execute(
+                            select(DatasetVersionModel)
+                            .where(DatasetVersionModel.dataset_id.in_([d.id for d in datasets]))
+                            .order_by(DatasetVersionModel.created_at.desc(), DatasetVersionModel.id)
+                            .limit(200)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if datasets
+                else []
+            )
             return [
-                {"id": str(d.id), "name": d.name, "status": d.status}
-                for d in await dataset_service.repo.list(owner, project)
+                {
+                    "id": str(d.id),
+                    "name": d.name,
+                    "status": d.status,
+                    "versions": [
+                        {"version_id": str(v.id), "number": v.number, "status": v.status}
+                        for v in versions
+                        if v.dataset_id == d.id
+                    ],
+                    "version_query_limit": 200,
+                }
+                for d in datasets
             ]
         if capability == "dataset.prepare_import":
             service = DatasetImportService(self.db)
@@ -343,11 +471,13 @@ class AgentToolGateway:
         manifest = await DatasetHandoffService(self.db).manifest(
             owner, project, dataset_id, version_id
         )
-        return (
-            manifest
-            if capability == "dataset.inspect"
-            else {"assets": manifest["assets"], "validation": manifest["validation"]}
-        )
+        if capability == "dataset.inspect":
+            version = await DatasetService(self.db).repo.version(
+                owner, project, dataset_id, version_id
+            )
+            # A live manifest also has a digest; a digest alone does not prove freezing.
+            return {**manifest, "handoff_frozen": bool(version.handoff)}
+        return {"assets": manifest["assets"], "validation": manifest["validation"]}
 
     async def _download_proposal(
         self,
@@ -496,7 +626,7 @@ class AgentToolGateway:
             raise ValidationError("该记录不是可批准预案")
         record = await self.confirmations.get_status(context.user_id, row.confirmation_id)
         if record is None or record.parameter_hash != row.parameters_hash:
-            raise ConflictError("确认记录丢失或参数不一致")
+            raise ConflictError("确认记录丢失或参数不一致", code="CONFIRMATION_RECORD_MISMATCH")
         if approve:
             record = await self.confirmations.approve_by_human(
                 user_id=context.user_id, confirmation_id=row.confirmation_id
@@ -523,7 +653,11 @@ class AgentToolGateway:
                 .limit(1)
             )
         ).scalar_one_or_none()
-        if link is None and getattr(get_settings(), "dataset_discovery_readonly", False):
+        if (
+            link is None
+            and context.extra["project_id"]
+            and getattr(get_settings(), "dataset_discovery_readonly", False)
+        ):
             from cygnusx.infrastructure.database.models.dataset import DatasetIngestionModel
 
             ingestions = (
@@ -715,7 +849,7 @@ class AgentToolGateway:
             raise ValidationError("缺少人工确认")
         record = await self.confirmations.get_status(context.user_id, row.confirmation_id)
         if record is None or record.parameter_hash != row.parameters_hash:
-            raise ConflictError("确认已过期或参数摘要不一致")
+            raise ConflictError("确认已过期或参数摘要不一致", code="CONFIRMATION_RECORD_MISMATCH")
         bound = record.normalized_request
         if any(
             bound.get(k) != v

@@ -398,6 +398,8 @@ class DatasetAnalysisService:
         return {
             "analysis_proposal_id": str(row.id),
             "dataset_version_id": str(version_id),
+            "dataset_id": str(dataset_id),
+            "expires_at": approval.expires_at.isoformat() if approval else None,
             "parameters_hash": row.parameters_hash,
             "state": task.status
             if task
@@ -415,12 +417,19 @@ class DatasetAnalysisService:
         }
 
     async def approve(
+        self, owner: uuid.UUID, project_id: uuid.UUID, dataset_id: uuid.UUID,
+        version_id: uuid.UUID, proposal_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        return await self.decide(owner, project_id, dataset_id, version_id, proposal_id, True)
+
+    async def decide(
         self,
         owner: uuid.UUID,
         project_id: uuid.UUID,
         dataset_id: uuid.UUID,
         version_id: uuid.UUID,
         proposal_id: uuid.UUID,
+        approve: bool,
     ) -> dict[str, Any]:
         row = await self.owned_proposal(
             owner, project_id, dataset_id, version_id, proposal_id, lock=True
@@ -432,10 +441,16 @@ class DatasetAnalysisService:
             or record.normalized_request != row.normalized_request
         ):
             raise ConflictError("预案过期或变更", code="CONFIRMATION_MISMATCH")
-        await self.confirmations.approve_by_human(
-            user_id=str(owner), confirmation_id=record.confirmation_id
-        )
-        return {"analysis_proposal_id": str(row.id), "state": "APPROVED", "write_enabled": False}
+        if approve:
+            await self.confirmations.approve_by_human(
+                user_id=str(owner), confirmation_id=record.confirmation_id
+            )
+        else:
+            await self.confirmations.reject(
+                user_id=str(owner), confirmation_id=record.confirmation_id
+            )
+        return {"analysis_proposal_id": str(row.id),
+                "state": "APPROVED" if approve else "REJECTED", "write_enabled": False}
 
     async def execute(
         self,

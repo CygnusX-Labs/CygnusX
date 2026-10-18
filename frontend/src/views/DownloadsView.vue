@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NSelect, NTabs, NTabPane, NIcon, NButton, NPopconfirm, NSpin, useMessage,
+  NAlert, NSelect, NTabs, NTabPane, NIcon, NButton, NPopconfirm, NSpin, useMessage,
 } from 'naive-ui'
 import {
   LibraryOutline, CloudDownloadOutline, ServerOutline, LinkOutline,
   InformationCircleOutline, ChevronDownOutline, DownloadOutline, RefreshOutline,
 } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
+import { getDownloadCapabilities, type DownloadCapabilities } from '@/api/downloadCapabilities'
 import PageHeader from '@/components/PageHeader.vue'
 
 type SourceTab = 'sra' | 'cloud-drive' | 'cloud-storage' | 'direct-link'
@@ -49,16 +50,18 @@ const loadingTasks = ref(false)
 
 // ── SRA 基础表单 ──
 const sraAccession = ref('')
-const sraMethod = ref<'aws' | 'aspera' | 'ftp'>('aws')
+const sraMethod = ref<string | null>(null)
+const capabilities = ref<DownloadCapabilities | null>(null)
+async function fetchCapabilities() {
+  try {
+    capabilities.value = await getDownloadCapabilities()
+    sraMethod.value = capabilities.value?.sources.find(s => s.source_type === 'sra')?.supported_methods[0] ?? null
+  } catch { capabilities.value = null }
+}
 const targetDirectory = ref('')
 
-// ── 高级选项：仅 4 个正则过滤字段 ──
-const advancedOpen = ref(false)
+// ── 直链高级选项 ──
 const directAdvancedOpen = ref(false)
-const includeSample = ref('')
-const excludeSample = ref('')
-const includeRun = ref('')
-const excludeRun = ref('')
 
 // ── 云盘表单 ──
 const driveProvider = ref<'baidu' | '123'>('baidu')
@@ -80,10 +83,10 @@ const directRecursive = ref(false)
 const statusFilter = ref<'all' | DownloadTask['status']>('all')
 
 const tabDescriptions: Record<SourceTab, string> = {
-  'sra': '输入 NCBI / EBI 登录号（如 PRJNA、SRR），支持 AWS S3 / Aspera 高并发节点拉取原始测序数据，完成后自动入库。',
-  'cloud-drive': '支持解析百度网盘、123 云盘分享链接，云端内网极速提取交接数据、不消耗本地带宽，完成后自动入库。',
-  'cloud-storage': '支持通过云厂商内网（阿里云 / 火山 / 华为）对象存储 CLI 拉取数据，完成后自动入库。',
-  'direct-link': '支持 HTTP / HTTPS / FTP 直链批量下载，断点续传、并发加速，完成后自动入库。',
+  'sra': '输入单个 NCBI / ENA 登录号（如 PRJNA、SRR），选择 AWS S3 或 ENA FTP 方式。GEO 登录号请先在数据集导入中解析。',
+  'cloud-drive': '百度网盘与 123 云盘提取尚未接入，暂不可提交。',
+  'cloud-storage': '可提交阿里云 OSS、火山 TOS、华为 OBS 对象路径；需管理员配置并启用对应下载工具。',
+  'direct-link': '可提交 HTTP / HTTPS / 匿名 FTP 文件链接或 FTP 目录；暂不支持 FTPS。可用协议由平台配置决定。',
 }
 
 const statusConfig: Record<string, { label: string; badge: string; icon: string }> = {
@@ -120,11 +123,10 @@ const filteredTasks = computed(() => {
   return tasks.value.filter(t => t.status === statusFilter.value)
 })
 
-const sraMethodOptions = [
-  { label: 'AWS S3（推荐，最快）', value: 'aws' },
-  { label: 'Aspera 高速', value: 'aspera' },
-  { label: 'FTP 标准下载', value: 'ftp' },
-]
+const sraMethodOptions = computed(() =>
+  (capabilities.value?.sources.find(s => s.source_type === 'sra')?.supported_methods ?? [])
+    .map(method => ({ label: method.toUpperCase(), value: method })),
+)
 
 const targetDirectoryOptions = [
   { label: '根目录（默认）', value: '' },
@@ -132,11 +134,11 @@ const targetDirectoryOptions = [
   { label: 'projects/variant', value: 'projects/variant' },
 ]
 
-const storageProviderOptions = [
-  { label: '阿里云 OSS', value: 'aliyun' },
-  { label: '火山引擎 TOS', value: 'volc' },
-  { label: '华为云 OBS', value: 'huawei' },
-]
+const storageLabels: Record<string, string> = { aliyun: '阿里云 OSS', volc: '火山引擎 TOS', huawei: '华为云 OBS' }
+const storageProviderOptions = computed(() =>
+  (capabilities.value?.sources.find(s => s.source_type === 'cloud_storage')?.supported_methods ?? [])
+    .map(provider => ({ label: storageLabels[provider] ?? provider, value: provider })),
+)
 
 const threadOptions = [
   { label: '1 线程', value: 1 },
@@ -199,15 +201,6 @@ async function fetchDownloads() {
   }
 }
 
-async function toggleAdvanced() {
-  advancedOpen.value = !advancedOpen.value
-  if (advancedOpen.value) {
-    await nextTick()
-    const el = document.getElementById('advanced-panel-bottom')
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }
-}
-
 function dedupLinks() {
   directLinks.value = [...new Set(
     directLinks.value.split(/\r?\n|,/).map(link => link.trim()).filter(Boolean),
@@ -215,6 +208,10 @@ function dedupLinks() {
 }
 
 async function handleSubmit() {
+  if (!capabilities.value?.write_enabled) {
+    message.warning('下载传输尚未完成运行验收，当前不能提交')
+    return
+  }
   if (activeTab.value === 'cloud-drive') {
     message.warning('云盘极速提取尚未接入后端，当前先支持公共数据库与云存储直拉')
     return
@@ -279,7 +276,7 @@ async function handleDelete(task: DownloadTask) {
   }
 }
 
-onMounted(fetchDownloads)
+onMounted(() => { void fetchDownloads(); void fetchCapabilities() })
 </script>
 
 <template>
@@ -290,6 +287,8 @@ onMounted(fetchDownloads)
         title="数据下载与聚合"
         subtitle="从 NCBI/EBI 公共数据库、网盘或云存储拉取测序数据，下载完成后自动入库"
       />
+
+      <NAlert v-if="!capabilities?.write_enabled" type="info">下载最终目的地和传输预算尚未完成运行验收，当前展示受支持的契约，暂不开放执行。</NAlert>
 
       <!-- ═══ 来源切换 Tabs（平台统一下划线式）═══ -->
       <NTabs v-model:value="activeTab" type="line" class="source-tabs">
@@ -310,10 +309,10 @@ onMounted(fetchDownloads)
               <textarea
                 v-model="sraAccession"
                 rows="1"
-                placeholder="PRJNA1251654 或 SRRxxxxxx，多个用逗号或换行分隔"
+                placeholder="单个登录号，如 PRJNA1251654 或 SRRxxxxxx"
                 class="text-input text-input--textarea"
               />
-              <p class="field-help">支持 Project / Sample / Run 级登录号，多个用逗号或换行分隔。</p>
+              <p class="field-help">一次提交一个 ENA/SRA 登录号；项目或实验下的 Run 由来源数据库解析，结果可能为空。</p>
             </div>
 
             <div class="field">
@@ -326,54 +325,13 @@ onMounted(fetchDownloads)
               <NSelect v-model:value="targetDirectory" :options="targetDirectoryOptions" class="field-select" />
             </div>
 
-            <!-- 高级选项折叠条 -->
-            <div class="field">
-              <button
-                type="button"
-                class="adv-toggle"
-                :class="{ 'is-open': advancedOpen }"
-                :aria-expanded="advancedOpen"
-                @click="toggleAdvanced"
-              >
-                <span class="adv-toggle__title">高级选项：样本与 Run 过滤</span>
-                <span class="adv-toggle__desc">{{ advancedOpen ? '收起' : '支持正则匹配，留空不过滤' }}</span>
-                <NIcon :size="16" class="adv-toggle__chevron" :class="{ 'is-open': advancedOpen }">
-                  <ChevronDownOutline />
-                </NIcon>
-              </button>
-              <div v-if="advancedOpen" id="advanced-panel-bottom" class="adv-panel">
-                <div class="filter-grid">
-                  <div class="filter-field">
-                    <label class="field-label"><span class="filter-badge filter-badge--include">+</span>包含样本（Include）</label>
-                    <input v-model="includeSample" type="text" placeholder="如：^SAMN.*" class="text-input" />
-                    <span class="field-help">正则匹配样本 ID，留空不过滤</span>
-                  </div>
-                  <div class="filter-field">
-                    <label class="field-label"><span class="filter-badge filter-badge--exclude">−</span>排除样本（Exclude）</label>
-                    <input v-model="excludeSample" type="text" placeholder="如：.control." class="text-input" />
-                    <span class="field-help">匹配到的样本将被跳过</span>
-                  </div>
-                  <div class="filter-field">
-                    <label class="field-label"><span class="filter-badge filter-badge--include">+</span>包含 Run（Include）</label>
-                    <input v-model="includeRun" type="text" placeholder="如：SRR123.*" class="text-input" />
-                    <span class="field-help">正则匹配 Run 编号</span>
-                  </div>
-                  <div class="filter-field">
-                    <label class="field-label"><span class="filter-badge filter-badge--exclude">−</span>排除 Run（Exclude）</label>
-                    <input v-model="excludeRun" type="text" placeholder="如：.test." class="text-input" />
-                    <span class="field-help">匹配到的 Run 将被跳过</span>
-                  </div>
-                </div>
-                <p class="adv-panel__note">支持正则表达式过滤，留空表示不过滤。多个模式用逗号分隔。</p>
-              </div>
-            </div>
+            <p class="field-help" role="note">样本与 Run 筛选暂不可用。</p>
 
             <div class="form-actions">
-              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+              <NButton type="primary" :loading="submitting" :disabled="!capabilities?.write_enabled" @click="handleSubmit">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
                 提交拉取任务
               </NButton>
-              <NButton secondary :disabled="submitting">Dry Run</NButton>
             </div>
           </div>
         </NTabPane>
@@ -393,23 +351,23 @@ onMounted(fetchDownloads)
             <div class="field">
               <label class="field-label">网盘来源</label>
               <div class="radio-row">
-                <label class="radio-item"><input v-model="driveProvider" type="radio" value="baidu" />百度网盘</label>
-                <label class="radio-item"><input v-model="driveProvider" type="radio" value="123" />123 云盘</label>
+                <label class="radio-item"><input disabled v-model="driveProvider" type="radio" value="baidu" />百度网盘</label>
+                <label class="radio-item"><input disabled v-model="driveProvider" type="radio" value="123" />123 云盘</label>
               </div>
             </div>
             <div class="field">
               <label class="field-label">分享链接 <span class="req">*</span></label>
-              <input v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="text-input" />
+              <input disabled v-model="driveLink" type="text" placeholder="粘贴网盘分享链接" class="text-input" />
             </div>
             <div class="field">
               <label class="field-label">提取码</label>
-              <input v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="text-input text-input--code" />
+              <input disabled v-model="driveCode" type="text" placeholder="可选" maxlength="8" class="text-input text-input--code" />
               <p class="field-help">无提取码可留空。</p>
             </div>
             <div class="form-actions">
-              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+              <NButton type="primary" disabled>
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
-                提交拉取任务
+                暂未接入
               </NButton>
             </div>
           </div>
@@ -444,7 +402,7 @@ onMounted(fetchDownloads)
               <label class="checkbox-item"><input v-model="storageRecursive" type="checkbox" />递归拉取目录</label>
             </div>
             <div class="form-actions">
-              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+              <NButton type="primary" :loading="submitting" :disabled="!capabilities?.write_enabled" @click="handleSubmit">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
                 提交拉取任务
               </NButton>
@@ -521,7 +479,7 @@ onMounted(fetchDownloads)
             </div>
 
             <div class="form-actions">
-              <NButton type="primary" :loading="submitting" @click="handleSubmit">
+              <NButton type="primary" :loading="submitting" :disabled="!capabilities?.write_enabled" @click="handleSubmit">
                 <template #icon><NIcon><DownloadOutline /></NIcon></template>
                 提交下载任务
               </NButton>

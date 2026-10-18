@@ -32,6 +32,8 @@ class ExecutionContext:
     # ---- 通用回调（可选）----
     on_log: Callable[[str, str, str], Awaitable[None]] | None = None
     on_progress: Callable[[float], Awaitable[None]] | None = None
+    # Optional, caller-owned presentation filter; download callers use it before any log/result sink.
+    log_filter: Callable[[str], str] | None = None
 
 
 @dataclass

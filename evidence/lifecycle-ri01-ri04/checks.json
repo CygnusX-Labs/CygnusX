@@ -1,0 +1,499 @@
+{
+  "generated_at": "2026-10-16T07:07:27.503318+00:00",
+  "scope": "RI01-RI04 + RI12-Design only",
+  "test_index_semantics": "48 requirement indices, not 48 independent E2E runs; parametrized tests cover multiple indices",
+  "tests": [
+    {
+      "id": "T-RI01-01",
+      "subject": "single output",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f01_f10_real_worker_register_to_dataset_reconcile",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-02",
+      "subject": "multiple outputs",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f02_f03_f05_multiple_outputs_owners_and_idempotent_quota",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-03",
+      "subject": "repeat task registration",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f02_f03_f05_multiple_outputs_owners_and_idempotent_quota",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-04",
+      "subject": "cross owner",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_registration_context_fails_closed",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-05",
+      "subject": "wrong task",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_ri01_invalid_task_reference_never_registers",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-06",
+      "subject": "partial results",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f12_real_direct_worker_nonzero_preserves_partial_or_rejects_empty_success",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-07",
+      "subject": "missing file",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f11_success_without_outputs_requires_reconciliation",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-08",
+      "subject": "changed content",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f06_f07_existing_records_never_claimed_or_silently_rehashed",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-09",
+      "subject": "same path conflict",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f06_f07_existing_records_never_claimed_or_silently_rehashed",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI01-10",
+      "subject": "actual registered records reconciled",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_f01_f10_real_worker_register_to_dataset_reconcile",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-01",
+      "subject": "server capability contract",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri02_01_capability_contract_code_not_runtime",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-02",
+      "subject": "legacy methods reject",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri02_02_legacy_unsupported_is_never_remapped",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-03",
+      "subject": "injected execution identity",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri02_03_no_client_execution_identity",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-04",
+      "subject": "aws ftp schemas",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri02_04_declared_methods_accepted_in_schema",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-05",
+      "subject": "REST shared description",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri02_05_rest_uses_shared_contract",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-06",
+      "subject": "CLI checked-in subset",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_transport_contract.py::test_platform_methods_remain_a_subset_of_checked_in_cli",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-07",
+      "subject": "REST unsupported before submit",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_transport_contract.py::test_rest_rejects_unsupported_method_with_reason_before_submission",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI02-08",
+      "subject": "configured protocol restriction",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_transport_contract.py::test_config_can_restrict_protocols_but_cannot_add_a_transport",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-01",
+      "subject": "special hosts",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_01_special_hosts",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-02",
+      "subject": "cloud uri",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_02_cloud_uris",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-03",
+      "subject": "credentials ports aliases",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_03_url_alias_credentials",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-04",
+      "subject": "DNS observations, not pinning",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_04_dns_changes_require_public_observations",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-05",
+      "subject": "redirect refusal",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_05_redirects_never_authorize_unpinned_cli",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-06",
+      "subject": "all unaccepted transport closed",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_06_unaccepted_transports_stay_blocked",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-07",
+      "subject": "no task queue side effects",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_07_execution_block_precedes_directory_task_and_queue",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-08",
+      "subject": "FTP depth/files bounds",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_08_09_ftp_is_bounded_without_network",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-09",
+      "subject": "FTP cycles/time bounds",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_download_security.py::test_ri03_08_09_ftp_is_bounded_without_network",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-10",
+      "subject": "quota changes",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_ri03_10_quota_change_blocks_registration_without_deleting_files",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-11",
+      "subject": "project access changes",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_ri01_project_revocation_blocks_real_registration",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI03-12",
+      "subject": "module access changes",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_download_registration_contract.py::test_ri01_owner_module_revocation_during_download",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-01",
+      "subject": "scientific entry roles",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_01_02_both_real_service_entry_roles",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-02",
+      "subject": "evidence entry roles",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_01_02_both_real_service_entry_roles",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-03",
+      "subject": "missing report partial",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_03_04_missing_reports_are_partial_not_fabricated",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-04",
+      "subject": "missing snapshot partial",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_03_04_missing_reports_are_partial_not_fabricated",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-05",
+      "subject": "wrong owner",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_05_wrong_owner",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-06",
+      "subject": "wrong task/observation",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_06_07_inapplicable_peer_not_used",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-07",
+      "subject": "wrong temporal peer",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_06_07_inapplicable_peer_not_used",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-08",
+      "subject": "wrong snapshot task",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_08_wrong_snapshot_task_rejected",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-09",
+      "subject": "tampered bytes",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_09_tampered_scientific_file_rejected",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-10",
+      "subject": "checksums coverage",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_10_11_12_zip_members_and_checksums",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-11",
+      "subject": "duplicate members",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_10_11_12_zip_members_and_checksums",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI04-12",
+      "subject": "undeclared members",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_lifecycle_report_delivery.py::test_ri04_10_11_12_zip_members_and_checksums",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-01",
+      "subject": "deep_immutability",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_01_deep_immutability",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-02",
+      "subject": "digest_order_and_canonical_json",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_02_digest_order_and_canonical_json",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-03",
+      "subject": "unknown_history_not_invented",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_03_unknown_history_not_invented",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-04",
+      "subject": "roundtrip_and_version_rejection",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_04_roundtrip_and_version_rejection",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-05",
+      "subject": "sensitive_or_ambiguous_parameters",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_05_sensitive_or_ambiguous_parameters",
+      "runtime": "BLOCKED"
+    },
+    {
+      "id": "T-RI12-06",
+      "subject": "existing_models_are_not_migrated_or_backfilled",
+      "status": "PASS_ISOLATED",
+      "evidence": "tests/unit/test_execution_definition_contract.py::test_ri12_06_existing_models_are_not_migrated_or_backfilled",
+      "runtime": "BLOCKED"
+    }
+  ],
+  "gates": [
+    {
+      "id": "G0",
+      "status": "PASS_WORKSPACE",
+      "evidence": "baseline.json; status.txt; baseline-files"
+    },
+    {
+      "id": "G1",
+      "status": "PASS_ISOLATED",
+      "evidence": "registration production function and SQLite"
+    },
+    {
+      "id": "G2",
+      "status": "PASS_ISOLATED",
+      "evidence": "original DatasetImportService reconcile"
+    },
+    {
+      "id": "G3",
+      "status": "PASS_CODE_AND_ISOLATED",
+      "evidence": "shared server helper; source method matrix; runtime BLOCKED"
+    },
+    {
+      "id": "G4",
+      "status": "PASS_FAIL_CLOSED_RUNTIME_BLOCKED",
+      "evidence": "actual transfers disabled; no hard streaming byte budget claim"
+    },
+    {
+      "id": "G5",
+      "status": "PASS_ISOLATED",
+      "evidence": "roles snapshots bytes ZIP manifest"
+    },
+    {
+      "id": "G6",
+      "status": "PASS_TARGETED",
+      "evidence": "known failures repaired; full repo static FAIL retained"
+    },
+    {
+      "id": "G7",
+      "status": "DESIGN_REVIEWED_ISOLATED",
+      "evidence": "schema parity and pure DTO tests; no runtime authorization"
+    },
+    {
+      "id": "G8",
+      "status": "PASS_CODE",
+      "evidence": "false source write gates and flags.json"
+    },
+    {
+      "id": "G9",
+      "status": "PASS_CODE_REVIEW",
+      "evidence": "no new engine/migration/export/reproduction"
+    },
+    {
+      "id": "G10",
+      "status": "PASS_DISCLOSURE",
+      "evidence": "runtime-probes.json and implementation report"
+    }
+  ],
+  "subgates": [
+    {
+      "id": "G-RI01-01",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI01-02",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI01-03",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI01-04",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI02-01",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI02-02",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI02-03",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI02-04",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI02-05",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI03-01",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI03-02",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI03-03",
+      "status": "PARTIAL_ISOLATED_RUNTIME_BLOCKED",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI03-04",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI03-05",
+      "status": "PARTIAL_ISOLATED_RUNTIME_BLOCKED",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI04-01",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI04-02",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI04-03",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI04-04",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    },
+    {
+      "id": "G-RI04-05",
+      "status": "PASS_ISOLATED_OR_CODE",
+      "detail": "See implementation report corresponding RI section; actual runtime not accepted"
+    }
+  ],
+  "runtime": "BLOCKED",
+  "full_repository": "NOT_PASS"
+}

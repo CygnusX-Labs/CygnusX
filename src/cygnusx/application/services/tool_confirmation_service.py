@@ -92,6 +92,7 @@ class ConfirmationRecord:
     consumed_at: datetime | None = None
     task_id: str | None = None
     rejection_reason: str | None = None
+    flow_version: str = ""  # prepare 时冻结的流程契约版本；submit 时比对，漂移即拒绝
 
     def to_json(self) -> str:
         data = asdict(self)
@@ -122,6 +123,7 @@ class ConfirmationRecord:
             ),
             task_id=data.get("task_id"),
             rejection_reason=data.get("rejection_reason"),
+            flow_version=data.get("flow_version", ""),
         )
 
 
@@ -277,6 +279,7 @@ class ToolConfirmationService:
         flow_name: str,
         normalized_request: TaskSubmitRequest,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        flow_version: str = "",
     ) -> ConfirmationRecord:
         """创建 task 类确认记录（分析流程预检）。"""
         request_dict = normalized_request.model_dump(mode="json")
@@ -293,6 +296,7 @@ class ToolConfirmationService:
             expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
             agent_id=context.agent_id,
             session_id=context.session_id,
+            flow_version=flow_version,
         )
         store = await self._get_store()
         await store.save(record)
@@ -310,6 +314,18 @@ class ToolConfirmationService:
     ) -> ConfirmationRecord:
         """创建 tool 类确认记录（requires_confirm 工具）。"""
         payload = {k: v for k, v in arguments.items() if k not in _CONTROL_ARGUMENT_KEYS}
+        if tool_name in {"cygnusx_submit_download", "platform_submit_download"}:
+            from pydantic import ValidationError as SchemaError
+
+            from cygnusx.application.schemas.download import DownloadRequest
+
+            try:
+                DownloadRequest.model_validate(payload)
+            except SchemaError:
+                # Never put rejected signed URLs or credentials into the confirmation store.
+                raise ConfirmationError(
+                    "UNSAFE_DOWNLOAD_ARGUMENTS", "下载参数尚未通过安全或协议校验"
+                ) from None
         record = ConfirmationRecord(
             confirmation_id=str(uuid.uuid4()),
             user_id=user_id,
@@ -379,6 +395,23 @@ class ToolConfirmationService:
                 task_id=record.task_id,
                 message="任务已提交（确认记录此前已消费）",
             )
+
+        # 契约漂移防线（R5）：prepare 冻结的流程版本与当前 YAML 不一致即拒绝，
+        # 防止"预检后改流程定义、按旧契约提交"。存量记录无 flow_version（空串）不拦截。
+        if record.flow_id and record.flow_version:
+            from cygnusx.application.services.flow_service import FlowService
+            from cygnusx.core.exceptions import NotFoundError
+
+            try:
+                current_version = FlowService().get_flow_config(record.flow_id).meta.version
+            except NotFoundError:
+                current_version = None
+            if current_version != record.flow_version:
+                raise ConfirmationError(
+                    "FLOW_CONTRACT_CHANGED",
+                    f"流程 '{record.flow_id}' 定义已在预检后变更"
+                    f"（{record.flow_version} → {current_version}），请重新预检",
+                )
 
         if record.status == _STATUS_PENDING and not human_channel:
             raise ConfirmationError(

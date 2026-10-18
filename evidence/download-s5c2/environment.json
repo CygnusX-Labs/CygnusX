@@ -1,0 +1,21 @@
+{
+  "explicit_test_env_present": {
+    "E2E_DATABASE_URL": false,
+    "TEST_DATABASE_URL": false,
+    "TEST_REDIS_URL": false,
+    "REDIS_TEST_URL": false
+  },
+  "executables": {
+    "node": "/home/zj/.nvm/versions/node/v24.11.0/bin/node",
+    "postgres": null,
+    "redis-server": null,
+    "chromium": "/snap/bin/chromium",
+    "docker": "/usr/bin/docker"
+  },
+  "python_browser_packages": {
+    "playwright": false,
+    "selenium": false
+  },
+  "tcp_bind": "[Errno 1] Operation not permitted",
+  "unix_bind": "[Errno 1] Operation not permitted"
+}

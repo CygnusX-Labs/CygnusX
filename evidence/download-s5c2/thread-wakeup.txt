@@ -1,0 +1,20 @@
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Fail to write a null byte into the self-pipe socket
+Traceback (most recent call last):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/selector_events.py", line 139, in _write_to_self
+    csock.send(b'\0')
+PermissionError: [Errno 1] Operation not permitted
+DEBUG:asyncio:Fail to write a null byte into the self-pipe socket
+Traceback (most recent call last):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/selector_events.py", line 139, in _write_to_self
+    csock.send(b'\0')
+PermissionError: [Errno 1] Operation not permitted
+result 42
+DEBUG:asyncio:Fail to write a null byte into the self-pipe socket
+Traceback (most recent call last):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/selector_events.py", line 139, in _write_to_self
+    csock.send(b'\0')
+PermissionError: [Errno 1] Operation not permitted
+timer wake
+DEBUG:asyncio:Close <_UnixSelectorEventLoop running=False closed=False debug=True>
+done

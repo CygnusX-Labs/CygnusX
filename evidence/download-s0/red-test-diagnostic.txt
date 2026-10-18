@@ -1,0 +1,114 @@
+[92m09:58:13 - LiteLLM:WARNING[0m: get_model_cost_map.py:290 - LiteLLM: Failed to fetch remote model cost map from https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json: [Errno -3] Temporary failure in name resolution. Falling back to local backup.
+/home/zj/.config/matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /tmp/matplotlib-4dc92exz because there was an issue with the default path ({configdir}); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+[32m2026-10-16 09:58:17.950[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.core.telemetry[0m:[36msetup_telemetry[0m:[36m225[0m | [1m遥测已初始化（service=worker, otlp=off, prometheus=on）[0m
+[32m2026-10-16 09:58:18.116[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1m已自动挂载工具路由: ['blast', 'deg', 'enrichments', 'gsea', 'jbrowse', 'phylogenetic_tree', 'registry', 'synteny'][0m
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0 -- /home/zj/zj_code_libarary/OmicHub/.venv/bin/python
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... [32m2026-10-16 09:58:18.198[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.schemas[0m
+[32m2026-10-16 09:58:18.198[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.tables[0m
+[32m2026-10-16 09:58:18.198[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.types[0m
+[32m2026-10-16 09:58:18.198[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.constraints[0m
+[32m2026-10-16 09:58:18.199[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.defaults[0m
+[32m2026-10-16 09:58:18.199[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.comments[0m
+[32m2026-10-16 09:58:18.199[0m | [1mINFO    [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [1msetup plugin alembic.autogenerate.checkconstraint_byname[0m
+collected 1 item
+
+tests/unit/test_download_registration_contract.py::test_f01_f10_real_worker_register_to_dataset_reconcile [32m2026-10-16 09:58:18.503[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+Timeout (0:00:10)!
+Thread 0x0000780a6b7fe6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py", line 81 in _worker
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780a7a4fd6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 331 in wait
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 629 in wait
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/_shared_internal/__init__.py", line 156 in worker
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780a79cfc6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 331 in wait
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 629 in wait
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/_shared_internal/__init__.py", line 156 in worker
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780a8134e6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 395 in _recv
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 430 in _recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 216 in recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py", line 365 in get
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 300 in _queued_writer
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780a7b8ff6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 395 in _recv
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 430 in _recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 216 in recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py", line 365 in get
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 300 in _queued_writer
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780a7b0fe6c0 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 395 in _recv
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 430 in _recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/connection.py", line 216 in recv_bytes
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py", line 365 in get
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 300 in _queued_writer
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 982 in run
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045 in _bootstrap_inner
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/threading.py", line 1002 in _bootstrap
+
+Thread 0x0000780ae8e7f740 (most recent call first):
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/selectors.py", line 468 in select
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 1898 in _run_once
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 608 in run_forever
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 641 in run_until_complete
+  File "/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118 in run
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 905 in inner
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/python.py", line 167 in pytest_pyfunc_call
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1707 in runtest
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 569 in runtest
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 184 in pytest_runtest_call
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 250 in <lambda>
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 361 in from_call
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 249 in call_and_report
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 139 in runtestprotocol
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118 in pytest_runtest_protocol
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 408 in pytest_runtestloop
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 384 in _main
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 330 in wrap_session
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/main.py", line 377 in pytest_cmdline_main
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 229 in _main
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 253 in _console_main
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/pytest/__main__.py", line 9 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main

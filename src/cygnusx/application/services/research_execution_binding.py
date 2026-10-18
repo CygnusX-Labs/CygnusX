@@ -15,6 +15,7 @@ from cygnusx.application.services.flow_service import FlowService
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import ConflictError, ValidationError
 from cygnusx.domain.dataset.validation import ValidationLimits, checksum, open_owned_file
+from cygnusx.domain.task.entities import Task
 from cygnusx.infrastructure.database.models.dataset import DatasetAnalysisLinkModel
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.repositories.dataset_repository import DatasetRepository
@@ -117,7 +118,7 @@ async def validate_dataset_submission(
     return link
 
 
-async def worker_preflight(db: AsyncSession, task: TaskModel) -> None:
+async def worker_preflight(db: AsyncSession, task: TaskModel | Task) -> None:
     if not task.idempotency_key or not task.idempotency_key.startswith("dataset:"):
         return
     from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate

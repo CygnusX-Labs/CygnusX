@@ -710,3 +710,155 @@ pipelines/ATACFlow/mcp/
 5. **依赖**：仅允许沙箱镜像预装的包，禁止运行时 `pip install` 非白名单包
 6. **审计**：所有生成/注册/调用/销毁操作记入 `mcp_logs`
 7. **回退**：实验 MCP 异常不得影响平台内置 Preset 的正常运行
+
+---
+
+## 11. MCP 工具固定化：固定工具 + 动态 Flow 目录
+
+> 基线：2026-10-16（阶段 0 已落地）。实施手册与逐阶段验收 checklist 见
+> `docs/info/26.10.15/CygnusX-MCP工具固定化-审查核对与实施手册.md`；
+> 本节是目标接入架构的唯一权威描述，后续阶段完成后同步更新"当前状态"。
+
+### 11.1 背景与问题
+
+平台每新增一个 Flow，MCP 工具数量就增长一次。改造前三套暴露口径并存：
+
+1. **Chat 内置 `cygnusx-tools`**：`flows/*.yaml` 经 `FlowToolSchemaCompiler`
+   （`src/cygnusx/tools/flow_schema_compiler.py`）自动生成
+   `cygnusx_prepare_<flow_id>_submission`，每 Flow 一个工具，经
+   `tools/schema_loader.py` 进 LLM 请求，执行走
+   `tool_bridge_service._execute_analysis_flow()`；
+2. **RNA/ATAC 四件套**（prepare / submit / status / results × 2）：外部
+   `mcp-server/tools/pipelines.py` 与内置
+   `src/cygnusx/infrastructure/mcp/pipeline_preset.py` **平行维护两份 schema**，
+   handler 同落 `PipelineController`；
+3. **外部通用提交** `cygnusx_submit_analysis(flow_id, parameters, …)`：
+   已按 flow_id 分发，不随 Flow 增长，但校验是浅校验
+   （`mcp-server/tools/analysis.py` 只做必填键与样本表存在性检查）。
+
+三套口径 = 模型上下文与校验强度双漂移。核心诊断：**自动生成工具解决的是
+"手工维护"，不是"工具数量膨胀"**；正确的靶子是统一暴露层。
+
+### 11.2 目标接入架构
+
+**固定动词 + 动态目录**：工具清单固定为 4 个能力，Flow 作为目录数据增长。
+从 2 个 Flow 到几十个 Flow，工具清单不变。
+
+```
+┌─ 模型 / 外部客户端 ─┐
+│  list_flows(带门控) │  目录：只含简要字段（id / 名称 / 一句话描述 / 类别标签），
+│  describe_flow      │  细节永远走 describe，list 输出不随流程数膨胀
+│  prepare            │  通用信封 {flow_id, arguments: object}，flow 特定参数
+│  submit             │  一律收进 arguments，以 describe 契约为校验依据
+└────────┬───────────┘
+         ▼
+AnalysisFlowToolService（唯一服务实现，内外双端共用，禁两份实现）
+  discover() / describe() / prepare() / confirm_and_submit()
+         ▼
+TaskService.submit() 主链（确认门与九步链复用，不弱化）
+         ▼
+状态 / 结果 / 日志 / 取消：复用通用任务工具（外部 tools/tasks.py 全套已具备；
+内置端由 FlowToolSchemaCompiler 生成的 status/summary 工具承担，后续补齐
+cancel / logs 通用能力）
+```
+
+命名沿用 `cygnusx_` 前缀（与现有命名空间一致）。外部端目录/describe 已存在：
+`cygnusx_list_flows` / `cygnusx_get_flow_detail`（`mcp-server/tools/flows.py`），
+即固定目录工具的外部形态，不改名、不新增同能力工具。
+
+### 11.3 关键设计决策（红线）
+
+| 决策 | 内容 |
+|------|------|
+| Schema 原则 | 固定工具的 inputSchema 小而稳定；**禁止把全部 Flow 的 oneOf 塞进通用 Schema**（那是把工具清单膨胀搬成 Schema 膨胀）；flow 参数收进 `arguments` 对象 |
+| 门控同源 | `list_flows` 输出必须与"实际可提交集合"同源同判定（`FlowService._enabled`，如 `counts_deg_flow_enabled=false` 默认关闭）；describe 对未开放流程同样 404/"不存在" |
+| 人类确认红线 | 提交只认服务端确认凭证：参数快照 + 契约版本/哈希冻结 + 归属 + 过期（默认 30 分钟可配）+ 单次消费（原子操作防并发重放）+ **幂等**（同一 confirmation_id 重试返回既有 task_id，不新建任务）；**绝不接受模型布尔自证已确认**（`_confirmed` 已废弃，评审打回项） |
+| 契约漂移防线 | prepare 冻结契约版本/哈希，submit 校验，不符即拒绝并要求重新 prepare |
+| 校验对等 | 新入口校验强度 ≥ 旧 pipelines 路径；建"校验对等矩阵"（6 类非法输入 × Chat/外部双链路），不通过不进入切换阶段 |
+| 校验插件化 | pipelines 控制器中的工作区数据检查、样本-FASTQ 匹配检查抽为可复用校验插件，由流程 YAML 配置引用；**插件不增加 MCP 工具** |
+| 参数 Schema 严格化 | `FlowService.get_flow_json_schema()` 的 `"type": "any"` 占位（非法 JSON Schema 类型）改复用 FlowToolSchemaCompiler 编译产物，describe_flow 输出严格类型契约 |
+
+### 11.4 现状锚点（as-built）
+
+| 资产 | 位置 |
+|------|------|
+| 通用 Flow 服务（六方法齐备） | `src/cygnusx/application/services/analysis_flow_tool_service.py`（discover:53 / describe:72 / prepare:98 / confirm_and_submit:151 / get_task_status:173 / get_task_summary:188） |
+| Flow 门控 | `FlowService._enabled`（`flow_service.py:76`，Settings `counts_deg_flow_enabled`，`core/config.py:91`） |
+| Chat 自动生成工具 | `src/cygnusx/tools/flow_schema_compiler.py`（产物 `cygnusx_prepare_<slug>_submission`；消费者：schema_loader、内置 preset `presets.py:_build_cygnusx_tools_preset`、describe()） |
+| 旧四件套（双端） | `mcp-server/tools/pipelines.py` / `infrastructure/mcp/pipeline_preset.py` |
+| 外部浅校验 | `mcp-server/tools/analysis.py::cygnusx_preview_analysis`（阶段 2 起统一提交改走 `cygnusx_prepare` 全量校验） |
+| 校验插件 | `src/cygnusx/domain/flow/validation_plugins.py`（`fastq_workspace`；YAML `ai.validation_plugins` 引用） |
+| 外部通用任务工具 | `mcp-server/tools/tasks.py`（list/get/progress/logs/cancel/dag 全套） |
+
+### 11.5 分阶段路线与当前状态
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 0 止血前置包 | 冻结政策（新增 Flow 不得新增 MCP 工具）；目录/describe 能力就位并声明门控语义；旧四件套 + 自动生成 per-flow 工具加 `[DEPRECATED]` 软弃用标注（仅 description，零行为改动） | ✅ 2026-10-16 落地 |
+| 1 统一 prepare/submit | 固定工具 `cygnusx_prepare(flow_id, arguments)` / `cygnusx_submit(confirmation_id)` 落地：内置端经 `tools_schema.yaml`（`tool_role: prepare_fixed/submit_fixed`）进 `cygnusx-tools` preset，桥接分发到 `AnalysisFlowToolService`；外部端 `mcp-server/tools/analysis.py` 经新 API `POST /ai/flows/{flow_id}/prepare`、`POST /ai/flow-confirmations/{id}/submit` 调同一服务。确认记录冻结（参数快照 + SHA-256 哈希 + 归属 + 30 分钟 TTL）、单次消费原子迁移、幂等返回既有 task_id、模型通道须人类点卡 APPROVED——全部由既有 `ToolConfirmationService` 保证，固定工具零自证布尔 | ✅ 2026-10-16 落地（提交链写门禁 `require_agent_write_gate` 维持现状，启用需独立评审） |
+| 2 校验对齐 | 校验插件抽取：新增 `domain/flow/validation_plugins.py`（`FlowValidationPlugin` 协议 + `fastq_workspace` 插件：工作区数据 + 样本-FASTQ 匹配，与 PipelineController 同源唯一实现），`FlowAIConfig.validation_plugins` 字段 + `flows/rna_seq.yaml`/`atac_seq.yaml` 的 `ai.validation_plugins: [fastq_workspace]` 引用，统一 prepare 按配置调用；修复 `"type": "any"`（已复用 FlowToolSchemaCompiler 严格编译产物）；契约漂移防线（确认记录冻结 `flow_version`，submit 比对当前 YAML 版本，漂移即 `FLOW_CONTRACT_CHANGED` 拒绝）；校验对等矩阵 6 类非法输入 × 新旧双路径单测全绿（`tests/unit/test_flow_validation_parity.py`，含基线对照） | ✅ 2026-10-16 落地（Chat/外部 MCP 双链路真实 e2e 冒烟待用户环境实例配合，见实施手册阶段 2 checklist） |
+| 3 切换与下线 | 切换机制已落地（`LEGACY_PIPELINE_TOOLS`，后端 `core/config.py` + 外部 mcp-server `config.yaml` 同语义）：off 时 Chat per-flow 自动生成工具停止注册（编译器保留契约编译职责，`describe`/参数 Schema 照常）、内置 `cygnusx-pipelines` preset 变迁移壳（空工具清单 + 明确"已迁移"描述）、外部四件套变同名迁移 stub（调用返回迁移提示而非 tool-not-found，工具名清单闭合）；通用 status/summary 与固定工具不受影响。**默认 true 保持现状**；灰度回归（测试环境 Chat 链路 + 外部 MCP 链路 + 旧客户端包装，一周）经用户验收后双端同步翻 false | 🔧 机制就绪待切换（默认 true；flip 需用户验收） |
+| 4 扩展定型 | 后端插件机制落地（`FlowValidationPlugin` 协议 + 注册表 + YAML `ai.validation_plugins` 引用，阶段 2 已交付）；《新增 Flow 接入指南》已更新进 `CygnusX_flow_architecture.md` §8（工具固定化后：flows YAML + 可选校验插件 + Worker 验收，零新增 MCP 工具，含固定工具闭环验收步骤与红线） | ✅ 2026-10-16 文档就绪（以一个真实新 Flow 走完整链路的现场验收需部署环境，列入用户验收项） |
+
+### 11.6 新增 Flow 的目标接入路径
+
+```
+flows/<new_flow>.yaml        ← 声明式契约（参数 / 样本表 / 资源 / 执行映射）
+        + 可选后端校验插件    ← 数据预检、特殊结果解析（FASTQ 预检 RNA/ATAC 共用）
+        + Worker 验收
+```
+
+上线后即刻出现在 `list_flows` 目录（若开放门控），`describe_flow` 按需返回
+契约，`prepare/submit` 固定工具直接可用——**全程零新增 MCP 工具**。
+
+---
+
+## 12. 架构审查与版本治理（2026-10-16 审查响应）
+
+> 基线：2026-10-16。依据 `docs/info/26.10.16/CygnusX_MCP架构审查与版本治理实施方案.md`
+> （评审稿 v1.0）对本文档 §1–§11 的评分与缺口清单逐项响应。状态标记：
+> 已实现 / 已测试 / 已部署 / 待验收。
+
+### 12.1 审查结论采纳
+
+评审综合判断约 7/10："适合在现有架构上演进，不建议另起一套注册、授权或发布
+框架"——采纳。所有修复在既有框架内完成，不新建平行注册/权限/版本体系。
+§11 Flow 固定化获 8.5/10，维持现状继续演进；防膨胀（5.5/10）与版本回退
+（5.5/10）为本次重点补齐对象。
+
+### 12.2 本次落地（防膨胀 + 实验池执行权限）
+
+| 项 | 内容 | 状态 |
+|---|---|---|
+| 实验池 invoke 门禁（P0） | `MCPBuilderService.call_experimental_tool` 强制校验链：归属 → `review_status == APPROVED` → `is_enabled` → TTL 未过期；未审核/已驳回/已下线一律拒绝，与 Agent 装配口径（`agent_service._mcp_mount_allowed_for_agent`）一致，堵住"绕过目录直接 invoke 未发布构建"断点 | 已实现 + 已测试（`tests/unit/test_mcp_builder_invoke_gate.py` 7 例） |
+| 实验输出限额（P0） | `_clamp_experimental_result`：单次调用输出 >16KiB（UTF-8 字节）整包替换为截断说明（保留 success 语义），引导大结果写工作区文件 | 已实现 + 已测试 |
+| 目录分页（P1） | `FlowService.list_flows(limit, offset)` + `GET /flows` 可选分页参数（不传保持全量，前端兼容）；外部 `cygnusx_list_flows(category, limit=20, offset=0)`，limit 上限 50，返回 `total/next_offset/has_more`；门控判定在分页前应用 | 已实现 + 已测试（`tests/unit/test_mcp_budget_and_pagination.py`） |
+| llm_payload 独立限额（P1） | `_package_analysis_flow_result` 接入与 `_package` 相同的 3000B 标准（`_fit_llm_payload`）：超限先裁剪 `parameter_preview`（附字节数引用）再裁 `resource_hint`，仍超限退化为最小摘要；错误/警告清单限首 10 条 + TRUNCATED 计数；完整数据始终在 `ui_payload`（确认卡）不受限额影响 | 已实现 + 已测试 |
+
+### 12.3 版本治理现状与差距（诚实记录，未宣称完成）
+
+| 审查项 | 现状（代码证据 2026-10-16 调查） | 差距 / 后续 |
+|---|---|---|
+| 版本包内容 | `mcp_versions` 已有：代码快照（builder 路径）、工具/契约快照（`tools_snapshot` 含 inputSchema）、`config_snapshot`（12 个语义字段）、changelog、build 引用 | 缺依赖锁定（仅静态分析 warnings，无 requirements 冻结）与运行环境/镜像摘要；admin 路径快照无 code_snapshot |
+| 契约指纹 | ✅ 已落地：`versioning.compute_contract_digest`（v1 规范化算法：工具 schema/描述 + config_snapshot 12 语义字段的 sort_keys JSON SHA-256，`v1:<hex>` 前缀带算法版本）；`mcp_versions.contract_digest` 列（迁移 `a6b7c8d9e0f1`）；builder/admin 两条快照路径与 rollback 版本行均写入/继承；版本列表 DTO 暴露 | 依赖锁定与运行环境摘要仍缺；插件版本经 tools_snapshot schema 间接体现，显式插件指纹待后续 |
+| 发布/回退语义 | rollback（builder `mcp_builder_service.py` 与 admin `mcp_service.py`）为纯 DB 指针切换：还原 config/tools 快照 + 改 `current_version`；实验 MCP 靠下次调用按 `current_version` 重写沙箱代码间接受益，外部 MCP 靠 connection fingerprint 变化惰性重建——**不等于制品重建语义** | 需 deployment/generation 模型（乐观锁 + 原子激活 + 候选健康检查），回退是一次指向历史验证版本的新部署操作 |
+| 并发保护 | ✅ 回退乐观锁已落地：双端 `rollback` 支持 `expected_current_version`（不一致即 `ConflictError` 拒绝，server 不被改动），builder 走 Query 参数、admin 走请求体字段；API 已暴露。✅ `next_patch_version` 行锁：先对 `mcp_servers` 行 `FOR UPDATE` 再算 max+1，串行化同一 server 的并发版本递进，消除撞唯一约束互相覆盖窗口 | 通用 `expected_generation` 条件更新待 deployment 模型；多 worker 下行锁有效但跨环境发布协调仍待 `mcp_deployments` |
+| Builder 生命周期 | TTL 到期 `expire_stale_servers` 置 `is_enabled=False`；invoke 现已即时拒绝（本次修复）；沙箱子进程即用即起（start→call→stop），无长驻进程误杀问题 | `mcp_visibility` 细粒度共享表已建但全链路未接线（仅创建者可见现状）；invoke 层无限流（仅 submit 有配额） |
+| UDS 沙箱执行层 | `/mcp/*` 依赖 per-session UDS 文件权限 + host 侧归属/审核/TTL 校验（本次加固）；start/call/tools 有 30s 超时与单容器并发上限 8 | `/mcp/call` 无频率限制、无独立审计（依赖 host 侧一条 MCPLog）；应用层无 token 鉴权 |
+
+### 12.4 验收矩阵映射（本次新增证据）
+
+| 审查验收项 | 本次证据 | 状态 |
+|---|---|---|
+| 权限：未审核/已驳回实验 MCP invoke 失败 | `test_mcp_builder_invoke_gate.py`（PENDING/REJECTED/disabled 均拒，沙箱管理器零接触） | 已测试（进程内）；跨用户矩阵与真实传输待部署验收 |
+| 输出预算：llm_payload 超限有引用且不失去错误信息 | `test_mcp_budget_and_pagination.py`（三级退化 + 错误清单截断 + ui_payload 完整保留） | 已测试 |
+| 目录扩容：2/20/100 Flow 下固定工具名/schema 不变 | 固定工具 schema 无 flow_id 枚举（上一轮已核）+ 分页落地；2/20/100 实测需部署环境 | 待验收 |
+| 确认并发 20 并发同凭证 ≤1 任务 | 既有 Redis Lua 原子迁移 + 幂等返回；并发压测需部署环境 | 待验收 |
+| 版本完整性/复现/发布并发/回退 | 契约指纹与回退乐观锁已落地（`test_mcp_builder_version_control.py` 追加 4 例：digest 确定性/敏感性、乐观锁冲突拒绝且 server 不变、版本匹配放行、rollback 行指纹继承）；制品重建语义与部署切换见 §12.3 | 部分实现（进程内已测试）；并发发布压测与回退演练需部署环境 |
+
+### 12.5 后续路线（按审查 §10 优先级）
+
+1. **P1** ~~契约指纹 contract_digest~~ ✅ 已落地（2026-10-16，`a6b7c8d9e0f1`）；剩余：依赖锁定与运行环境摘要入版本包；
+2. **P1** `mcp_deployments`（generation 乐观锁、原子激活、候选健康检查、失败保持原 active）；回退从"DB 指针切换"升级为"指向历史验证版本的新部署操作"；
+3. **P1** 调用绑定 version_id/contract_digest/deployment_generation，发现结果携带版本指纹；
+4. **P2** `mcp_visibility` 共享接线、invoke 限流、版本管理界面与审计增强。

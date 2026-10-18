@@ -35,9 +35,11 @@ FlowServiceDep = Annotated[FlowService, Depends(get_flow_service)]
 async def list_flows(
     service: FlowServiceDep,
     category: Annotated[str | None, Query(description="按分类过滤")] = None,
+    limit: Annotated[int | None, Query(description="分页大小（不传返回全量）")] = None,
+    offset: Annotated[int, Query(description="分页偏移")] = 0,
 ) -> FlowListResponse:
-    """获取所有可用流程的列表"""
-    return service.list_flows(category=category)
+    """获取所有可用流程的列表（门控后集合；支持可选分页）"""
+    return service.list_flows(category=category, limit=limit, offset=offset)
 
 
 @router.get(

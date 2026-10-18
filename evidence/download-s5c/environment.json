@@ -1,0 +1,17 @@
+{
+  "explicit_test_configuration_present": {
+    "PROJECT_EXPORT_TEST_DATABASE_URL": false,
+    "CYGNUSX_REPORT_TEST_DATABASE_URL": false,
+    "CYGNUSX_S5C_TEST_DATABASE_URL": false,
+    "CYGNUSX_S5C_BASE_URL": false
+  },
+  "executables": {
+    "postgres": null,
+    "redis-server": null,
+    "chromium": "/snap/bin/chromium",
+    "chromium-browser": "/usr/bin/chromium-browser",
+    "docker": "/usr/bin/docker"
+  },
+  "loopback_bind": "PermissionError: [Errno 1] Operation not permitted",
+  "unix_bind": "PermissionError: [Errno 1] Operation not permitted"
+}

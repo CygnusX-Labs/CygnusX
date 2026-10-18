@@ -1,0 +1,105 @@
+{
+  "scope": "HOST_READ_ONLY_NOT_WORKER",
+  "status": "DEPENDENCIES_UNVERIFIED",
+  "runtime_certified": false,
+  "kernel": {
+    "release": "6.8.0-147-generic",
+    "machine": "x86_64"
+  },
+  "process": {
+    "Uid": "1000\t1000\t1000\t1000",
+    "Gid": "1000\t1000\t1000\t1000",
+    "CapEff": "0000000000000000",
+    "CapBnd": "0000000000000000",
+    "NoNewPrivs": "1",
+    "Seccomp": "2"
+  },
+  "capabilities": {
+    "CapEff": {
+      "CAP_SYS_ADMIN": false,
+      "CAP_NET_ADMIN": false,
+      "CAP_BPF": false,
+      "CAP_PERFMON": false
+    },
+    "CapBnd": {
+      "CAP_SYS_ADMIN": false,
+      "CAP_NET_ADMIN": false,
+      "CAP_BPF": false,
+      "CAP_PERFMON": false
+    }
+  },
+  "cgroup": {
+    "v2_visible": true,
+    "current_path": "/user.slice/user-1000.slice/user@1000.service/tmux-spawn-e59e94fe-7753-44eb-96f1-c0b15337eab7.scope",
+    "controllers": [
+      "cpuset",
+      "cpu",
+      "io",
+      "memory",
+      "hugetlb",
+      "pids",
+      "rdma",
+      "misc"
+    ],
+    "root_writable_hint": false,
+    "kill_file_visible": false
+  },
+  "namespaces_visible": {
+    "cgroup": true,
+    "ipc": true,
+    "mnt": true,
+    "net": true,
+    "pid": true,
+    "user": true,
+    "uts": true
+  },
+  "writable_filesystems": {
+    "/": {
+      "mountpoint": "/",
+      "filesystem": "ext4",
+      "options": [
+        "nodev",
+        "nosuid",
+        "relatime",
+        "ro",
+        "rw"
+      ],
+      "xfs_project_quota_option": false
+    },
+    "/tmp": {
+      "mountpoint": "/tmp",
+      "filesystem": "ext4",
+      "options": [
+        "nodev",
+        "nosuid",
+        "relatime",
+        "rw"
+      ],
+      "xfs_project_quota_option": false
+    }
+  },
+  "inspection_tools": {
+    "bpftool": "/usr/sbin/bpftool",
+    "nft": "/usr/sbin/nft",
+    "iptables": "/usr/sbin/iptables",
+    "ip": "/usr/sbin/ip",
+    "unshare": "/usr/bin/unshare",
+    "xfs_quota": "/usr/sbin/xfs_quota",
+    "setpriv": "/usr/bin/setpriv"
+  },
+  "docker_socket_visible": true,
+  "adapter_implementation": "NOT_IMPLEMENTED",
+  "network_enforcement": "NOT_TESTED_BY_READ_ONLY_PROBE",
+  "atomic_rx_accounting": "NOT_TESTED",
+  "filesystem_quota": "NOT_TESTED_BY_READ_ONLY_PROBE",
+  "worker_loss_cleanup": "NOT_TESTED",
+  "required_external_dependencies": [
+    "authorized isolated non-production Worker and controlled HTTP origin",
+    "authenticated supervisor independent of Worker with bounded lease",
+    "per-Task cgroup, network/mount namespaces and immutable CLI digest",
+    "unbypassable IPv4/IPv6 egress with atomic ingress byte admission",
+    "per-Task block/inode hard quota covering every writable path",
+    "trusted server admission and durable budget reference resolution",
+    "existing Task/FileRegistry/Dataset reconciliation environment"
+  ]
+}

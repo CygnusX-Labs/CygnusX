@@ -1,0 +1,5 @@
+[2026-10-17 04:52:42,540: INFO/MainProcess] Task cygnusx.infrastructure.celery_app.tasks.project_reports.generate_project_report[acec9765-4dfc-48f2-9cf5-42498dc35204] received
+2026-10-17 04:52:42.544 | INFO     | app | cygnusx.infrastructure.celery_app.logging:__call__:73 | Task acec9765-4dfc-48f2-9cf5-42498dc35204 started: cygnusx.infrastructure.celery_app.tasks.project_reports.generate_project_report
+2026-10-17 04:52:42.546 | INFO     | app | cygnusx.infrastructure.celery_app.logging:__call__:91 | Task acec9765-4dfc-48f2-9cf5-42498dc35204 finished: cygnusx.infrastructure.celery_app.tasks.project_reports.generate_project_report
+[2026-10-17 04:52:42,549: ERROR/ForkPoolWorker-3] Task cygnusx.infrastructure.celery_app.tasks.project_reports.generate_project_report[acec9765-4dfc-48f2-9cf5-42498dc35204] raised unexpected: DependencyUnavailableError('Project scientific report generation is not admitted')
+        "task.id": "acec9765-4dfc-48f2-9cf5-42498dc35204",

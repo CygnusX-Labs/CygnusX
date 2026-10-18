@@ -1,0 +1,6 @@
+try1=true
+try2_same_session=true
+session_locks=1
+unlock1=true
+unlock2=true
+locks_after=0

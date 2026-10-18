@@ -1,0 +1,32 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 4 items
+
+tests/unit/test_download_history_projection.py ..FF                      [100%]
+
+=================================== FAILURES ===================================
+___ test_sse_download_metadata_is_filtered_without_mutating_execution_chunk ____
+tests/unit/test_download_history_projection.py:60: in test_sse_download_metadata_is_filtered_without_mutating_execution_chunk
+    assert "HISTORY_CANARY" not in str(sent.metadata)
+E   assert 'HISTORY_CANARY' not in "{'tool_name...Y_CANARY']}}"
+E     
+E     'HISTORY_CANARY' is contained here:
+E       g/f?token=HISTORY_CANARY']}}
+_________ test_new_persisted_envelope_hash_covers_safe_projection_only _________
+tests/unit/test_download_history_projection.py:65: in test_new_persisted_envelope_hash_covers_safe_projection_only
+    from cygnusx.application.services.chat.utils import (
+E   ImportError: cannot import name '_finalize_invocation_envelope' from 'cygnusx.application.services.chat.utils' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/services/chat/utils.py)
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_history_projection.py::test_sse_download_metadata_is_filtered_without_mutating_execution_chunk
+FAILED tests/unit/test_download_history_projection.py::test_new_persisted_envelope_hash_covers_safe_projection_only
+==================== 2 failed, 2 passed, 1 warning in 0.28s ====================

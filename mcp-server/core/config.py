@@ -57,6 +57,12 @@ class MCPServerConfig(BaseSettings):
     max_log_lines: int = _limits.get("max_log_lines", 100)
     sandbox_timeout: int = _limits.get("sandbox_timeout", 300)
 
+    # MCP 工具固定化（阶段 3）：旧 RNA/ATAC 四件套发现开关。
+    # true=旧工具可用（默认，现状/回退）；false=注册同名迁移 stub，
+    # 客户端收到明确"已迁移"提示（固定工具 cygnusx_prepare/cygnusx_submit 接管）。
+    # 与平台后端 Settings.legacy_pipeline_tools 同语义，需保持一致翻转。
+    legacy_pipeline_tools: bool = _yaml.get("legacy_pipeline_tools", True)
+
     def is_tool_group_enabled(self, group_id: str) -> bool:
         return _tool_groups.get(group_id, True)
 

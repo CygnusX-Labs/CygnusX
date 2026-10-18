@@ -47,7 +47,9 @@ class ProjectService:
             # getattr 兼容测试替身等无 status 属性的投影对象（同 customer 处理）
             "status": getattr(model, "status", None) or "active",
             # WP3 任务 3：项目级设置（当前仅 research_mode）；NULL 透出为 None
-            "settings": getattr(model, "settings", None) if isinstance(getattr(model, "settings", None), dict) else None,
+            "settings": getattr(model, "settings", None)
+            if isinstance(getattr(model, "settings", None), dict)
+            else None,
             "created_at": model.created_at.isoformat() if model.created_at else None,
             "updated_at": model.updated_at.isoformat() if model.updated_at else None,
         }
@@ -254,13 +256,30 @@ class ProjectService:
 
     async def delete_project(self, user_id: UUID, project_id: UUID) -> bool:
         """删除项目（仅删 DB 记录 + 目录记录，不删物理文件，避免误删数据）。"""
-        stmt = select(ProjectModel).where(
-            ProjectModel.id == project_id, ProjectModel.user_id == user_id
+        stmt = (
+            select(ProjectModel)
+            .where(ProjectModel.id == project_id, ProjectModel.user_id == user_id)
+            .with_for_update()
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         if model is None:
             raise NotFoundError(f"项目不存在：{project_id}")
+        from cygnusx.core.config import get_settings
+
+        if get_settings().project_export_enabled:
+            from cygnusx.infrastructure.database.models.project_export import ProjectExportJobModel
+
+            retained = await self._session.scalar(
+                select(ProjectExportJobModel.id)
+                .where(ProjectExportJobModel.project_id == project_id)
+                .limit(1)
+            )
+            if retained is not None:
+                raise ConflictError(
+                    "项目包含保留的科研导出记录，请先完成保留策略审核",
+                    code="PROJECT_EVIDENCE_RETAINED",
+                )
         await self._session.delete(model)
         # 清理目录记录
         dirs = DirectoryRepositoryImpl(self._session)

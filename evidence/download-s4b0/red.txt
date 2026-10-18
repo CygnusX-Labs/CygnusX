@@ -1,0 +1,61 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/unit/test_download_s4b0_reliability.py FFF                         [100%]
+
+=================================== FAILURES ===================================
+______________ test_legacy_prefix_cannot_starve_recoverable_task _______________
+tests/unit/test_download_s4b0_reliability.py:30: in test_legacy_prefix_cannot_starve_recoverable_task
+    assert result['dispatched'] == 1
+E   assert 0 == 1
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 02:10:32.133[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 02:10:32.200[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.domain.task.services[0m:[36mtransition_status[0m:[36m92[0m | [1mtoolbox.task.transition[0m
+_______________________ test_repeat_cancel_is_idempotent _______________________
+tests/unit/test_download_s4b0_reliability.py:38: in test_repeat_cancel_is_idempotent
+    second = await service.cancel_task(task.id, str(env.owner))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/task_service.py:305: in cancel_task
+    raise ValidationError(f"当前状态 {task.status.value} 不允许取消")
+E   cygnusx.core.exceptions.ValidationError: 当前状态 cancelled 不允许取消
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 02:10:32.476[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 02:10:32.756[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.domain.task.services[0m:[36mtransition_status[0m:[36m92[0m | [1mtoolbox.task.transition[0m
+[32m2026-10-17 02:10:32.758[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.domain.task.services[0m:[36mtransition_status[0m:[36m92[0m | [1mtoolbox.task.transition[0m
+_______________ test_session_close_clears_pending_notifications ________________
+tests/unit/test_download_s4b0_reliability.py:45: in test_session_close_clears_pending_notifications
+    assert not env.db.sync.info.get('download_dispatch')
+E   AssertionError: assert not {'da2cde83-8dbd-42ba-aead-2b4ec4c6eb27'}
+E    +  where {'da2cde83-8dbd-42ba-aead-2b4ec4c6eb27'} = <built-in method get of dict object at 0x72009f50cac0>('download_dispatch')
+E    +    where <built-in method get of dict object at 0x72009f50cac0> = {'download_dispatch': {'da2cde83-8dbd-42ba-aead-2b4ec4c6eb27'}}.get
+E    +      where {'download_dispatch': {'da2cde83-8dbd-42ba-aead-2b4ec4c6eb27'}} = <sqlalchemy.orm.session.Session object at 0x72009f0d0850>.info
+E    +        where <sqlalchemy.orm.session.Session object at 0x72009f0d0850> = <tests.unit.test_dataset_phase3.OfflineDB object at 0x72009f1a0990>.sync
+E    +          where <tests.unit.test_dataset_phase3.OfflineDB object at 0x72009f1a0990> = namespace(db=<tests.unit.test_dataset_phase3.OfflineDB object at 0x72009f1a0990>, datasets=<cygnusx.application.servic...t 0x72009f55c290>>, send=<Mock id='125346998696336'>, original_dispatch=<function dispatch_download at 0x7201197b3100>).db
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 02:10:32.764[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 02:10:32.781[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.domain.task.services[0m:[36mtransition_status[0m:[36m92[0m | [1mtoolbox.task.transition[0m
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s4b0_reliability.py::test_legacy_prefix_cannot_starve_recoverable_task
+FAILED tests/unit/test_download_s4b0_reliability.py::test_repeat_cancel_is_idempotent
+FAILED tests/unit/test_download_s4b0_reliability.py::test_session_close_clears_pending_notifications
+========================= 3 failed, 1 warning in 0.73s =========================

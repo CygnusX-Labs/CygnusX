@@ -1,0 +1,6 @@
+FROM project_export_jobs 
+WHERE project_export_jobs.id = $1::UUID
+2026-10-17 05:09:25.725 | INFO     | app | cygnusx.infrastructure.celery_app.logging:__call__:91 | Task da9ac1aa-650b-480d-a55a-8d65ccb7353e finished: cygnusx.infrastructure.celery_app.tasks.project_exports.generate_project_export
+[2026-10-17 05:09:25,726: INFO/ForkPoolWorker-4] Task cygnusx.infrastructure.celery_app.tasks.project_exports.generate_project_export[da9ac1aa-650b-480d-a55a-8d65ccb7353e] succeeded in 0.08687347199884243s: {'job_id': 'f61dafa4-ea30-4b09-9112-b262ceb0f1d8', 'status': 'ready'}
+        "task.name": "cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports",
+        "task.name": "cygnusx.infrastructure.celery_app.tasks.project_exports.generate_project_export",

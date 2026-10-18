@@ -1,0 +1,4 @@
+ERROR:  column "file_size" does not exist
+LINE 1: SELECT id,user_id,original_name,storage_path,file_size FROM ...
+                                                     ^
+HINT:  Perhaps you meant to reference the column "file_records.file_type".

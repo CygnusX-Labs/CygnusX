@@ -23,6 +23,13 @@ from cygnusx.infrastructure.ai_provider.openai_compatible import ChatChunk
 _GOLDEN_ROOT = Path(__file__).parents[2] / "e2e" / "chat_golden"
 
 
+@pytest.fixture(autouse=True)
+def static_model_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These terminal/approval fixtures exercise static binding, not live provider routing."""
+    settings = lg_module.get_settings().model_copy(update={"dynamic_model_routing_enabled": False})
+    monkeypatch.setattr(lg_module, "get_settings", lambda: settings)
+
+
 class _Service:
     def __init__(self, sandbox_meta: dict | None = None) -> None:
         self.update_message_content = AsyncMock()

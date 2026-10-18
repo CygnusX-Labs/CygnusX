@@ -1,0 +1,6 @@
+ M docs/ARC/architecture-2026-10-06.md
+ M functions/seqout-chat/index.ts
+ M server/.env.example
+ M server/local.mjs
+?? functions/seqout-chat/platform-tools.ts
+?? functions/seqout-chat/tests/platform-tools.test.ts

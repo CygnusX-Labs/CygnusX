@@ -11,11 +11,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from cygnusx.domain.mcp.entities import MCPServer
+
+#: 契约摘要算法版本（更换规范化规则时 bump，旧 digest 仍可识别）
+CONTRACT_DIGEST_ALGORITHM = "v1"
 
 #: 合法变更类型 → 版本段递进规则
 CHANGE_TYPES = ("feature", "fix", "breaking", "refactor")
@@ -53,6 +58,30 @@ def extract_config_snapshot(server: MCPServer) -> dict[str, Any]:
             value = type(value)(value)
         data[field] = value
     return data
+
+
+def compute_contract_digest(
+    tools_snapshot: list[dict[str, Any]] | None,
+    config_snapshot: dict[str, Any] | None,
+) -> str:
+    """计算版本契约指纹（架构审查 §7.3）。
+
+    覆盖影响语义的面：工具名/输入输出 schema/描述（tools_snapshot）与
+    连接行为配置（config_snapshot 的 12 个语义字段，时间戳等非语义字段不在
+    其内）。规范化算法：JSON sort_keys + ensure_ascii=False 的 SHA-256，
+    结果带算法版本前缀（``v1:<hex>``）。插件/参数等下游变化通过
+    tools_snapshot 的 schema 与 description 体现，不能只靠 YAML 版本号不变
+    而漏检。
+    """
+    payload = {
+        "algorithm": CONTRACT_DIGEST_ALGORITHM,
+        "tools": tools_snapshot or [],
+        "config": {
+            k: (config_snapshot or {}).get(k) for k in CONFIG_SNAPSHOT_FIELDS
+        },
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return f"{CONTRACT_DIGEST_ALGORITHM}:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 _SEMVER_RE = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"

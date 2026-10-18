@@ -120,3 +120,32 @@ Phase 0 回归、离线 HTML、安全、生命周期、去重、发布失败恢�
 ## 受保护的 Dataset 科研交付扩展
 
 Phase4 增加可选 ResultObservation 关联和 Snapshot.research_delivery；无扩展字段的历史快照保持原 digest。Counts 可在受保护路径排独立科学 BioReport job 和执行证据 job，继续复用本报告中心与队列；科学模板只展示完成结果，渲染失败不重跑计算。Report 读取/发布在开关启用时复核当前项目权限。默认主路径与旧 API 保留，新增运行能力仍 BLOCKED，详见 [科研交付架构](CygnusX_research_delivery_architecture.md)。
+
+## RI04 单任务交付角色与校验修复
+
+`ReportService.build_delivery_package`现按实际report_kind分别查询同owner/Task、已发布且适用观察/时间范围的科学与执行证据报告；实际Task校验及行锁在打包前执行。证据入口不再将自己命名为Scientific_Report。显式快照/观察冲突拒绝；缺科学/证据/PDF标partial，不触发分析。修复模板为delivery-v1.1.0，避免复用旧错误角色包，旧包/快照不覆盖。
+
+没有冻结快照时只交付实际存在的报告和缺口，不创建假快照：EvidenceManifest使用cygnusx.evidence_manifest.v1.1、snapshot_id/digest=null；有快照的包保留v1格式。验证器支持两版，严格校验成员唯一/路径/链接/数量/展开大小、Manifest列出文件与缺失状态、checksums一致性和额外成员；不是外来科研归档执行器。
+
+SQLite+真实ReportService/临时文件覆盖双入口、缺失、版本、权限、摘要、幂等、ZIP异常及不重算；真实PG锁/存储/浏览器下载仍未认证。证据与回滚见`docs/implementation/cygnusx-research-lifecycle-ri01-ri04-implementation.md`。
+
+### RI13 新执行证据的报告投影
+
+对包含合法 `_execution_evidence` 的新Task，ResearchProvenance.runtime包含definition_digest、execution_binding_digest及前后观察，原ResultObservation捕获这一投影。ReportSnapshotBuilder对新捕获增加对应摘要事实和未观察环境缺口；旧无证据Task不做当前环境回填，已冻结快照和digest不改写。Manifest v1/v1.1及缺失partial语义保持。这里证明的是关联和时点采集，不是发布包/镜像/工具/参考已认证或历史复现成功。
+
+
+### 项目科研成果导出 RI06–RI09（代码/隔离层）
+
+ProjectDetailView新增ProjectResearchDelivery卡片，复用既有报告、快照和只读Provenance；独立ProjectExportJob整理已有成果，不触发报告生成或计算。默认证据包，小型结果及复现材料明确选择；缺口partial、当前权限、冻结摘要、真实Job状态及下载SHA分开显示。默认关闭project_export_enabled，真实环境/浏览器未验收。完整现状、关联/容量/授权边界和恢复设计以[科研交付架构](CygnusX_research_delivery_architecture.md)的RI06–RI09节为准。
+
+### RI10追溯与项目综合报告只读原型
+
+现有ClaimService的DEG单元格读取已增加显式Report/Snapshot/Observation/定义/Version只读追溯投影；数值核验与自由文本解释分层，旧报告缺失历史关联不取最新记录补齐。界面入口复用项目成果卡片，旧报告及快照字节不改。
+
+report_audit_renderer现有HTML/CSP/表格/样式被用于项目Manifest的14章只读原型，summary-preview不创建Report或生成Job，不生成PDF，不修改Frozen Manifest/旧ZIP；不能当作正式Project Scientific Summary。原Task-first Report/Job模型的非空Task约束仍存在，正式项目源须先评审兼容契约和迁移，禁止伪造Task。详见[科研交付架构](CygnusX_research_delivery_architecture.md)和`docs/design/cygnusx-project-scientific-summary-report.md`。真实运行验收仍BLOCKED。
+
+### RI095 正式项目报告增量（代码与隔离层）
+
+原 summary-preview 保持 prototype。新增独立 ProjectReportJob 身份绑定冻结 M0 与服务端核验的 Claim selection；Task Report／GenerationJob／Snapshot 的非空 Task 身份不变。ReportFile 追加 project_report_job_id，与 report_id 用 XOR CHECK 互斥，继续复用 ReportService／FileRegistry／StoragePathFactory／原子发布。追加 projectreport01 迁移尚未应用业务库。
+
+scientific-summary 的 Prepare 只读，Create 需人类 JWT；独立 outbox／Celery／reconcile，发布真实 HTML 后 ready，下载复核当前授权、登记和字节。固定 14 章项目模板经 BioReportAdapter 静态边界；可选 PDF 复用原 Pandoc／Typst 转换器，默认关闭且失败保留 HTML。renderer_runtime=NOT_OBSERVED，真实渲染镜像、PG／Worker／浏览器准入 BLOCKED。M1 使用显式 project_delivery.v2，引用 M0 digest 和报告产物，不改旧 v1／ZIP。详见 docs/implementation/cygnusx-ri095-project-scientific-report-phase1-4.md 与对应 ADR／运行门禁。

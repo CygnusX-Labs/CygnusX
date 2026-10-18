@@ -1,0 +1,126 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 49 items
+
+tests/unit/test_download_s5b_consumption.py .....................FFFF.   [ 53%]
+tests/unit/test_langgraph_runtime.py .......................             [100%]
+
+=================================== FAILURES ===================================
+__________________ test_full_shared_tool_round[False-legacy] ___________________
+tests/unit/test_download_s5b_consumption.py:462: in test_full_shared_tool_round
+    from cygnusx.infrastructure.ai_provider import provider_manager
+E   ImportError: cannot import name 'provider_manager' from 'cygnusx.infrastructure.ai_provider' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/ai_provider/__init__.py)
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:07:30.813[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 01:07:30.829[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:30.832[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:30.844[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:30.856[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:30.860[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:30.872[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:30.884[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:30.888[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:30.900[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:30.914[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:30.919[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:30.931[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+_________________ test_full_shared_tool_round[False-langgraph] _________________
+tests/unit/test_download_s5b_consumption.py:462: in test_full_shared_tool_round
+    from cygnusx.infrastructure.ai_provider import provider_manager
+E   ImportError: cannot import name 'provider_manager' from 'cygnusx.infrastructure.ai_provider' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/ai_provider/__init__.py)
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:07:31.214[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 01:07:31.229[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.233[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.245[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.257[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.261[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.272[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.284[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.288[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.299[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.315[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.319[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.332[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+___________________ test_full_shared_tool_round[True-legacy] ___________________
+tests/unit/test_download_s5b_consumption.py:462: in test_full_shared_tool_round
+    from cygnusx.infrastructure.ai_provider import provider_manager
+E   ImportError: cannot import name 'provider_manager' from 'cygnusx.infrastructure.ai_provider' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/ai_provider/__init__.py)
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:07:31.348[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 01:07:31.363[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.367[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.379[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.391[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.395[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.407[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.419[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.423[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.435[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.451[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.454[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.467[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+_________________ test_full_shared_tool_round[True-langgraph] __________________
+tests/unit/test_download_s5b_consumption.py:462: in test_full_shared_tool_round
+    from cygnusx.infrastructure.ai_provider import provider_manager
+E   ImportError: cannot import name 'provider_manager' from 'cygnusx.infrastructure.ai_provider' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/ai_provider/__init__.py)
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:07:31.483[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+----------------------------- Captured stdout call -----------------------------
+[32m2026-10-17 01:07:31.498[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.502[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.513[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.525[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.529[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.540[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.552[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.556[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.568[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+[32m2026-10-17 01:07:31.582[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: atac_seq (v0.1.0)[0m
+[32m2026-10-17 01:07:31.586[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: counts_deg (v0.1.0)[0m
+[32m2026-10-17 01:07:31.598[0m | [1mINFO    [0m | [36mapp[0m | [36mcygnusx.infrastructure.database.repositories.flow_repository[0m:[36m_load_all[0m:[36m108[0m | [1m已加载流程: rna_seq (v2.3.0)[0m
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[False-legacy]
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[False-langgraph]
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[True-legacy]
+FAILED tests/unit/test_download_s5b_consumption.py::test_full_shared_tool_round[True-langgraph]
+=================== 4 failed, 45 passed, 1 warning in 2.27s ====================
+--- Logging error in Loguru Handler #5 ---
+Record was: {'elapsed': datetime.timedelta(seconds=7, microseconds=399074), 'exception': (type=<class 'ValueError'>, value=ValueError('I/O operation on closed file.'), traceback=<traceback object at 0x76c9a9cc24c0>), 'extra': {'service': 'app', 'trace_id': '', 'span_id': '', 'request_id': '', 'session_id': ''}, 'file': (name='__init__.py', path='/home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/logging/__init__.py'), 'function': 'callHandlers', 'level': (name='ERROR', no=40, icon='❌'), 'line': 1706, 'message': 'Exception while exporting Span.', 'module': '__init__', 'name': 'logging', 'process': (id=2, name='MainProcess'), 'thread': (id=130606524524224, name='OtelBatchSpanRecordProcessor'), 'time': datetime(2026, 10, 17, 1, 7, 32, 348053, tzinfo=datetime.timezone(datetime.timedelta(seconds=28800), 'CST'))}
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/_shared_internal/__init__.py", line 182, in _export
+    self._exporter.export(
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/opentelemetry/sdk/trace/export/__init__.py", line 346, in export
+    self.out.write(self.formatter(span))
+ValueError: I/O operation on closed file.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_handler.py", line 206, in emit
+    self._sink.write(str_record)
+  File "/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/loguru/_simple_sinks.py", line 16, in write
+    self._stream.write(message)
+ValueError: I/O operation on closed file.
+--- End of logging error ---

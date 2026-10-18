@@ -1,0 +1,37 @@
+{
+  "time": "2026-10-16T08:08:07.415352+00:00",
+  "scope": "HOST_READ_ONLY_NOT_WORKER",
+  "binaries": {
+    "/usr/bin/aria2c": {
+      "exists": false,
+      "executable": false
+    },
+    "/usr/bin/wget": {
+      "exists": true,
+      "executable": true,
+      "sha256": "6e47207f7a759f371ff895817f4ec9bad9b6eae6be1cc30a091d6743293ef9f3"
+    },
+    "/data/omichub/bin/EBIDownload": {
+      "exists": true,
+      "executable": true,
+      "sha256": "6628ad8fd489eee68b9ebd58299f32c021812b386435a82193911c4494e219c4"
+    },
+    "/data/omichub/bin/ossutil": {
+      "exists": false,
+      "executable": false
+    },
+    "/data/omichub/bin/tosutil": {
+      "exists": true,
+      "executable": false,
+      "sha256": "de97013fbf179a88fcc8da5035617cbed07e1318871e9af6e076348e879d9386"
+    },
+    "/data/omichub/bin/obsutil": {
+      "exists": false,
+      "executable": false
+    }
+  },
+  "docker_access": {
+    "error": "PermissionError",
+    "errno": 1
+  }
+}

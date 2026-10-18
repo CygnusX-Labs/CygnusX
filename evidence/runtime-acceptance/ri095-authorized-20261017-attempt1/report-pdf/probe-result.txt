@@ -1,0 +1,10 @@
+# PDF render probe 2026-10-17T22:24:45+08:00
+image: cygnusx-ri095-app:pdf2-d9c92cf6ee1c
+pandoc 3.1.11.1 / typst 0.13.1 / fontconfig 2.15.0
+pdf bytes: 24057
+pdf sha256: f325669f70c213c0c22047eb0124e6ad378fbfa328bdcdcf8ed2f96bf3b0d380
+pages: 1
+cjk extract ok: 豌豆 present
+fonts: DroidSansFallback, LibertinusSerif
+
+# defect D3 fixed: render_audit_pdf now sets cwd=TMPDIR to writable tempdir (pandoc .: openTempFile permission denied when cwd=/app root-owned 755)

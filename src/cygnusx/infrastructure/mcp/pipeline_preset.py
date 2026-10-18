@@ -51,11 +51,11 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
         "inputSchema": schema,
     }
     for pipeline_type, action, description, schema in [
-        ("rna_seq", "prepare", "校验 RNA-seq 参数、数据完整性并预估资源", _prepare_schema()),
+        ("rna_seq", "prepare", "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。校验 RNA-seq 参数、数据完整性并预估资源", _prepare_schema()),
         (
             "rna_seq",
             "submit",
-            "提交已预检的 RNA-seq 任务",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。提交已预检的 RNA-seq 任务",
             {
                 "type": "object",
                 "properties": {"prepared_params": {"type": "object"}},
@@ -65,7 +65,7 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
         (
             "rna_seq",
             "status",
-            "查询 RNA-seq 任务状态",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。查询 RNA-seq 任务状态",
             {
                 "type": "object",
                 "properties": {"task_id": {"type": "string"}},
@@ -75,7 +75,7 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
         (
             "rna_seq",
             "results",
-            "获取 RNA-seq 任务结果摘要和产物",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。获取 RNA-seq 任务结果摘要和产物",
             {
                 "type": "object",
                 "properties": {
@@ -89,11 +89,11 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
                 "required": ["task_id"],
             },
         ),
-        ("atac_seq", "prepare", "校验 ATAC-seq 参数、数据完整性并预估资源", _prepare_schema()),
+        ("atac_seq", "prepare", "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。校验 ATAC-seq 参数、数据完整性并预估资源", _prepare_schema()),
         (
             "atac_seq",
             "submit",
-            "提交已预检的 ATAC-seq 任务",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。提交已预检的 ATAC-seq 任务",
             {
                 "type": "object",
                 "properties": {"prepared_params": {"type": "object"}},
@@ -103,7 +103,7 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
         (
             "atac_seq",
             "status",
-            "查询 ATAC-seq 任务状态",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。查询 ATAC-seq 任务状态",
             {
                 "type": "object",
                 "properties": {"task_id": {"type": "string"}},
@@ -113,7 +113,7 @@ PIPELINE_TOOLS: list[dict[str, Any]] = [
         (
             "atac_seq",
             "results",
-            "获取 ATAC-seq 任务结果摘要和产物",
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。获取 ATAC-seq 任务结果摘要和产物",
             {
                 "type": "object",
                 "properties": {
@@ -205,6 +205,26 @@ PIPELINE_HANDLERS = {tool["name"]: _pipeline_handler for tool in PIPELINE_TOOLS}
 
 
 def build_pipeline_preset() -> dict[str, Any]:
+    """cygnusx-pipelines 内置 preset。
+
+    LEGACY_PIPELINE_TOOLS=false（阶段 3 灰度切换后）时旧四件套从默认清单移除：
+    preset 保留同名壳与迁移提示，工具清单为空；代码与开关保留可回退。
+    """
+    from cygnusx.core.config import get_settings
+
+    if not get_settings().legacy_pipeline_tools:
+        return {
+            "name": CYGNUSX_PIPELINES_SERVER_NAME,
+            "description": (
+                "[已迁移] RNA-seq / ATAC-seq 四件套已下线：流程目录走 "
+                "cygnusx_list_flows / cygnusx_get_flow_detail，预检提交走固定工具 "
+                "cygnusx_prepare / cygnusx_submit；任务查询复用通用任务工具。"
+                "如需临时恢复旧工具，设置 LEGACY_PIPELINE_TOOLS=true。"
+            ),
+            "transport": "builtin",
+            "tools": [],
+            "handlers": {},
+        }
     return {
         "name": CYGNUSX_PIPELINES_SERVER_NAME,
         "description": "CygnusX 完整分析流程 MCP - RNA-seq、ATAC-seq 预检、提交、状态和结果",

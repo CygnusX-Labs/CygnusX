@@ -204,7 +204,7 @@ async def test_isolated_import_task_link_file_integrity_partial_and_restore(
     monkeypatch.setattr(module, "require_import_write", lambda: None)
     calls = []
 
-    async def submit(self, uid, req):
+    async def submit(self, uid, req, *, project_id=None):
         assert uid == str(owner) and req.accession == "SRR1"
         task = TaskModel(user_id=owner, flow_id="download", name="fixture", status=task_status)
         db.add(task)
@@ -266,7 +266,7 @@ async def test_ambiguous_submit_not_replayed_and_source_change_invalidates(
     geo.candidate["source_evidence"][0]["response_sha256"] = "a" * 64
     calls = []
 
-    async def timeout(*args):
+    async def timeout(*args, **kwargs):
         calls.append(1)
         raise TimeoutError("queue outcome unknown")
 

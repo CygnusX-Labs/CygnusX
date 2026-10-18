@@ -1,0 +1,1077 @@
+
+> cygnusx-frontend@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /home/zj/zj_code_libarary/OmicHub/frontend
+
+stderr | src/components/ai-chat/__tests__/deep-thinking-stream.test.ts
+生成会话标题失败: AxiosError: Network Error
+    at XMLHttpRequest.handleError (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/axios/lib/adapters/xhr.js:124:21)
+    at XMLHttpRequest.invokeTheCallbackFunction (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/generated/idl/EventHandlerNonNull.js:14:28)
+    at XMLHttpRequest.<anonymous> (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/helpers/create-event-accessor.js:57:32)
+    at innerInvokeEventListeners (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at XMLHttpRequestImpl._dispatch (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+    at fireAnEvent (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/helpers/events.js:18:36)
+    at requestErrorSteps (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:157:3)
+    at dispatchError (/home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:131:3)
+    at /home/zj/zj_code_libarary/OmicHub/frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:752:13
+    at Axios.request (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/axios/lib/core/Axios.js:46:41)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at generateSessionTitle (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1568:19) {
+  isAxiosError: true,
+  code: 'ERR_NETWORK',
+  config: [Object: null prototype] {
+    transitional: {
+      silentJSONParsing: true,
+      forcedJSONParsing: true,
+      clarifyTimeoutError: false,
+      legacyInterceptorReqResOrdering: true,
+      advertiseZstdAcceptEncoding: false,
+      validateStatusUndefinedResolves: true
+    },
+    adapter: [ 'xhr', 'http', 'fetch' ],
+    transformRequest: [ [Function: transformRequest] ],
+    transformResponse: [ [Function: transformResponse] ],
+    timeout: 30000,
+    xsrfCookieName: 'XSRF-TOKEN',
+    xsrfHeaderName: 'X-XSRF-TOKEN',
+    maxContentLength: -1,
+    maxBodyLength: -1,
+    env: { FormData: [Function], Blob: [class Blob] },
+    validateStatus: [Function: validateStatus],
+    headers: Object [AxiosHeaders] {
+      Accept: 'application/json, text/plain, */*',
+      'Content-Type': 'application/json'
+    },
+    baseURL: '/api/v1',
+    method: 'post',
+    url: '/chat/sessions/session-final/generate-title',
+    allowAbsoluteUrls: true,
+    data: undefined
+  },
+  request: XMLHttpRequest {},
+  event: ProgressEvent { isTrusted: [Getter] }
+}
+
+ ❯ src/components/ai-chat/__tests__/deep-thinking-stream.test.ts (3 tests | 1 failed) 891ms
+     × 仅 done 事件携带 answer：仍写入正文并完成消息状态 26ms
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+加载模型列表失败: TypeError: (res.data || []).map is not a function
+    at Proxy.fetchAvailableModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1012:48)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at loadRoomModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/views/AgentTeamsRoomView.vue:192:46)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="帮我做一下系统发育树呀" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/components/ai-chat/__tests__/live-stream-render.test.ts > KimiMessageItem 活体 streaming→done 切换 > 后端回填 message_id 后，后续正文帧仍实时更新同一消息气泡
+[vue-observe-visibility] IntersectionObserver API is not available in your browser. Please install this polyfill: https://github.com/w3c/IntersectionObserver/tree/master/polyfill
+
+stderr | src/components/ai-chat/__tests__/live-stream-render.test.ts > KimiMessageItem 活体 streaming→done 切换 > 后端回填 message_id 后，后续正文帧仍实时更新同一消息气泡
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <KimiMessageItem message= {
+  id: 'msg-1792163656102',
+  role: 'user',
+  content: '测试流式正文',
+  metadata: undefined,
+  createdAt: '2026-10-16T15:14:16.102Z'
+} is-streaming=false streaming-content=""  ... > 
+  at <DynamicScrollerItem item= {
+  id: 'msg-1792163656102',
+  role: 'user',
+  content: '测试流式正文',
+  metadata: undefined,
+  createdAt: '2026-10-16T15:14:16.102Z'
+} active=true emit-resize=true  ... > 
+  at <RecycleScroller ref="scroller" items= [
+  {
+    item: {
+      id: 'msg-1792163656102',
+      role: 'user',
+      content: '测试流式正文',
+      metadata: undefined,
+      createdAt: '2026-10-16T15:14:16.102Z'
+    },
+    id: 'msg-1792163656102',
+    size: 0
+  },
+  {
+    item: {
+      id: 'msg-ai-1792163656102',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      modelName: 'deepseek-v4-flash',
+      toolCalls: [],
+      timeline: [],
+      createdAt: '2026-10-16T15:14:16.102Z',
+      tokens: [Object],
+      thought: '正在分析'
+    },
+    id: 'msg-ai-1792163656102',
+    size: 0
+  }
+] min-item-size=80  ... > 
+  at <DynamicScroller ref="scrollerRef" items= [
+  {
+    id: 'msg-1792163656102',
+    role: 'user',
+    content: '测试流式正文',
+    metadata: undefined,
+    createdAt: '2026-10-16T15:14:16.102Z'
+  },
+  {
+    id: 'msg-ai-1792163656102',
+    role: 'assistant',
+    content: '',
+    status: 'streaming',
+    modelName: 'deepseek-v4-flash',
+    toolCalls: [],
+    timeline: [],
+    createdAt: '2026-10-16T15:14:16.102Z',
+    tokens: { input: 0, output: 0, total: 0, cached: 0 },
+    thought: '正在分析'
+  }
+] min-item-size=80  ... > 
+  at <KimiMessageList messages= [
+  {
+    id: 'msg-1792163656102',
+    role: 'user',
+    content: '测试流式正文',
+    metadata: undefined,
+    createdAt: '2026-10-16T15:14:16.102Z'
+  },
+  {
+    id: 'msg-ai-1792163656102',
+    role: 'assistant',
+    content: '',
+    status: 'streaming',
+    modelName: 'deepseek-v4-flash',
+    toolCalls: [],
+    timeline: [],
+    createdAt: '2026-10-16T15:14:16.102Z',
+    tokens: { input: 0, output: 0, total: 0, cached: 0 },
+    thought: '正在分析'
+  }
+] isTyping=true streamingContent=""  ... > 
+  at <MessageProvider> 
+  at <App>
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <KimiMessageItem message= {
+  id: 'msg-ai-1792163656102',
+  role: 'assistant',
+  content: '',
+  status: 'streaming',
+  modelName: 'deepseek-v4-flash',
+  toolCalls: [],
+  timeline: [],
+  createdAt: '2026-10-16T15:14:16.102Z',
+  tokens: { input: 0, output: 0, total: 0, cached: 0 },
+  thought: '正在分析'
+} is-streaming=true streaming-content=""  ... > 
+  at <DynamicScrollerItem item= {
+  id: 'msg-ai-1792163656102',
+  role: 'assistant',
+  content: '',
+  status: 'streaming',
+  modelName: 'deepseek-v4-flash',
+  toolCalls: [],
+  timeline: [],
+  createdAt: '2026-10-16T15:14:16.102Z',
+  tokens: { input: 0, output: 0, total: 0, cached: 0 },
+  thought: '正在分析'
+} active=true emit-resize=true  ... > 
+  at <RecycleScroller ref="scroller" items= [
+  {
+    item: {
+      id: 'msg-1792163656102',
+      role: 'user',
+      content: '测试流式正文',
+      metadata: undefined,
+      createdAt: '2026-10-16T15:14:16.102Z'
+    },
+    id: 'msg-1792163656102',
+    size: 0
+  },
+  {
+    item: {
+      id: 'msg-ai-1792163656102',
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      modelName: 'deepseek-v4-flash',
+      toolCalls: [],
+      timeline: [],
+      createdAt: '2026-10-16T15:14:16.102Z',
+      tokens: [Object],
+      thought: '正在分析'
+    },
+    id: 'msg-ai-1792163656102',
+    size: 0
+  }
+] min-item-size=80  ... > 
+  at <DynamicScroller ref="scrollerRef" items= [
+  {
+    id: 'msg-1792163656102',
+    role: 'user',
+    content: '测试流式正文',
+    metadata: undefined,
+    createdAt: '2026-10-16T15:14:16.102Z'
+  },
+  {
+    id: 'msg-ai-1792163656102',
+    role: 'assistant',
+    content: '',
+    status: 'streaming',
+    modelName: 'deepseek-v4-flash',
+    toolCalls: [],
+    timeline: [],
+    createdAt: '2026-10-16T15:14:16.102Z',
+    tokens: { input: 0, output: 0, total: 0, cached: 0 },
+    thought: '正在分析'
+  }
+] min-item-size=80  ... > 
+  at <KimiMessageList messages= [
+  {
+    id: 'msg-1792163656102',
+    role: 'user',
+    content: '测试流式正文',
+    metadata: undefined,
+    createdAt: '2026-10-16T15:14:16.102Z'
+  },
+  {
+    id: 'msg-ai-1792163656102',
+    role: 'assistant',
+    content: '',
+    status: 'streaming',
+    modelName: 'deepseek-v4-flash',
+    toolCalls: [],
+    timeline: [],
+    createdAt: '2026-10-16T15:14:16.102Z',
+    tokens: { input: 0, output: 0, total: 0, cached: 0 },
+    thought: '正在分析'
+  }
+] isTyping=true streamingContent=""  ... > 
+  at <MessageProvider> 
+  at <App>
+
+ ❯ src/components/ai-chat/__tests__/live-stream-render.test.ts (2 tests | 1 failed) 1664ms
+     × 后端回填 message_id 后，后续正文帧仍实时更新同一消息气泡 1277ms
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+加载模型列表失败: TypeError: (res.data || []).map is not a function
+    at Proxy.fetchAvailableModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1012:48)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at loadRoomModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/views/AgentTeamsRoomView.vue:192:46)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  },
+  {
+    kind: 'file',
+    key: 'file-74a2448c-593a-4c9c-aa19-bb2214339c54',
+    name: '74a2448c593a4c9caa19bb2214339c54.treefile',
+    description: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile · 2.0KB',
+    uuid: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+    file: {
+      id: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+      original_name: '74a2448c593a4c9caa19bb2214339c54.treefile',
+      path: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
+      directory: 'workspace/chat-uploads',
+      size: 2048,
+      file_type: 'treefile'
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="@Manager " onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+加载模型列表失败: TypeError: (res.data || []).map is not a function
+    at Proxy.fetchAvailableModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1012:48)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at loadRoomModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/views/AgentTeamsRoomView.vue:192:46)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="帮我做一下系统发育树呀" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="帮我做一下系统发育树呀" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+加载模型列表失败: TypeError: (res.data || []).map is not a function
+    at Proxy.fetchAvailableModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1012:48)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at loadRoomModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/views/AgentTeamsRoomView.vue:192:46)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Failed to resolve directive: animate-list 
+  at <MentionMenu key=0 items= [
+  {
+    kind: 'agent',
+    key: 'room-agent-bioops-manager',
+    name: 'Manager',
+    description: 'manager Agent · 当前 Case 参与者',
+    agent: {
+      id: 'bioops-manager',
+      name: 'Manager',
+      description: 'manager Agent · 当前 Case 参与者',
+      avatar: '🧑‍🔬',
+      color: '#4f8ef7',
+      category: 'analysis',
+      model_engine: 'runtime',
+      system_prompt: '',
+      welcome_message: '',
+      mcp_ids: [],
+      skill_ids: [],
+      features: {},
+      is_active: true,
+      is_builtin: true,
+      is_default: false
+    }
+  },
+  {
+    kind: 'file',
+    key: 'file-74a2448c-593a-4c9c-aa19-bb2214339c54',
+    name: '74a2448c593a4c9caa19bb2214339c54.treefile',
+    description: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile · 2.0KB',
+    uuid: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+    file: {
+      id: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+      original_name: '74a2448c593a4c9caa19bb2214339c54.treefile',
+      path: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
+      directory: 'workspace/chat-uploads',
+      size: 2048,
+      file_type: 'treefile'
+    }
+  }
+] active-index=0  ... > 
+  at <BaseTransition appear=true persisted=false mode=undefined  ... > 
+  at <Transition name="composer-menu" appear="" > 
+  at <KimiChatInput ref="composerRef" modelValue="@workspace" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="@Manager " onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="@Manager  帮我做一下系统发育树呀" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+加载模型列表失败: TypeError: (res.data || []).map is not a function
+    at Proxy.fetchAvailableModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/stores/agentHub.ts:1012:48)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at loadRoomModels (/home/zj/zj_code_libarary/OmicHub/frontend/src/views/AgentTeamsRoomView.vue:192:46)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+[Vue warn]: Extraneous non-props attributes (class) were passed to component but could not be automatically inherited because component renders fragment or text or teleport root nodes. 
+  at <KimiChatInput ref="composerRef" modelValue="" onUpdate:modelValue=fn  ... > 
+  at <AgentTeamsRoomView> 
+  at <DialogProvider> 
+  at <MessageProvider> 
+  at <App>
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+stderr | src/views/__tests__/agent-teams-room-send.test.ts
+团队协作室事件流连接异常，将继续使用轮询同步。 Error: no sse in jsdom
+    at /home/zj/zj_code_libarary/OmicHub/frontend/src/views/__tests__/agent-teams-room-send.test.ts:128:54
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at wrapper (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:722:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2621:52
+    at run (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1150:20)
+    at limiterFn (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1162:59)
+    at runHook (file:///home/zj/zj_code_libarary/OmicHub/frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:2620:10)
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts (9 tests | 5 failed) 3575ms
+     × planning_running（规划中）状态下输入框可用，Enter 发送成功 749ms
+     × 点击发送按钮发送，@ 工作区文件引用映射为 context_refs 361ms
+     × 发送失败后恢复草稿，不丢失用户已输入内容 276ms
+     × 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case 462ms
+     × 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流 256ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > planning_running（规划中）状态下输入框可用，Enter 发送成功
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'case-1', '帮我做一下系统发育树呀', [] ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "case-1",
+    "帮我做一下系统发育树呀",
+    [],
++   "room-msg-1792163656481-can9shdb",
++   "",
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts:156:48
+    154|
+    155|     expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledTimes(1)
+    156|     expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledWith('c…
+       |                                                ^
+    157|     expect(document.body.textContent?.match(/帮我做一下系统发育树呀/g)).toHaveLen…
+    158|     app.unmount()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 点击发送按钮发送，@ 工作区文件引用映射为 context_refs
+AssertionError: expected '@Manager ' to contain '@workspace/chat-uploads/74a2448c593a4…'
+
+Expected: "@workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile"
+Received: "@Manager "
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts:197:28
+    195|     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter'…
+    196|     await flush()
+    197|     expect(textarea.value).toContain('@workspace/chat-uploads/74a2448c…
+       |                            ^
+    198|     // 继续输入正文（含 chip 的消息）
+    199|     typeText(textarea, `${textarea.value} 帮我做一下系统发育树呀`)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 发送失败后恢复草稿，不丢失用户已输入内容
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts:228:78
+    226|     // 失败后草稿恢复，发送按钮复位可用
+    227|     expect(textarea.value).toBe('帮我做一下系统发育树呀')
+    228|     expect(document.querySelector<HTMLButtonElement>('.send-btn')?.dis…
+       |                                                                              ^
+    229|     app.unmount()
+    230|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 旧 Case 目标不相关时，带 treefile 的绘树请求自动创建独立 Case
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Number of calls: 0
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts:253:43
+    251|     await flush(20)
+    252|
+    253|     expect(agentTeamsApiMocks.createCase).toHaveBeenCalledWith(expect.…
+       |                                           ^
+    254|       intent: expect.stringContaining('系统发育树'),
+    255|       context_refs: [{
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  src/views/__tests__/agent-teams-room-send.test.ts > 协作室房间（已有 Case）发送消息 > 空态直接发消息：先建轻量房间（不建 Case），首条消息落房间事件流
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'room-1', '创建一个数据质控团队', [], Any{…} ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "room-1",
+    "创建一个数据质控团队",
+    [],
+-   Any<String>,
++   "room-msg-1792163658665-92yqx72d",
++   "",
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/views/__tests__/agent-teams-room-send.test.ts:309:48
+    307|     }))
+    308|     expect(agentTeamsApiMocks.createCase).not.toHaveBeenCalled()
+    309|     expect(agentTeamsApiMocks.postRoomMessage).toHaveBeenCalledWith(
+       |                                                ^
+    310|       'room-1',
+    311|       '创建一个数据质控团队',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  src/components/ai-chat/__tests__/deep-thinking-stream.test.ts > 深度思考流式聊天全链路 > 仅 done 事件携带 answer：仍写入正文并完成消息状态
+AssertionError: expected { input: 12, output: 8, …(3) } to deeply equal { input: 12, output: 8, …(2) }
+
+- Expected
++ Received
+
+  {
+    "cached": 0,
++   "cachedOutput": 0,
+    "input": 12,
+    "output": 8,
+    "total": 20,
+  }
+
+ ❯ src/components/ai-chat/__tests__/deep-thinking-stream.test.ts:181:26
+    179|     expect(aiMsg.content).toBe('来自 done 事件的完整正文')
+    180|     expect(aiMsg.status).toBe('complete')
+    181|     expect(aiMsg.tokens).toEqual({ input: 12, output: 8, total: 20, ca…
+       |                          ^
+    182|   })
+    183| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  src/components/ai-chat/__tests__/live-stream-render.test.ts > KimiMessageItem 活体 streaming→done 切换 > 后端回填 message_id 后，后续正文帧仍实时更新同一消息气泡
+AssertionError: expected { input: 10, output: 6, …(3) } to deeply equal { input: 10, output: 6, …(2) }
+
+- Expected
++ Received
+
+  {
+    "cached": 0,
++   "cachedOutput": 0,
+    "input": 10,
+    "output": 6,
+    "total": 16,
+  }
+
+ ❯ src/components/ai-chat/__tests__/live-stream-render.test.ts:174:45
+    172|
+    173|     expect(el.textContent).toContain('第一段正文，第二段正文')
+    174|     expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, outpu…
+       |                                             ^
+    175|     app.unmount()
+    176|     vi.unstubAllGlobals()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  3 failed | 82 passed (85)
+      Tests  7 failed | 577 passed (584)
+   Start at  23:14:08
+   Duration  14.05s (transform 16.46s, setup 0ms, import 104.58s, tests 25.94s, environment 41.66s)
+

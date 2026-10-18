@@ -482,7 +482,9 @@ async def test_dynamic_mcp_registry_bridge_and_gateway_share_contract(env, monke
     from cygnusx.infrastructure.mcp.client import MCPClient
 
     client = MCPClient()
-    monkeypatch.setattr(config, "get_settings", lambda: env.settings)
+    from cygnusx.core.config import get_settings
+    complete_settings = get_settings().model_copy(update=vars(env.settings))
+    monkeypatch.setattr(config, "get_settings", lambda: complete_settings)
     preset = presets.get_preset_by_name("cygnusx-tools")
     names = [t["name"] for t in preset["tools"]]
     for capability in capability_catalog():

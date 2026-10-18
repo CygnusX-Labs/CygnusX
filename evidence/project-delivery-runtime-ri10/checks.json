@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-10-16T15:02:03.883102+00:00",
+  "overall": "ISOLATED_INCREMENT_AND_DESIGNS_DELIVERED_RUNTIME_BLOCKED",
+  "runtime": {
+    "RA01-RA15": "BLOCKED",
+    "PostgreSQL": "NO_EXPLICIT_TEST_DSN",
+    "actual_business_API_8_concurrency": "NOT_RUN",
+    "Celery_Broker_storage": "NOT_AUTHORIZED_NOT_RUN",
+    "browser": "CHROMIUM_SNAP_READ_ONLY_RUNTIME_DIR_EXIT_46",
+    "screenshots": [],
+    "real_research_zip": null,
+    "PASS_RUNTIME": false,
+    "PASS_E2E": false
+  },
+  "baseline_tests": 105,
+  "combined_tests": {
+    "status": "PASS_ISOLATED",
+    "tests": 215,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "files": 13,
+    "new_tests": 21
+  },
+  "frontend": {
+    "status": "PASS_ISOLATED",
+    "targeted_tests": 13,
+    "files": 3,
+    "type_check": "PASS_CODE",
+    "build": "PASS_CODE",
+    "full_suite": "NOT_RERUN_NO_FULL_PASS_CLAIM"
+  },
+  "quality": {
+    "ruff_selected": "PASS_CODE",
+    "mypy_selected_6_sources": "PASS_CODE",
+    "existing_6_sources_baseline_errors": 0,
+    "existing_6_sources_current_errors": 0,
+    "new_diagnostics": 0,
+    "schema_parity": "PASS_CODE",
+    "old_claim_schema_source": "UNCHANGED",
+    "legacy_renderer_bytes": "PASS_ISOLATED_IDENTICAL",
+    "full_repository": "NOT_RERUN_PREVIOUS_KNOWN_FAILURES_NOT_CLEARED"
+  },
+  "deliverables": [
+    "docs/audits/cygnusx-project-delivery-runtime-acceptance.md",
+    "docs/implementation/cygnusx-project-delivery-stabilization.md",
+    "docs/implementation/cygnusx-ri10-claim-provenance.md",
+    "docs/design/cygnusx-project-scientific-summary-report.md"
+  ],
+  "RI10": "LIMITED_DEG_CELL_PROJECTION_PASS_ISOLATED_NOT_GENERAL_CLAIM_VERIFICATION",
+  "RI09_5": "DESIGN_AND_READ_ONLY_HTML_PROTOTYPE_ONLY_NO_FORMAL_REPORT_JOB_PDF_OR_ZIP_VERSION",
+  "no_production_actions": [
+    "commit",
+    "push",
+    "deploy",
+    "production_connection",
+    "migration",
+    "real_download",
+    "analysis",
+    "gate_enable"
+  ],
+  "source_sha256": {
+    "src/cygnusx/application/schemas/research_claims.py": "74c901eab1e935a91ff6773a800847c4e37f7c4a0ba2ff756a56b9396c37fdb7",
+    "src/cygnusx/application/services/project_delivery_service.py": "caf7d6f2fb70be5e976e19d3f54387158268734cce3c74fa2ca15b6da37b10fd",
+    "src/cygnusx/application/services/research_claim_service.py": "ca8d9984c06a80a7f56d716fa394a935195dfc2d9f89220a3c63ff5318af3cb5",
+    "src/cygnusx/application/services/report_audit_renderer.py": "1db8732034997626d4239baafebb7aa12a4cd0805936dbe1418bb1c5f62ca600",
+    "src/cygnusx/application/services/__pycache__/report_audit_renderer.cpython-311.pyc": "62636cc4ed14acc09c431e2f5401ad97f151f3f1500a80de9b91654ecd98cc43",
+    "src/cygnusx/api/v1/research_delivery.py": "eeb7101dff1be37eaa1bd4766eae63239e548b293eaf4a944ee0b754769cacd6",
+    "src/cygnusx/api/v1/research_claims.py": "05409ca7098d63df639acc911d1031524fb249f85b8e5d8e8a8418dbc25829e8",
+    "frontend/src/components/ProjectResearchDelivery.vue": "16da3bce2ec3dc8ae839e17929cbc005de9032d229550b83884ca58b5d40fb4e",
+    "frontend/src/components/__tests__/ProjectResearchDelivery.test.ts": "9ca0ec46ade97850bdfea7a78ab2ef1c5aae5fe52e0efd5fe201a803246cded6",
+    "frontend/src/api/projectDelivery.ts": "502b713315544bc96e48c36d83d1582afbf4724552a3b31f4122e48abc7aaf2b",
+    "ARCHITECTURE_DESIGN/CygnusX_research_delivery_architecture.md": "61d791369bc4913b73bd990de9c75cc009d7b12b85ac32671acc282418c5cf00",
+    "ARCHITECTURE_DESIGN/CygnusX_report_architecture.md": "3bf80b428ef9083be2364e5cf8fc6ff5e7c4b4d3345fab77cb6f4ef532b08ff0",
+    "src/cygnusx/application/schemas/claim_provenance.py": "261e2dee8963b936bce575560962a7950f3a8c1c9d1aeb3095b8477c5fe1f40f",
+    "frontend/src/api/claimProvenance.ts": "43c96aeca216f8526f484f69e07901e8b8aaba4d8677541ad93fbbdc89d1ffe7",
+    "frontend/src/components/ClaimEvidencePanel.vue": "31f8a9e5fcdc10e7d9591a12e95405947d01b92d1933b9aef1da3bc0aad99aed",
+    "frontend/src/components/__tests__/ClaimEvidencePanel.test.ts": "cdad31cdce6b1e0e9e9ff1ad3a9f3cf30269d6239ed07b3d4f8167abd6dbda24",
+    "tests/unit/test_claim_provenance_ri10.py": "c32f024966df84e8618eac6b42476f647fe80ad54d991828fe6f562da10d65b4",
+    "tests/unit/test_project_summary_prototype.py": "8568f0f921e7796d3988d1ddf01de17bf9a0aab95bec9820df94d7baa151917b",
+    "tests/unit/test_project_delivery_stabilization.py": "dddf5df68a7f4f8c0f8957f8412ec5f29716c550074091e220b2208d6d123987",
+    "docs/contracts/cygnusx-claim-provenance-v1.schema.json": "ebe7ec2bd80878a4ba40c5b2819f0da18b369382acd51bf0d24ac988aad6f540",
+    "docs/contracts/cygnusx-claim-provenance-request-v1.schema.json": "61d086947daf5c55f823a9719576a7907270781ee8296f16e92580e37fcbb08c",
+    "docs/audits/cygnusx-project-delivery-runtime-acceptance.md": "34806720b5a27b65b23425e5157ddb1487aa70cbd76ec5b877fcdcdd3b970efa",
+    "docs/implementation/cygnusx-project-delivery-stabilization.md": "818ec8bc9b572015976ade6ad1ba4ed937e5c0410d69b1423dac0d869232516f",
+    "docs/implementation/cygnusx-ri10-claim-provenance.md": "67a53f3581200e3dbbbec9d1a08c771d5373d4506e8a42eb6b233384a22d4a49",
+    "docs/design/cygnusx-project-scientific-summary-report.md": "d80a5a9e4ad5cef22d947b9be14ab24777d65fb8254b9c5bb8e5c6fc029b7f5c"
+  }
+}

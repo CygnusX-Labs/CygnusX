@@ -1,0 +1,71 @@
+{
+  "run_id": "ri095-final-20261017-attempt1",
+  "artifacts": [
+    {
+      "path": "docker-access.log",
+      "bytes": 223,
+      "sha256": "793aa1411ea4e2b8603a5a61ff93999d69d4d5a03e491901eacf906ca2d5ff75"
+    },
+    {
+      "path": "execution.json",
+      "bytes": 4352,
+      "sha256": "f592584510e2574ee7c761f58bd9fd96a2032f47764ba3d479bb3ccf70004129"
+    },
+    {
+      "path": "frontend-clean-npm-ci.log",
+      "bytes": 1012,
+      "sha256": "4ad7922b7cf4e99a77806fac2198d6ca6d1648487abe5aab286c30ad7d2c305b"
+    },
+    {
+      "path": "frontend-online-execution.json",
+      "bytes": 678,
+      "sha256": "624071834d652d0025c64f0701620ffab8df49a1811be09a2b218d6f61ed14c0"
+    },
+    {
+      "path": "frontend-online-npm-ci.log",
+      "bytes": 749,
+      "sha256": "874e6d705e68bef1dae907f17aade4c1273f052e4778cf1dc34221a9c549b06d"
+    },
+    {
+      "path": "identity.log",
+      "bytes": 57,
+      "sha256": "53abdb38748ff92f4b9d64b478a5aa7cbe5d174ee9f9b0091973775ebcd6fd78"
+    },
+    {
+      "path": "node-version.log",
+      "bytes": 9,
+      "sha256": "2bd3183c269da2dbbc4bff7660dd06fccd60bcbb5d36ba1f6e22d0c3bb85fa84"
+    },
+    {
+      "path": "npm-debug-summary.log",
+      "bytes": 3550,
+      "sha256": "70529ee64f76a06dc109e1460ce3a0bacd1439eea45f1380c5677eef85f72645"
+    },
+    {
+      "path": "npm-version.log",
+      "bytes": 7,
+      "sha256": "ca98a1c911934c30b4d4578dae26c55cd8e4ea6b7f67d02cbfa7f5ac58693358"
+    },
+    {
+      "path": "prior-evidence-integrity.json",
+      "bytes": 95,
+      "sha256": "1e2cbf965468b58ba65d0d754f7b74913c2dcb5a4eefd912ddc4a0e16b2fed46"
+    },
+    {
+      "path": "source-hashes.json",
+      "bytes": 662,
+      "sha256": "8c34d4fee7983dd2de3a23f29a64096826d664ab8cfe4f6a901b9bf087712b6a"
+    },
+    {
+      "path": "source-state.patch",
+      "bytes": 933,
+      "sha256": "f3358e223db44c3892df221c071aee52eb91ada8382feb64d52ef41dd234bc4a"
+    },
+    {
+      "path": "source-status.txt",
+      "bytes": 374,
+      "sha256": "4294b7a36c6889bb16ef238f2fa470fb042a9a3cd48b026ca19579dbdfce2d04"
+    }
+  ],
+  "note": "Evidence hashes only; no acceptance status inferred"
+}

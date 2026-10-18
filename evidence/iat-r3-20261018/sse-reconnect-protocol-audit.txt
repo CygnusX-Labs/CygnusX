@@ -1,0 +1,45 @@
+R3 SSE reconnect protocol source audit
+Date: 2026-10-18
+Scope: read-only review of the current Research Agent API, service, and Vue workbench.
+
+Status: historical finding; superseded by the implementation and regression recorded
+in `sse-reconnect-isolated.txt`. The audit below describes the code before the
+request identity, persistent event cursor, and independent producer were added. Its
+runtime limitations still apply: browser/PostgreSQL verification is outstanding,
+and producer recovery after process exit is not implemented.
+
+Finding: the new IAT-R3 requirement for reconnecting to the same generation with
+event deduplication and a consistent terminal state is not implemented.
+
+Evidence:
+- src/cygnusx/api/v1/research_agent.py:69-95 exposes only POST
+  /sessions/{session_id}/messages:stream. Frames contain `data:` JSON only;
+  there is no SSE `id`, Last-Event-ID handling, replay cursor, or resume endpoint.
+- src/cygnusx/application/services/research_treasure_service.py:370-392 appends
+  a new user message before invoking the Agent for every POST. A repeated POST
+  therefore starts another generation and may repeat Agent/tool work.
+- research_treasure_service.py writes the assistant snapshot from the generator's
+  finally block and now commits it before cancellation propagates. This fixes
+  loss of user/partial assistant messages on request rollback (covered by
+  `treasure-stream-cancel-regression.txt`); it still does not append each frame
+  to a durable replay log.
+- frontend/src/views/TreasureResearchWorkbench.vue:94-111 issues one POST and
+  consumes it once. It has no reconnect cursor or event-id deduplication.
+- frontend/src/components/research/adapters/researchPresentation.ts:93-115
+  parses SSE data frames but ignores SSE id fields and does not deduplicate events.
+
+Conclusion: BR-06.R3-STALE-SSE proves only that frames from a previous session
+are ignored after switching A1 to A2. It does not prove transport reconnection.
+`BR-08.R3-CANCEL-SNAPSHOT` separately proves the canceled generation's partial
+snapshot is committed under the isolated SQLite fixture.
+The historical BR-08 PASS_E2E evidence describes interruption followed by a
+browser refresh/reload and retrieval of persisted facts; that is narrower than
+the 2026-10-18 requirement, which explicitly says refresh is not reconnection.
+
+Do not implement reconnect by blindly repeating POST: that would append another
+user message and rerun the Agent. A passing implementation needs a stable
+generation/request identity, durable monotonically ordered events with a replay
+cursor, authenticated resume bound to the same owner/session/generation, client
+deduplication by event identity, and a persisted terminal state that agrees with
+the replayed event log. It must prove reconnect does not start a second Agent
+generation. No runtime or browser test was run in this audit.

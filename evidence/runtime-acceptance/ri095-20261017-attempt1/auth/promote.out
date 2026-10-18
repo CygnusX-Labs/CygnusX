@@ -1,0 +1,7 @@
+   username    | role  | status 
+---------------+-------+--------
+ ri095_admin   | admin | active
+ ri095_owner_a | user  | active
+ ri095_owner_b | user  | active
+(3 rows)
+

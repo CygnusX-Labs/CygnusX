@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-10-16T07:55:51.146448+00:00",
+  "aria2c_present": false,
+  "docker_socket_present": true,
+  "proxy_variable_names_present": [],
+  "docker_socket": {
+    "error": "PermissionError",
+    "errno": 1
+  }
+}

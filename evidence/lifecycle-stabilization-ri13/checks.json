@@ -1,0 +1,101 @@
+{
+  "generated_at": "2026-10-16T08:27:04.106278+00:00",
+  "scope": "stabilization + RI12 revision + RI13 minimum code wiring + RI05 preparation + RI06-RI09 design",
+  "deliverables": [
+    {
+      "item": 1,
+      "name": "download admission",
+      "path": "docs/implementation/cygnusx-download-runtime-admission.md",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 2,
+      "name": "incremental quality baseline",
+      "path": "evidence/lifecycle-stabilization-ri13/quality-baseline.json",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 3,
+      "name": "RI12 contract and code",
+      "path": "docs/contracts/cygnusx-execution-evidence-v1.md",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 4,
+      "name": "RI13 minimum wiring and tests",
+      "path": "src/cygnusx/application/services/execution_evidence_service.py",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 5,
+      "name": "RI05 isolated environment plan",
+      "path": "docs/implementation/cygnusx-ri05-isolated-runtime-acceptance-plan.md",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 6,
+      "name": "RI06-RI09 proposed interfaces",
+      "path": "docs/implementation/cygnusx-ri06-ri09-project-export-interface-proposal.md",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 7,
+      "name": "test and gate matrix",
+      "path": "evidence/lifecycle-stabilization-ri13/checks.json",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    },
+    {
+      "item": 8,
+      "name": "limitations and rollback",
+      "path": "docs/implementation/cygnusx-lifecycle-stabilization-ri13-implementation.md",
+      "status": "DELIVERED_CODE_ISOLATION_OR_PLAN"
+    }
+  ],
+  "quality": {
+    "mypy_baseline_errors": 9,
+    "mypy_current_errors": 8,
+    "new_diagnostics": [],
+    "incremental_status": "PASS_NO_NEW_DIAGNOSTICS",
+    "raw_current_mypy": "FAIL_INHERITED_ERRORS",
+    "ruff_selected": "PASS",
+    "new_evidence_boundary_mypy": "PASS_3_SOURCE_FILES",
+    "full_repository": "NOT_CLAIMED"
+  },
+  "tests": {
+    "targeted": {
+      "passed": 151,
+      "files": 10,
+      "junit": "targeted.xml"
+    },
+    "related_regression": {
+      "passed": 341,
+      "files": 22,
+      "junit": "regression.xml"
+    },
+    "warning_notes": [
+      "existing Pydantic deprecation",
+      "existing asyncio marker",
+      "OTel background export may encounter closed test capture stream after exit"
+    ]
+  },
+  "gates": {
+    "dirty_baseline": "CAPTURED_AND_PRESERVED",
+    "v1_protocol_unchanged": "PASS_SOURCE_HASH_AND_SCHEMA",
+    "v2_and_evidence_schema_parity": "PASS",
+    "manual_agent_worker_download": "FAIL_CLOSED_SOURCE_UNCHANGED",
+    "server_capability_shared": "PASS_REAL_REST_AND_GATEWAY_OFFLINE",
+    "manifest_v1_v1_1": "PASS_CONTRACT_AND_SERVICE_TESTS",
+    "submission_task_persistence": "PASS_REAL_SQLITE_AND_BUILDER_QUEUE_FAKE",
+    "worker_input_checks": "PASS_ORIGINAL_WORKER_FUNCTION_AND_REAL_FILES_EXECUTOR_FAKE",
+    "worker_redelivery": "PASS_ISOLATED_TERMINAL_AND_RUNNING_REFUSAL",
+    "provenance_snapshot_projection": "PASS_ISOLATED",
+    "postgres_lock_recovery": "RUNTIME_BLOCKED",
+    "redis_cas": "RUNTIME_BLOCKED",
+    "workflow_release_attestation": "NOT_OBSERVED",
+    "worker_image_tool_reference_attestation": "NOT_OBSERVED",
+    "real_download_analysis_bioreport": "NOT_RUN_NO_AUTHORIZED_TEST_ENV",
+    "pasilla_case": "SELECTED_LICENSE_SOURCE_REFERENCED_ACTUAL_SIZE_SHA_NOT_YET_ACQUIRED",
+    "full_project_export_reproduction": "NOT_IMPLEMENTED_PER_SCOPE"
+  },
+  "rollback": "baseline hunk rollback only; retain all persisted task/evidence/snapshots/files; no runtime gates enabled"
+}

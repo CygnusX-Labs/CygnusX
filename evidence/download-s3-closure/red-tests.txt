@@ -1,0 +1,244 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 42 items
+
+tests/unit/test_download_s3_closure.py FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 78%]
+FFFFFFFFF                                                                [100%]
+
+=================================== FAILURES ===================================
+_ test_mutated_internal_request_is_rejected_before_runtime_gate[http://127.0.0.1/a] _
+tests/unit/test_download_s3_closure.py:26: in test_mutated_internal_request_is_rejected_before_runtime_gate
+    assert error.value.code == "DOWNLOAD_ARGUMENTS_INVALID"
+E   AssertionError: assert 'DOWNLOAD_SOURCE_DISABLED' == 'DOWNLOAD_ARGUMENTS_INVALID'
+E     
+E     - DOWNLOAD_ARGUMENTS_INVALID
+E     + DOWNLOAD_SOURCE_DISABLED
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 15:46:13.711[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_ test_mutated_internal_request_is_rejected_before_runtime_gate[https://example.org/a?token=CANARY] _
+tests/unit/test_download_s3_closure.py:26: in test_mutated_internal_request_is_rejected_before_runtime_gate
+    assert error.value.code == "DOWNLOAD_ARGUMENTS_INVALID"
+E   AssertionError: assert 'DOWNLOAD_SOURCE_DISABLED' == 'DOWNLOAD_ARGUMENTS_INVALID'
+E     
+E     - DOWNLOAD_ARGUMENTS_INVALID
+E     + DOWNLOAD_SOURCE_DISABLED
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 15:46:13.977[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-manual] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-agent] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-worker] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+_ test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-unknown] _
+tests/unit/test_download_s3_closure.py:34: in test_admission_is_protocol_and_caller_specific_but_never_self_certifies
+    from cygnusx.infrastructure.download.policy import describe_transport_admission
+E   ImportError: cannot import name 'describe_transport_admission' from 'cygnusx.infrastructure.download.policy' (/home/zj/zj_code_libarary/OmicHub/src/cygnusx/infrastructure/download/policy.py)
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_s3_closure.py::test_mutated_internal_request_is_rejected_before_runtime_gate[http://127.0.0.1/a]
+FAILED tests/unit/test_download_s3_closure.py::test_mutated_internal_request_is_rejected_before_runtime_gate[https://example.org/a?token=CANARY]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[http-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[https-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftp-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.aws-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[sra.ftp-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[oss-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[tos-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[obs-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[ftps-unknown]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-manual]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-agent]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-worker]
+FAILED tests/unit/test_download_s3_closure.py::test_admission_is_protocol_and_caller_specific_but_never_self_certifies[s3-unknown]
+======================== 42 failed, 1 warning in 0.34s =========================

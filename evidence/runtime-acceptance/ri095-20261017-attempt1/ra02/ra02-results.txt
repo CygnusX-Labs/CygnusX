@@ -1,0 +1,28 @@
+=== setup fixtures ===
+--- RA02_1 XOR both null   (expect 23514)
+  SQLSTATE=23514
+--- RA02_2 XOR both set    (expect 23514)
+  SQLSTATE=23514
+--- RA02_3 FK bad file_rec  (expect 23503)
+  SQLSTATE=23503
+--- RA02_4 XOR legal single(expect 00000)
+  SQLSTATE=00000
+--- RA02_5 frozen export    (expect P0001)
+  SQLSTATE=P0001
+--- RA02_6 frozen report    (expect P0001)
+  SQLSTATE=P0001
+--- RA02_7 ready needs html (expect 23514)
+  SQLSTATE=23514
+--- RA02_8 bad export enum  (expect 23514)
+  SQLSTATE=23514
+--- RA02_9 bad report enum  (expect 23514)
+  SQLSTATE=23514
+--- RA02_10 counters <0     (expect 23514)
+  SQLSTATE=23514
+--- RA02_11 dup source      (expect 23505)
+  SQLSTATE=23505
+--- RA02_12 legal update    (expect 00000)
+  SQLSTATE=00000
+=== final state (fixtures, committed) ===
+report_job queued attempt=1 version=1
+export_job md1 status=queued

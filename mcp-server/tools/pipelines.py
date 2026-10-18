@@ -7,6 +7,55 @@ from typing import Any
 from client.api_client import CygnusXAPIClient, CygnusXAPIError
 from fastmcp import FastMCP
 
+# 旧四件套工具名（LEGACY_PIPELINE_TOOLS=false 时注册为同名迁移 stub）
+LEGACY_TOOL_NAMES: tuple[str, ...] = (
+    "rna_seq_prepare",
+    "rna_seq_submit",
+    "rna_seq_status",
+    "rna_seq_results",
+    "atac_seq_prepare",
+    "atac_seq_submit",
+    "atac_seq_status",
+    "atac_seq_results",
+    "list_available_pipelines",
+    "check_workspace_data",
+)
+
+_MIGRATION_MESSAGE = (
+    "[已迁移] 该工具已由统一固定工具替代：流程目录请用 cygnusx_list_flows / "
+    "cygnusx_get_flow_detail；预检与提交请用 cygnusx_prepare / cygnusx_submit"
+    "（参数快照冻结 + 用户网页确认 + 幂等提交）；任务状态/结果/日志请用 "
+    "cygnusx_get_task / cygnusx_get_task_progress / cygnusx_get_task_logs。"
+    "如需临时恢复旧工具，由平台管理员设置 legacy_pipeline_tools=true。"
+)
+
+
+def _register_migration_stubs(mcp: FastMCP) -> None:
+    """旧四件套同名迁移 stub：存量客户端收到明确"已迁移"提示而非 tool-not-found。"""
+
+    async def _stub(
+        raw_data_path: str = "",
+        species: str = "",
+        genome_version: str = "",
+        sample_sheet: list[dict] | None = None,
+        comparisons: list[dict] | None = None,
+        library_type: str = "",
+        project_name: str = "",
+        task_name: str = "",
+        extra_parameters: dict | None = None,
+        prepared_params: dict | None = None,
+        task_id: str = "",
+        result_types: list[str] | None = None,
+        analysis_type: str = "",
+        data_path: str = "",
+        user_confirmed: bool = False,
+    ) -> dict[str, Any]:
+        # 仅返回迁移提示；无论传入什么参数都不触发任何服务端行为。
+        return {"success": False, "summary": _MIGRATION_MESSAGE, "data": None}
+
+    for tool_name in LEGACY_TOOL_NAMES:
+        mcp.tool(name=tool_name)(_stub)
+
 
 def _failure(error: CygnusXAPIError) -> dict[str, Any]:
     return {
@@ -40,6 +89,14 @@ def _needs_confirmation(
 
 
 def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
+    from core.config import settings
+
+    # 阶段 3（MCP 工具固定化）：legacy_pipeline_tools=false 时旧四件套变为
+    # 同名迁移 stub（明确"已迁移"提示），固定工具接管提交主链。
+    if not settings.legacy_pipeline_tools:
+        _register_migration_stubs(mcp)
+        return
+
     async def prepare(pipeline_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return await api.prepare_pipeline(pipeline_type, payload)
@@ -79,7 +136,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         project_name: str,
         extra_parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params。"""
         payload = locals()
         payload["extra_parameters"] = extra_parameters or {}
         return await prepare("rna_seq", payload)
@@ -88,7 +145,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def rna_seq_submit(
         prepared_params: dict[str, Any], user_confirmed: bool = False
     ) -> dict[str, Any]:
-        """提交经过预检的 RNA-seq 任务；必须先完成平台网页确认。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。提交经过预检的 RNA-seq 任务；必须先完成平台网页确认。"""
 
         if user_confirmed:
             return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请在平台网页批准预检确认记录。"}
@@ -98,7 +155,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def rna_seq_status(task_id: str) -> dict[str, Any]:
-        """查询 RNA-seq 任务状态和进度。
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。查询 RNA-seq 任务状态和进度。
 
         # :param task_id: 任务唯一标识符
         # :return: JSON 格式的任务状态
@@ -113,7 +170,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def rna_seq_results(
         task_id: str, result_types: list[str] | None = None
     ) -> dict[str, Any]:
-        """获取 RNA-seq 结果摘要、差异基因统计和产物清单。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。获取 RNA-seq 结果摘要、差异基因统计和产物清单。"""
 
         return await results("rna_seq", task_id, result_types)
 
@@ -128,7 +185,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         project_name: str,
         extra_parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """校验 ATAC-seq 参数和工作区数据，返回可提交的 prepared_params。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。校验 ATAC-seq 参数和工作区数据，返回可提交的 prepared_params。"""
 
         payload = locals()
         payload["extra_parameters"] = extra_parameters or {}
@@ -138,7 +195,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def atac_seq_submit(
         prepared_params: dict[str, Any], user_confirmed: bool = False
     ) -> dict[str, Any]:
-        """提交经过预检的 ATAC-seq 任务；必须先完成平台网页确认。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。提交经过预检的 ATAC-seq 任务；必须先完成平台网页确认。"""
 
         if user_confirmed:
             return {"success": False, "summary": "拒绝 user_confirmed 布尔自证；请在平台网页批准预检确认记录。"}
@@ -148,7 +205,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def atac_seq_status(task_id: str) -> dict[str, Any]:
-        """查询 ATAC-seq 任务状态和进度。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。查询 ATAC-seq 任务状态和进度。"""
 
         return await status("atac_seq", task_id)
 
@@ -156,7 +213,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def atac_seq_results(
         task_id: str, result_types: list[str] | None = None
     ) -> dict[str, Any]:
-        """获取 ATAC-seq 结果摘要和产物清单。"""
+        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。获取 ATAC-seq 结果摘要和产物清单。"""
 
         return await results("atac_seq", task_id, result_types)
 

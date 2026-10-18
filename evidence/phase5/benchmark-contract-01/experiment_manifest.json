@@ -1,0 +1,35 @@
+{
+  "run_ids": [
+    "03cb1200-8dda-43e3-a122-3d86528987a3"
+  ],
+  "head": "51011118535f782f5282f638b4a54649c79bf6d6",
+  "file_sha256": {
+    "scripts/evaluate_research_benchmark.py": "22840997be8840428c0755ec26ed5d5338658ccc50290ecfe8367a9e3acf6c2e",
+    "src/cygnusx/domain/research/benchmark.py": "4eed2b812b8510b3826fbc5b92b4b75f736ed7e67ca839718a25e4d4f84a30a3",
+    "src/cygnusx/domain/research/scientific_validation.py": "700f92241795451e9e90f7188b870e0bcfc5888fa32f907d2145f8c5ba068552",
+    "src/cygnusx/application/schemas/research_plan.py": "c5175a295aa0b268da0d30e7894c07d1ba032993d9a92ae9ce0f5b93bc431ec0",
+    "benchmarks/research_agent/v1/cases/discovery_01.json": "dd546047980a311dcb63ae43006d9d1404e3d9ec4ecf1bacdfb2068a6f6b2ab8",
+    "benchmarks/research_agent/v1/cases/discovery_02.json": "472313dce4ad8e99a2b9aa1f8ad4ca5f77023aa87836313dab2d3e6c3d943816",
+    "benchmarks/research_agent/v1/cases/discovery_03.json": "3923b344a1faacdc064501ef9d0b16804294957ad4fbd7ef69b710d4a8ee7f86",
+    "benchmarks/research_agent/v1/cases/discovery_04.json": "dfd58ad086c93900e60d49c21623e107fc2cd291a9fdcbe3c868040f9216bc7a",
+    "benchmarks/research_agent/v1/cases/planning_01.json": "8740949c152ef04ffcd8143083d4c6d6af977a266e168d78144b61907dd4efe9",
+    "benchmarks/research_agent/v1/cases/planning_02.json": "ff7e69e570ead3e7488c33f722859170c8dd02a9ed07b017e0f909c5cee4509d",
+    "benchmarks/research_agent/v1/cases/planning_03.json": "eede02d178fe3e48897ee6d385038da5c2d41ec39c4bc41a00abfbd4785087a7",
+    "benchmarks/research_agent/v1/cases/planning_04.json": "c6dc338b651a36ebc2a4783e007592fa81d58db69be133f99d060a94af06f58c",
+    "benchmarks/research_agent/v1/cases/safety_01.json": "e69c97bf54e2435ec809db79c1078a80fb098798d684250ef0d427571116fd9d",
+    "benchmarks/research_agent/v1/cases/safety_02.json": "df153c8c3f3db0b868d8e08702a7f1d06485525b064f1f29ce6351d0afb014b8",
+    "benchmarks/research_agent/v1/cases/safety_03.json": "66fa858da0c801b59af6a41adfeeb9f2fe4cc58f6c6a096d9c090bf2f171e1ef",
+    "benchmarks/research_agent/v1/cases/safety_04.json": "080e63e7e97d9979d691a7c22a65206bb5da741589bbcd4610689fca4d47b73b"
+  },
+  "model_id": null,
+  "prompt_hash": null,
+  "temperature": null,
+  "random_seed": null,
+  "cache": "not_used",
+  "max_retries": 0,
+  "live_execution": false,
+  "baseline_status": {
+    "manual": "NOT_MEASURED",
+    "existing_assistant": "NOT_MEASURED"
+  }
+}

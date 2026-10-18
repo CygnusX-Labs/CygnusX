@@ -1,0 +1,5 @@
+{
+  "src/cygnusx/application/services/report_audit_renderer.py": true,
+  "src/cygnusx/application/schemas/report_snapshot.py": true,
+  "src/cygnusx/application/schemas/report_delivery.py": true
+}

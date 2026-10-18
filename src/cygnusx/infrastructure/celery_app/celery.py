@@ -47,6 +47,8 @@ celery_app = Celery(
         "cygnusx.infrastructure.celery_app.tasks.observability",
         "cygnusx.infrastructure.celery_app.tasks.schedules",
         "cygnusx.infrastructure.celery_app.tasks.reports",
+        "cygnusx.infrastructure.celery_app.tasks.project_exports",
+        "cygnusx.infrastructure.celery_app.tasks.project_reports",
         "cygnusx.infrastructure.celery_app.tasks.datasets",
     ],
 )
@@ -101,8 +103,16 @@ celery_app.conf.task_routes = {
 
 # 定时任务
 celery_app.conf.beat_schedule = {
+    "project-report-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports",
+        "schedule": 60.0,
+    },
     "dataset-ingestion-reconcile": {
         "task": "cygnusx.infrastructure.celery_app.tasks.datasets.reconcile_dataset_jobs",
+        "schedule": 60.0,
+    },
+    "project-export-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.project_exports.reconcile_project_exports",
         "schedule": 60.0,
     },
     "reproducible-report-reconcile": {
@@ -177,6 +187,10 @@ celery_app.conf.beat_schedule = {
     "mas-outbox-publish": {
         "task": "cygnusx.infrastructure.celery_app.tasks.mas.publish_outbox",
         "schedule": 10.0,
+    },
+    "download-task-reconcile": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.download.reconcile_downloads",
+        "schedule": 600.0,
     },
     "run-events-publish": {
         "task": "cygnusx.infrastructure.celery_app.tasks.run_events.publish_pending",

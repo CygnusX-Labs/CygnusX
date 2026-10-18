@@ -1,0 +1,4 @@
+{
+  "postgres": "BLOCKED: PermissionError: Operation not permitted",
+  "redis": "BLOCKED: PermissionError: Operation not permitted"
+}

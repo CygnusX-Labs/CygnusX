@@ -1,0 +1,70 @@
+{
+  "head": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+  "files": [
+    {
+      "path": "frontend/package.json",
+      "bytes": 2235,
+      "sha256": "b7eb0b19bc921d1eb0c89bb1a915f63e25d2b9a245b49190c246e696739781a8"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "bytes": 320964,
+      "sha256": "995b06832aa2bdea3b31e912e5ddfee64b61e4957808c2f9719f6ee03c56d35e"
+    },
+    {
+      "path": "alembic/versions/c1d2e3f4b5a6_add_contract_digest_to_mcp_versions.py",
+      "bytes": 882,
+      "sha256": "c1a3a95b76c24aeb3f157e1dc4b6525aa42a5b37bf8ba86c2d5d117e05a6ecaa"
+    },
+    {
+      "path": "alembic/versions/h6i7j8k9l1m3_add_mcp_builder_tables.py",
+      "bytes": 8398,
+      "sha256": "5b2cbf0b8f8d7304a16220f853ee1b65b88c807d7b0c812a612daff1b8014682"
+    },
+    {
+      "path": "deploy/acceptance/compose.yml",
+      "bytes": 3882,
+      "sha256": "33542929a65c5437efe2dbdaaa2b92a075b47dcead7d4eafbe2872250b595f14"
+    },
+    {
+      "path": "deploy/acceptance/control.py",
+      "bytes": 8019,
+      "sha256": "2509442b1b02a1ea6dcba2601ff65bbcfc25ee610aa402ab838b77895ca451ab"
+    },
+    {
+      "path": "deploy/acceptance/runtime.py",
+      "bytes": 7998,
+      "sha256": "be125d89ce5f1633778899d6da70c3091f8ea0f26a9eeee6b5be6b2f707e5cc5"
+    },
+    {
+      "path": "deploy/acceptance/checks.py",
+      "bytes": 3544,
+      "sha256": "3dfed0162920402853638c956910ad27a97cb55563b8ac5c37a6da87e546155a"
+    },
+    {
+      "path": "deploy/acceptance/Dockerfile",
+      "bytes": 442,
+      "sha256": "78e99a1c4c2b2c4735f1def7b3f33974e911431935229c233f2c5ad6e872b801"
+    },
+    {
+      "path": "deploy/acceptance/Dockerfile.pdf",
+      "bytes": 1695,
+      "sha256": "ef9edd518a7a06e901af7d18a4bde41e80a35890542da46165bd63456e94b004"
+    },
+    {
+      "path": "src/cygnusx/application/services/report_audit_pdf_renderer.py",
+      "bytes": 1947,
+      "sha256": "dfe8141471201beb106c96d945f1f1e7e51fb1f8845fd339e8795a6956b0f858"
+    },
+    {
+      "path": "src/cygnusx/application/services/bioreport_adapter.py",
+      "bytes": 7699,
+      "sha256": "7b997355614b206c7ead03cdaf71253fc5579843e4d8c07d0edf5a3e9450953d"
+    },
+    {
+      "path": "deploy/docker/Dockerfile.frontend",
+      "bytes": 1472,
+      "sha256": "4961ada8e44d1f19023802d5c28a2890876d08e04ab5d821a88014aaa809e746"
+    }
+  ]
+}

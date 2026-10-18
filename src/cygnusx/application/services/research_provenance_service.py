@@ -167,7 +167,7 @@ class ResearchProvenanceService:
             "dataset_version_id": str(version),
             "handoff_hash": row.handoff.get("manifest_hash") if row.handoff else None,
             "analyses": [
-                (await self.task(owner, link.task_id)).model_dump(mode="json")
+                await self._project_analysis(owner, link.task_id)
                 if link.task_id
                 else {
                     "analysis_link_id": str(link.id),
@@ -181,7 +181,23 @@ class ResearchProvenanceService:
             "gaps": [] if row.handoff else ["HANDOFF_NOT_FROZEN"],
         }
 
-    async def project(self, owner: UUID, project: UUID) -> dict[str, Any]:
+    async def _project_analysis(self, owner: UUID, task_id: UUID) -> dict[str, Any]:
+        try:
+            return (await self.task(owner, task_id)).model_dump(mode="json")
+        except (NotFoundError, ConflictError):
+            if not getattr(self, "_tolerate_unavailable", False):
+                raise
+            return {
+                "task_id": None,
+                "state": "UNAVAILABLE",
+                "association_status": "UNAVAILABLE",
+                "gaps": ["LINKED_TASK_UNAVAILABLE"],
+            }
+
+    async def project(
+        self, owner: UUID, project: UUID, *, tolerate_unavailable: bool = False
+    ) -> dict[str, Any]:
+        self._tolerate_unavailable = tolerate_unavailable
         await self.repo.require_module(owner, "reports")
         await self.repo.project(owner, project)
         self._project_links_remaining = 20
@@ -231,6 +247,11 @@ class ResearchProvenanceService:
             finished_at=task.finished_at.isoformat() if task.finished_at else None,
         )
         graph.gaps = ["RUNTIME_IMAGE_NOT_OBSERVED", "WORKFLOW_RELEASE_NOT_ATTESTED"]
+        from cygnusx.application.services.execution_evidence_service import evidence_projection
+
+        execution_evidence = evidence_projection(task)
+        if execution_evidence is not None:
+            graph.runtime["execution_evidence"] = execution_evidence
         runs = (
             (
                 await self.db.execute(
@@ -304,6 +325,7 @@ class ResearchProvenanceService:
             ):
                 graph.analysis_parameters["design"] = design
             graph.runtime = {
+                **graph.runtime,
                 "image_digest": None,
                 "software_versions": None,
                 "observation": "NOT_OBSERVED",

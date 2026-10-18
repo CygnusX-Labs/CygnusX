@@ -1,0 +1,7 @@
+{
+  "status": "PASS_ISOLATED",
+  "fixture": "synthetic_rna",
+  "legacy_html_byte_identical": true,
+  "before_sha256": "887dba3ff4f3bedd8c3fabbb98e7340d004b83fd6a76be63e6712d2e96f7aca5",
+  "after_sha256": "887dba3ff4f3bedd8c3fabbb98e7340d004b83fd6a76be63e6712d2e96f7aca5"
+}

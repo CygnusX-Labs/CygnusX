@@ -1,0 +1,8 @@
+src/cygnusx/infrastructure/database/repositories/task_repository.py:84: error: Missing type arguments for generic type "dict"  [type-arg]
+src/cygnusx/infrastructure/database/repositories/task_repository.py:103: error: Missing type arguments for generic type "dict"  [type-arg]
+src/cygnusx/infrastructure/database/repositories/task_repository.py:118: error: Missing type arguments for generic type "Row"  [type-arg]
+src/cygnusx/infrastructure/database/repositories/task_repository.py:141: error: Missing type arguments for generic type "Row"  [type-arg]
+src/cygnusx/infrastructure/database/repositories/task_repository.py:150: error: Missing type arguments for generic type "Row"  [type-arg]
+src/cygnusx/infrastructure/celery_app/tasks/download.py:199: error: "Result[Any]" has no attribute "rowcount"  [attr-defined]
+pyproject.toml: note: unused section(s): module = ['docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'mcp.*', 'rocketmq.*', 'snakemake.*']
+Found 6 errors in 2 files (checked 4 source files)

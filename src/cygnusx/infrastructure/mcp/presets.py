@@ -1055,8 +1055,9 @@ async def _platform_submit_download(
     }
     try:
         req = DownloadRequest(**business_args)
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"下载参数不合法: {e}"}
+    except Exception:  # noqa: BLE001
+        # Pydantic exceptions include rejected input, which may contain credentials.
+        return {"error": "下载参数不符合安全或协议约束", "code": "DOWNLOAD_ARGUMENTS_INVALID"}
 
     # 与 REST 路由 _ensure_enabled 保持一致的功能开关校验
     settings = get_settings()
@@ -1950,11 +1951,11 @@ PLATFORM_PRESET_TOOLS = [
     {
         "name": "platform_submit_download",
         "description": (
-            "提交数据下载任务，产物落到当前用户工作区 raw_data 目录（可选子目录），完成后自动登记到数据管理。"
+            "提交数据下载任务，默认产物落到当前用户 downloads 目录（可选用户子目录），完成后自动登记到数据管理。"
             "支持三类来源（source）："
-            "① sra（公共数据库高速下载，默认）：支持 NCBI SRA/GEO 系列登录号，包括项目号（PRJNA/PRJEB/PRJ 开头，"
-            "如 PRJNA1285930）、测序 run（SRR/ERR/DRR 开头）、GEO 样本（GSM 开头）等；"
-            "download_method 可选 aws（推荐，S3 全球镜像最快）/aspera/ftp，multithreads 控制并发 run 数，"
+            "① sra（公共数据库高速下载，默认）：提交单个 ENA/SRA 登录号，包括项目号（PRJNA/PRJEB 开头，"
+            "如 PRJNA1285930）、测序 run（SRR/ERR/DRR 开头）；GSE/GSM 需先经数据集来源解析；"
+            "download_method 可选 aws（推荐，SRA 公共镜像）/ftp，multithreads 控制并发 run 数，"
             "aws_threads 控制单文件 AWS 并发线程，dry_run=True 可先验证登录号不实际下载。"
             "② cloud_storage（多云服务商对象存储高速下载）：cloud_provider 取 aliyun(oss://)/volc(tos://)/huawei(obs://)，"
             "object_uri 需带对应前缀，recursive 控制是否递归。"
@@ -1982,7 +1983,7 @@ PLATFORM_PRESET_TOOLS = [
                 },
                 "download_method": {
                     "type": "string",
-                    "enum": ["aws", "aspera", "ftp"],
+                    "enum": ["aws", "ftp"],
                     "default": "aws",
                     "description": "SRA 下载方式，aws 最快（仅 source=sra 有效）",
                 },
@@ -2416,29 +2417,34 @@ def _build_cygnusx_tools_preset() -> dict[str, Any]:
     static_tools = schema_loader.to_openai_tools()
     handlers = {t["function"]["name"]: _cygnusx_tools_handler for t in static_tools}
 
-    # 动态编译 ai.enabled 的 Flow 为 MCP tool
+    # 动态编译 ai.enabled 的 Flow 为 MCP tool（LEGACY_PIPELINE_TOOLS=false 时移除，
+    # 统一固定工具接管；编译器契约编译职责保留）
+    from cygnusx.core.config import get_settings
+
+    legacy = get_settings().legacy_pipeline_tools
     compiler = FlowToolSchemaCompiler()
     flow_service = FlowService()
     dynamic_tools: list[dict[str, Any]] = []
     try:
-        for flow_config in flow_service.list_ai_enabled_flows():
-            try:
-                tool_def = compiler.compile_prepare_tool(flow_config)
-                tool_name = tool_def["name"]
-                dynamic_tools.append(
-                    {
-                        "name": tool_name,
-                        "description": tool_def["description"],
-                        "inputSchema": tool_def["input_schema"],
-                    }
-                )
-                handlers[tool_name] = _cygnusx_tools_handler
-            except Exception:  # noqa: BLE001
-                import logging
+        if legacy:
+            for flow_config in flow_service.list_ai_enabled_flows():
+                try:
+                    tool_def = compiler.compile_prepare_tool(flow_config)
+                    tool_name = tool_def["name"]
+                    dynamic_tools.append(
+                        {
+                            "name": tool_name,
+                            "description": tool_def["description"],
+                            "inputSchema": tool_def["input_schema"],
+                        }
+                    )
+                    handlers[tool_name] = _cygnusx_tools_handler
+                except Exception:  # noqa: BLE001
+                    import logging
 
-                logging.getLogger(__name__).warning(
-                    f"动态编译 Flow tool 失败: {flow_config.meta.id}", exc_info=True
-                )
+                    logging.getLogger(__name__).warning(
+                        f"动态编译 Flow tool 失败: {flow_config.meta.id}", exc_info=True
+                    )
 
         # 通用查询工具
         for tool_def in [compiler.compile_status_tool(), compiler.compile_summary_tool()]:
@@ -2474,7 +2480,7 @@ def _build_cygnusx_tools_preset() -> dict[str, Any]:
     from cygnusx.core.config import get_settings
 
     if get_settings().tool_gateway_read_enabled:
-        for capability in capability_catalog(include_dataset=getattr(get_settings(), "dataset_discovery_readonly", False), include_research=getattr(get_settings(), "research_delivery_read_enabled", False)):
+        for capability in capability_catalog(include_dataset=getattr(get_settings(), "dataset_discovery_readonly", False), include_research=getattr(get_settings(), "research_delivery_read_enabled", False), include_plans=getattr(get_settings(), "research_plan_enabled", False)):
             if capability.tool_name in tools_by_name:
                 raise ValueError(f"共享工具注册冲突: {capability.tool_name}")
             tools_by_name[capability.tool_name] = {

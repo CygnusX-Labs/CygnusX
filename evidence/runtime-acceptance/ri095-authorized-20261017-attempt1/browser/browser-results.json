@@ -1,0 +1,188 @@
+[
+  {
+    "step": "browser.launch_sandboxed",
+    "ok": true,
+    "version": "131.0.6778.33"
+  },
+  {
+    "step": "w1920.login",
+    "ok": true,
+    "url": "http://frontend:8080/"
+  },
+  {
+    "step": "w1920.project_list",
+    "ok": true,
+    "rows": 2
+  },
+  {
+    "step": "w1920.project_detail",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w1920.delivery_panel_present",
+    "ok": true
+  },
+  {
+    "step": "w1920.export_preview_available",
+    "ok": true
+  },
+  {
+    "step": "w1920.preview_shows_details",
+    "ok": true,
+    "detail_sections": 3
+  },
+  {
+    "step": "w1920.export_ready",
+    "ok": false,
+    "buttons": [
+      "111",
+      "刷新计划",
+      "刷新交付记录",
+      "刷新科研成果",
+      "导出科研成果：预览范围",
+      "确认范围并后台生成"
+    ]
+  },
+  {
+    "step": "w1920.refresh_persists",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w1920.keyboard_focus",
+    "ok": true,
+    "focused_tag": "A"
+  },
+  {
+    "step": "w1920.no_horizontal_overflow",
+    "ok": true,
+    "overflow_px": 0
+  },
+  {
+    "step": "w1920.console_clean",
+    "ok": true,
+    "errors": 0
+  },
+  {
+    "step": "w768.login",
+    "ok": true,
+    "url": "http://frontend:8080/"
+  },
+  {
+    "step": "w768.project_list",
+    "ok": true,
+    "rows": 2
+  },
+  {
+    "step": "w768.project_detail",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w768.delivery_panel_present",
+    "ok": true
+  },
+  {
+    "step": "w768.export_preview_available",
+    "ok": true
+  },
+  {
+    "step": "w768.preview_shows_details",
+    "ok": true,
+    "detail_sections": 3
+  },
+  {
+    "step": "w768.export_ready",
+    "ok": false,
+    "buttons": [
+      "111",
+      "R",
+      "刷新计划",
+      "刷新交付记录",
+      "刷新科研成果",
+      "导出科研成果：预览范围",
+      "确认范围并后台生成"
+    ]
+  },
+  {
+    "step": "w768.refresh_persists",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w768.keyboard_focus",
+    "ok": true,
+    "focused_tag": "A"
+  },
+  {
+    "step": "w768.no_horizontal_overflow",
+    "ok": true,
+    "overflow_px": 0
+  },
+  {
+    "step": "w768.console_clean",
+    "ok": true,
+    "errors": 0
+  },
+  {
+    "step": "w390.login",
+    "ok": true,
+    "url": "http://frontend:8080/"
+  },
+  {
+    "step": "w390.project_list",
+    "ok": true,
+    "rows": 2
+  },
+  {
+    "step": "w390.project_detail",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w390.delivery_panel_present",
+    "ok": true
+  },
+  {
+    "step": "w390.export_preview_available",
+    "ok": true
+  },
+  {
+    "step": "w390.preview_shows_details",
+    "ok": true,
+    "detail_sections": 3
+  },
+  {
+    "step": "w390.export_ready",
+    "ok": false,
+    "buttons": [
+      "111",
+      "刷新计划",
+      "刷新交付记录",
+      "刷新科研成果",
+      "导出科研成果：预览范围",
+      "确认范围并后台生成"
+    ]
+  },
+  {
+    "step": "w390.refresh_persists",
+    "ok": true,
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "step": "w390.keyboard_focus",
+    "ok": true,
+    "focused_tag": "A"
+  },
+  {
+    "step": "w390.no_horizontal_overflow",
+    "ok": true,
+    "overflow_px": 0
+  },
+  {
+    "step": "w390.console_clean",
+    "ok": true,
+    "errors": 0
+  }
+]

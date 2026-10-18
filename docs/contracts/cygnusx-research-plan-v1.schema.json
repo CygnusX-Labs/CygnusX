@@ -1,0 +1,517 @@
+{
+  "$defs": {
+    "Effect": {
+      "enum": [
+        "READ_ONLY",
+        "PREPARE",
+        "MUTATING",
+        "REPORT_PUBLISH"
+      ],
+      "title": "Effect",
+      "type": "string"
+    },
+    "InputBinding": {
+      "additionalProperties": false,
+      "description": "Bind an exact upstream output to a declared downstream argument.",
+      "properties": {
+        "argument": {
+          "enum": [
+            "proposal_id",
+            "task_id",
+            "dataset_id",
+            "version_id"
+          ],
+          "title": "Argument",
+          "type": "string"
+        },
+        "from_step": {
+          "pattern": "^[a-z][a-z0-9_]{0,47}$",
+          "title": "From Step",
+          "type": "string"
+        },
+        "output": {
+          "enum": [
+            "analysis_proposal",
+            "import_proposal",
+            "task_id",
+            "dataset_version"
+          ],
+          "title": "Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "argument",
+        "from_step",
+        "output"
+      ],
+      "title": "InputBinding",
+      "type": "object"
+    },
+    "PlanBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tool_calls": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_elapsed_seconds": {
+          "default": 300,
+          "maximum": 600,
+          "minimum": 1,
+          "title": "Max Elapsed Seconds",
+          "type": "integer"
+        },
+        "max_model_tokens": {
+          "default": 10000,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Model Tokens",
+          "type": "integer"
+        },
+        "max_retries": {
+          "const": 0,
+          "default": 0,
+          "title": "Max Retries",
+          "type": "integer"
+        },
+        "estimated_compute_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Compute Seconds"
+        },
+        "estimated_storage_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Storage Bytes"
+        }
+      },
+      "title": "PlanBudget",
+      "type": "object"
+    },
+    "PlanStatus": {
+      "enum": [
+        "DRAFT",
+        "VALIDATED",
+        "READY_FOR_REVIEW",
+        "REVIEW_REQUIRED",
+        "APPROVED",
+        "RUNNING",
+        "PAUSED",
+        "COMPLETED",
+        "PARTIAL",
+        "FAILED",
+        "CANCELLED",
+        "RECONCILIATION_REQUIRED"
+      ],
+      "title": "PlanStatus",
+      "type": "string"
+    },
+    "ResearchPlanDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "cygnusx.research_plan.v1",
+          "default": "cygnusx.research_plan.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "research_question": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Research Question",
+          "type": "string"
+        },
+        "assumptions": {
+          "items": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/ResearchStepDraft"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "budget": {
+          "$ref": "#/$defs/PlanBudget"
+        }
+      },
+      "required": [
+        "research_question",
+        "steps"
+      ],
+      "title": "ResearchPlanDraft",
+      "type": "object"
+    },
+    "ResearchReportLink": {
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "format": "uuid",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "scientific",
+            "reproducibility",
+            "delivery"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "integrity": {
+          "default": "UNKNOWN",
+          "enum": [
+            "VERIFIED",
+            "PARTIAL",
+            "UNKNOWN",
+            "MISSING",
+            "FAILED",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Integrity",
+          "type": "string"
+        },
+        "result_observation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Observation Id"
+        },
+        "report_url": {
+          "title": "Report Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_id",
+        "kind",
+        "state",
+        "report_url"
+      ],
+      "title": "ResearchReportLink",
+      "type": "object"
+    },
+    "ResearchStepDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "pattern": "^[a-z][a-z0-9_]{0,47}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "goal": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,47}$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "bindings": {
+          "items": {
+            "$ref": "#/$defs/InputBinding"
+          },
+          "maxItems": 2,
+          "title": "Bindings",
+          "type": "array"
+        },
+        "failure_policy": {
+          "const": "STOP_AND_RECONCILE",
+          "default": "STOP_AND_RECONCILE",
+          "title": "Failure Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step_id",
+        "kind",
+        "goal"
+      ],
+      "title": "ResearchStepDraft",
+      "type": "object"
+    },
+    "StepKind": {
+      "enum": [
+        "DISCOVERY",
+        "DATASET_INSPECT",
+        "WORKFLOW_MATCH",
+        "ANALYSIS_PREPARE",
+        "DATASET_IMPORT_PREPARE",
+        "DATASET_IMPORT",
+        "ANALYSIS_EXECUTE",
+        "DELIVERY_PREPARE",
+        "REPORT_PUBLISH"
+      ],
+      "title": "StepKind",
+      "type": "string"
+    },
+    "StepStatus": {
+      "enum": [
+        "WAITING_INPUT",
+        "READY",
+        "WAITING_APPROVAL",
+        "SUBMITTING",
+        "QUEUED",
+        "RUNNING",
+        "COMPLETE",
+        "PARTIAL",
+        "FAILED",
+        "CANCELLED",
+        "RECONCILIATION_REQUIRED"
+      ],
+      "title": "StepStatus",
+      "type": "string"
+    },
+    "StepView": {
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "capability_id": {
+          "title": "Capability Id",
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "approval_required": {
+          "title": "Approval Required",
+          "type": "boolean"
+        },
+        "expected_output": {
+          "title": "Expected Output",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/StepStatus"
+        },
+        "invocation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invocation Id"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "result_manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result Manifest Sha256"
+        },
+        "reports": {
+          "items": {
+            "$ref": "#/$defs/ResearchReportLink"
+          },
+          "maxItems": 20,
+          "title": "Reports",
+          "type": "array"
+        }
+      },
+      "required": [
+        "step_id",
+        "kind",
+        "capability_id",
+        "effect",
+        "approval_required",
+        "expected_output",
+        "status"
+      ],
+      "title": "StepView",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.research_plan.v1",
+      "default": "cygnusx.research_plan.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "plan_id": {
+      "format": "uuid",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PlanStatus"
+    },
+    "mode": {
+      "const": "PLAN_ONLY",
+      "default": "PLAN_ONLY",
+      "title": "Mode",
+      "type": "string"
+    },
+    "draft": {
+      "$ref": "#/$defs/ResearchPlanDraft"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/StepView"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "reviewed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reviewed At"
+    },
+    "superseded_by": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Superseded By"
+    }
+  },
+  "required": [
+    "plan_id",
+    "version",
+    "project_id",
+    "digest",
+    "status",
+    "draft",
+    "steps",
+    "gaps",
+    "created_at"
+  ],
+  "title": "ResearchPlanView",
+  "type": "object"
+}

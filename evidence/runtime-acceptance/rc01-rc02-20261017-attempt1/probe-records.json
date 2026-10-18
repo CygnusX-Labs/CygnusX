@@ -1,0 +1,69 @@
+{
+  "run_id": "rc01-rc02-20261017-attempt1",
+  "git_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+  "image_digest": "NOT_OBSERVED_DOCKER_DENIED",
+  "records": [
+    {
+      "gate": "docker",
+      "command": [
+        "docker",
+        "version",
+        "--format",
+        "{{json .Server.Version}}"
+      ],
+      "start": "2026-10-17T06:56:12.666155+00:00",
+      "end": "2026-10-17T06:56:12.677919+00:00",
+      "exit_code": 1,
+      "evidence_path": "docker.log"
+    },
+    {
+      "gate": "migration-check",
+      "command": [
+        ".venv/bin/python",
+        "scripts/check_migrations.py"
+      ],
+      "start": "2026-10-17T06:56:12.677935+00:00",
+      "end": "2026-10-17T06:56:13.093216+00:00",
+      "exit_code": 0,
+      "evidence_path": "migration-check.log"
+    },
+    {
+      "gate": "node",
+      "command": [
+        "node",
+        "--version"
+      ],
+      "start": "2026-10-17T06:56:13.093236+00:00",
+      "end": "2026-10-17T06:56:13.098697+00:00",
+      "exit_code": 0,
+      "evidence_path": "node.log"
+    },
+    {
+      "gate": "npm",
+      "command": [
+        "npm",
+        "--version"
+      ],
+      "start": "2026-10-17T06:56:13.098718+00:00",
+      "end": "2026-10-17T06:56:13.154648+00:00",
+      "exit_code": 0,
+      "evidence_path": "npm.log"
+    },
+    {
+      "gate": "npm-ci-original",
+      "command": [
+        "npm",
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "start": "2026-10-17T06:56:13.160048+00:00",
+      "end": "2026-10-17T06:56:13.450766+00:00",
+      "exit_code": 1,
+      "evidence_path": "npm-ci-original.log"
+    }
+  ],
+  "frontend_temp": "/tmp/rc01-frontend-zex6cul8"
+}

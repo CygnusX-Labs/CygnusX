@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/unit/test_download_log_security.py F                               [100%]
+
+=================================== FAILURES ===================================
+_________________ test_binary_log_filter_runs_before_callback __________________
+tests/unit/test_download_log_security.py:23: in test_binary_log_filter_runs_before_callback
+    assert messages == ["[redacted]"]
+E   AssertionError: assert ['https://exa...en=S3_CANARY'] == ['[redacted]']
+E     
+E     At index 0 diff: 'https://example.org/a?token=S3_CANARY' != '[redacted]'
+E     Use -v to get more diff
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-16 10:35:45.741[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_log_security.py::test_binary_log_filter_runs_before_callback
+========================= 1 failed, 1 warning in 0.29s =========================

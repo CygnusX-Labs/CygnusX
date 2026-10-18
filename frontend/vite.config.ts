@@ -23,6 +23,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      '/treasure-mouse/': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/docs-static': {
         target: 'http://localhost:8888',
         changeOrigin: true,

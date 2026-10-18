@@ -1,0 +1,39 @@
+# Source baseline 2026-10-17T22:13:48+08:00
+branch: feat/research-agent-phase5
+head: d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33
+describe: d9c92cf6
+
+## git status (short, count by state)
+    237 ??
+    285 D
+      5 m
+    115 M
+
+## acceptance-relevant paths
+ M frontend/package-lock.json
+ M frontend/package.json
+?? alembic/versions/bioopsphase5_research_plans.py
+?? alembic/versions/c1d2e3f4b5a6_add_contract_digest_to_mcp_versions.py
+?? alembic/versions/mcpdigestmerge01_merge_contract_digest_and_project_delivery.py
+?? alembic/versions/projectdelivery01_project_exports.py
+?? alembic/versions/projectreport01_project_report_jobs.py
+?? deploy/acceptance/
+?? docs/audits/RI095-Final-Runtime-Acceptance.md
+?? docs/audits/appendix-download-capability-matrix.yaml
+?? docs/audits/appendix-download-evidence-index.md
+?? docs/audits/cygnusx-phase5-acceptance.md
+?? docs/audits/cygnusx-phase5-changes.md
+?? docs/audits/cygnusx-phase5-entry-gates.md
+?? docs/audits/cygnusx-phase5-implementation-report.md
+?? docs/audits/cygnusx-platform-download-capability-and-agent-tool-readiness-audit-2026-10-16.md
+?? docs/audits/cygnusx-project-delivery-runtime-acceptance.md
+?? docs/audits/cygnusx-research-lifecycle-and-reproducibility-architecture-audit-2026-10-16.md
+?? docs/audits/cygnusx-ri095-rc01-runtime-foundation-closure.md
+?? docs/audits/cygnusx-ri095-rc02-pdf-browser-enablement.md
+?? docs/audits/cygnusx-ri095-real-runtime-gates.md
+?? docs/audits/cygnusx-ri095-runtime-e2e-investigation-2026-10-17.md
+?? docs/audits/cygnusx-ri095-runtime-e2e-results.md
+?? docs/audits/cygnusx-runtime-acceptance-environment.md
+?? docs/audits/cygnusx-treasure-mouse-ui-regression-and-mcp-integration-audit-2026-10-15.md
+?? docs/audits/treasure-e2e-release-gates.md
+?? evidence/runtime-acceptance/

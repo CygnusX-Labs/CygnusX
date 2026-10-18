@@ -1,0 +1,10 @@
+26:  analysis-rnaseq:
+27:    image: cygnusx-analysis:rnaseq-v0.0.1dev
+28:    dockerfile: deploy/runtime-images/rnaseq.Dockerfile
+63:  sandbox-rnaseq:
+64:    image: cygnusx-sandbox-rnaseq:v0.0.2dev
+65:    dockerfile: tool_configs/terminal/docker/Dockerfile.rnaseq
+94:      - 'docker build -t "cygnusx-analysis:rnaseq-${RNASEQ_TAG}"'
+112:  - file: deploy/runtime-images/rnaseq.Dockerfile
+127:  - cygnusx-analysis:rnaseq-v0.0.1dev
+135:  - cygnusx-sandbox-rnaseq:v0.0.2dev

@@ -52,7 +52,7 @@ class BinaryExecutor(BaseExecutor):
                 text = line.decode(errors="replace").rstrip("\n")
                 if not text.strip():
                     continue
-                sink.append(text)
+                sink.append(ctx.log_filter(text) if ctx.log_filter else text)
                 await self._emit(ctx, text, is_stderr=is_stderr)
 
         # 并发排空 stdout / stderr，实现真正的逐行实时流式
@@ -86,7 +86,9 @@ class BinaryExecutor(BaseExecutor):
             level = "warning"
 
         if ctx.on_log is not None:
-            await ctx.on_log(level, message, source="binary")
+            await ctx.on_log(
+                level, ctx.log_filter(message) if ctx.log_filter else message, "binary"
+            )
 
         if progress is not None and ctx.on_progress is not None:
             with contextlib.suppress(Exception):

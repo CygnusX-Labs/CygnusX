@@ -1,0 +1,41 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "case_version": "1.0",
+  "case_id": "discovery_04",
+  "category": "discovery",
+  "difficulty": "small_synthetic",
+  "question": "Synthetic contract fixture: discovery_04",
+  "public_input": {
+    "operation": "claim_grounding",
+    "claim": {
+      "claim_id": "synthetic_claim",
+      "claim_type": "DATASET_FACT",
+      "claim_text": "Synthetic source assertion requiring evidence review",
+      "evidence_refs": [
+        {
+          "kind": "SOURCE",
+          "resource_id": "synthetic-source"
+        }
+      ]
+    },
+    "available_evidence": [
+      [
+        "SOURCE",
+        "synthetic-source"
+      ]
+    ],
+    "conflicting": true
+  },
+  "gold": {
+    "status": "CONTRADICTORY"
+  },
+  "source": "Repository-authored synthetic fixture; no public study or real accession",
+  "access": "SYNTHETIC_NO_NETWORK",
+  "license": "Synthetic fixture follows repository licensing; no third-party scientific data",
+  "review_status": "PENDING_HUMAN_REVIEW",
+  "reviewer": null,
+  "review_record": null,
+  "network_allowed": false,
+  "live_execution_allowed": false,
+  "max_seconds": 30
+}

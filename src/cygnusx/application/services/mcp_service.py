@@ -32,6 +32,7 @@ from cygnusx.core.exceptions import (
 from cygnusx.domain.mcp.entities import MCPServer, MCPToolRegistry
 from cygnusx.domain.mcp.services import MCPDomainService
 from cygnusx.domain.mcp.value_objects import ServerStatus, Transport
+from cygnusx.infrastructure.database.models.mcp import MCPServerModel
 from cygnusx.infrastructure.database.models.mcp_builder import MCPVersionModel
 from cygnusx.infrastructure.database.models.mcp_log import MCPLogModel
 from cygnusx.infrastructure.database.repositories.mcp_repository import (
@@ -42,6 +43,7 @@ from cygnusx.infrastructure.mcp.builder.versioning import (
 )
 from cygnusx.infrastructure.mcp.builder.versioning import (
     compare_versions,
+    compute_contract_digest,
     is_valid_semver,
     parse_semver,
 )
@@ -107,7 +109,15 @@ async def next_patch_version(db: AsyncSession, server: MCPServer) -> str:
 
     无法解析任何版本号时从 1.0.0 起算。MCPService 与 MCPBuilderService 共用，
     保证两条版本管理路径的版本号递进口径一致。
+
+    行锁（架构审查 §8.4）：先对 mcp_servers 行加 FOR UPDATE，串行化同一
+    server 的并发版本递进，防止 max+1 计算后并发插入撞唯一约束互相覆盖。
     """
+    await db.execute(
+        select(MCPServerModel.id)
+        .where(MCPServerModel.id == server.id)
+        .with_for_update()
+    )
     result = await db.execute(
         select(MCPVersionModel.version).where(
             MCPVersionModel.mcp_server_id == server.id
@@ -606,6 +616,7 @@ class MCPService:
                 created_by=v.created_by,
                 created_at=v.created_at,
                 has_config_snapshot=bool(v.config_snapshot),
+                contract_digest=v.contract_digest or None,
             )
             for v in rows
         ]
@@ -615,11 +626,23 @@ class MCPService:
         server_id: UUID,
         version: str,
         actor_id: UUID | str | None = None,
+        expected_current_version: str | None = None,
     ) -> MCPServerDTO:
-        """回滚到指定版本（任意 server 均可），回滚本身产生一条新版本记录"""
+        """回滚到指定版本（任意 server 均可），回滚本身产生一条新版本记录。
+
+        ``expected_current_version`` 提供 generation 式乐观锁（架构审查 §8.4）：
+        与读取时不一致即拒绝，防止并发发布/回退互相覆盖。
+        """
         server = await self._repo.get_by_id(server_id)
         if server is None:
             raise NotFoundError("MCP Server 不存在")
+        if (
+            expected_current_version is not None
+            and server.current_version != expected_current_version
+        ):
+            raise ConflictError(
+                f"并发冲突：当前版本已变为 {server.current_version}，请重新读取后重试"
+            )
         result = await self._db.execute(
             select(MCPVersionModel).where(
                 MCPVersionModel.mcp_server_id == server_id,
@@ -920,6 +943,9 @@ class MCPService:
                 is_major=False,
                 config_snapshot=_config_snapshot(server),
                 tools_snapshot=_tool_snapshot(server.tools),
+                contract_digest=compute_contract_digest(
+                    _tool_snapshot(server.tools), _config_snapshot(server)
+                ),
                 source=source,
                 changelog=changelog,
                 created_by=UUID(str(actor_id)) if actor_id else None,

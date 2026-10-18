@@ -1,0 +1,97 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "case_version": "1.0",
+  "case_id": "planning_01",
+  "category": "planning",
+  "difficulty": "small_synthetic",
+  "question": "Synthetic contract fixture: planning_01",
+  "public_input": {
+    "operation": "scientific_eligibility",
+    "handoff": {
+      "handoff_schema_version": "1.0",
+      "project_id": "afe98ab4-3d24-49ce-a7b8-1dc28a539bcf",
+      "dataset_id": "f38ab826-b8e2-480a-9e57-537639c57fb0",
+      "dataset_version_id": "aa6f9aff-e6ed-43c0-8d1c-df17d79ffc67",
+      "source": [
+        {
+          "repository": "synthetic",
+          "processing": "synthetic raw counts"
+        }
+      ],
+      "ingestion": [],
+      "assets": [
+        {
+          "asset_id": "e40f7490-db81-4b7b-b037-61d75042b209",
+          "file_record_id": "8baa2d9e-e49f-4b83-9b54-25e3aa854b78",
+          "asset_role": "raw_counts",
+          "data_type": "RAW_INTEGER_COUNTS",
+          "format": "tsv",
+          "size": 100,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "checksum_status": "VERIFIED",
+          "availability": "AVAILABLE"
+        }
+      ],
+      "samples": [
+        {
+          "mapping_status": "CONFIRMED",
+          "source_metadata": {
+            "organism": "synthetic"
+          },
+          "user_annotation": {
+            "group": "control",
+            "group_confirmed": true
+          }
+        },
+        {
+          "mapping_status": "CONFIRMED",
+          "source_metadata": {
+            "organism": "synthetic"
+          },
+          "user_annotation": {
+            "group": "control",
+            "group_confirmed": true
+          }
+        },
+        {
+          "mapping_status": "CONFIRMED",
+          "source_metadata": {
+            "organism": "synthetic"
+          },
+          "user_annotation": {
+            "group": "treatment",
+            "group_confirmed": true
+          }
+        },
+        {
+          "mapping_status": "CONFIRMED",
+          "source_metadata": {
+            "organism": "synthetic"
+          },
+          "user_annotation": {
+            "group": "treatment",
+            "group_confirmed": true
+          }
+        }
+      ],
+      "validation": {
+        "dataset_ready": true
+      },
+      "provenance": {},
+      "manifest_hash": null
+    },
+    "flow_id": "counts_deg"
+  },
+  "gold": {
+    "status": "ELIGIBLE_FOR_PREPARE"
+  },
+  "source": "Repository-authored synthetic fixture; no public study or real accession",
+  "access": "SYNTHETIC_NO_NETWORK",
+  "license": "Synthetic fixture follows repository licensing; no third-party scientific data",
+  "review_status": "PENDING_HUMAN_REVIEW",
+  "reviewer": null,
+  "review_record": null,
+  "network_allowed": false,
+  "live_execution_allowed": false,
+  "max_seconds": 30
+}

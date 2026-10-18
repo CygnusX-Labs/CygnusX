@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cygnusx.application.schemas.report import (
@@ -615,6 +615,56 @@ class ReportService:
 
         return report
 
+    async def register_project_report_file(
+        self, *, owner: UUID, project: UUID, job_id: UUID,
+        archive_path: str, content: bytes, file_type: str,
+    ) -> ReportFileModel:
+        """Register already-published project bytes using the shared file registry."""
+        from cygnusx.application.services.file_service import ensure_directory_chain
+        from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
+        from cygnusx.infrastructure.database.models.project_report import ProjectReportJobModel
+
+        await ProjectDeliveryService(self._db).authorize(owner, project)
+        job = await self._db.get(ProjectReportJobModel, job_id, populate_existing=True)
+        if not job or (job.user_id, job.project_id) != (owner, project):
+            raise NotFoundError("Project report unavailable")
+        if file_type not in {"html", "pdf"} or not content:
+            raise ValidationError("Invalid project report artifact")
+        path = self._factory.data_root / archive_path
+        root = self._factory.user_root(str(owner))
+        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+            raise AuthorizationError("Project report archive path denied")
+        published = await read_archive(self._backend, self._factory, archive_path)
+        sha = hashlib.sha256(content).hexdigest()
+        self._verify_report_bytes(sha, len(content), published)
+        existing_file = await self._db.scalar(select(ReportFileModel).where(
+            ReportFileModel.project_report_job_id == job.id, ReportFileModel.type == file_type
+        ))
+        if existing_file is not None:
+            if (existing_file.path, existing_file.sha256, existing_file.size) != (str(path), sha, len(content)):
+                raise ConflictError("Published project report cannot be replaced")
+            return existing_file
+        directory = path.parent.relative_to(root).as_posix()
+        await ensure_directory_chain(self._db, owner, directory)
+        record = await FileRegistry(self._db, self._factory, self._backend).register(
+            owner, path, source=FileSource.REPORT, directory=directory, checksum=sha,
+        )
+        if (
+            record.user_id != owner or record.task_id is not None
+            or record.owner_scope != "personal" or record.status != "active"
+            or record.lifecycle_status != "active" or record.source != "report"
+            or record.checksum != sha or record.size != len(content)
+        ):
+            raise ConflictError("Project report registration mismatch")
+        file = ReportFileModel(
+            project_report_job_id=job.id, name=f"index.{file_type}", type=file_type,
+            path=str(path), size=len(content), sha256=sha, file_record_id=record.id,
+            is_primary=file_type == "html",
+        )
+        self._db.add(file)
+        await self._db.flush()
+        return file
+
     async def register_reproducibility_report(
         self,
         *,
@@ -751,40 +801,106 @@ class ReportService:
         if source is None or str(source.user_id) != user_id:
             raise NotFoundError("报告不存在")
         await self._require_research_scope(source)
+        from cygnusx.infrastructure.database.models.task import TaskModel
+
+        actual_task = (
+            await self._db.execute(
+                select(TaskModel)
+                .where(TaskModel.id == source.task_id, TaskModel.user_id == source.user_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if actual_task is None or actual_task.user_id != source.user_id:
+            raise NotFoundError("报告任务不存在或无权访问")
+        if source.status != "completed":
+            raise ConflictError("只有已发布报告可以打包")
         if source.report_kind == "delivery":
             raise ConflictError("科研交付包不能再次打包")
-        evidence: ReportModel | None
-        if source.snapshot_id is None:
-            evidence = await self._db.scalar(
-                select(ReportModel)
-                .where(
-                    ReportModel.user_id == source.user_id,
-                    ReportModel.task_id == source.task_id,
-                    ReportModel.report_kind == "reproducibility",
-                    ReportModel.snapshot_id.is_not(None),
-                )
-                .order_by(ReportModel.version.desc(), ReportModel.created_at.desc())
-                .limit(1)
-            )
+        if source.report_kind not in {"scientific", "reproducibility"}:
+            raise ConflictError("报告类型不能作为科研交付来源")
+        scientific: ReportModel | None = source if source.report_kind == "scientific" else None
+        evidence: ReportModel | None = source if source.report_kind == "reproducibility" else None
+        opposite = "reproducibility" if scientific else "scientific"
+        query = select(ReportModel).where(
+            ReportModel.user_id == source.user_id,
+            ReportModel.task_id == source.task_id,
+            ReportModel.report_kind == opposite,
+            ReportModel.status == "completed",
+        )
+        if source.result_observation_id is not None:
+            query = query.where(ReportModel.result_observation_id == source.result_observation_id)
         else:
-            evidence = source
-        if evidence is None or evidence.snapshot_id is None:
-            raise ConflictError("该任务没有可归档的 ReportSnapshot")
-        snapshot_model = await self._db.get(ReportSnapshotModel, evidence.snapshot_id)
-        if snapshot_model is None or snapshot_model.user_id != source.user_id:
-            raise NotFoundError("报告快照不存在")
-        try:
-            snapshot = validate_snapshot_row(snapshot_model)
-        except (TypeError, ValueError) as exc:
-            raise ConflictError("报告快照完整性校验失败") from exc
+            query = query.where(ReportModel.result_observation_id.is_(None))
+        if (
+            source.report_kind == "reproducibility"
+            and source.snapshot_id
+            and source.result_observation_id is None
+        ):
+            original_snapshot = await self._db.get(ReportSnapshotModel, source.snapshot_id)
+            if original_snapshot is not None:
+                query = query.where(
+                    or_(
+                        ReportModel.completed_at <= original_snapshot.captured_at,
+                        and_(
+                            ReportModel.completed_at.is_(None),
+                            ReportModel.created_at <= original_snapshot.captured_at,
+                        ),
+                    )
+                )
+        peer = await self._db.scalar(
+            query.order_by(ReportModel.version.desc(), ReportModel.created_at.desc()).limit(1)
+        )
+        if scientific is not None:
+            evidence = peer
+        else:
+            scientific = peer
+        for candidate in (scientific, evidence):
+            if candidate is not None:
+                if candidate.user_id != source.user_id or candidate.task_id != source.task_id:
+                    raise ConflictError("报告来源身份不一致")
+                await self._require_research_scope(candidate)
+        snapshot_ref = evidence.snapshot_id if evidence else source.snapshot_id
+        snapshot_model = (
+            await self._db.get(ReportSnapshotModel, snapshot_ref) if snapshot_ref else None
+        )
+        snapshot: ReportSnapshot | None = None
+        if snapshot_ref:
+            if (
+                snapshot_model is None
+                or snapshot_model.user_id != source.user_id
+                or snapshot_model.task_id != source.task_id
+            ):
+                raise ConflictError("报告快照身份不一致")
+            try:
+                snapshot = validate_snapshot_row(snapshot_model)
+            except (TypeError, ValueError) as exc:
+                raise ConflictError("报告快照完整性校验失败") from exc
+            if source.snapshot_id and source.snapshot_id != snapshot_ref:
+                raise ConflictError("报告快照版本不一致")
+            for candidate in (scientific, evidence):
+                if candidate and candidate.snapshot_id and candidate.snapshot_id != snapshot_ref:
+                    raise ConflictError("报告快照版本不一致")
+            if source.result_observation_id is not None and (
+                snapshot.research_delivery is None
+                or snapshot.research_delivery.result_observation_id != source.result_observation_id
+            ):
+                raise ConflictError("报告观察与冻结快照不一致")
+            # Unbound historical scientific reports must not postdate the frozen evidence.
+            if scientific is not None and source.result_observation_id is None:
+                when = scientific.completed_at or scientific.created_at
+                if when and when.replace(tzinfo=UTC) > snapshot_model.captured_at.replace(
+                    tzinfo=UTC
+                ):
+                    scientific = None
         existing = await self._db.scalar(
             select(ReportModel)
             .where(
                 ReportModel.user_id == source.user_id,
                 ReportModel.task_id == source.task_id,
                 ReportModel.report_kind == "delivery",
-                ReportModel.snapshot_id == snapshot_model.id,
-                ReportModel.template_version == "delivery-v1.0.0",
+                ReportModel.snapshot_id == snapshot_ref,
+                or_(ReportModel.parent_id == source.id, ReportModel.snapshot_id.is_not(None)),
+                ReportModel.template_version == "delivery-v1.1.0",
             )
             .limit(1)
         )
@@ -792,14 +908,16 @@ class ReportService:
             return existing
 
         inputs: list[DeliveryInput] = []
-        reports = (("Scientific_Report", source), ("Reproducibility_Record", evidence))
+        reports = (("Scientific_Report", scientific), ("Reproducibility_Record", evidence))
         seen: set[str] = set()
         scientific_html: bytes | None = None
         bioreport_config: tuple[bytes, str] | None = None
         renderer_versions: set[str] = set()
         for prefix, report in reports:
             available_types: set[str] = set()
-            for file_model in report.files:
+            report_files = report.files if report is not None else []
+            for file_model in report_files:
+                assert report is not None
                 logical_name = f"{prefix}.{file_model.type}"
                 if logical_name in seen:
                     continue
@@ -844,18 +962,23 @@ class ReportService:
                             logical_name=expected_name,
                             content=None,
                             file_type=expected_type,
-                            source_object=f"{report.id}:missing:{expected_type}",
+                            source_object=f"{report.id if report else source.task_id}:missing:{expected_type}",
                         )
                     )
 
         renderer_version = ";".join(sorted(renderer_versions)) or "not_used"
-        if bioreport_config is not None and not any(
-            item.logical_name == "Scientific_Report.pdf" and item.content is not None
-            for item in inputs
+        if (
+            snapshot is not None
+            and bioreport_config is not None
+            and not any(
+                item.logical_name == "Scientific_Report.pdf" and item.content is not None
+                for item in inputs
+            )
         ):
+            assert snapshot_ref is not None
             rendered_pdf = await self._render_scientific_pdf(
                 task_id=source.task_id,
-                snapshot_id=snapshot_model.id,
+                snapshot_id=snapshot_ref,
                 snapshot_digest=snapshot.snapshot_digest,
                 html=scientific_html,
                 config=bioreport_config,
@@ -877,21 +1000,26 @@ class ReportService:
             DeliveryInput(
                 logical_name="ReportSnapshot.json",
                 content=json.dumps(
-                    snapshot.model_dump(mode="json"), ensure_ascii=False, indent=2
-                ).encode("utf-8"),
+                    snapshot.model_dump(mode="json") if snapshot else None,
+                    ensure_ascii=False,
+                    indent=2,
+                ).encode("utf-8")
+                if snapshot
+                else None,
                 file_type="json",
-                source_object=str(snapshot_model.id),
+                source_object=str(snapshot_ref) if snapshot_ref else "NOT_RECORDED",
                 generation="generated",
             )
         )
         root = self._factory.user_root(user_id) / "delivery"
         build = ResearchDeliveryBuilder().build(
             snapshot=snapshot,
-            snapshot_id=snapshot_model.id,
+            snapshot_id=snapshot_ref,
+            task_id=source.task_id,
             output_root=root,
             inputs=tuple(inputs),
             renderer_version=renderer_version,
-            template_version="delivery-v1.0.0",
+            template_version="delivery-v1.1.0",
         )
         previous = await self._db.scalar(
             select(ReportModel)
@@ -924,8 +1052,8 @@ class ReportService:
             created_at=now,
             completed_at=now,
             report_kind="delivery",
-            snapshot_id=snapshot_model.id,
-            template_version="delivery-v1.0.0",
+            snapshot_id=snapshot_ref,
+            template_version="delivery-v1.1.0",
             evidence_partial=build.manifest.evidence_status == "partial",
             parent_id=source.id,
             version=(previous.version + 1 if previous else 1),
@@ -938,6 +1066,8 @@ class ReportService:
             (build.directory / "checksums.sha256", "sha256", False),
             (build.zip_path, "zip", True),
         ):
+            if file_type == "json" and snapshot is None:
+                continue
             content = path.read_bytes()
             self._db.add(
                 ReportFileModel(

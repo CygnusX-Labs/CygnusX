@@ -10,7 +10,7 @@
  * 2. @ 工作区文件引用 chip 正确映射为 context_refs；
  * 3. 发送失败时恢复草稿，不丢用户已输入内容。
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { NDialogProvider, NMessageProvider } from 'naive-ui'
@@ -55,6 +55,13 @@ vi.mock('@/api/agentTeams', () => ({ agentTeamsApi: agentTeamsApiMocks }))
 
 import AgentTeamsRoomView from '@/views/AgentTeamsRoomView.vue'
 
+const mountedApps: Array<ReturnType<typeof createApp>> = []
+
+afterEach(() => {
+  mountedApps.splice(0).forEach((app) => app.unmount())
+  document.body.replaceChildren()
+})
+
 const planningCase: AgentTeamsCase = {
   case_id: 'case-1',
   intent: '做一个系统发育树',
@@ -88,6 +95,7 @@ function mountView() {
     },
   })
   app.mount(el)
+  mountedApps.push(app)
   return { el, app }
 }
 
@@ -113,6 +121,16 @@ async function mountAndSelectCase() {
 function typeText(textarea: HTMLTextAreaElement, text: string) {
   textarea.value = text
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+async function selectWorkspaceFile(el: HTMLElement, textarea: HTMLTextAreaElement) {
+  typeText(textarea, '@workspace')
+  await flush()
+  const fileItem = [...el.querySelectorAll<HTMLElement>('.mention-item')]
+    .find((item) => item.querySelector('.item-tag')?.textContent?.trim() === 'File')
+  expect(fileItem).toBeTruthy()
+  fileItem!.click()
+  await flush()
 }
 
 describe('协作室房间（已有 Case）发送消息', () => {
@@ -153,7 +171,9 @@ describe('协作室房间（已有 Case）发送消息', () => {
     await flush()
 
     expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledTimes(1)
-    expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledWith('case-1', '帮我做一下系统发育树呀', [])
+    expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledWith(
+      'case-1', '帮我做一下系统发育树呀', [], expect.any(String), '',
+    )
     expect(document.body.textContent?.match(/帮我做一下系统发育树呀/g)).toHaveLength(1)
     app.unmount()
   })
@@ -189,11 +209,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
 
   it('点击发送按钮发送，@ 工作区文件引用映射为 context_refs', async () => {
     const { el, app, textarea } = await mountAndSelectCase()
-    // 模拟输入 @ 触发 mention 面板并用 Enter 选中文件
-    typeText(textarea, '@workspace')
-    await flush()
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await flush()
+    await selectWorkspaceFile(el, textarea)
     expect(textarea.value).toContain('@workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile')
     // 继续输入正文（含 chip 的消息）
     typeText(textarea, `${textarea.value} 帮我做一下系统发育树呀`)
@@ -208,7 +224,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
     expect(content).toContain('帮我做一下系统发育树呀')
     expect(refs).toEqual([{
       kind: 'file',
-      id: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+      id: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
       location: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
     }])
     app.unmount()
@@ -225,7 +241,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
     expect(agentTeamsApiMocks.postCaseMessage).toHaveBeenCalledTimes(1)
     // 失败后草稿恢复，发送按钮复位可用
     expect(textarea.value).toBe('帮我做一下系统发育树呀')
-    expect(document.querySelector<HTMLButtonElement>('.send-btn')?.disabled).toBe(false)
+    expect(app._container?.querySelector<HTMLButtonElement>('.send-btn')?.disabled).toBe(false)
     app.unmount()
   })
 
@@ -241,10 +257,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
     agentTeamsApiMocks.createCase.mockResolvedValue(createdCase)
 
     const { el, app, textarea } = await mountAndSelectCase()
-    typeText(textarea, '@workspace')
-    await flush()
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await flush()
+    await selectWorkspaceFile(el, textarea)
     typeText(textarea, `${textarea.value} 帮我做一下系统发育树呀`)
     await flush()
     el.querySelector<HTMLButtonElement>('.send-btn')!.click()
@@ -254,7 +267,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
       intent: expect.stringContaining('系统发育树'),
       context_refs: [{
         kind: 'file',
-        id: '74a2448c-593a-4c9c-aa19-bb2214339c54',
+        id: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
         location: 'workspace/chat-uploads/74a2448c593a4c9caa19bb2214339c54.treefile',
       }],
     }))
@@ -262,6 +275,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
       'case-tree',
       expect.stringContaining('系统发育树'),
       expect.any(Array),
+      expect.any(String),
     )
     expect(agentTeamsApiMocks.postCaseMessage).not.toHaveBeenCalledWith(
       'case-1',
@@ -311,6 +325,7 @@ describe('协作室房间（已有 Case）发送消息', () => {
       '创建一个数据质控团队',
       [],
       expect.any(String),
+      '',
     )
     expect(agentTeamsApiMocks.postCaseMessage).not.toHaveBeenCalled()
 

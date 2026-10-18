@@ -1,0 +1,9 @@
+{
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "530ecf2e94bfc872af4ecc81c1f6b49a80c567959767a03e81c6d64db710a530",
+  "src/cygnusx/infrastructure/download/outputs.py": "54c5914d287a333e04d53edbd88fdddf18bacab0a2083a66c11d2c357ae405cd",
+  "src/cygnusx/tools/download/config.py": "32135d902b2d0d92baaf4e2b4ea12be666128f88ade18c675329e800065f92c1",
+  "tests/unit/test_download_registration_contract.py": "50f76b44985afc47a3d74ded9b325c9eca26dc2a26aeb5469dd23b850df8221f",
+  "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md": "92f21ecba08bb10f37201d481615ba1b9f692e42645985ab2ce06d931f4c3980",
+  "docs/implementation/download-s0-baseline-and-red-test.md": "6a48480342beefc3d70fda07434382705d8eb84ee32e5275d5cabba5b40e940a",
+  "docs/implementation/download-s1-file-registry-dataset-bridge.md": "ca7e56ff2083ac4e0aa738868a9d2e18644d63af1f48b0c6e210cfb44407d43d"
+}

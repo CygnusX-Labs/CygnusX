@@ -1,0 +1,16 @@
+{
+  "status": "SOURCE_VERIFIED_RUNTIME_PENDING",
+  "tests": {
+    "platform": 12,
+    "island_and_actual_workbench": 10
+  },
+  "compose_config": "PASS",
+  "artifacts": {
+    "entry_exists": true,
+    "assets": 139,
+    "inventory_absent": true,
+    "main_references_island": true
+  },
+  "docker": "socket permission denied; no restart performed",
+  "visual_gate": "PENDING"
+}

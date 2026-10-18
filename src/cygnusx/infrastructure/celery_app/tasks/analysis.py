@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from celery import shared_task
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cygnusx.core.exceptions import ConflictError
 from cygnusx.core.telemetry import get_tracer
 from cygnusx.domain.file.value_objects import FileSource
 from cygnusx.domain.task.value_objects import LogLevel, TaskStatus
@@ -146,9 +148,19 @@ async def _execute_snakemake(
         domain = TaskDomainService(repo)
 
         task_uuid = UUID(task_id)
+        from sqlalchemy import select
+
+        from cygnusx.infrastructure.database.models.task import TaskModel
+
+        await session.execute(
+            select(TaskModel.id).where(TaskModel.id == task_uuid).with_for_update()
+        )
         task = await repo.get_by_id(task_uuid)
         if task is None:
             return {"status": "failed", "message": f"任务 {task_id} 不存在"}
+        if task.status != TaskStatus.QUEUED:
+            # Terminal tasks never reopen; running/ambiguous deliveries require reconciliation.
+            return {"status": task.status.value, "task_id": task_id, "execution": "not_started"}
 
         from sqlalchemy import select
 
@@ -167,15 +179,41 @@ async def _execute_snakemake(
                 source=source,
             )
 
+        from cygnusx.application.services.execution_evidence_service import (
+            observe_execution,
+            retain_preflight_failure,
+            validate_executor_binding,
+        )
         from cygnusx.application.services.research_execution_binding import worker_preflight
 
-        await worker_preflight(session, task)
+        try:
+            # Claim while holding the Task row lock, before evidence commits release it.
+            task = await domain.transition_status(task, TaskStatus.RUNNING)
+            await observe_execution(session, task)
+            validate_executor_binding(
+                task,
+                snakefile=snakefile,
+                work_dir=work_dir,
+                config_file=config_file,
+                config_file_param=config_file_param,
+                cores=cores,
+            )
+            await worker_preflight(session, task)
+        except Exception:
+            # Preserve the evidence check's committed failure; do not start the executor.
+            # Preserve corrupt evidence for reconciliation instead of replacing it.
+            with suppress(ConflictError):
+                retain_preflight_failure(task)
+            task = await domain.transition_status(task, TaskStatus.FAILED)
+            task.error_message = "Execution preflight rejected; reconciliation required"
+            await repo.save(task)
+            await session.commit()
+            return {"status": "failed", "task_id": task_id, "error": "PREFLIGHT_REJECTED"}
 
         # 推送开始日志
         await _add_and_publish_log(LogLevel.INFO, "开始执行 Snakemake 分析任务", source="celery")
 
         # 推进到 RUNNING
-        task = await domain.transition_status(task, TaskStatus.RUNNING)
         if run_events and run is not None:
             await run_events.emit(run.id, task_id=task_uuid, status="running", progress=0.0)
         await session.commit()
@@ -214,6 +252,9 @@ async def _execute_snakemake(
                 ).info("toolbox.flow.run completed")
 
             # 记录 stdout / stderr 摘要
+            await observe_execution(
+                session, task, after=True, failed=result.get("status") != "success"
+            )
             for line in (result.get("stdout") or "").splitlines()[-200:]:
                 if line.strip():
                     await _add_and_publish_log(LogLevel.INFO, line, source="snakemake")
@@ -363,6 +404,11 @@ async def _execute_snakemake(
             }
 
         except Exception as exc:  # noqa: BLE001
+            try:
+                await observe_execution(session, task, after=True, failed=True)
+            except Exception:
+                # observe_execution persists a failed check before raising.
+                logger.warning("Execution evidence requires reconciliation for Task {}", task_id)
             await _add_and_publish_log(LogLevel.ERROR, f"执行异常: {exc}", source="celery")
             task = await domain.transition_status(task, TaskStatus.FAILED)
             if run_events and run is not None:

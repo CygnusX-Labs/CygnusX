@@ -1,0 +1,99 @@
+{
+  "schema_version": "cygnusx.download_runtime_manifest.v1",
+  "recorded_at": "2026-10-16T02:26:30.018605+00:00",
+  "scope": "SOURCE_ONLY",
+  "source": {
+    "main_sha": "51011118535f782f5282f638b4a54649c79bf6d6",
+    "main_dirty": true,
+    "downloader_sha": "b351e03dfc845d229102d90f9bd88d6ca731f0de",
+    "downloader_dirty": false,
+    "downloader_version": "1.4.0",
+    "downloader_cargo_lock_sha256": "9827c218a954eb8c2b7c76c4b0c8960fbb1a803cd9c456c2ace85dc3d52961d2",
+    "python_uv_lock_sha256": "dcc3f7155380e3fc852a29b50974e053ec1393e70b68ac248ae9ce0da68e2c2e",
+    "worker_dockerfile_sha256": "2be1716a5e7ec1daad78ee32007fbb20632b891bed06429ad2473708ab8f6548",
+    "worker_compose_sha256": "1bd3afbbf164bb850b3d4bb7f6c68a441b9e08966b54ae24c17c3c3df07139fd"
+  },
+  "declared": {
+    "sra_methods": [
+      "aws",
+      "ftp"
+    ],
+    "direct_schemes": [
+      "ftp",
+      "http",
+      "https"
+    ],
+    "effective_direct_schemes": [
+      "ftp",
+      "http",
+      "https"
+    ],
+    "cloud_schemes": {
+      "aliyun": "oss",
+      "volc": "tos",
+      "huawei": "obs"
+    },
+    "unsupported": [
+      "aspera",
+      "ftps",
+      "s3",
+      "cos",
+      "cloud_drive",
+      "advanced_filters"
+    ],
+    "required_programs": {
+      "sra.aws": [
+        "EBIDownload",
+        "fasterq-dump",
+        "Rust built-in compression"
+      ],
+      "sra.ftp": [
+        "EBIDownload",
+        "wget"
+      ],
+      "direct_link": [
+        "aria2c"
+      ],
+      "ftp_directory": [
+        "Python ftplib",
+        "aria2c"
+      ],
+      "aliyun": [
+        "ossutil"
+      ],
+      "volc": [
+        "tosutil"
+      ],
+      "huawei": [
+        "obsutil"
+      ]
+    }
+  },
+  "configuration": {
+    "binary_paths": {
+      "ebi": "/data/omichub/bin/EBIDownload",
+      "ebi_config": "/data/omichub/bin/EBIDownload.yaml",
+      "aria2c": "/usr/bin/aria2c",
+      "ossutil": "/data/omichub/bin/ossutil",
+      "tosutil": "/data/omichub/bin/tosutil",
+      "obsutil": "/data/omichub/bin/obsutil"
+    },
+    "settings_storage_root": "/data/omichub",
+    "path_factory_storage_root": "/data/omichub",
+    "binary_priority": "explicit download YAML > binary-specific Settings/env > storage_path-derived defaults",
+    "switch_policy": "download YAML feature OR Settings environment feature",
+    "web_mount_source": "CYGNUSX_DATA_ROOT",
+    "worker_mount_source": "WORKER_SHARED_DATA_DIR",
+    "worker_uid_declared_default": 1000,
+    "worker_uid_observed": null
+  },
+  "worker_observation": null,
+  "worker_provenance_state": "UNKNOWN",
+  "runtime_status": "BLOCKED",
+  "release_ready": false,
+  "reason_codes": [
+    "AGENT_WRITE_GATE_CLOSED",
+    "PROTOCOL_RUNTIME_NOT_TESTED",
+    "WORKER_OBSERVATION_MISSING"
+  ]
+}

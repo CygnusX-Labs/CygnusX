@@ -140,6 +140,7 @@ class AnalysisFlowToolService:
             flow_id=flow_id,
             flow_name=flow.meta.name,
             normalized_request=validation.normalized_request,
+            flow_version=flow.meta.version,
         )
         return {
             **preview,

@@ -1,0 +1,20 @@
+{
+  "run_id": "ri095-final-20261017-attempt1",
+  "git_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+  "image_digest": "NOT_OBSERVED",
+  "environment": "approved local Docker socket; restricted sandbox",
+  "execution_time": "2026-10-17T12:55:13.640833+00:00",
+  "gate": "Docker runtime admission",
+  "command": [
+    "docker",
+    "--host",
+    "unix:///var/run/docker.sock",
+    "version",
+    "--format",
+    "{{json .Server.Version}}"
+  ],
+  "exit_code": 1,
+  "result": "BLOCKED",
+  "observed_result": "\npermission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.51/version\": dial unix /var/run/docker.sock: connect: operation not permitted\n",
+  "evidence_path": "evidence/runtime-acceptance/ri095-final-20261017-attempt1/admission-recheck-20261017T125513640833Z.json"
+}

@@ -1,14 +1,17 @@
 """数据下载相关 DTO"""
 
-import ipaddress
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from cygnusx.application.schemas.base import CygnusXBaseSchema
+from cygnusx.core.exceptions import ValidationError
+from cygnusx.domain.download_contract import DownloadSource, SraDownloadMethod, validate_transport
+from cygnusx.domain.download_security import public_host, validate_download_url
+from cygnusx.tools.download.config import get_download_config
 
-DownloadSource = Literal["sra", "cloud_storage", "direct_link"]
 CloudStorageProvider = Literal["aliyun", "volc", "volcengine", "huawei", "huaweicloud"]
 
 # 各云商对象存储允许的 endpoint 后缀（大小写不敏感）
@@ -28,14 +31,17 @@ def _validate_cloud_host(provider: str, object_uri: str) -> None:
     """
     parsed = urlparse(object_uri)
     host = parsed.hostname
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.fragment
+        or parsed.query
+    ):
+        raise ValueError("云对象 URI 不允许凭据、端口或片段")
     if not host:
         raise ValueError("对象 URI 缺少主机名")
-    # 禁止直接使用 IP 地址
-    try:
-        ipaddress.ip_address(host)
-        raise ValueError("对象 URI 禁止直接使用 IP 地址")
-    except ValueError:
-        pass
+    host = public_host(host, allow_ip=False)
     # 裸 bucket（无点号）是 ossutil 等工具的合法简写，予以保留
     if "." not in host:
         return
@@ -52,7 +58,11 @@ class DownloadRequest(CygnusXBaseSchema):
     （ossutil / tosutil / obsutil）。两类任务都复用通用 Task 聚合根。
     """
 
-    source: DownloadSource = Field(default="sra", description="下载来源：sra、cloud_storage 或 direct_link")
+    model_config = ConfigDict(extra="forbid")
+
+    source: DownloadSource = Field(
+        default="sra", description="下载来源：sra、cloud_storage 或 direct_link"
+    )
 
     # HTTP/HTTPS/FTP 直链下载参数
     links: list[str] = Field(default_factory=list, description="HTTP/HTTPS/FTP 下载链接列表")
@@ -63,7 +73,7 @@ class DownloadRequest(CygnusXBaseSchema):
 
     # 公共数据库 / SRA 下载参数
     accession: str = Field(default="", description="EBI/NCBI 登录号，如 PRJNA1251654 或 SRRxxxxxx")
-    download_method: Literal["aws", "aspera", "ftp"] = Field(default="aws", description="下载方式")
+    download_method: SraDownloadMethod = Field(default="aws", description="下载方式")
     multithreads: int = Field(default=4, ge=1, le=32, description="并发下载数")
     aws_threads: int = Field(default=8, ge=1, le=64, description="单文件 AWS 并发线程数")
 
@@ -80,11 +90,50 @@ class DownloadRequest(CygnusXBaseSchema):
         default=False, description="模拟下载，不实际下载文件（测试用，仅 SRA 下载支持）"
     )
     confirmation_id: str | None = Field(default=None, max_length=128, exclude=True)
+    request_key: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unsupported_transport(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            if any(
+                key in value
+                for key in (
+                    "advanced",
+                    "filter_sample",
+                    "filter_run",
+                    "exclude_sample",
+                    "exclude_run",
+                    "include_sample",
+                    "include_run",
+                    "cleanup_sra",
+                    "pe_only",
+                )
+            ):
+                raise PydanticCustomError(
+                    "DOWNLOAD_FILTERS_UNSUPPORTED", "样本与Run高级筛选尚未接入"
+                )
+            try:
+                validate_transport(
+                    str(value.get("source", "sra")),
+                    method=str(value.get("download_method", "aws")),
+                    accession=str(value.get("accession", "")).strip().upper(),
+                    links=[link for link in value.get("links", []) if isinstance(link, str)]
+                    if isinstance(value.get("links", []), list)
+                    else [],
+                    cloud_provider=str(value.get("cloud_provider") or ""),
+                    object_uri=str(value.get("object_uri", "")).strip(),
+                    allowed_schemes=get_download_config().validation.allowed_schemes,
+                )
+            except ValidationError as exc:
+                raise PydanticCustomError(exc.code or "DOWNLOAD_UNSUPPORTED", str(exc)) from exc
+        return value
 
     @model_validator(mode="after")
     def validate_source_payload(self) -> "DownloadRequest":
         if self.source == "sra":
-            if not self.accession or not self.accession.strip():
+            self.accession = self.accession.strip().upper()
+            if not self.accession:
                 raise ValueError("登录号 (accession) 不能为空")
             return self
 
@@ -93,20 +142,7 @@ class DownloadRequest(CygnusXBaseSchema):
             if not normalized_links:
                 raise ValueError("至少需要一个 HTTP/HTTPS/FTP 下载链接")
             for link in normalized_links:
-                parsed = urlparse(link)
-                if parsed.scheme.lower() not in {"http", "https", "ftp"} or not parsed.netloc:
-                    raise ValueError(f"下载链接必须是有效的 HTTP/HTTPS/FTP 地址: {link}")
-                if parsed.username or parsed.password:
-                    raise ValueError("下载链接不支持在 URL 中直接携带账号密码")
-                host = (parsed.hostname or "").lower()
-                if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
-                    raise ValueError("下载链接主机名不允许指向本地网络")
-                try:
-                    host_ip = ipaddress.ip_address(host)
-                except ValueError:
-                    host_ip = None
-                if host_ip is not None and (host_ip.is_private or host_ip.is_loopback or host_ip.is_link_local):
-                    raise ValueError("下载链接不允许指向内网或本机 IP")
+                validate_download_url(link)
             self.links = normalized_links
             return self
 

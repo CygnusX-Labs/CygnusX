@@ -2616,7 +2616,7 @@ export interface AIQuickAction {
 
 ### 38.1 已核实现状
 
-1. **主平台与寻宝鼠边界**：主平台由 `frontend/src/main.ts` 单入口创建 Vue 应用，路由页面使用动态 import。`/treasure-mouse` 对应 `TreasureMouseView.vue`，该组件展示加载/错误状态并 iframe 嵌入同源 `/treasure-mouse/`。寻宝鼠子应用源码不在 `frontend/src`，本节不描述其内部布局、主题或状态实现。
+1. **主平台与寻宝鼠边界**：主平台由 `frontend/src/main.ts` 单入口创建 Vue 应用，路由页面使用动态 import。`/treasure-mouse` 对应 `TreasureMouseView.vue`，当前直接挂载 `TreasureResearchWorkbench.vue`，不含 iframe 或旧账号入口。首屏先读取 `/api/v1/research-agent/capabilities`；native 关闭或模块未授权时不请求项目/会话。窗口重新聚焦或手动刷新会重验许可并清空旧内容。Research BFF 对实际业务请求重验 active、模块和 owner，project=null 允许全局只读历史。开发、生产与独立前端 Nginx 均将精确 `/treasure-mouse` 返回主 SPA index.html，精确 `/treasure-mouse/` 重定向到该页面并保留查询参数；旧 `/treasure-mouse/` 下账号、聊天与静态资源子路径保持 404，Node 科研后端仍留内网。停止接收不保证跨进程取消。当前源码已接入原 React 展示树和消息适配；下载/分析交接、真实视觉验收与发布仍未完成，Gate 仍待审查。详见 `docs/implementation/treasure-native-p0-access-and-entry.md`。
 2. **全局壳层与 fullscreen 语义**：受保护路由均由 `DefaultLayout.vue` 承载。路由 `meta.fullscreen` 在该布局中让内容区 padding 归零并使用原生滚动容器；它不会移除全局 Header 或 Sidebar。AI/Studio 路由会自动折叠全局 Sidebar。工具区域另有零外层 padding 规则，普通内容区使用 24px。
 3. **AI/Studio 内部工具栏**：`AIChatView.vue` 挂载 `AgentWorkspace.vue`；后者包含 60px `AgentSidebar`，活跃会话时 `AgentSandbox.vue` 渲染会话级 header。Studio 页面在全局 Header 下方渲染自己的 `.studio-topbar`。这些是全局壳层内的工作区导航/操作区，不替代全局 Header。
 4. **项目上下文**：Agent session 数据包含 `project_id`，`agentHub` 在 chat stream 请求中传递该字段。新 Studio 会话提供项目选择；未选择时前端提示后端将会话归入默认项目。项目详情使用路由 `projectId` 加载项目及关联概览；Studio API DTO 支持 `project_id`，报告转 Studio 使用 `report_id` 来源入口。项目关联确实存在，但各入口的传递规则不同；当前证据不支持“平台缺少项目上下文”或“必须强制选择项目”的结论。
@@ -2625,10 +2625,30 @@ export interface AIQuickAction {
 
 ### 38.2 后续评估项（非已实施设计）
 
-- 先取得寻宝鼠 iframe 子应用源码或受控运行证据，再判断哪些主题和交互规范可以跨应用共享；不要仅凭父页面推断子应用视觉。
+- 寻宝鼠旧 React 展示源码位于 `pipelines/Treasure-Seeking_Mouse/src/`；P1-A 须以隔离 PoC、旧新版截图与人工视觉验收判断展示复用方式，不凭临时平台工作台推断已恢复原版体验。
 - 对比文件管理、AI 助手、Studio 的全局壳层、内部工具栏和滚动容器职责。确认实际重复后，再决定是否抽象 `WorkspaceLayout`；保留各业务工作区所需的导航和信息密度。
 - 按 chat、Studio、下载、分析任务、文件空间逐条核对后端项目关联契约。前端当前允许未选择项目时使用默认项目；任何改变默认行为的提议都需先核实业务边界。
 - 在实现统一错误体验前，先以浏览器验证 `AppErrorBoundary` 对异步路由加载失败的表现；再决定是否增加 router error hook 或重试 UI。
 - 评估项验收应覆盖 1920、1440、1280、1024、768、390px，明暗主题、键盘焦点、reduced motion/transparency 和 forced colors；静态 CSS 检索不能代替这些验收。
 
 本节不改变前端组件、路由、样式或运行行为。新增要求只有在后续实施并完成验证后，才能从“评估项”转为实现规范。
+
+
+### 38.3 寻宝鼠展示 Island 隔离实验
+
+父仓 `frontend/poc/treasure-island/` 保留独立 Vue 宿主及真实展示树测试。正式 Workbench 通过 `TreasureOriginalDisplay.vue` 的 app 模式挂载子仓 `src/island/FullPresentation.tsx`，直接复用 ChatMessage、Markdown、结果卡、编号证据与文献详情、ToolTrace、GroundingNotice、DownloadBoostCard、SessionSidebar、Composer、欢迎页、桌宠、设置、统计/排行榜弹窗和关于内容。此前 Vue Markdown/简化卡片与静态桌宠替代渲染已移除。
+
+Vue 持有身份、项目、会话、草稿和 SSE；researchPresentation.ts 为实时与历史提供统一投影。BFF 保存即时及终态 cards、tools、grounding、polariseq；会话改名/软归档及文献读取验证 owner。原站统计/排行榜数据服务尚未接入，界面保留不可用态；平台使用默认模型策略。旧身份、Supabase、旧聊天服务不进入模块；构建别名提供平台回调和模块内存存储。
+
+主前端不增加 React 依赖，prebuild/predev 用子仓锁定依赖生成 public/treasure-island 后进入 dist。原 CSS、字体、资源与 Portal 在 ShadowRoot 隔离，语言/主题不写平台 html。独立 ES module 约 1.05 MB（gzip 316 KB），介绍图约 1.94 MB，字体本地分片。编译与 DOM 测试不能代替真实浏览器验收；此环境无法启动 Chromium 或 Docker，未发布，视觉 Gate 未通过。调查与映射见 `docs/implementation/treasure-full-presentation-migration.md`，消息契约见 `docs/contracts/treasure-research-message-v1.md`。
+
+### 38.4 寻宝鼠科研动作增量
+
+原 DatasetCard 增加“查看数据与样本”，FullPresentation 原树挂载可选 ResearchWorkflowPanel（原主题Dialog）。Vue useResearchWorkflow控制权威候选、raw/processed、预算、导入预案、真实DatasetVersion/Handoff、兼容Flow与人工参数、审批、持久Task及报告引用；不传平台token/内部目录给React，不新增执行入口。旧工作台外的重复工具/JSON面板不再挂载，项目管理原组件保留。全局公开核验可无project，持久Prepare要求会话项目。项目列表和动作请求有generation保护；workflow作为显式快照跨Vue/React边界更新。
+
+原欢迎/回复/建议/桌宠/双语/主题不替换。消息与历史仍由同一个researchMessageView投影，平台记录使用Gateway related恢复，报告仅真实记录，无报告显示NOT_GENERATED。默认开关、写运行门禁不变；本轮仅隔离DOM/SQLite证据，真实浏览器与运行准入BLOCKED。契约见 docs/contracts/treasure-research-actions-v1.md 和 treasure-research-event-projection-v1.md。
+
+
+### 项目科研成果导出 RI06–RI09（代码/隔离层）
+
+ProjectDetailView新增ProjectResearchDelivery卡片，复用既有报告、快照和只读Provenance；独立ProjectExportJob整理已有成果，不触发报告生成或计算。默认证据包，小型结果及复现材料明确选择；缺口partial、当前权限、冻结摘要、真实Job状态及下载SHA分开显示。默认关闭project_export_enabled，真实环境/浏览器未验收。完整现状、关联/容量/授权边界和恢复设计以[科研交付架构](CygnusX_research_delivery_architecture.md)的RI06–RI09节为准。

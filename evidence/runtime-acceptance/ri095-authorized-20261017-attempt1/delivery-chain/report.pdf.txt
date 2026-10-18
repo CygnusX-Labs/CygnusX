@@ -1,0 +1,66 @@
+Project Scientific Summary
+Project Scientific Summary
+仅组织冻结来源与有限证据；未进行科研计算或复现验证。
+1. Project Overview
+2. Research Objectives
+3. Dataset Inventory
+4. Data Provenance
+5. Analysis Workflows
+6. Execution Summary
+7. Scientific Results
+8. Key Findings
+9. Quality Control
+10. Evidence Coverage
+11. Report Inventory
+12. Reproducibility Readiness
+13. Limitations
+14. Appendix
+1. Project Overview
+Field Frozen value
+Project a87cfde8-ddb5-4c57-8b8f-827e16aa3ad6
+M0 aa54d9be8a15e228cd3155f96d17a47a5e82b0eef5b1dd15d0a9b04ab7f56338
+Source a407aec37c7b40a198ae27a1b56c0f47bdb5eac9d2fc70a0506c31dcfbdf865f
+2. Research Objectives
+研究意图非事实；NOT_RECORDED。
+3. Dataset Inventory
+Kind ID Task Version Status
+未记录 (not_recorded)
+4. Data Provenance
+Kind ID Task Version Status
+未记录 (not_recorded)
+15. Analysis Workflows
+NOT_RECORDED：冻结来源没有记录此事实。
+历史镜像、工具和参考版本：NOT_OBSERVED。
+6. Execution Summary
+Kind ID Task Version Status
+未记录 (not_recorded)
+7. Scientific Results
+Kind ID Task Version Status
+未记录 (not_recorded)
+既有科学报告为原始结果；此报告未重新计算。
+8. Key Findings
+无已验证结论。
+9. Quality Control
+NOT_RECORDED：冻结来源没有记录此事实。
+无明确测量与规则时不判定 QC PASS。
+10. Evidence Coverage
+Gap
+HISTORICAL_ASSOCIATION_COVERAGE_NOT_RECORDED
+REPRODUCTION_NOT_RUN
+11. Report Inventory
+Kind ID Task Version Status
+未记录 (not_recorded)
+12. Reproducibility Readiness
+REPRODUCIBILITY_STATUS: NOT_RUN
+13. Limitations
+有限数值证据核验不保证机制、因果、科研结论或复现成功。FILE_INTEGRITY、
+EVIDENCE_COVERAGE 和 DELIVERY_COMPLETENESS 分别核验。
+Unverified cell
+未记录 (not_recorded)
+214. Appendix
+Template Renderer Runtime
+project-summary.v1 project-summary-adapter.v1 NOT_OBSERVED
+File Bytes SHA-256
+README.md 66848000b73399a85995276e79797ba07341d301259c03b1671dcb480bdd1d4ff66
+verify_project_delivery.py 4401511c1a400f24c79a4ba42c18cf4815be68749379a02b99d37da29bfc2c6f642e
+3

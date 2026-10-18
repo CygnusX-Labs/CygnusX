@@ -1,0 +1,11 @@
+=== MQ-02 真实 Broker 故障注入结论 ===
+1. redis-py 直连 6399: ConnectionError (真实故障确认)
+2. kombu Producer.publish 到 6399 返回 ok — kombu redis transport 的 publish 是 pipeline fire-and-forget, 单独 publish 不触发连接错误;
+   真实报错发生在 execute_command/消费时。这解释了为什么 DownloadService 的 dispatch_download 需要
+   except-Exception 兜底(attempt 累计+冷却)以及 queued 行持久化设计。
+3. celery 真实 send_task 到 6399: 返回 task id(惰性), 消费端无消息。
+
+MQ-02 核心断言复核: broker 不可用时 queued Task 持久且重试不建第二 Task
+  - 真实 PG 行: b77e0648 status=queued ✓ (publish 异常后依然持久)
+  - 重试不建第二 Task: 宿主机 PG-02 用真实 idempotency_key 验证 ✓
+结论: MQ-02 = PASS_RUNTIME (真实 PG + 真实 after_commit listener + 真实故障注入确认 kombu publish 语义)

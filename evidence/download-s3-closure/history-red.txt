@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/unit/test_download_history_projection.py F.                        [100%]
+
+=================================== FAILURES ===================================
+_ test_download_history_projection_removes_credentials_and_paths_without_mutation _
+tests/unit/test_download_history_projection.py:20: in test_download_history_projection_removes_credentials_and_paths_without_mutation
+    assert "HISTORY_CANARY" not in serialized
+E   assert 'HISTORY_CANARY' not in '{"message_i..."tokens":{}}'
+E     
+E     'HISTORY_CANARY' is contained here:
+E       ate?token=HISTORY_CANARY"]},"result":{"work_dir":"/data/users/private","error":"password=HISTORY_CANARY"}}]},"created_at":"2026-10-16T07:49:30.186996Z","tokens":{}}
+E     ?           ++++++++++++++
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_history_projection.py::test_download_history_projection_removes_credentials_and_paths_without_mutation
+==================== 1 failed, 1 passed, 1 warning in 0.28s ====================

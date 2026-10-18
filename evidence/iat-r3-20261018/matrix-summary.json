@@ -1,0 +1,129 @@
+{
+  "matrix": "docs/info/26.10.18/CygnusX_Integration_Test_Matrix_2026-10-18.csv",
+  "row_count": 120,
+  "parent_case_count": 78,
+  "child_assertion_count": 42,
+  "status_counts_all_rows": {
+    "BLOCKED": 44,
+    "NOT_TESTED": 13,
+    "PASS_E2E": 3,
+    "PASS_ISOLATED": 27,
+    "PASS_RUNTIME": 33
+  },
+  "status_counts_parent_cases": {
+    "BLOCKED": 27,
+    "NOT_TESTED": 13,
+    "PASS_E2E": 3,
+    "PASS_ISOLATED": 4,
+    "PASS_RUNTIME": 31
+  },
+  "status_counts_child_assertions": {
+    "BLOCKED": 17,
+    "PASS_ISOLATED": 23,
+    "PASS_RUNTIME": 2
+  },
+  "pass_evidence_check": {
+    "rows_checked": 63,
+    "missing_count": 0,
+    "missing": []
+  },
+  "children_by_parent": {
+    "AG-01": [
+      "AG-01.R2-GATEWAY-AUDIT"
+    ],
+    "AG-02": [
+      "AG-02.R3-DET-PROVIDER"
+    ],
+    "AG-03": [
+      "AG-03.R3-DET-PROVIDER"
+    ],
+    "AG-09": [
+      "AG-09.R3-GATEWAY-INVOCATION",
+      "AG-09.R3-PREPARE-ISOLATED"
+    ],
+    "BR-01": [
+      "BR-01.R3-FRONTEND-UNIT",
+      "BR-01.R3-PRODUCT-E2E",
+      "BR-01.R3-UI-ISOLATED"
+    ],
+    "BR-06": [
+      "BR-06.R3-STALE-SSE"
+    ],
+    "BR-08": [
+      "BR-08.R3-CANCEL-ROUTE",
+      "BR-08.R3-CANCEL-SNAPSHOT",
+      "BR-08.R3-RECONNECT-CURSOR",
+      "BR-08.R3-RECONNECT-PROTOCOL"
+    ],
+    "ENV-01": [
+      "ENV-01.R3-AUTH"
+    ],
+    "ENV-02": [
+      "ENV-02.R3-IMAGE"
+    ],
+    "ENV-03": [
+      "ENV-03.R3-STACK"
+    ],
+    "ENV-04": [
+      "ENV-04.R3-LOOPBACK"
+    ],
+    "ENV-05": [
+      "ENV-05.R3-DB"
+    ],
+    "ENV-06": [
+      "ENV-06.R3-WORKER"
+    ],
+    "FR-07": [
+      "FR-07.R3-WORKDIR-ISOLATED"
+    ],
+    "FR-09": [
+      "FR-09.R3-TERMINAL-RETRY-REGISTRATION"
+    ],
+    "G3-01": [
+      "G3-01.E2-ADMISSION-SOURCE",
+      "G3-01.E2-EVIDENCE-CLIENT",
+      "G3-01.E2-HOST-PREFLIGHT",
+      "G3-01.E2-MTLS-CLIENT",
+      "G3-01.E2-NONCE-DB",
+      "G3-01.E2-PUBLISH-GATE",
+      "G3-01.E2-RECEIPT"
+    ],
+    "G3-06": [
+      "G3-06.E2-INODE-CONTRACT"
+    ],
+    "MQ-02": [
+      "MQ-02.R2-PERSISTENCE"
+    ],
+    "MQ-03": [
+      "MQ-03.R3-LOST-ACK"
+    ],
+    "MQ-05": [
+      "MQ-05.R3-API-CRASH",
+      "MQ-05.R3-SAVEPOINT-ROLLBACK"
+    ],
+    "MQ-06": [
+      "MQ-06.R3-WORKER-ABSENCE"
+    ],
+    "MQ-07": [
+      "MQ-07.R3-LONG-OUTAGE"
+    ],
+    "PG-01": [
+      "PG-01.R3-CONCURRENCY"
+    ],
+    "PG-11": [
+      "PG-11.R3-ALL-WRITES",
+      "PG-11.R3-SERVICE-GUARDS"
+    ],
+    "REC-04": [
+      "REC-04.R3-BACKLOG-FAIRNESS"
+    ],
+    "REC-06": [
+      "REC-06.R3-COMMIT-FAILURE"
+    ],
+    "REC-07": [
+      "REC-07.R3-BEAT-CYCLE",
+      "REC-07.R3-COOLDOWN-ISOLATED"
+    ]
+  },
+  "aggregation_rule": "child assertions are reported separately and never change parent status"
+}

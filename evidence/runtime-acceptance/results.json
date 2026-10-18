@@ -1,0 +1,33 @@
+{
+  "overall": "PARTIAL",
+  "run_id": "ri095-20261017-attempt1",
+  "source_commit": "d9c92cf6ee1c",
+  "configuration_delivery": "PARTIAL",
+  "PASS_RUNTIME": true,
+  "PASS_E2E": false,
+  "services_started": true,
+  "services_stopped": true,
+  "production_flags_changed": false,
+  "dev_stack_touched": false,
+  "gates": [
+    {"gate": "S0 static/protection", "status": "PASS_STATIC", "evidence": "ri095-20261017-attempt1/preflight/s0-static-checks.log"},
+    {"gate": "RA01 migration", "status": "FAIL_FIXED_THEN_PASS_RUNTIME", "evidence": "ri095-20261017-attempt1/ra01/"},
+    {"gate": "RA02 PostgreSQL constraints", "status": "PASS_RUNTIME", "evidence": "ri095-20261017-attempt1/ra02/"},
+    {"gate": "RA03 concurrency/advisory lock", "status": "PASS_RUNTIME_PARTIAL_SCOPE", "evidence": "ri095-20261017-attempt1/ra03/"},
+    {"gate": "RA04/05/06 Celery", "status": "PARTIAL_NO_PER_GATE_DEFINITION", "evidence": "ri095-20261017-attempt1/ra04/"},
+    {"gate": "HTML report", "status": "PASS_RUNTIME", "evidence": "ri095-20261017-attempt1/report/"},
+    {"gate": "PDF", "status": "BLOCKED_MISSING_RENDERER", "evidence": "ri095-20261017-attempt1/report/versions.log"},
+    {"gate": "private storage", "status": "PASS_RUNTIME_LOCAL_SCOPE", "evidence": "ri095-20261017-attempt1/storage/"},
+    {"gate": "object storage", "status": "BLOCKED_NO_TEST_BUCKET", "evidence": null},
+    {"gate": "JWT", "status": "PASS_RUNTIME", "evidence": "ri095-20261017-attempt1/auth/"},
+    {"gate": "M0/M1/ZIP", "status": "PASS_RUNTIME_MECHANICS_CORPUS_BLOCKED", "evidence": "ri095-20261017-attempt1/chain/"},
+    {"gate": "Browser 1920/768/390", "status": "BLOCKED_APPMOR_SANDBOX", "evidence": "ri095-20261017-attempt1/browser/"},
+    {"gate": "approved corpus", "status": "BLOCKED_NOT_PROVIDED", "evidence": null}
+  ],
+  "defects_found": [
+    "fresh-DB alembic ordering: c1d2e3f4b5a6 (ALTER mcp_versions) before h6i7j8k9l1m3 (CREATE)",
+    "compose.yml tmpfs flow-sequence mis-parsed (gid=10001 as mount path)"
+  ],
+  "rollback": "flags=false, project stopped, volumes retained",
+  "note": "PASS_RUNTIME achieved for core gates; browser/PDF/object-storage/corpus remain BLOCKED. Not full RI09.5 closure."
+}

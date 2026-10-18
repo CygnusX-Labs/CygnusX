@@ -1,0 +1,10 @@
+{
+  "scope": "offline verifier boundary, not an upload endpoint or runtime exploit",
+  "cases": {
+    "normal": "ACCEPTED_BY_VERIFIER",
+    "extra_unlisted_file": "ACCEPTED_BY_VERIFIER",
+    "duplicate_member": "ACCEPTED_BY_VERIFIER",
+    "listed_file_tampered": "REJECTED_BY_VERIFIER",
+    "path_traversal": "REJECTED_BY_VERIFIER"
+  }
+}

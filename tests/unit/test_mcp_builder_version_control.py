@@ -439,3 +439,87 @@ async def test_promote_blocks_unreviewed_when_review_required():
 
     with pytest.raises(ValidationError, match="须通过审核"):
         await service.promote_server(str(server.id), str(uuid4()))
+
+
+# ----------------------------------------------------------------------
+# 契约指纹与回退乐观锁（架构审查 §7.3 / §8.4）
+# ----------------------------------------------------------------------
+def test_contract_digest_deterministic_and_sensitive():
+    from cygnusx.infrastructure.mcp.builder.versioning import compute_contract_digest
+
+    tools = [{"name": "t", "description": "d", "inputSchema": {"type": "object"}}]
+    config = {"name": "s", "transport": "stdio", "timeout": 30}
+    d1 = compute_contract_digest(tools, config)
+    d2 = compute_contract_digest(list(reversed(tools)), dict(reversed(list(config.items()))))
+    assert d1 == d2
+    assert d1.startswith("v1:")
+
+    # 工具 schema 变化 → digest 变化
+    assert compute_contract_digest(
+        [{"name": "t", "description": "d", "inputSchema": {"type": "string"}}], config
+    ) != d1
+    # 语义配置变化 → digest 变化
+    assert compute_contract_digest(tools, {**config, "timeout": 60}) != d1
+    # 非语义字段（config 快照字段之外）不影响 digest
+    assert compute_contract_digest(tools, {**config, "created_at": "now"}) == d1
+
+
+async def test_rollback_conflict_on_stale_expected_version():
+    """乐观锁：expected_current_version 与现值不一致即拒绝，server 不被改动。"""
+    from cygnusx.core.exceptions import ConflictError
+
+    owner = uuid4()
+    server = _server(created_by=owner, current_version="1.0.1", version="1.0.1")
+    target = _version_row(
+        server.id, "1.0.0",
+        config_snapshot={"description": "old", "name": "exp-demo", "transport": "stdio"},
+    )
+    service, _db, _ = _make_service(versions=[target])
+    service._repo.get_by_id.return_value = server
+
+    with pytest.raises(ConflictError, match="并发冲突"):
+        await service.rollback(
+            str(server.id), "1.0.0", str(owner), expected_current_version="1.0.0"
+        )
+    assert server.current_version == "1.0.1"
+
+
+async def test_rollback_expected_version_match_passes():
+    owner = uuid4()
+    server = _server(created_by=owner, current_version="1.0.1", version="1.0.1")
+    target = _version_row(
+        server.id, "1.0.0",
+        config_snapshot={"description": "old", "name": "exp-demo", "transport": "stdio"},
+    )
+    service, _db, _ = _make_service(versions=[target])
+    service._repo.get_by_id.return_value = server
+
+    result = await service.rollback(
+        str(server.id), "1.0.0", str(owner), expected_current_version="1.0.1"
+    )
+    assert result["current_version"] == "1.0.0"
+
+
+async def test_rollback_version_row_carries_target_contract_digest():
+    """rollback 产生的新版本行继承目标版本契约指纹（指纹连续性）。"""
+    from cygnusx.infrastructure.mcp.builder.versioning import compute_contract_digest
+
+    owner = uuid4()
+    server = _server(created_by=owner, current_version="1.0.1", version="1.0.1")
+    tools_snapshot = [{"name": "tool_old", "description": "o", "inputSchema": {}}]
+    config_snapshot = {"description": "old", "name": "exp-demo", "transport": "stdio"}
+    digest = compute_contract_digest(tools_snapshot, config_snapshot)
+    target = _version_row(
+        server.id, "1.0.0",
+        contract_digest=digest,
+        config_snapshot=config_snapshot,
+        tools_snapshot=tools_snapshot,
+    )
+    service, db, _ = _make_service(versions=[target])
+    service._repo.get_by_id.return_value = server
+
+    await service.rollback(str(server.id), "1.0.0", str(owner))
+
+    added = [c for c in db.added if isinstance(c, MCPVersionModel) and c.source == "rollback"]
+    assert len(added) == 1
+    assert added[0].contract_digest == digest

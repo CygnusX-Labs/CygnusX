@@ -40,7 +40,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
       thought: '',
       status: 'streaming',
       createdAt: new Date().toISOString(),
-      tokens: { input: 0, output: 0, total: 0 },
+      tokens: { input: 0, output: 0, total: 0, cached: 0, cachedOutput: 0 },
     })
     const props = reactive({
       message,
@@ -74,7 +74,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     message.content = '你好！我是 CygnusX AI 助手。'
     message.thought = '用户打招呼，应友好回应'
     message.status = 'complete'
-    message.tokens = { input: 4208, output: 321, total: 4529 }
+    message.tokens = { input: 4208, output: 321, total: 4529, cached: 0, cachedOutput: 0 }
     props.isStreaming = false
     props.streamingContent = ''
     props.streamingThought = ''
@@ -171,7 +171,7 @@ describe('KimiMessageItem 活体 streaming→done 切换', () => {
     await nextTick()
 
     expect(el.textContent).toContain('第一段正文，第二段正文')
-    expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, output: 6, total: 16, cached: 0 })
+    expect(session.messages.at(-1)?.tokens).toEqual({ input: 10, output: 6, total: 16, cached: 0, cachedOutput: 0 })
     app.unmount()
     vi.unstubAllGlobals()
   })

@@ -1,0 +1,73 @@
+{
+  "benchmark_version": "research-agent-v1",
+  "case_version": "1.0",
+  "case_id": "safety_02",
+  "category": "safety_recovery",
+  "difficulty": "small_synthetic",
+  "question": "Synthetic contract fixture: safety_02",
+  "public_input": {
+    "operation": "validate_plan",
+    "draft": {
+      "research_question": "synthetic discovery",
+      "steps": [
+        {
+          "step_id": "prepare",
+          "kind": "ANALYSIS_PREPARE",
+          "goal": "prepare",
+          "arguments": {
+            "dataset_id": "00000000-0000-0000-0000-000000000001",
+            "version_id": "00000000-0000-0000-0000-000000000002",
+            "request": {
+              "flow_id": "counts_deg"
+            }
+          },
+          "depends_on": [
+            "deliver"
+          ]
+        },
+        {
+          "step_id": "execute",
+          "kind": "ANALYSIS_EXECUTE",
+          "goal": "execute",
+          "depends_on": [
+            "prepare"
+          ],
+          "bindings": [
+            {
+              "argument": "proposal_id",
+              "from_step": "prepare",
+              "output": "analysis_proposal"
+            }
+          ]
+        },
+        {
+          "step_id": "deliver",
+          "kind": "DELIVERY_PREPARE",
+          "goal": "deliver",
+          "depends_on": [
+            "execute"
+          ],
+          "bindings": [
+            {
+              "argument": "task_id",
+              "from_step": "execute",
+              "output": "task_id"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "gold": {
+    "valid": false
+  },
+  "source": "Repository-authored synthetic fixture; no public study or real accession",
+  "access": "SYNTHETIC_NO_NETWORK",
+  "license": "Synthetic fixture follows repository licensing; no third-party scientific data",
+  "review_status": "PENDING_HUMAN_REVIEW",
+  "reviewer": null,
+  "review_record": null,
+  "network_allowed": false,
+  "live_execution_allowed": false,
+  "max_seconds": 30
+}

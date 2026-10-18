@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from cygnusx.api.deps import (
     CurrentJwtUserId,
@@ -22,11 +23,15 @@ from cygnusx.application.schemas.tool_invocation import (
     ToolInvocationContext,
 )
 from cygnusx.application.services.ai_service import AIService
-from cygnusx.application.services.analysis_flow_tool_service import AnalysisFlowToolService
+from cygnusx.application.services.analysis_flow_tool_service import (
+    AnalysisFlowToolService,
+    FlowAIError,
+)
 from cygnusx.application.services.tool_confirmation_service import (
     ConfirmationError,
     get_tool_confirmation_service,
 )
+from cygnusx.core.exceptions import NotFoundError
 from cygnusx.core.security import decode_token
 from cygnusx.infrastructure.database.session import get_session_factory
 
@@ -39,12 +44,15 @@ async def create_external_tool_confirmation(
     current_user_id: CurrentUserId,
 ) -> dict[str, Any]:
     """Create a PENDING record; only the JWT approval endpoint can approve it."""
-    record = await get_tool_confirmation_service().create_for_tool(
-        user_id=str(current_user_id),
-        tool_name=request.tool_name,
-        arguments=request.arguments,
-        session_id="external-mcp",
-    )
+    try:
+        record = await get_tool_confirmation_service().create_for_tool(
+            user_id=str(current_user_id),
+            tool_name=request.tool_name,
+            arguments=request.arguments,
+            session_id="external-mcp",
+        )
+    except ConfirmationError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from None
     return {
         "success": True,
         "confirmation_id": record.confirmation_id,
@@ -241,6 +249,72 @@ async def reject_tool_confirmation(
     except ConfirmationError as e:
         raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
     return {"success": True, "status": record.status}
+
+
+# ============================================================
+# 固定分析工具（MCP 工具固定化：list/describe 之外的两个写入口）
+# ============================================================
+
+
+class FlowPrepareRequest(BaseModel):
+    """固定工具 cygnusx_prepare 的请求体。"""
+
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/flows/{flow_id}/prepare", summary="预检流程参数（固定工具入口）")
+async def prepare_analysis_flow(
+    flow_id: str,
+    request: FlowPrepareRequest,
+    current_user_id: CurrentUserId,
+    db: DbSession,
+) -> dict[str, Any]:
+    """全量校验 flow 参数，冻结快照并创建待确认记录（默认 30 分钟有效）。
+
+    模型通道（API Key）：只创建 PENDING 记录，任务不会提交；
+    用户经 /tool-confirmations/{id}/approve（JWT 人类通道）或确认卡批准（APPROVED）
+    后，由 cygnusx_submit 消费。
+    """
+    context = ToolInvocationContext(
+        user_id=str(current_user_id),
+        session_id="flow-fixed-api",
+        db=db,
+    )
+    service = AnalysisFlowToolService(context=context)
+    try:
+        return await service.prepare(flow_id, request.arguments)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except FlowAIError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+
+
+@router.post(
+    "/flow-confirmations/{confirmation_id}/submit",
+    summary="消费确认记录并提交任务（固定工具入口）",
+)
+async def submit_analysis_flow(
+    current_user_id: CurrentUserId,
+    db: DbSession,
+    confirmation_id: UUID,
+) -> dict[str, Any]:
+    """模型通道消费确认记录：要求记录已被人类批准（APPROVED）。
+
+    服务端校验归属 / 未过期 / 原子单次消费；同一 confirmation_id 重复调用
+    幂等返回既有 task_id，不新建任务。写门禁 require_agent_write_gate 由
+    服务层统一执行（与 chat / pipelines 路径同一道门）。
+    """
+    context = ToolInvocationContext(
+        user_id=str(current_user_id),
+        session_id="flow-fixed-api",
+        db=db,
+    )
+    service = AnalysisFlowToolService(context=context)
+    try:
+        result = await service.confirm_and_submit(str(confirmation_id))
+    except ConfirmationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message}) from e
+    return {"success": True, **result}
 
 
 @router.post("/tool-invocations/{confirmation_id}/approve", summary="批准待确认的工具调用")

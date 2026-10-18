@@ -108,6 +108,9 @@ class FlowToolSchemaCompiler:
     def _build_description(self, flow: FlowConfig, ai: FlowAIConfig) -> str:
         """构建 tool 描述。"""
         lines = [
+            "[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。"
+            " 流程目录请走 list/describe 固定工具，提交请走统一 prepare/submit 入口。",
+            "",
             ai.assistant_summary or flow.meta.description,
             "",
             f"流程名称: {flow.meta.name}",

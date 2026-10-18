@@ -2,7 +2,13 @@
 
 本目录集中存放 CygnusX 的项目级架构、设计规范和实施方案。修改相关功能前，请先阅读对应文档，确保实现与既有约束保持一致。
 
+> 科研寻宝鼠端到端链路现状入口：[CygnusX_treasure_mouse_architecture.md](CygnusX_treasure_mouse_architecture.md)（as-built；发现→Dataset→下载/分析预案→双报告读取，全部写执行运行门禁 BLOCKED）。
+
 > 科研交付链现状入口：[CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)（Phase4 受保护代码；运行准入 BLOCKED）。
+
+> 项目科研成果与导出现状同见科研交付架构的RI06–RI09节：ProjectDetail只读聚合、版本化Manifest、独立ProjectExportJob与授权下载已接代码/隔离验证；默认关闭，真实PG/Worker/浏览器未验收。
+
+> 受控研究计划现状：[CygnusX_research_plan_architecture.md](CygnusX_research_plan_architecture.md)（Phase5 PLAN_ONLY；真实执行与评测发布未准入）。
 
 ## 0. 这个架构文档目录如何发挥作用
 
@@ -79,6 +85,12 @@ sequenceDiagram
 
 ### `CygnusX_dataset_architecture.md` — Dataset 与 Flow 输入资产（as-built，运行准入 BLOCKED）
 新增版本化 Dataset/Source/Asset/Sample、GEO/ENA 只读证据、导入预案和原服务对账、受控 Handoff；统计本地验收与 Worker/写门禁分开，详见该活动基线。
+
+### `CygnusX_treasure_mouse_architecture.md` — 科研寻宝鼠端到端科研链路（as-built，运行准入 BLOCKED）
+该域活动架构入口：React Island 唯一展示树 + Vue 外壳 + FastAPI BFF 三层边界；三条调用链（UI typed action / Node 有限委托 / 平台 AI ToolBridge）汇入同一 `AgentToolGateway`；身份/项目/scope 派生、能力目录、委托 token、Dataset 七表与 Alembic 链（单一 head）；GEO/ENA 只读证据适配；Prepare→人类 JWT 审批→执行三段分离与幂等对账；DatasetVersion/冻结 Handoff；FASTQ→RNAFlow / raw counts→counts_deg 匹配与统一 `FlowSubmissionValidator`;双报告只读投影；`WRITE_RUNTIME_ACCEPTED=False` + `worker_paths_verified=False` 两道源码门禁与默认关闭开关矩阵；RG-01–12 与能力状态；**§16 文档与代码核对**列出发现的不一致（含 `/research-agent/capabilities` 字段漂移）。
+
+### `CygnusX_download_architecture.md` — 下载与公共数据接入（as-built，**平台下载模块单一权威文件**）
+三来源人工下载链（EBIDownload、三云 CLI、aria2c/ftplib）与云盘 UI 占位；前端→REST→Service→Task→Worker→FileRecord→Dataset/Handoff 的职责、源码写门禁与已证 task_id/source/checksum 断点；区分子模块 EBIDownload 1.4.0、旁仓 Polariseq 1.4.3、宿主程序和未知运行容器。**下载模块的全部细节以本文为准**；Agent 工具层、寻宝鼠链路、Dataset 三份文档只在各自域内保留接入点并回指本文。调查矩阵与逐协议/Agent 发布门禁见文内专项调查链接，不能将代码存在视为运行认证。附录 A 附"数据下载与多 Agent 工具化"目标态参考图（提案，非现状依据）。
 
 ## 1. 平台总览与总体规范
 
@@ -166,7 +178,7 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 ### `CygnusX_storage_workspace_gap_audit.md` — 存储与四级入口工作目录 Gap 审计（时点快照，2026-10-03）
 存储层 Gap 调查的原始证据存档：Gap 1 换根硬编码五处、Gap 2 worker_config 与 .env 数据根不一致、Gap 3 会诊工作目录三种矛盾前缀 + 挂载断裂、Gap 4 chat 产物目录游离协议外、Gap 5 /data/platform 提示词未告知、Gap 6 协作室 Worker 零挂载、Gap 7 文档口径漂移；每条附 文件:行号 与 live 实勘。Gap 1/2/挂载断裂已修复（见上份文档），其余以本审计为决策输入。
 
-### `CygnusX_mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"）。
+### `CygnusX_mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线；§11 为 **MCP 工具固定化**目标接入架构（固定 4 能力 + 动态 Flow 目录，工具清单不随 Flow 数增长；阶段 0/1 已完成：冻结政策、旧四件套与 per-flow 自动生成工具 `[DEPRECATED]` 软弃用标注、固定 `cygnusx_prepare`/`cygnusx_submit` 内外双端落地并复用同一 `AnalysisFlowToolService` + 确认凭证链；阶段 2–4 路线与红线：校验对等矩阵、兼容包装下线、插件机制）；§12 为 **2026-10-16 架构审查响应**（实验池 invoke 门禁 + 输出限额、目录分页与 llm_payload 预算已落地并测试；版本治理差距清单——契约指纹/依赖锁定/generation 原子激活/回退制品语义——诚实记录为后续 P1/P2 路线）。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"，§9 含 Flow 工具冻结政策）。
 
 ### `CygnusX_database_architecture.md` — 数据库基础设施基线（as-built + 规范，2026-09-11）
 `session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 87 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
@@ -177,7 +189,7 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 ### `CygnusX_log_architecture.md` — 统一日志架构（as-built + 更新规范）
 统一日志根 `/data/cygnusx/logs/`（app/celery/nginx/snakemake/audit 五域）；`core/logging.py` loguru 四 sink 与 `CYGNUSX_LOG_*` 环境变量、trace_id 注入；`LoggedTask` 单任务日志、DB `tasks.logs` 截断；Nginx `cygnusx_json` 格式、Snakemake 落盘、审计 `audit_logs` 表 + JSON 备份；Docker 挂载矩阵、Loki/Promtail 预留、清理策略与容量治理、排障速查。与日志无关的 terminal/参考基因组记录已迁至 CygnusX_database_architecture.md 附录。
 
-### `CygnusX_flow_architecture.md` — 分析中心 Flow 接入架构（as-built，2026-10-03）
+### `CygnusX_flow_architecture.md` — 分析中心 Flow 接入架构（as-built，2026-10-03；§8 接入清单 2026-10-16 按 MCP 工具固定化更新）
 L1 分析中心流程接入链路现状：仓库根 `flows/*.yaml` 六段 FlowConfig schema（meta/ai/parameters/sample_sheet/execution/pipeline_mapping，`domain/flow/` 严格模式权威定义）；`FileSystemFlowRepository` 磁盘扫描 + mtime 热重载（无 DB 注册、免重启）；`ai.enabled` 流程由 `FlowToolSchemaCompiler` 运行时编译为 `cygnusx_prepare_{tool_slug}_submission` 动态工具（确认门 PENDING→APPROVED→消费）；表单与 AI 双通道在 `TaskService.submit()` 九步链汇合（`GenericFlowBuilder` 按 `pipeline_mapping` 生成 analysisyaml/samples.csv/contrasts.csv → Celery `run_snakemake`）；与 FlowFrame analysisyaml 的键一致性约定（人工对齐、无交叉校验，改键须同 PR）；非 YAML-only 通道的硬编码边界（`/api/v1/pipelines/*` Literal、mcp-server preset、前端 union、`data/ai/flows/` 第二注册表）与新流程接入清单。前身 `flows/flows_design*.md` 提案已全部落地（见"相关文档"）。
 
 ### `CygnusX_toolbox_architecture.md` — 生信工具箱子系统（as-built，2026-10-03）

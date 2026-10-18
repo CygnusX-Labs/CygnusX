@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "file_record_id": {
+      "format": "uuid",
+      "title": "File Record Id",
+      "type": "string"
+    },
+    "feature_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Feature Id",
+      "type": "string"
+    },
+    "column": {
+      "enum": [
+        "log2FoldChange",
+        "pvalue",
+        "padj",
+        "baseMean",
+        "lfcSE",
+        "stat"
+      ],
+      "title": "Column",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "file_record_id",
+    "feature_id",
+    "column"
+  ],
+  "title": "ArtifactCellRequest",
+  "type": "object"
+}

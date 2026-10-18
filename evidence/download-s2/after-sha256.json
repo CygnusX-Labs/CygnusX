@@ -1,0 +1,14 @@
+{
+  "src/cygnusx/domain/download_contract.py": "d97bad5a2dab99272821c484b6cca87fa46e8240cfd95380caa1e7c94618d309",
+  "src/cygnusx/application/schemas/download.py": "d4c004501fd10302a64ec3fe87fd23ae8f7a3d5e13b1b1d79d7f344191254b1d",
+  "src/cygnusx/tools/download/config.py": "cc3ea9c0b5258ebf58d8e38548ab177cd5ccb9620b2674b0c61a8057608b23d1",
+  "src/cygnusx/infrastructure/download/provenance.py": "03def377cb30d95d18d6cacb328f30b16755fb2ec6a96a166f7b2873ad0a92ed",
+  "src/cygnusx/infrastructure/celery_app/tasks/download.py": "6abb63802987dc754979ff02c53dce905753f60c87a03e8aecda084aae16c271",
+  "scripts/inspect_download_runtime.py": "855bfc6f4c999a875959ed194d053f561c570126962de1dbf15580e2e16b028e",
+  "tests/unit/test_download_transport_contract.py": "1402e3bcf44650093ca389965ee4789e3d253e5f6057e4470e800eae40bbe3e5",
+  "tests/unit/test_download_provenance.py": "2ff912777b886091d8433178035a78c0281eac922a83a06714b2b4d56dbcb015",
+  "tests/unit/test_download_worker_protocol_gate.py": "a36c56d84949942d5cc1edd2be1583b31126dd21d1e0fe93d8051601725d0d99",
+  "frontend/src/views/DownloadsView.vue": "cb6f02224aba89bc68eba5a9966f0c2f64521cf1aecfc9ce92a9305a48451943",
+  "frontend/src/views/__tests__/DownloadsTransportContract.test.ts": "277abd43ee3f67f7537a11a6f48b5e307b92312a0516c8419c70c3b4acaa24b9",
+  "ARCHITECTURE_DESIGN/CygnusX_download_architecture.md": "64404f95ce4277573f9cb3655dd0eb3d019e97f1810218b008fc55770ee899bc"
+}

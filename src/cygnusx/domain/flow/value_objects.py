@@ -375,6 +375,10 @@ class FlowAIConfig(_StrictModel):
     )
     max_samples: int | None = Field(default=None, ge=1, description="最大样本数限制")
     max_comparisons: int | None = Field(default=None, ge=1, description="最大比较组数限制")
+    validation_plugins: list[str] = Field(
+        default=[],
+        description="提交前校验插件名列表（FlowValidationPlugin 注册名，如 fastq_workspace）",
+    )
     example_dialogue: list[FlowDialogueExample] = Field(default=[], description="示例对话")
 
     @field_validator("tool_slug")

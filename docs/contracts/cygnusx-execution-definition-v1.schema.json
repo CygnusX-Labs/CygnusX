@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "DefinitionParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,79}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "value_json": {
+          "maxLength": 16384,
+          "title": "Value Json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value_json"
+      ],
+      "title": "DefinitionParameter",
+      "type": "object"
+    },
+    "ExecutionFileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "file_record_id": {
+          "format": "uuid",
+          "title": "File Record Id",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "role": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Role",
+          "type": "string"
+        },
+        "status": {
+          "default": "UNKNOWN",
+          "enum": [
+            "DECLARED",
+            "UNKNOWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_record_id",
+        "role"
+      ],
+      "title": "ExecutionFileRef",
+      "type": "object"
+    },
+    "ExecutionResources": {
+      "additionalProperties": false,
+      "properties": {
+        "cores": {
+          "anyOf": [
+            {
+              "maximum": 1024,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cores"
+        },
+        "memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Bytes"
+        },
+        "time_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Seconds"
+        }
+      },
+      "title": "ExecutionResources",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "cygnusx.execution_definition.v1",
+      "default": "cygnusx.execution_definition.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "digest_policy": {
+      "const": "canonical_definition.v1",
+      "default": "canonical_definition.v1",
+      "title": "Digest Policy",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    },
+    "dataset_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Version Id"
+    },
+    "handoff_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Handoff Digest"
+    },
+    "workflow_id": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "title": "Workflow Id",
+      "type": "string"
+    },
+    "workflow_release_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Release Id"
+    },
+    "workflow_release_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Release Digest"
+    },
+    "container_image_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Container Image Digest"
+    },
+    "input_refs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ExecutionFileRef"
+      },
+      "maxItems": 2000,
+      "title": "Input Refs",
+      "type": "array"
+    },
+    "reference_refs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ExecutionFileRef"
+      },
+      "maxItems": 2000,
+      "title": "Reference Refs",
+      "type": "array"
+    },
+    "normalized_parameters": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DefinitionParameter"
+      },
+      "maxItems": 200,
+      "title": "Normalized Parameters",
+      "type": "array"
+    },
+    "sample_design_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Design Digest"
+    },
+    "resource_specification": {
+      "$ref": "#/$defs/ExecutionResources",
+      "default": {
+        "cores": null,
+        "memory_bytes": null,
+        "time_seconds": null
+      }
+    },
+    "comparison_policy": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Comparison Policy"
+    },
+    "provenance_status": {
+      "default": "UNKNOWN",
+      "enum": [
+        "DECLARED",
+        "UNKNOWN"
+      ],
+      "title": "Provenance Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflow_id"
+  ],
+  "title": "ExecutionDefinition",
+  "type": "object"
+}

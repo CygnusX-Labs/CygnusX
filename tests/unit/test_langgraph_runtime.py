@@ -24,6 +24,15 @@ from cygnusx.infrastructure.execution.langgraph_runtime import LangGraphRuntimeS
 USAGE = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
 
 
+@pytest.fixture(autouse=True)
+def static_model_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cygnusx.application.services.chat.runtimes import langgraph_runtime
+    from cygnusx.core.config import get_settings
+
+    settings = get_settings().model_copy(update={"dynamic_model_routing_enabled": False})
+    monkeypatch.setattr(langgraph_runtime, "get_settings", lambda: settings)
+
+
 def _make_stream(rounds: list[list[ChatChunk]]) -> tuple[Any, list[list[dict[str, Any]]]]:
     """构造假 chat_stream：第 N 次调用返回 rounds[N]，并记录收到的 messages"""
     calls: list[list[dict[str, Any]]] = []
@@ -487,7 +496,12 @@ class _CaptureRuntime:
 
 
 def _chat_service(sandbox_meta: dict | None = None) -> Any:
-    service = SimpleNamespace()
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from cygnusx.application.services.chat_service import ChatService
+
+    service: Any = ChatService(AsyncMock(spec=AsyncSession))
+    service._sessions.get_messages = AsyncMock(return_value=[])
     service.update_message_content = AsyncMock()
     service._apply_usage_to_session = AsyncMock()
     service.get_session = AsyncMock(return_value=SimpleNamespace(sandbox_meta=sandbox_meta))

@@ -372,6 +372,18 @@ class ChatMessageModel(Base):
             unique=True,
             postgresql_where=text("(metadata_json ->> 'matrix_event_id') IS NOT NULL"),
         ),
+        Index(
+            "uq_chat_messages_research_request",
+            "session_id",
+            text("(metadata_json ->> 'research_request_id')"),
+            unique=True,
+            sqlite_where=text(
+                "role = 'user' AND (metadata_json ->> 'research_request_id') IS NOT NULL"
+            ),
+            postgresql_where=text(
+                "role = 'user' AND (metadata_json ->> 'research_request_id') IS NOT NULL"
+            ),
+        ),
     )
 
 

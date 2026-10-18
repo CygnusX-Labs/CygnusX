@@ -1,0 +1,69 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0, cov-7.1.0, langsmith-0.10.16
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 26 items
+
+tests/unit/test_download_s4a_reliability.py ...........                  [ 42%]
+tests/unit/test_download_service.py F....FF.                             [ 73%]
+tests/unit/test_dataset_import_handoff.py ......                         [ 96%]
+tests/unit/test_download_worker_protocol_gate.py .                       [100%]/home/zj/zj_code_libarary/OmicHub/.venv/lib/python3.11/site-packages/_pytest/unraisableexception.py:33: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+  gc.collect()
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+
+=================================== FAILURES ===================================
+_______________ test_submit_creates_download_task_and_dispatches _______________
+tests/unit/test_download_service.py:82: in test_submit_creates_download_task_and_dispatches
+    result = await service.submit(user_id, req)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/download_service.py:138: in submit
+    if owner is None or owner.status != "active":
+                        ^^^^^^^^^^^^
+E   AttributeError: 'coroutine' object has no attribute 'status'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:37:38.169[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+________________ test_submit_cloud_storage_task_and_dispatches _________________
+tests/unit/test_download_service.py:176: in test_submit_cloud_storage_task_and_dispatches
+    result = await service.submit(user_id, req)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cygnusx/application/services/download_service.py:138: in submit
+    if owner is None or owner.status != "active":
+                        ^^^^^^^^^^^^
+E   AttributeError: 'coroutine' object has no attribute 'status'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:37:38.447[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+_____________ test_submit_direct_link_task_persists_batch_options ______________
+tests/unit/test_download_service.py:215: in test_submit_direct_link_task_persists_batch_options
+    await service.submit(user_id, req)
+src/cygnusx/application/services/download_service.py:138: in submit
+    if owner is None or owner.status != "active":
+                        ^^^^^^^^^^^^
+E   AttributeError: 'coroutine' object has no attribute 'status'
+---------------------------- Captured stdout setup -----------------------------
+[32m2026-10-17 01:37:38.457[0m | [34m[1mDEBUG   [0m | [36mapp[0m | [36mlogging[0m:[36mcallHandlers[0m:[36m1706[0m | [34m[1mUsing selector: EpollSelector[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+src/cygnusx/application/schemas/ai_provider.py:36
+  /home/zj/zj_code_libarary/OmicHub/src/cygnusx/application/schemas/ai_provider.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIProviderConfigDTO(AIProviderConfigBaseDTO):
+
+tests/unit/test_download_service.py::test_submit_cloud_storage_task_and_dispatches
+  /home/zj/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/unittest/mock.py:2133: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    setattr(_type, entry, MagicProxy(entry, self))
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_download_service.py::test_submit_creates_download_task_and_dispatches
+FAILED tests/unit/test_download_service.py::test_submit_cloud_storage_task_and_dispatches
+FAILED tests/unit/test_download_service.py::test_submit_direct_link_task_persists_batch_options
+=================== 3 failed, 23 passed, 2 warnings in 1.15s ===================

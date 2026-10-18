@@ -1,0 +1,25 @@
+{
+  "static_checks": "PASS",
+  "configs": [
+    {
+      "config": "nginx.conf",
+      "native_route": "SPA index.html",
+      "trailing_slash": "302 canonical URL, preserves query",
+      "legacy_subpaths": "404"
+    },
+    {
+      "config": "nginx.prod.conf",
+      "native_route": "SPA index.html",
+      "trailing_slash": "302 canonical URL, preserves query",
+      "legacy_subpaths": "404"
+    },
+    {
+      "config": "frontend.conf",
+      "native_route": "SPA index.html",
+      "trailing_slash": "302 canonical URL, preserves query",
+      "legacy_subpaths": "404"
+    }
+  ],
+  "built_index_exists": true,
+  "runtime": "NOT VERIFIED: network/Docker socket unavailable"
+}

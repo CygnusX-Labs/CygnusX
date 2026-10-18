@@ -1,0 +1,1310 @@
+[
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/login"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-B48US33q.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-BU7dAxLs.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LoginView-7W-_GISr.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/site-config-P0acSmBm.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/vue3-lottie.es-DfZXNhPV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/_commonjsHelpers-Cpj98o6Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MailOutline-D67dBKts.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkOutline-DGMNKk6S.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CopyOutline-BG9duyfB.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkCircleOutline-CkMd5WHt.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StardustQuote-8xXN2tEM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StardustQuote-brqnw9b9.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PersonOutline-BB9QD2sN.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LockClosedOutline-DfWfs1ip.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LoginView-C-vZdA7C.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/lottie/earth-globe.json"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/lottie/loader-cat.json"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/site-settings"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/site-content"
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/auth/login"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-Dr9EMzuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/cookie-BIFsiurW.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/agentTeams-DcyRQyvM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AddOutline-_1t7yzVD.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TrashOutline-C3p_h1hI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/WarningOutline-j0Dcw3M7.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AlertCircleOutline-Dkxfx28H.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/InformationCircleOutline-CZZ47ExE.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatGPT_logo-8RZBGau0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/upload-C2yTfScI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ContractOutline-BEz6FzGq.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloudUploadOutline-itD8GG-p.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PauseOutline-cA8rmAd0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PlayOutline-CCpdWx62.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloseOutline-CRlPjsW0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ExpandOutline-K8ONm0BZ.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-DuBgrGXM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-Do4ktST4.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/purify.es-D6gMnemd.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-CL2tXN6V.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SparklesOutline-0bMx1-aT.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StopOutline-B1yYAjXk.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SendOutline-C0U6W5Bf.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/displayName-wdn4_K7I.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/Planet-DkXDxT95.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HelpCircleOutline-C0z9mgDx.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronForwardOutline-B7SxyLpp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronDownOutline-DWF65kDL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeOutline-CvCzwAdK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FlaskOutline-xzGxqYmK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DocumentTextOutline-ZcwGQVfc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GridOutline-MbWu1a5Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SearchOutline-BuUXskyb.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LayersOutline-Cmk-xFsX.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DownloadOutline-Dz02_Dt-.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BarChartOutline-oayvo8MM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatbubblesOutline-r_EgX_w0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DesktopOutline-BWhjZ393.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ConstructOutline-pCGwoKuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SettingsOutline-CE8os-W0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BulbOutline-C0bMQ430.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ServerOutline-BuEPhKdy.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TerminalOutline-n2MEI8kV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-DN0lzLdS.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeView-BulXiqpZ.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FestivalPopup-BOruIlBm.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FestivalPopup-rpzSHLGq.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AnnouncementBanner-Camoe07G.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/announcement-D3OFlz2P.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AnnouncementBanner-BQ31-huq.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/projects-D96hYUxc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/report-BpQnWXnz.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/RefreshOutline-DTtoiT7R.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FolderOpenOutline-DhfCg4e_.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TimeOutline-DIxn5j2k.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/homeQuickEntries-CSEk37HV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StatsChartOutline-Bke35PZW.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ListOutline-Dlsh7dNP.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LibraryOutline-DdyyjSYq.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BookOutline-DM9VNQnu.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AppsOutline-Du5ewLpL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/interfacePreferences-DkrEKkWO.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ArrowForwardOutline-DrtVFkxL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeView-HEur7ATY.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/animationLibrary-CuonUwte.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/announcements/active"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/ai-token-rate"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/tasks?status=running&limit=5"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/tasks?status=queued&limit=5"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/reports?page=1&page_size=5"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/site-content"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/site-settings"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/festival/today"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/llm/generate-welcome"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/projects"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-B48US33q.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-BU7dAxLs.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-Dr9EMzuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/cookie-BIFsiurW.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/site-config-P0acSmBm.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LockClosedOutline-DfWfs1ip.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MailOutline-D67dBKts.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkOutline-DGMNKk6S.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CopyOutline-BG9duyfB.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/agentTeams-DcyRQyvM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AddOutline-_1t7yzVD.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TrashOutline-C3p_h1hI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/WarningOutline-j0Dcw3M7.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AlertCircleOutline-Dkxfx28H.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/InformationCircleOutline-CZZ47ExE.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatGPT_logo-8RZBGau0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/upload-C2yTfScI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/_commonjsHelpers-Cpj98o6Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkCircleOutline-CkMd5WHt.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ContractOutline-BEz6FzGq.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloudUploadOutline-itD8GG-p.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PauseOutline-cA8rmAd0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PlayOutline-CCpdWx62.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloseOutline-CRlPjsW0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ExpandOutline-K8ONm0BZ.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-DuBgrGXM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-Do4ktST4.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/purify.es-D6gMnemd.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-CL2tXN6V.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SparklesOutline-0bMx1-aT.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StopOutline-B1yYAjXk.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SendOutline-C0U6W5Bf.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/displayName-wdn4_K7I.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/Planet-DkXDxT95.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HelpCircleOutline-C0z9mgDx.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronForwardOutline-B7SxyLpp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronDownOutline-DWF65kDL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeOutline-CvCzwAdK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FlaskOutline-xzGxqYmK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DocumentTextOutline-ZcwGQVfc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GridOutline-MbWu1a5Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SearchOutline-BuUXskyb.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LayersOutline-Cmk-xFsX.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DownloadOutline-Dz02_Dt-.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BarChartOutline-oayvo8MM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatbubblesOutline-r_EgX_w0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DesktopOutline-BWhjZ393.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ConstructOutline-pCGwoKuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SettingsOutline-CE8os-W0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PersonOutline-BB9QD2sN.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BulbOutline-C0bMQ430.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ServerOutline-BuEPhKdy.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TerminalOutline-n2MEI8kV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-DN0lzLdS.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectsView-B21YaWqh.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-DqskppSh.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ArrowBackOutline-CtiBUGMK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-D00CQ3V_.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CreateProjectModal.vue_vue_type_script_setup_true_lang-CarYmL31.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/projects-D96hYUxc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/RefreshOutline-DTtoiT7R.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FolderOpenOutline-DhfCg4e_.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectsView-jkrriWqx.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-B48US33q.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-BU7dAxLs.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-Dr9EMzuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/cookie-BIFsiurW.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/site-config-P0acSmBm.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LockClosedOutline-DfWfs1ip.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MailOutline-D67dBKts.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkOutline-DGMNKk6S.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CopyOutline-BG9duyfB.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/agentTeams-DcyRQyvM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AddOutline-_1t7yzVD.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TrashOutline-C3p_h1hI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/WarningOutline-j0Dcw3M7.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AlertCircleOutline-Dkxfx28H.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/InformationCircleOutline-CZZ47ExE.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatGPT_logo-8RZBGau0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/upload-C2yTfScI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/_commonjsHelpers-Cpj98o6Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkCircleOutline-CkMd5WHt.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ContractOutline-BEz6FzGq.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloudUploadOutline-itD8GG-p.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PauseOutline-cA8rmAd0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PlayOutline-CCpdWx62.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloseOutline-CRlPjsW0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ExpandOutline-K8ONm0BZ.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-DuBgrGXM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-Do4ktST4.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/purify.es-D6gMnemd.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-CL2tXN6V.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SparklesOutline-0bMx1-aT.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StopOutline-B1yYAjXk.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SendOutline-C0U6W5Bf.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/displayName-wdn4_K7I.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/Planet-DkXDxT95.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HelpCircleOutline-C0z9mgDx.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronForwardOutline-B7SxyLpp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronDownOutline-DWF65kDL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeOutline-CvCzwAdK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FlaskOutline-xzGxqYmK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DocumentTextOutline-ZcwGQVfc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GridOutline-MbWu1a5Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SearchOutline-BuUXskyb.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LayersOutline-Cmk-xFsX.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DownloadOutline-Dz02_Dt-.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BarChartOutline-oayvo8MM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatbubblesOutline-r_EgX_w0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DesktopOutline-BWhjZ393.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ConstructOutline-pCGwoKuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SettingsOutline-CE8os-W0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PersonOutline-BB9QD2sN.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BulbOutline-C0bMQ430.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ServerOutline-BuEPhKdy.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TerminalOutline-n2MEI8kV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-DN0lzLdS.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectDetailView-CIdUNiDp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-DqskppSh.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ArrowBackOutline-CtiBUGMK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-D00CQ3V_.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/chat-Bx48xJYM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/projects-D96hYUxc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FolderOpenOutline-DhfCg4e_.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GitBranchOutline-BkabL4yz.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TimeOutline-DIxn5j2k.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectDetailView-DVonql_C.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/overview?session_limit=100&session_status=active"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/research-plans"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/research-delivery"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/delivery-inventory"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/delivery-inventory"
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/exports/prepare"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/projects/f437891e-818d-4ba6-abed-5d9e6dc46891"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-B48US33q.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-BU7dAxLs.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-Dr9EMzuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/cookie-BIFsiurW.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/site-config-P0acSmBm.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LockClosedOutline-DfWfs1ip.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MailOutline-D67dBKts.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkOutline-DGMNKk6S.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CopyOutline-BG9duyfB.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/agentTeams-DcyRQyvM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AddOutline-_1t7yzVD.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TrashOutline-C3p_h1hI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/WarningOutline-j0Dcw3M7.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/AlertCircleOutline-Dkxfx28H.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/InformationCircleOutline-CZZ47ExE.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatGPT_logo-8RZBGau0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/upload-C2yTfScI.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/_commonjsHelpers-Cpj98o6Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CheckmarkCircleOutline-CkMd5WHt.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ContractOutline-BEz6FzGq.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloudUploadOutline-itD8GG-p.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PauseOutline-cA8rmAd0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PlayOutline-CCpdWx62.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/CloseOutline-CRlPjsW0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ExpandOutline-K8ONm0BZ.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-DuBgrGXM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/index-Do4ktST4.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/purify.es-D6gMnemd.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/MarkdownRenderer-CL2tXN6V.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SparklesOutline-0bMx1-aT.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/StopOutline-B1yYAjXk.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SendOutline-C0U6W5Bf.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/displayName-wdn4_K7I.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/Planet-DkXDxT95.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HelpCircleOutline-C0z9mgDx.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronForwardOutline-B7SxyLpp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChevronDownOutline-DWF65kDL.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/HomeOutline-CvCzwAdK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FlaskOutline-xzGxqYmK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DocumentTextOutline-ZcwGQVfc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GridOutline-MbWu1a5Y.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SearchOutline-BuUXskyb.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/LayersOutline-Cmk-xFsX.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DownloadOutline-Dz02_Dt-.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BarChartOutline-oayvo8MM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ChatbubblesOutline-r_EgX_w0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DesktopOutline-BWhjZ393.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ConstructOutline-pCGwoKuU.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/SettingsOutline-CE8os-W0.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PersonOutline-BB9QD2sN.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/BulbOutline-C0bMQ430.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ServerOutline-BuEPhKdy.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TerminalOutline-n2MEI8kV.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/DefaultLayout-DN0lzLdS.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectDetailView-CIdUNiDp.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-DqskppSh.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ArrowBackOutline-CtiBUGMK.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/PageHeader-D00CQ3V_.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/chat-Bx48xJYM.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/projects-D96hYUxc.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/FolderOpenOutline-DhfCg4e_.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/GitBranchOutline-BkabL4yz.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/TimeOutline-DIxn5j2k.js"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/assets/ProjectDetailView-DVonql_C.css"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/overview?session_limit=100&session_status=active"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/research-plans"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/research-delivery"
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/f437891e-818d-4ba6-abed-5d9e6dc46891/delivery-inventory"
+  }
+]

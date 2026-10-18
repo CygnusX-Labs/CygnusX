@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from loguru import logger
 
@@ -20,6 +20,7 @@ class ChatEventService:
 
     enforcement: str
     _events: list[ChatChunk] = field(default_factory=list)
+    _download_call_ids: set[str] = field(default_factory=set)
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> ChatEventService:
@@ -28,6 +29,30 @@ class ChatEventService:
 
     def before_send(self, chunk: ChatChunk) -> ChatChunk:
         """在 SSE 输出前校验事件；生产告警模式不会中断用户流。"""
+        from cygnusx.domain.download_security import (
+            is_download_tool_name,
+            redact_download_text,
+            redact_download_tool_history,
+        )
+
+        call_id = chunk.metadata.get("tool_call_id") or chunk.metadata.get("id")
+        named_download = any(
+            is_download_tool_name(chunk.metadata.get(key)) for key in ("tool_name", "name")
+        )
+        if named_download and isinstance(call_id, str):
+            self._download_call_ids.add(call_id)
+        download_context = named_download or (
+            isinstance(call_id, str) and call_id in self._download_call_ids
+        )
+        safe_metadata = redact_download_tool_history(
+            chunk.metadata, download_context=download_context
+        )
+        assert isinstance(safe_metadata, dict)
+        chunk = replace(
+            chunk,
+            metadata=safe_metadata,
+            content=redact_download_text(chunk.content) if download_context else chunk.content,
+        )
         self._events.append(chunk)
         try:
             validate_event_sequence(self._events, require_completion=False)
