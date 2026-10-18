@@ -6,7 +6,9 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -23,9 +25,7 @@ from cygnusx.infrastructure.database.base import Base, TimestampMixin
 class DownloadExecutionReceiptNonceModel(Base, TimestampMixin):
     __tablename__ = "download_execution_receipt_nonces"
     __table_args__ = (
-        UniqueConstraint(
-            "supervisor_id", "nonce", name="uq_download_execution_receipt_nonce"
-        ),
+        UniqueConstraint("supervisor_id", "nonce", name="uq_download_execution_receipt_nonce"),
         Index("ix_download_execution_receipt_nonces_expires_at", "expires_at"),
     )
 
@@ -41,6 +41,17 @@ class DownloadExecutionBudgetModel(Base, TimestampMixin):
     __tablename__ = "download_execution_budgets"
     __table_args__ = (
         Index("ix_download_execution_budgets_owner_status", "owner_id", "status"),
+        CheckConstraint(
+            "limit_bytes > 0 AND reserved_bytes >= 0 AND reserved_bytes <= limit_bytes",
+            name="ck_download_budget_reservation",
+        ),
+        CheckConstraint(
+            "admitted_bytes IS NULL OR (admitted_bytes >= 0 AND admitted_bytes <= reserved_bytes)",
+            name="ck_download_budget_measurement",
+        ),
+        CheckConstraint(
+            "disk_block_limit_bytes > 0 AND disk_inodes_limit > 0", name="ck_download_budget_disk"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -50,10 +61,12 @@ class DownloadExecutionBudgetModel(Base, TimestampMixin):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=True
     )
-    limit_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    reserved_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    admitted_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    limit_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    admitted_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    disk_block_limit_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    disk_inodes_limit: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     policy_revision: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -66,6 +79,12 @@ class DownloadExecutionAdmissionModel(Base, TimestampMixin):
         UniqueConstraint("task_id", name="uq_download_execution_admission_task"),
         UniqueConstraint("ingestion_id", name="uq_download_execution_admission_ingestion"),
         Index("ix_download_execution_admissions_expiry", "status", "expires_at"),
+        UniqueConstraint(
+            "task_id", "attempt_id", "execution_epoch", name="uq_download_admission_attempt"
+        ),
+        CheckConstraint(
+            "execution_epoch >= 0 AND reserved_bytes >= 0", name="ck_download_admission_epoch"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -91,8 +110,13 @@ class DownloadExecutionAdmissionModel(Base, TimestampMixin):
     policy_revision: Mapped[str] = mapped_column(String(128), nullable=False)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
     caller_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    caller_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    tool_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, default=uuid.uuid4)
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     allowed_destinations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="READY")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="READY")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     execution_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

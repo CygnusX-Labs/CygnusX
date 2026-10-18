@@ -1,0 +1,12 @@
+{
+  "head": "e78fd1efa1df3ebfcb098be973e81e193b1db224",
+  "files": {
+    "frontend/src/components/research/adapters/useResearchWorkflow.ts": "2d1bff0569b525b07d45f36fff976d273c61727c8ca98b35e831022caf84cdfb",
+    "frontend/src/components/research/adapters/__tests__/researchWorkflow.test.ts": "3b6e003e6d06e019a17857a1991f1984397cebc9397d4621316e1839878f6594",
+    "frontend/src/views/TreasureResearchWorkbench.vue": "e6563dbe9090cc7fd8290938b383882159a52540e7901e7b40708076c715149f",
+    "frontend/package-lock.json": "995b06832aa2bdea3b31e912e5ddfee64b61e4957808c2f9719f6ee03c56d35e",
+    "pipelines/Treasure-Seeking_Mouse/functions/seqout-chat/platform-tools.ts": "10c3f26ea0023bc678f3687c94ccc214f59f5a79e14af75df84ba01ec093a7f6",
+    "pipelines/Treasure-Seeking_Mouse/functions/seqout-chat/index.ts": "5a323716d51dccc75c22e279694dd724378b9d8e609b77915a7d831d7101f950",
+    "pipelines/Treasure-Seeking_Mouse/pnpm-lock.yaml": "b065c559a4d10ba171479c8c8b4d06a59cabd0a3366369e7ba39a50f1e92e4cd"
+  }
+}

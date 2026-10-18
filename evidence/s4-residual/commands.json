@@ -1,0 +1,58 @@
+[
+  {
+    "name": "s4-existing",
+    "command": [
+      "uv",
+      "run",
+      "pytest",
+      "tests/unit/test_download_s4a_reliability.py",
+      "tests/unit/test_download_s4b0_reliability.py",
+      "-q"
+    ],
+    "exit_code": 2,
+    "log": "evidence/s4-residual/s4-existing.log"
+  },
+  {
+    "name": "s4-exact-id-probes",
+    "command": [
+      "uv",
+      "run",
+      "pytest",
+      "-c",
+      "pyproject.toml",
+      "evidence/s4-residual/test_residual_isolated.py",
+      "-q",
+      "-s"
+    ],
+    "exit_code": 2,
+    "log": "evidence/s4-residual/s4-exact-id-probes.log"
+  },
+  {
+    "name": "s4-existing-venv",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/unit/test_download_s4a_reliability.py",
+      "tests/unit/test_download_s4b0_reliability.py",
+      "-q"
+    ],
+    "exit_code": 0,
+    "log": "evidence/s4-residual/s4-existing-venv.log"
+  },
+  {
+    "name": "s4-exact-id-probes-venv",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "-c",
+      "pyproject.toml",
+      "evidence/s4-residual/test_residual_isolated.py",
+      "-q",
+      "-s"
+    ],
+    "exit_code": 0,
+    "log": "evidence/s4-residual/s4-exact-id-probes-venv.log"
+  }
+]

@@ -1,12 +1,13 @@
 """Project-scoped dataset APIs; mutation/approval is human JWT only."""
 
-from typing import Any
+import hashlib
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
-from cygnusx.api.deps import CurrentJwtUserId, CurrentUserId, DbSession
+from cygnusx.api.deps import CurrentJwtUserId, CurrentUserId, DbSession, oauth2_scheme
 from cygnusx.application.schemas.dataset import (
     AssetAttach,
     AssetRoleReview,
@@ -243,7 +244,12 @@ async def import_proposal(
 
 @router.post(IMPORT + "/{proposal_id}/{decision}")
 async def decide_import(
-    project_id: UUID, proposal_id: UUID, decision: str, user: CurrentJwtUserId, db: DbSession
+    project_id: UUID,
+    proposal_id: UUID,
+    decision: str,
+    user: CurrentJwtUserId,
+    db: DbSession,
+    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
 ) -> dict[str, Any]:
     service = DatasetImportService(db)
     if decision == "execute":
@@ -255,7 +261,15 @@ async def decide_import(
 
         raise NotFoundError("操作不存在")
     try:
-        return await service.decide(UUID(user), project_id, proposal_id, decision == "approve")
+        return await service.decide(
+            UUID(user),
+            project_id,
+            proposal_id,
+            decision == "approve",
+            auth_session_or_jti_hash=(
+                hashlib.sha256(("jwt-session:" + token).encode()).hexdigest() if token else None
+            ),
+        )
     except ConfirmationError as exc:
         raise ConflictError(exc.message, code=exc.code) from exc
 

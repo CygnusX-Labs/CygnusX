@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_debug: bool = True
     deterministic_test_provider_enabled: bool = False
+    # Trusted operator profiles only; an empty registry denies Admission issuance.
+    download_admission_profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     download_execution_supervisor_id: str | None = None
     download_execution_supervisor_public_key_b64: str | None = Field(default=None, repr=False)
     download_execution_supervisor_url: str | None = None

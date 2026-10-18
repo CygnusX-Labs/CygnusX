@@ -1,0 +1,11 @@
+test_id,status,reason
+SR01,BLOCKED,PG uniqueness retry or stable 409 not observed
+SR02,PASS_ISOLATED_RUNTIME_BLOCKED,Exact Task three sequential aliases verified; PG concurrency absent
+SR03,PASS_ISOLATED_RUNTIME_BLOCKED,105 queued plus 101 legacy; exact union and disjoint verified
+SR04,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR05,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR06,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR07,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR08,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR09,BLOCKED,Independent nonproduction fault runtime authorization absent
+SR10,BLOCKED,Independent nonproduction fault runtime authorization absent

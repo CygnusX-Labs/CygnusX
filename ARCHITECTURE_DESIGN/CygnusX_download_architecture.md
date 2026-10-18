@@ -249,3 +249,9 @@ flowchart TD
 云URI异常吞掉IP拒绝的逻辑已修复；IP特殊地址/非标准表示/映射IPv6/凭据/编码别名拒绝，FTP遍历有深度/条目/超时与循环边界。但Python初次检查不约束外部CLI最终连接：源码`DOWNLOAD_TRANSPORT_RUNTIME_ACCEPTED=False`在Service副作用前和Worker/CLI前阻断所有未经认证运输。真实下载（包括人类表单）本轮不开放；不以max_bytes预估或登记后预算冒充传输硬限制。
 
 继承的S1实际登记链继续使用FileRegistry、savepoint/配额及原Task投影；本轮增加显式Ingestion项目权限复查、用户/下载模块撤权拒绝、错误Task/真实登记到reconcile与配额变化回归。没有重新开发下载器，也没有新建Task/FileRecord/关系表；真实PG并发、队列、CLI网络与挂载需RI05独立验收。
+
+## P0-A / G3 服务端离线增量
+
+P0-A 在原 ingestion 保存持久审批快照，原 Admission 仓储重新查证 Task/owner/project/摘要及固定环境 profile；预算改 BigInteger、未计量值为 NULL，Task/Admission/预算同事务提交并复用原 after_commit。迁移 dwnbinding02 不继承旧执行许可，旧记录保留待对账。首期仅 HTTP；现 GEO HTTPS 预案不自动降级，真实链仍阻断。可信结算与 PG 并发验收未完成。
+
+新增 supervisor_server.py 提供 mTLS 控制服务骨架与默认拒绝编排；没有 Linux enforcement backend、持久 scope journal 或 P0-A authority 实现，未接 Worker。隔离测试仅证明编排，不证明 RX/cgroup/netns/quota/停止事实，真实九场景0/9。全部写/运输门禁保持关闭。交付与回滚详见 docs/implementation/cygnusx-p0a-trusted-admission-budget-binding.md 及 cygnusx-g3-e2-trusted-http-acceptance.md，不能继承历史运行认证。

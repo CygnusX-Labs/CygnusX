@@ -57,7 +57,7 @@ features:
     mode: required_for_freshness
     # 仅声明基线（FRESHNESS_SEARCH_TRIGGERS）之外的领域增量词
     triggers: [标准, 配色规范]
-tool_packs: [workspace, visualization, handoff, agentteams_case]
+tool_packs: [workspace, research, visualization, handoff, agentteams_case]
 handoff:
   allowed_targets: [agent-general, agent-rnaseq, agent-scrna, agent-code]
   max_hops_per_session: 10

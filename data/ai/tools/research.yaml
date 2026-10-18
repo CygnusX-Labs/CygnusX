@@ -9,44 +9,6 @@ platform_tools:
   - platform_list_agent_skills
 builtin_tools:
   - cygnusx_run_kegg_enrichment
-  # Verified read-only research database adapters. Large assets, quantitative
-  # expression, pathway analysis, and STRING remain outside this pack.
-  - cygnusx_gene_search
-  - cygnusx_gene_get
-  - cygnusx_gene_resolve
-  - cygnusx_variant_search
-  - cygnusx_variant_get
-  - cygnusx_variant_resolve
-  - cygnusx_chem_search
-  - cygnusx_chem_get
-  - cygnusx_chem_resolve
-  - biothings_describe
-  - cygnusx_genome_lookup
-  - cygnusx_genome_homology
-  - cygnusx_genome_region
-  - cygnusx_genome_sequence
-  - cygnusx_plant_search
-  - cygnusx_plant_get
-  - cygnusx_te_search
-  - cygnusx_te_get
-  - cygnusx_expression_studies
-  - cygnusx_expression_manifest
-  - cygnusx_pathway_get
-  - cygnusx_protein_resolve
-  - cygnusx_protein_features
-  - cygnusx_protein_sequence
-  - cygnusx_domain_get
-  - cygnusx_domain_proteins
-  - cygnusx_structure_search
-  - cygnusx_structure_get
-  - cygnusx_structure_prediction
-  - cygnusx_clinvar_search
-  - cygnusx_clinvar_get
-  - cygnusx_target_search
-  - cygnusx_target_associations
-  - cygnusx_target_evidence
-  - cygnusx_literature_get
-  - cygnusx_literature_annotations
   # Shared schemas come from CAPABILITY_MODELS; runtime read flags/scopes still apply.
   - bioops_downloads_describe_capabilities
   - bioops_dataset_discover
@@ -58,3 +20,49 @@ builtin_tools:
   # Prepare only: existing human confirmation, never transfer or task execution.
   - bioops_downloads_prepare
   - bioops_dataset_prepare_import
+
+# These adapters are MCP presets, rather than cygnusx-tools builtin functions.
+# Keep the whitelist explicit so every Agent using this pack receives only the
+# read-only database operations declared here.
+mcp_ids:
+  - "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+  - "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+mcp_tools:
+  "7711b9e0-845c-5ff0-85a1-4578d15b009e":
+    - cygnusx_gene_search
+    - cygnusx_gene_get
+    - cygnusx_gene_resolve
+    - cygnusx_variant_search
+    - cygnusx_variant_get
+    - cygnusx_variant_resolve
+    - cygnusx_chem_search
+    - cygnusx_chem_get
+    - cygnusx_chem_resolve
+    - biothings_describe
+  "9110de7a-d7bf-557c-94f1-50aa0a4af67b":
+    - cygnusx_genome_lookup
+    - cygnusx_genome_homology
+    - cygnusx_genome_region
+    - cygnusx_genome_sequence
+    - cygnusx_plant_search
+    - cygnusx_plant_get
+    - cygnusx_te_search
+    - cygnusx_te_get
+    - cygnusx_expression_studies
+    - cygnusx_expression_manifest
+    - cygnusx_pathway_get
+    - cygnusx_protein_resolve
+    - cygnusx_protein_features
+    - cygnusx_protein_sequence
+    - cygnusx_domain_get
+    - cygnusx_domain_proteins
+    - cygnusx_structure_search
+    - cygnusx_structure_get
+    - cygnusx_structure_prediction
+    - cygnusx_clinvar_search
+    - cygnusx_clinvar_get
+    - cygnusx_target_search
+    - cygnusx_target_associations
+    - cygnusx_target_evidence
+    - cygnusx_literature_get
+    - cygnusx_literature_annotations

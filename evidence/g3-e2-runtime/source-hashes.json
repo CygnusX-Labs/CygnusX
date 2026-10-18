@@ -1,0 +1,5 @@
+{
+  "src/cygnusx/infrastructure/download/supervisor_server.py": "f0d6516d4c37053345def21b888403382bdca36e5508eb18750f6383d07aff0d",
+  "tests/unit/test_download_supervisor_server.py": "e8e06de4242e7d7cdd230fdd2d49d1c28f38db3f57a7197d88828ac3e60d2d10",
+  "docs/implementation/cygnusx-g3-e2-trusted-http-acceptance.md": "e41fef5471f86e74fae36c8d60f89225ef29a30891de3f5417bf3c1ae90a998d"
+}

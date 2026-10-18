@@ -1,0 +1,15 @@
+test_id,scenario,status,reason
+RA01,Legacy formal listening API runtime,BLOCKED,Independent nonproduction runtime authorization absent
+RA02,LangGraph formal listening API runtime,BLOCKED,Independent nonproduction runtime authorization absent
+RA03,Node original chat complete tool loop,BLOCKED,Independent nonproduction runtime authorization absent
+RA04,Node delegation identity isolation,BLOCKED,Independent nonproduction runtime authorization absent
+RA05,Controlled metadata provenance,BLOCKED,Independent nonproduction runtime authorization absent
+RA06,PG assets with FileRegistry SHA,BLOCKED,Independent nonproduction runtime authorization absent
+RA07,Legal persistent prepare, no download task,BLOCKED,Independent nonproduction runtime authorization absent
+RA08,Chromium original React mount,BLOCKED,Independent nonproduction runtime authorization absent
+RA09,Dataset cards and evidence digest,BLOCKED,Independent nonproduction runtime authorization absent
+RA10,Permission/session revoke isolation,BLOCKED,Independent nonproduction runtime authorization absent
+RA11,Durable cursor reconnect and dedup,BLOCKED,Independent nonproduction runtime authorization absent
+RA12,Prepare pending human and no execution,BLOCKED,Independent nonproduction runtime authorization absent
+RA13,Fault/i18n/responsive browser,BLOCKED,Independent nonproduction runtime authorization absent
+RA14,Process restart and producer recovery,BLOCKED,Independent nonproduction runtime authorization absent

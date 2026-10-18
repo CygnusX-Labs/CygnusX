@@ -78,6 +78,21 @@ describe('T11–T14/T24/T25/T35/T41/T42 safe workflow adapter', () => {
     expect(w.view.gaps).toContain('VERSION_LIST_BOUNDED_NOT_COMPLETE_HISTORY')
     expect(calls.detail).not.toHaveBeenCalled()
   })
+  it('clears historical data when a successful catalog refresh removes scopes', async () => {
+    const w = mount()
+    await w.action({ type: 'capabilities.refresh' })
+    w.view.reports = [{ id: 'private-report', kind: 'science', state: 'READY', integrity: 'VERIFIED' }]
+    w.view.sources = [{ url: 'https://www.ncbi.nlm.nih.gov/geo/', digest: 'private-source' }]
+    w.view.accession = 'GSE1'
+    calls.catalog.mockResolvedValue({ tools: [] })
+    await w.action({ type: 'capabilities.refresh' })
+    expect(w.view.reports).toEqual([])
+    expect(w.view.sources).toEqual([])
+    expect(w.view.accession).toBeUndefined()
+    expect(w.view.allowedTools).toEqual([])
+    expect(w.view.busy).toBe(false)
+    expect(calls.invoke).not.toHaveBeenCalled()
+  })
   it('restores status from the Task query rather than historical proposal success', async () => {
     calls.related.mockResolvedValue([{ dataset_analysis: { analysis_proposal_id: 'p', task_id: 'task', state: 'succeeded' } }])
     calls.status.mockResolvedValue({ result: { task_id: 'task', status: 'failed' } })
@@ -90,11 +105,29 @@ describe('T11–T14/T24/T25/T35/T41/T42 safe workflow adapter', () => {
     const w = mount()
     await w.action({ type: 'capabilities.refresh' })
     w.view.proposals = [{ id: 'old', kind: 'import', state: 'APPROVED', hash: '', expires: '', details: [] }]
+    Object.assign(w.view, {
+      accession: 'GSE1', datasetId: 'private-dataset', versionId: 'v1', manifestHash: 'private-hash',
+      status: 'RESOLVED', files: [{ id: 'private-file', label: 'file', mode: 'processed', size: 12 }],
+      sources: [{ url: 'https://www.ncbi.nlm.nih.gov/geo/', digest: 'source-hash' }],
+      samples: [{ id: 'private-sample', summary: 'sample' }],
+      relations: [{ from: 'a', to: 'b', relation: 'private-relation' }],
+      reports: [{ id: 'private-report', kind: 'science', state: 'READY', integrity: 'VERIFIED' }],
+      workflows: [{ id: 'flow', label: 'flow' }], gaps: ['old-gap'], deliveryStatus: 'RECORDED_REFERENCES',
+    })
     calls.catalog.mockRejectedValue({ response: { status: 403 } })
     await w.action({ type: 'records.refresh' })
     expect(w.view.catalogStatus).toBe('UNAVAILABLE')
     expect(w.view.proposals).toEqual([])
     expect(w.view.allowedTools).toEqual([])
+    for (const field of ['files', 'sources', 'samples', 'relations', 'reports', 'workflows', 'gaps'] as const) expect(w.view[field]).toEqual([])
+    expect(w.view.accession).toBeUndefined()
+    expect(w.view.datasetId).toBeUndefined()
+    expect(w.view.versionId).toBeUndefined()
+    expect(w.view.manifestHash).toBeUndefined()
+    expect(w.view.status).toBeUndefined()
+    expect(w.view.deliveryStatus).toBe('UNKNOWN')
+    expect(w.view.open).toBe(true)
+    expect(w.view.error).toBeTruthy()
   })
   it('inspects public metadata without a project and retains multiple runs, samples and gaps', async () => {
     calls.invoke.mockResolvedValue({ result: { primary_accession: 'GSE1', status: 'RESOLVED', samples: [{ sample_key: 'GSM1', title: ['sample'] }], runs: [{ run_accession: 'SRR1', sample_accession: 'GSM1' }, { run_accession: 'SRR2', sample_accession: 'GSM1' }], files: [], related_accessions: [{ from: 'GSM1', to: 'SRX1', relation: 'sample_relation' }, { from: 'SRX1', to: 'SRR1', relation: 'ena_read_run' }], confidence_flags: ['groups_unknown'], source_evidence: [{ url: 'https://www.ncbi.nlm.nih.gov/geo/', response_sha256: 'abc' }] } })

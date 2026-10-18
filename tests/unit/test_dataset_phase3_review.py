@@ -18,7 +18,7 @@ from cygnusx.infrastructure.database.models.dataset import (
 )
 from cygnusx.infrastructure.database.models.user import UserModel
 from tests.unit.test_dataset_import_handoff import imports as imports
-from tests.unit.test_dataset_import_handoff import request
+from tests.unit.test_dataset_import_handoff import processed_http_fixture, request
 from tests.unit.test_dataset_phase3 import registry as registry
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -46,17 +46,23 @@ async def test_human_review_freeze_is_stable_and_revision_preserves_source(regis
     frozen = await handoffs.manifest(owner, project, ds.id, version.id, freeze=True)
     assert frozen["provenance"]["review_annotations"]["assay_type"] == "bulk_rnaseq"
     assert frozen == await handoffs.manifest(owner, project, ds.id, version.id, freeze=True)
-    from cygnusx.application.services.agent_tool_gateway import AgentToolGateway
     from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
-    from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
+    from cygnusx.application.services.agent_tool_gateway import AgentToolGateway
+    from cygnusx.infrastructure.database.models.agent_tool_invocation import (
+        AgentToolInvocationModel,
+    )
 
     context = ToolInvocationContext(
-        user_id=str(owner), session_id="inspection", db=db,
+        user_id=str(owner),
+        session_id="inspection",
+        db=db,
         extra={"project_id": str(project)},
     )
     gateway = AgentToolGateway(db)
     inspected = await gateway._dataset_tool(
-        context, AgentToolInvocationModel(), "dataset.inspect",
+        context,
+        AgentToolInvocationModel(),
+        "dataset.inspect",
         {"dataset_id": str(ds.id), "version_id": str(version.id)},
     )
     assert inspected["handoff_frozen"] is True
@@ -72,7 +78,9 @@ async def test_human_review_freeze_is_stable_and_revision_preserves_source(regis
     )
     assert cloned.file_record_id == files[0].id and cloned.checksum_status == "PENDING"
     live = await gateway._dataset_tool(
-        context, AgentToolInvocationModel(), "dataset.inspect",
+        context,
+        AgentToolInvocationModel(),
+        "dataset.inspect",
         {"dataset_id": str(ds.id), "version_id": str(revision.id)},
     )
     assert live["manifest_hash"] and live["handoff_frozen"] is False
@@ -83,9 +91,9 @@ async def test_permission_and_quota_revoked_after_approval_prevent_submit(
 ):
     db, _, owner, _, project, *_ = registry
     service, *_ = imports
-    proposal = await service.prepare(owner, project, request())
+    proposal = await service.prepare(owner, project, processed_http_fixture(imports, monkeypatch))
     iid = UUID(proposal["proposal_id"])
-    await service.decide(owner, project, iid, True)
+    await service.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
     monkeypatch.setattr(import_module, "require_import_write", lambda: None)
     user = await db.get(UserModel, owner)
     old_quota = user.storage_quota
@@ -438,10 +446,6 @@ async def test_rest_jwt_owner_scope_and_closed_execute(registry, imports, monkey
 async def test_same_geo_explicit_new_import_versions_do_not_overwrite(
     registry, imports, monkeypatch
 ):
-    from types import SimpleNamespace
-
-    from cygnusx.infrastructure.database.models.task import TaskModel
-
     db, service, owner, _, project, *_ = registry
     importer, *_ = imports
     ds = await service.create(owner, project, DatasetCreate(name="same GSE"))
@@ -451,21 +455,18 @@ async def test_same_geo_explicit_new_import_versions_do_not_overwrite(
     original.source_snapshot = {"retained": "original"}
     monkeypatch.setattr(import_module, "require_import_write", lambda: None)
 
-    async def submit(self, uid, args):
-        task = TaskModel(user_id=owner, flow_id="download", name="fixture", status="pending")
-        db.add(task)
-        await db.flush()
-        return SimpleNamespace(id=task.id)
-
-    monkeypatch.setattr(import_module.DownloadService, "submit", submit)
     versions = []
     for _ in range(2):
         req = request().model_copy(update={"dataset_id": ds.id})
         prepared = await importer.prepare(owner, project, req)
         iid = UUID(prepared["proposal_id"])
-        await importer.decide(owner, project, iid, True)
-        result = await importer.execute(owner, project, iid)
-        versions.append(result["dataset_version_id"])
+        await importer.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
+        # Existing DatasetService remains version authority; raw execution stays closed.
+        version = await service.new_version(
+            owner, project, ds.id, "explicit historical import", copy_latest=False
+        )
+        version.source_snapshot = prepared["preview"]
+        versions.append(str(version.id))
     assert versions[0] != versions[1]
     assert original.source_snapshot == {"retained": "original"}
     assert (

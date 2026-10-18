@@ -56,7 +56,7 @@ features:
     build_output_dir: mcp-builds   # 沙箱内相对 /workspace 的路径
 
 # workspace（文件操作）+ memory（跨会话构建上下文）+ handoff（超出构建范围时转交）
-tool_packs: [workspace, memory, handoff]
+tool_packs: [workspace, research, memory, handoff]
 handoff:
   allowed_targets: [agent-general, agent-code]
   max_hops_per_session: 10

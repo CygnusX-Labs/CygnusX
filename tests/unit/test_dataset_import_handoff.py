@@ -93,6 +93,7 @@ def imports(registry, monkeypatch, tmp_path):
 
     monkeypatch.setattr(managed_file_resolver, "get_path_factory", lambda: factory)
     settings = SimpleNamespace(
+        download_admission_profiles={},
         dataset_discovery_readonly=True,
         dataset_import_write=True,
         dataset_import_max_bytes=10000,
@@ -136,7 +137,9 @@ async def test_prepare_import_no_task_file_effect_idempotent_and_gate_closed(reg
     assert set(factory.data_root.rglob("*")) == before
     with pytest.raises(ConflictError):
         await service.prepare(owner, project, req.model_copy(update={"name": "tampered"}))
-    await service.decide(owner, project, UUID(proposal["proposal_id"]), True)
+    await service.decide(
+        owner, project, UUID(proposal["proposal_id"]), True, auth_session_or_jti_hash="a" * 64
+    )
     with pytest.raises(AuthorizationError, match="门禁"):
         await service.execute(owner, project, UUID(proposal["proposal_id"]))
     assert not db.sync.scalars(sa.select(TaskModel)).all()
@@ -182,12 +185,12 @@ async def test_import_forgery_rejected_and_no_auto_authorization(registry, impor
     monkeypatch.setattr(
         module, "require_import_write", lambda: None
     )  # isolated future adapter only
-    with pytest.raises(confirmations.ConfirmationError):
+    with pytest.raises(ConflictError, match="持久记录"):
         await service.execute(owner, project, iid)
     row = await db.get(DatasetIngestionModel, iid)
     row.normalized_request = {**row.normalized_request, "max_bytes": 9999}
     with pytest.raises(ConflictError):
-        await service.decide(owner, project, iid, True)
+        await service.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
     with pytest.raises(SchemaError):
         ImportPrepare.model_validate({**request().model_dump(), "user_confirmed": True})
 
@@ -200,41 +203,46 @@ async def test_isolated_import_task_link_file_integrity_partial_and_restore(
     service, geo, factory, _ = imports
     proposal = await service.prepare(owner, project, request())
     iid = UUID(proposal["proposal_id"])
-    await service.decide(owner, project, iid, True)
+    await service.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
     monkeypatch.setattr(module, "require_import_write", lambda: None)
-    calls = []
+    # Seed a historical raw import; new raw execution must stay blocked.
+    from cygnusx.application.schemas.dataset import DatasetCreate
 
-    async def submit(self, uid, req, *, project_id=None):
-        assert uid == str(owner) and req.accession == "SRR1"
-        task = TaskModel(user_id=owner, flow_id="download", name="fixture", status=task_status)
-        db.add(task)
-        await db.flush()
-        folder = factory.user_root(uid) / req.target_directory / "SRR1"
-        folder.mkdir(parents=True)
-        path = folder / "GSM1_R1.fastq"
-        path.write_bytes(b"@r\nACGT\n+\nIIII\n")
-        db.add(
-            FileRecordModel(
-                user_id=owner,
-                original_name=path.name,
-                storage_path=path.relative_to(factory.data_root).as_posix(),
-                directory=req.target_directory,
-                size=path.stat().st_size,
-                task_id=task.id,
-                source="download",
-                status="active",
-                owner_scope="personal",
-                lifecycle_status="active",
-            )
+    dataset = await registry_service.create(owner, project, DatasetCreate(name="historical raw"))
+    version = db.sync.scalar(
+        sa.select(DatasetVersionModel).where(DatasetVersionModel.dataset_id == dataset.id)
+    )
+    version.source_snapshot = deepcopy(geo.candidate)
+    task = TaskModel(
+        user_id=owner,
+        parameters={"project_id": str(project)},
+        flow_id="download",
+        name="historical",
+        status=task_status,
+    )
+    db.add(task)
+    await db.flush()
+    row = await db.get(DatasetIngestionModel, iid)
+    row.version_id, row.task_ids, row.state = version.id, [str(task.id)], "QUEUED"
+    folder = factory.user_root(str(owner)) / "projects/owned/downloads/SRR1"
+    folder.mkdir(parents=True)
+    path = folder / "GSM1_R1.fastq"
+    path.write_bytes(bytes([10]).join([b"@r", b"ACGT", b"+", b"IIII", b""]))
+    db.add(
+        FileRecordModel(
+            user_id=owner,
+            original_name=path.name,
+            storage_path=path.relative_to(factory.data_root).as_posix(),
+            directory="projects/owned/downloads",
+            size=path.stat().st_size,
+            task_id=task.id,
+            source="download",
+            status="active",
+            owner_scope="personal",
+            lifecycle_status="active",
         )
-        calls.append(task.id)
-        return SimpleNamespace(id=task.id)
-
-    monkeypatch.setattr(module.DownloadService, "submit", submit)
-    queued = await service.execute(owner, project, iid)
-    assert len(queued["tasks"]) == 1
-    assert (await service.execute(owner, project, iid))["tasks"][0]["task_id"] == str(calls[0])
-    assert len(calls) == 1
+    )
+    await db.flush()
     complete = await service.reconcile(owner, project, iid)
     assert complete["state"] == ("COMPLETED" if task_status == "success" else "PARTIAL")
     row = await db.get(DatasetIngestionModel, iid)
@@ -256,10 +264,11 @@ async def test_ambiguous_submit_not_replayed_and_source_change_invalidates(
 ):
     db, _, owner, _, project, *_ = registry
     service, geo, *_ = imports
-    proposal = await service.prepare(owner, project, request())
+    proposal = await service.prepare(owner, project, processed_http_fixture(imports, monkeypatch))
     iid = UUID(proposal["proposal_id"])
-    await service.decide(owner, project, iid, True)
+    await service.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
     monkeypatch.setattr(module, "require_import_write", lambda: None)
+    await db.commit()
     geo.candidate["source_evidence"][0]["response_sha256"] = "b" * 64
     with pytest.raises(ConflictError, match="来源"):
         await service.execute(owner, project, iid)
@@ -273,6 +282,51 @@ async def test_ambiguous_submit_not_replayed_and_source_change_invalidates(
     monkeypatch.setattr(module.DownloadService, "submit", timeout)
     with pytest.raises(ConflictError, match="对账"):
         await service.execute(owner, project, iid)
-    with pytest.raises(ConflictError, match="对账"):
+    with pytest.raises(ConflictError) as replay:
         await service.execute(owner, project, iid)
+    assert replay.value.code == "APPROVAL_SNAPSHOT_MISMATCH"
     assert calls == [1]
+
+
+def processed_http_fixture(imports, monkeypatch):
+    """Synthetic metadata-only HTTP fixture; no production URL policy change."""
+    _, geo, _, settings = imports
+    url = "http://fixture.invalid/counts.tsv"
+    geo.candidate["files"][0]["url"] = url
+    original = module.trusted_url
+
+    def fixture_url(value, **kwargs):
+        return value if value == url else original(value, **kwargs)
+
+    monkeypatch.setattr(module, "trusted_url", fixture_url)
+    settings.download_admission_profiles = {
+        "offline-env": {
+            "policy_revision": "offline",
+            "caller_id": "offline-worker",
+            "allowed_destinations": [{"host": "fixture.invalid", "port": 80}],
+        }
+    }
+    return request().model_copy(update={"mode": "processed", "selected_ids": [url]})
+
+
+@pytest.mark.parametrize("mode", ["raw", "https"])
+async def test_unaccepted_import_modes_do_not_consume_approval(
+    registry, imports, monkeypatch, mode
+):
+    db, _, owner, _, project, *_ = registry
+    service, geo, *_ = imports
+    req = request()
+    if mode == "https":
+        req = req.model_copy(
+            update={"mode": "processed", "selected_ids": [geo.candidate["files"][0]["url"]]}
+        )
+    prepared = await service.prepare(owner, project, req)
+    iid = UUID(prepared["proposal_id"])
+    await service.decide(owner, project, iid, True, auth_session_or_jti_hash="a" * 64)
+    monkeypatch.setattr(module, "require_import_write", lambda: None)
+    with pytest.raises(ConflictError) as caught:
+        await service.execute(owner, project, iid)
+    assert caught.value.code == "DOWNLOAD_ADMISSION_MODE_BLOCKED"
+    row = await db.get(DatasetIngestionModel, iid)
+    assert row.approval_snapshot["nonce_status"] == "APPROVED"
+    assert not db.sync.scalars(sa.select(TaskModel)).all()

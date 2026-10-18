@@ -53,7 +53,15 @@ export function useResearchWorkflow(session: Ref<ResearchSession | null>) {
       // Refresh authorization for every action; historical cards are never permissions.
       const catalog = await agentToolsApi.capabilities(current.session_id)
       if (!valid()) return
-      view.allowedTools = catalog.tools.map(tool => tool.capability_id)
+      const allowedTools = catalog.tools.map(tool => tool.capability_id)
+      if (view.allowedTools?.some(tool => !allowedTools.includes(tool))) {
+        Object.assign(view, empty(!!current.project_id), {
+          open: !background, busy: true, accession: undefined, versionId: undefined,
+          datasetId: undefined, manifestHash: undefined, status: undefined, error: '',
+        })
+        proposalVersions.clear()
+      }
+      view.allowedTools = allowedTools
       view.catalogStatus = 'AVAILABLE'
       if (view.allowedTools.includes('downloads.describe_capabilities')) {
         const description = row(await invoke('downloads.describe_capabilities'))
@@ -168,7 +176,18 @@ export function useResearchWorkflow(session: Ref<ResearchSession | null>) {
           if (valid()) view.proposals = view.proposals.map(item => item.id === intent.proposalId ? { ...item, state: str(row(result).state) } : item)
         }
       }
-    } catch (error) { if (valid()) { view.error = researchFailure(error); view.catalogStatus = 'UNAVAILABLE'; view.allowedTools = []; view.downloadCapabilities = []; view.proposals = []; view.tasks = []; view.assets = []; view.datasets = []; proposalVersions.clear() } }
+    } catch (error) {
+      if (valid()) {
+        // A failed authorization refresh invalidates every prior research projection.
+        // Keep the panel visible so the failure remains actionable.
+        Object.assign(view, empty(!!current.project_id), {
+          open: !background, accession: undefined, versionId: undefined,
+          datasetId: undefined, manifestHash: undefined, status: undefined,
+          error: researchFailure(error), catalogStatus: 'UNAVAILABLE',
+        })
+        proposalVersions.clear()
+      }
+    }
     finally { if (valid()) view.busy = false }
   }
   return { view, action }

@@ -12,6 +12,7 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,10 @@ from cygnusx.application.services.agent_tool_gateway import require_agent_write_
 from cygnusx.application.services.dataset_service import DatasetService
 from cygnusx.application.services.download_service import DownloadService
 from cygnusx.application.services.task_service import TaskService
-from cygnusx.application.services.tool_confirmation_service import get_tool_confirmation_service
+from cygnusx.application.services.tool_confirmation_service import (
+    ConfirmationRecord,
+    get_tool_confirmation_service,
+)
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import (
     AuthorizationError,
@@ -75,7 +79,9 @@ class DatasetImportService:
         self.geo = geo or metadata_adapter()
         self.confirmations = get_tool_confirmation_service()
 
-    async def discover(self, owner: uuid.UUID, project_id: uuid.UUID | None, value: str) -> dict[str, Any]:
+    async def discover(
+        self, owner: uuid.UUID, project_id: uuid.UUID | None, value: str
+    ) -> dict[str, Any]:
         require_dataset_read()
         if project_id is not None:
             await self.repo.project(owner, project_id)
@@ -320,7 +326,13 @@ class DatasetImportService:
         }
 
     async def decide(
-        self, owner: uuid.UUID, project_id: uuid.UUID, ingestion_id: uuid.UUID, approve: bool
+        self,
+        owner: uuid.UUID,
+        project_id: uuid.UUID,
+        ingestion_id: uuid.UUID,
+        approve: bool,
+        *,
+        auth_session_or_jti_hash: str | None = None,
     ) -> dict[str, Any]:
         row = await self.owned(owner, project_id, ingestion_id, lock=True)
         record = await self.confirmations.get_status(str(owner), row.confirmation_id or "")
@@ -331,14 +343,112 @@ class DatasetImportService:
         ):
             raise ConflictError("预案过期或参数已变化", code="CONFIRMATION_MISMATCH")
         if approve:
-            await self.confirmations.approve_by_human(
+            if (
+                not auth_session_or_jti_hash
+                or len(auth_session_or_jti_hash) != 64
+                or any(c not in "0123456789abcdef" for c in auth_session_or_jti_hash)
+            ):
+                raise AuthorizationError(
+                    "审批需要已认证 JWT 来源", code="APPROVAL_IDENTITY_REQUIRED"
+                )
+            if row.approval_snapshot is not None:
+                self.validate_approval_snapshot(row, record, owner, project_id)
+                return await self.view(owner, project_id, ingestion_id)
+            if record.status != "PENDING":
+                # Redis success followed by SQL failure must not reconstruct provenance.
+                raise ConflictError(
+                    "审批持久记录缺失，请重新生成预案", code="APPROVAL_SNAPSHOT_MISSING"
+                )
+            approved = await self.confirmations.approve_by_human(
                 user_id=str(owner), confirmation_id=record.confirmation_id
             )
+            now = datetime.now(UTC).isoformat()
+            row.approval_snapshot = {
+                "approval_id": approved.confirmation_id,
+                "approval_version": 1,
+                "actor_id": str(owner),
+                "owner_id": str(owner),
+                "project_id": str(project_id),
+                "ingestion_id": str(row.id),
+                "approved_at": now,
+                "auth_session_or_jti_hash": auth_session_or_jti_hash,
+                "proposal_digest": digest(row.normalized_request),
+                "request_digest": row.parameters_hash,
+                "source_digest": digest(row.normalized_request["candidate"]),
+                "method": "processed_http"
+                if row.normalized_request["input"]["mode"] == "processed"
+                else "unsupported_raw",
+                "max_budget": row.normalized_request["max_bytes"],
+                "scope": "dataset.execute_import",
+                "expires_at": approved.expires_at.isoformat(),
+                "revoked_at": None,
+                "nonce_hash": hashlib.sha256(approved.confirmation_id.encode()).hexdigest(),
+                "nonce_status": "APPROVED",
+                "status": "APPROVED",
+                "consumed_at": None,
+            }
         else:
             await self.confirmations.reject(
                 user_id=str(owner), confirmation_id=record.confirmation_id
             )
+            if row.approval_snapshot is not None:
+                row.approval_snapshot = {
+                    **row.approval_snapshot,
+                    "status": "REJECTED",
+                    "revoked_at": datetime.now(UTC).isoformat(),
+                    "nonce_status": "REJECTED",
+                }
+        await self.db.flush()
         return await self.view(owner, project_id, ingestion_id)
+
+    @staticmethod
+    def validate_approval_snapshot(
+        row: DatasetIngestionModel,
+        record: ConfirmationRecord,
+        owner: uuid.UUID,
+        project_id: uuid.UUID,
+    ) -> None:
+        """Both durable provenance and the live one-use confirmation are required."""
+        snapshot = row.approval_snapshot
+        if not snapshot:
+            raise ConflictError(
+                "审批持久记录缺失，请重新生成预案", code="APPROVAL_SNAPSHOT_MISSING"
+            )
+        expected = {
+            "approval_id": record.confirmation_id,
+            "approval_version": 1,
+            "actor_id": str(owner),
+            "owner_id": str(owner),
+            "project_id": str(project_id),
+            "ingestion_id": str(row.id),
+            "proposal_digest": digest(row.normalized_request),
+            "request_digest": row.parameters_hash,
+            "source_digest": digest(row.normalized_request["candidate"]),
+            "method": "processed_http"
+            if row.normalized_request["input"]["mode"] == "processed"
+            else "unsupported_raw",
+            "max_budget": row.normalized_request["max_bytes"],
+            "scope": "dataset.execute_import",
+            "expires_at": record.expires_at.isoformat(),
+            "revoked_at": None,
+            "nonce_hash": hashlib.sha256(record.confirmation_id.encode()).hexdigest(),
+            "nonce_status": "APPROVED",
+            "status": "APPROVED",
+            "consumed_at": None,
+        }
+        identity_hash = snapshot.get("auth_session_or_jti_hash")
+        if (
+            any(snapshot.get(key) != value for key, value in expected.items())
+            or not isinstance(identity_hash, str)
+            or len(identity_hash) != 64
+            or any(c not in "0123456789abcdef" for c in identity_hash)
+            or record.status != "APPROVED"
+            or datetime.now(UTC) > record.expires_at
+            or record.user_id != str(owner)
+            or record.kind != "tool"
+            or record.tool_name != "dataset.execute_import"
+        ):
+            raise ConflictError("审批持久记录与确认不匹配", code="APPROVAL_SNAPSHOT_MISMATCH")
 
     async def execute(
         self, owner: uuid.UUID, project_id: uuid.UUID, ingestion_id: uuid.UUID
@@ -360,12 +470,28 @@ class DatasetImportService:
         ):
             raise ConflictError("预案参数或确认发生变化", code="CONFIRMATION_MISMATCH")
         bound = row.normalized_request
+        self.validate_approval_snapshot(row, record, owner, project_id)
         if (
             bound["owner_id"] != str(owner)
             or bound["project_id"] != str(project_id)
             or bound["proposal_id"] != str(row.id)
         ):
             raise AuthorizationError("审批上下文不匹配")
+        requests = bound.get("requests", [])
+        profiles = get_settings().download_admission_profiles
+        if (
+            bound.get("input", {}).get("mode") != "processed"
+            or len(requests) != 1
+            or requests[0].get("source") != "direct_link"
+            or not requests[0].get("links")
+            or any(urlsplit(url).scheme != "http" for url in requests[0]["links"])
+        ):
+            raise ConflictError(
+                "仅支持单一 processed HTTP 预案", code="DOWNLOAD_ADMISSION_MODE_BLOCKED"
+            )
+        if len(profiles) != 1:
+            raise ConflictError("可信执行身份未配置", code="DOWNLOAD_ADMISSION_PROFILE_BLOCKED")
+        environment_id, profile = next(iter(profiles.items()))
         # Source snapshot change/removal after approval invalidates old proposal.
         candidate = await self.geo.resolve(bound["input"]["accession"], refresh=True)
         refs = {e["url"]: e["response_sha256"] for e in candidate["source_evidence"]}
@@ -378,11 +504,16 @@ class DatasetImportService:
         root = get_path_factory().user_root(str(owner))
         if root.exists() and shutil.disk_usage(root).free < bound["max_bytes"]:
             raise ValidationError("审批后可用空间不足", code="INSUFFICIENT_SPACE")
-        await self.confirmations.consume_tool_confirmation(
+        consumed = await self.confirmations.consume_tool_confirmation(
             str(owner), row.confirmation_id or "", "dataset.execute_import", bound
         )
+        row.approval_snapshot = {
+            **(row.approval_snapshot or {}),
+            "nonce_status": "CONSUMED",
+            "consumed_at": (consumed.consumed_at or datetime.now(UTC)).isoformat(),
+        }
         row.state = "SUBMITTING"
-        await self.db.commit()
+        await self.db.flush()
         try:
             if row.version_id is None:
                 target = bound["input"].get("dataset_id")
@@ -407,17 +538,39 @@ class DatasetImportService:
                     ).scalar_one()
                 version.source_snapshot = bound["candidate"]
                 row.version_id = version.id
-                await self.db.commit()
+                await self.db.flush()
             for index, request in enumerate(bound["requests"]):
                 task = await DownloadService(self.db).submit(
-                    str(owner), DownloadRequest.model_validate({
-                        **request, "request_key": f"ingestion:{row.id}:{index}"
-                    }), project_id=project_id,
+                    str(owner),
+                    DownloadRequest.model_validate(
+                        {**request, "request_key": f"ingestion:{row.id}:{index}"}
+                    ),
+                    project_id=project_id,
                 )
                 row.task_ids = [*row.task_ids, str(task.id)]
-                await self.db.commit()
+                await self.db.flush()
+                from cygnusx.infrastructure.database.repositories.download_execution_admission import (
+                    issue_processed_http_admission,
+                )
+
+                await issue_processed_http_admission(
+                    self.db,
+                    ingestion_id=row.id,
+                    task_id=task.id,
+                    owner_id=owner,
+                    project_id=project_id,
+                    confirmation_id=row.confirmation_id or "",
+                    request_digest=row.parameters_hash,
+                    limit_bytes=bound["max_bytes"],
+                    policy_revision=profile.get("policy_revision", ""),
+                    environment_id=environment_id,
+                    caller_id=profile.get("caller_id", ""),
+                    allowed_destinations=profile.get("allowed_destinations", []),
+                    expires_at=record.expires_at,
+                )
             row.state = "QUEUED"
-            await self.db.commit()
+            # The existing request dependency owns commit and after_commit dispatch.
+            await self.db.flush()
         except Exception:
             await self.db.rollback()
             raise ConflictError(

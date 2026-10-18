@@ -50,7 +50,7 @@ features:
   limits:
     summary_chars: 2000
     max_files_to_read: 50
-tool_packs: [workspace_readonly]
+tool_packs: [workspace_readonly, research]
 handoff:
   allowed_targets:
     - agent-general

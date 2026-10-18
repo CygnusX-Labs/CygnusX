@@ -1,0 +1,96 @@
+{
+  "head": {
+    "exit_code": 0,
+    "stdout": "e78fd1efa1df3ebfcb098be973e81e193b1db224\n",
+    "stderr": ""
+  },
+  "branch": {
+    "exit_code": 0,
+    "stdout": "main\n",
+    "stderr": ""
+  },
+  "dirty": {
+    "exit_code": 0,
+    "stdout": " M Protocol/FlowFrame\n M frontend/src/components/research/adapters/__tests__/researchWorkflow.test.ts\n M frontend/src/components/research/adapters/useResearchWorkflow.ts\n M pipelines/ATACFlow\n M pipelines/RNAFlow\n M pipelines/tools\n?? docs/info/26.10.19/2026-10-18_19.10.06.png\n?? docs/info/26.10.19/CygnusX-BioOps-Single-File-Architecture-Audit-and-Batch-Test-Brief.md\n?? docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/\n?? evidence/iat-r3-runtime/\n?? evidence/p0a/\n",
+    "stderr": ""
+  },
+  "diff_sha256": "ec5510e430471b03aeef80acf5caba45e6155842006d650d7e60500e054f1c66",
+  "submodules": {
+    "exit_code": 0,
+    "stdout": " 977ad657bbe7d49f2200a5f3f550b70f25234f3d Protocol/FlowFrame (heads/main)\n 4a68b347ba3b9497a86eed2603b6577afc3c2f27 pipelines/ATACFlow (heads/main)\n a41746e5712ea5898e2bf599356d86d5ed4e2711 pipelines/ATACFlow/container_env (a41746e)\n 4b9f6254d7f967cb9d35391a92b684cb2b113ac1 pipelines/ATACFlow/report (remotes/origin/omichub/atac-report-2026-07-24)\n 80e8ded2f958f2e26a8ada3587dffc0c8b54912f pipelines/ATACFlow/src (80e8ded)\n b351e03dfc845d229102d90f9bd88d6ca731f0de pipelines/EBIDownload (v1.4.0-2-gb351e03)\n 19f5068c4f9370ea27cb6fe554a3f061a1b62a51 pipelines/RNAFlow (heads/feat/result-manifest)\n c4a0cae8e129918ccfbd4e031da808b85abffbb4 pipelines/RNAFlow/report (remotes/origin/omichub/rna-report-2026-07-24)\n f973d5f86de11a0efa156b7ecd2aa6b02c7ee17f pipelines/RNAFlow/src (f973d5f)\n b780b7c2f01fb3ea9aaaef82c6eb91e41cde57db pipelines/Treasure-Seeking_Mouse (heads/feat/paper-data-analysis)\n b5066338fba47b1ed3fbee042f1cb43859cff882 pipelines/scrna (heads/main)\n 24ecb6ce75657c5ce188603b54ac7bf10ffb6d46 pipelines/tools (heads/main)\n",
+    "stderr": ""
+  },
+  "submodule_dirty": {
+    "Protocol/FlowFrame": {
+      "exit_code": 0,
+      "stdout": " M flow-framework/assets/templates/envs/fastqc.yaml\n",
+      "stderr": ""
+    },
+    "pipelines/ATACFlow": {
+      "exit_code": 0,
+      "stdout": " M container_env\n M envs/fastqc.yaml\n M envs/python3.yaml\n M report\n D rules/utils/__pycache__/common.cpython-313.pyc\n D rules/utils/__pycache__/datadeliver.cpython-313.pyc\n D rules/utils/__pycache__/id_convert.cpython-313.pyc\n D rules/utils/__pycache__/reference_update.cpython-313.pyc\n D rules/utils/__pycache__/resource_manager.cpython-313.pyc\n D rules/utils/__pycache__/validate.cpython-313.pyc\n M src\n",
+      "stderr": ""
+    },
+    "pipelines/ATACFlow/container_env": {
+      "exit_code": 0,
+      "stdout": " M images/Dockerfile.template\n",
+      "stderr": ""
+    },
+    "pipelines/ATACFlow/report": {
+      "exit_code": 0,
+      "stdout": " M docker/RNA/docker_build/Dockerfile\n?? docker/RNA/docker_build/vendor/\n",
+      "stderr": ""
+    },
+    "pipelines/ATACFlow/src": {
+      "exit_code": 0,
+      "stdout": " D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc\n",
+      "stderr": ""
+    },
+    "pipelines/EBIDownload": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "pipelines/RNAFlow": {
+      "exit_code": 0,
+      "stdout": " M config/run_parameter.yaml\n M envs/circexplorer2.yaml\n M envs/fastqc.yaml\n M envs/python3.yaml\n M report\n M rules/10.DEG_Enrichments.smk\n M rules/utils/common.py\n M rules/utils/datadeliver.py\n M rules/utils/result_manifest.py\n M snakefile\n M src\n?? envs/deg_edger.yaml\n?? rules/utils/deg_method.py\n",
+      "stderr": ""
+    },
+    "pipelines/RNAFlow/report": {
+      "exit_code": 0,
+      "stdout": " M docker/RNA/docker_build/Dockerfile\n D docker/RNA/templates/scripts/ai/__pycache__/engine.cpython-313.pyc\n D docker/RNA/templates/scripts/ai/__pycache__/schemas.cpython-313.pyc\n D templates/RNA_Project/scripts/ai/__pycache__/engine.cpython-313.pyc\n D templates/RNA_Project/scripts/ai/__pycache__/schemas.cpython-313.pyc\n?? docker/RNA/docker_build/vendor/\n",
+      "stderr": ""
+    },
+    "pipelines/RNAFlow/src": {
+      "exit_code": 0,
+      "stdout": " M src/DEG/README.md\n M src/data-deliver/RNAFlow_Deliver_Tool/config/deg_config.yaml\n M src/data-deliver/RNAFlow_Deliver_Tool/config/full_delivery_config.yaml\n M src/data-deliver/RNAFlow_Deliver_Tool/config/report.yaml\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc\n?? src/DEG/run_edger.r\n",
+      "stderr": ""
+    },
+    "pipelines/Treasure-Seeking_Mouse": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "pipelines/scrna": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "pipelines/tools": {
+      "exit_code": 0,
+      "stdout": " M skills/SKILLS_REGISTRY.md\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/__pycache__/cli.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/__init__.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/config.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-312.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/deliver.cpython-313.pyc\n D src/data-deliver/RNAFlow_Deliver_Tool/python/RNAFlow_Deliver/modules/__pycache__/merge.cpython-310.pyc\n?? skills/atacflow/\n?? skills/rnaflow/\n",
+      "stderr": ""
+    }
+  },
+  "hashes": {
+    "uv.lock": "dcc3f7155380e3fc852a29b50974e053ec1393e70b68ac248ae9ce0da68e2c2e",
+    "frontend/package-lock.json": "995b06832aa2bdea3b31e912e5ddfee64b61e4957808c2f9719f6ee03c56d35e",
+    "src/cygnusx/infrastructure/download/trusted_execution.py": "c300afb53473fabfe214cd5960db5fa46c7786e9ce1759069330aa01cc363099",
+    "src/cygnusx/infrastructure/download/supervisor_client.py": "59ae2de7ac1e5c05822a56a4e4467319731108f0ebe77545beacd7bf5dd67c40",
+    "tests/integration/test_download_trusted_http_boundary.py": "d3b04bda8173cc24ec5c713c14149624e434a5aa713f67fe15ebffc17763d2ee"
+  },
+  "kernel": "6.8.0-147-generic",
+  "uid": 1000,
+  "tool_image_digest": "UNKNOWN_NOT_AUTHORIZED",
+  "runtime_authorization": "NOT_PROVIDED"
+}

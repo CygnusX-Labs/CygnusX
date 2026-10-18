@@ -157,6 +157,7 @@ class DatasetIngestionModel(Base, TimestampMixin):
     parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     normalized_request: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     confirmation_id: Mapped[str | None] = mapped_column(String(128))
+    approval_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     invocation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agent_tool_invocations.id", ondelete="RESTRICT")
     )

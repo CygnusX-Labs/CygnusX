@@ -44,8 +44,9 @@ sequenceDiagram
  U->>D: execute
  D->>D: Phase2 source gate + Phase3 flag; recheck scope/quota/source
  D->>C: consume one-time bound approval
- D->>D: commit SUBMITTING reservation
- D->>W: existing submit (future gated path)
+ D->>D: mark SUBMITTING; retain outer transaction
+ D->>W: existing submit + Admission/budget in same transaction
+ D->>D: original request commit then after_commit enqueue
  R->>W: inspect existing Task only
  R->>D: verify FileRecords and content; COMPLETED / PARTIAL / reconcile required
 ```
@@ -61,6 +62,8 @@ GEO/ENA 适配器只读，受信 HTTPS 主机、禁重定向、响应/样本/Run
 FASTQ 走现有 RNAFlow，显式参考/物种/链特异性、样本前缀和配对一致，不自动重命名。counts 走独立 `pipelines/CountsDEGFlow`；本地 R/DESeq2 与 Snakemake 合成验证通过，Worker/镜像/FlowFrame 日志监控认证未通过，默认不注册为可用能力。当前 Handoff `worker_paths_verified=false` 是固定未验收事实，绝非 READY。
 
 数据服务由 REST、共享 Gateway、MCP preset 投影和 Vue 组件复用；没有新建第二个 Agent 执行系统。GET 不做对账写入。输出结果与报告状态独立，不从输入 manifest 推断已完成报告。
+
+P0-A 增量：原 ingestion.approval_snapshot 保存 JWT 来源哈希、actor、摘要、版本及单消费证明；Redis 与持久记录均须一致。execute 移除内部多次 commit，原 Task、关系、Admission 与预算共用请求事务及既有 after_commit。签发采用默认空的服务端环境 profile，首期仅单 processed HTTP；现 GEO 适配只产生 HTTPS，真实链仍阻断，不自动降级。预算 BigInteger、NULL 未知计量及撤销 fencing 不等于可信结算。迁移 dwnbinding02 未应用真实 PG，整体仍 PARTIAL_CODE / RUNTIME_BLOCKED；详见 docs/implementation/cygnusx-p0a-trusted-admission-budget-binding.md。
 
 ## 受保护的科研交付关联
 

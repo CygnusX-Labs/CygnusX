@@ -1,0 +1,33 @@
+[
+  {
+    "command": ".venv/bin/python -m pytest P0A approval/import/review/admission/migration tests -q -m not quarantine",
+    "exit_code": 0,
+    "result": "68 passed",
+    "log": "p0a-final-rerun.log"
+  },
+  {
+    "command": ".venv/bin/python -m pytest download/FileRegistry/Dataset regression selection -q -m not quarantine",
+    "exit_code": 0,
+    "result": "143 passed",
+    "log": "regression-final.log"
+  },
+  {
+    "command": ".venv/bin/mypy repository/download_execution_admission.py",
+    "exit_code": 0,
+    "log": "repo-mypy-final.log"
+  },
+  {
+    "command": ".venv/bin/mypy dataset_import_service.py datasets.py download_execution.py config.py",
+    "exit_code": 0,
+    "log": "mypy-final.log"
+  },
+  {
+    "command": ".venv/bin/python scripts/check_migrations.py",
+    "exit_code": 0,
+    "result": "single head; connected topology"
+  },
+  {
+    "command": "git diff --check -- task-owned files",
+    "exit_code": 0
+  }
+]
