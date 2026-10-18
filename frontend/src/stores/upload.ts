@@ -9,20 +9,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useChunkUpload } from '@/composables/useChunkUpload'
 import type { UploadMergeResponse, UploadQueueItem } from '@/types'
+import { generateId } from '@/utils/id'
 
 interface UploadController {
   pause: () => void
   resume: () => void
   cancel: () => Promise<void>
   run: () => void
-}
-
-/** 生成唯一 id（兼容无 crypto.randomUUID 的环境） */
-function genId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-  return `up_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
 
 export const useUploadStore = defineStore('upload', () => {
@@ -92,7 +85,7 @@ export const useUploadStore = defineStore('upload', () => {
 
   function addFile(file: File) {
     const item: UploadQueueItem = {
-      id: genId(),
+      id: generateId(),
       file,
       uploadId: null,
       status: 'pending',

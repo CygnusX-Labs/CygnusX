@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import apiClient from '@/api/client'
 import type { Conversation, ConversationDetail, AIMessage } from '@/types'
+import { generateId } from '@/utils/id'
 
 export const useAIStore = defineStore('ai', () => {
   const conversations = ref<Conversation[]>([])
@@ -50,7 +51,7 @@ export const useAIStore = defineStore('ai', () => {
       last.content += token
     } else {
       msgs.push({
-        id: crypto.randomUUID(),
+        id: generateId(),
         role: 'assistant',
         content: token,
         timestamp: new Date().toISOString(),
@@ -62,7 +63,7 @@ export const useAIStore = defineStore('ai', () => {
     // 占位一条空助手消息，供 token 累加
     if (!currentConversation.value) return
     currentConversation.value.messages.push({
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: 'assistant',
       content: '',
       timestamp: new Date().toISOString(),

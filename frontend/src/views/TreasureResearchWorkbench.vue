@@ -6,6 +6,7 @@ import type { ResearchActionV1, TreasureIslandProps } from '@/types/treasureIsla
 import { projectsApi, type ProjectItem } from '@/api/projects'
 import { researchAgentApi, researchFailure, researchStreamUrl, type ResearchCapabilities, type ResearchMessage, type ResearchSession } from '@/api/researchAgent'
 import TreasureOriginalDisplay from '@/components/research/TreasureOriginalDisplay.vue'
+import { generateId } from '@/utils/id'
 
 const capabilities = ref<ResearchCapabilities | null>(null)
 const accessError = ref('')
@@ -82,7 +83,7 @@ async function send(submitted?: string) {
   if (!currentSession.value) return
   const generation = sessionGeneration
   const sessionId = currentSession.value.session_id
-  const requestId = crypto.randomUUID()
+  const requestId = generateId()
   draft.value = ''
   streamError.value = ''
   messages.value.push({ message_id: `local-${Date.now()}`, role: 'user', content, status: 'complete', metadata_json: {}, created_at: new Date().toISOString() })

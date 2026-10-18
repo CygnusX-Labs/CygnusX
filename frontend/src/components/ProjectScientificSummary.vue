@@ -4,6 +4,7 @@ import { NAlert, NButton, NCard, NSpace } from 'naive-ui'
 import { projectReportApi, type ReportPreparation, type ReportRequest, type ProjectReportJob } from '@/api/projectReport'
 import type { ClaimCellQuery } from '@/api/claimProvenance'
 import { projectDeliveryApi, type ExportPreview, type ExportJob } from '@/api/projectDelivery'
+import { generateId } from '@/utils/id'
 const props = defineProps<{ projectId: string; manifestId: string; claims: ClaimCellQuery[] }>()
 const emit = defineEmits<{ published: [id: string] }>()
 const prepared = ref<ReportPreparation | null>(null), job = ref<ProjectReportJob | null>(null)
@@ -19,7 +20,7 @@ function failure(exc: unknown) {
 async function prepare() {
   const current = generation; busy.value = true; error.value = ''; prepared.value = null
   const selected: ReportRequest = { source_manifest_job_id: props.manifestId, claims: structuredClone(props.claims.map(c => ({ ...c }))), format: 'html' }
-  try { const value = await projectReportApi.prepare(props.projectId, selected, abort.signal); if (current === generation) { prepared.value = value; request = selected; key = crypto.randomUUID() } }
+  try { const value = await projectReportApi.prepare(props.projectId, selected, abort.signal); if (current === generation) { prepared.value = value; request = selected; key = generateId() } }
   catch (exc) { if (current === generation) failure(exc) } finally { if (current === generation) busy.value = false }
 }
 async function poll(current: number, project: string, id: string) {
@@ -43,7 +44,7 @@ async function prepareM1() {
   const current = generation; busy.value = true
   try {
     const value = await projectDeliveryApi.prepare(props.projectId, { ...selection, source_manifest_job_id: props.manifestId, project_report_job_ids: [job.value.id] }, abort.signal)
-    if (current === generation) { m1.value = value; key = crypto.randomUUID() }
+    if (current === generation) { m1.value = value; key = generateId() }
   } catch (exc) { if (current === generation) failure(exc) } finally { if (current === generation) busy.value = false }
 }
 async function createM1() {

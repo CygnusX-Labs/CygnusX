@@ -4,6 +4,7 @@ import { NButton, NInput, NSelect } from 'naive-ui'
 import { projectsApi, type ProjectItem } from '@/api/projects'
 import { asImportProposal, datasetsApi, type DataHandoff, type DatasetItem, type GeoCandidate, type ImportProposal } from '@/api/datasets'
 import DatasetImportCard from './DatasetImportCard.vue'
+import { generateId } from '@/utils/id'
 const props = defineProps<{ projectId?: string | null; datasetId?: string; versionId?: string; analysisMode?: boolean }>()
 const projects = ref<ProjectItem[]>([])
 const localProject = ref<string | null>(props.projectId || null)
@@ -66,7 +67,7 @@ async function discover(value = accession.value) {
 async function prepare() {
   const pid = project.value
   if (!pid || !candidate.value || !selectedIds.value.length) return
-  const args = { dataset_id: importTarget.value, accession: candidate.value.primary_accession, mode: mode.value, selected_ids: [...selectedIds.value], name: candidate.value.primary_accession, request_key: crypto.randomUUID(), max_bytes: Number(budget.value) }
+  const args = { dataset_id: importTarget.value, accession: candidate.value.primary_accession, mode: mode.value, selected_ids: [...selectedIds.value], name: candidate.value.primary_accession, request_key: generateId(), max_bytes: Number(budget.value) }
   await run(async snapshot => {
     const result = await datasetsApi.prepare(pid, args)
     if (snapshot === generation) { proposal.value = asImportProposal(result); if (!proposal.value) error.value = '来源暂不可用，没有导入预案。' }

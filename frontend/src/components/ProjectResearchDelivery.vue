@@ -5,6 +5,7 @@ import { projectDeliveryApi, type DeliveryInventory, type ExportJob, type Export
 import ClaimEvidencePanel from '@/components/ClaimEvidencePanel.vue'
 import ProjectScientificSummary from '@/components/ProjectScientificSummary.vue'
 import type { ClaimCellQuery } from '@/api/claimProvenance'
+import { generateId } from '@/utils/id'
 
 const props = defineProps<{ projectId: string }>()
 const inventory = ref<DeliveryInventory | null>(null)
@@ -85,7 +86,7 @@ async function prepare() {
   try {
     const value = await projectDeliveryApi.prepare(project, { kind: kind.value, task_ids: tasks.value, report_ids: reports.value }, abort.signal)
     if (current === generation && selectionVersion === selectionGeneration && value.manifest.project_id === project) {
-      preview.value = value; requestKey = crypto.randomUUID()
+      preview.value = value; requestKey = generateId()
     }
   } catch (exc) { if (current === generation) error.value = failure(exc) }
   finally { if (current === generation) busy.value = false }
@@ -96,7 +97,7 @@ async function create() {
   busy.value = true; error.value = ''
   try {
     // request_key 是导出幂等键；预览确认后必须非空，兜底生成避免空 UUID 422。
-    if (!requestKey) requestKey = crypto.randomUUID()
+    if (!requestKey) requestKey = generateId()
     const value = await projectDeliveryApi.create(project, preview.value, requestKey, abort.signal)
     if (current !== generation || value.project_id !== project) return
     job.value = value; remember(); clearTimeout(timer); void poll(current, project, value.id)

@@ -10,6 +10,7 @@ import { useAIStore } from '@/stores/ai'
 import { useAIWebSocket } from '@/composables/useAIWebSocket'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import type { AIEvent } from '@/types'
+import { generateId } from '@/utils/id'
 
 const store = useAIStore()
 const { connected, lastError, connect, sendChat, disconnect } = useAIWebSocket()
@@ -98,7 +99,7 @@ async function send() {
   input.value = ''
   // 占位用户消息（立即渲染）
   store.appendMessage({
-    id: crypto.randomUUID(),
+    id: generateId(),
     role: 'user',
     content,
     timestamp: new Date().toISOString(),
