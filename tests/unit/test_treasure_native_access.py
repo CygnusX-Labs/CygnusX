@@ -264,6 +264,13 @@ async def test_downstream_configuration_not_confused_with_empty_history(env: Sim
     assert body["read_sessions"] and not body["read_discovery"]
     assert body["reason_code"] == "NODE_NOT_CONFIGURED"
 
+
+async def test_manual_session_rename_locks_generated_title(env: SimpleNamespace) -> None:
+    response = await request(env, "PATCH", "/sessions/global", json={"title": "手动标题"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "手动标题"
+    assert response.json()["title_locked"] is True
+
 async def test_stream_provider_failure_is_http_503_before_sse(env: SimpleNamespace) -> None:
     response = await request(env, "POST", "/sessions/global/messages:stream", json={"content": "read"})
     assert response.status_code == 503

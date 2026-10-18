@@ -36,7 +36,7 @@ class DiscoveryProposal(BaseModel):
 
 class ResearchAgentSessionCreate(BaseModel):
     project_id: UUID | None = None
-    title: str = Field(default="科研发现", max_length=200)
+    title: str = Field(default="新对话", max_length=200)
     model_id: UUID | None = None
 
 

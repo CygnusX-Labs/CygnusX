@@ -408,6 +408,10 @@ BFF 流式端点 `POST /research-agent/sessions/{sid}/messages:stream`（`api/v1
 `merge_discovery_cards`（`:89`）在终态快照里折叠重复卡但保留来源 meta——**实时与历史投影等价**。
 `card_to_proposal`（`:53`）：`metadata_status` 恒为 `unverified`，`source_links` 只接受已知 accession 家族（`_source_link` 永不信任上游 URL，`:41-50`）。
 
+### 13.5 跨入口会话标题
+
+寻宝鼠使用平台 `chat_sessions` 持久会话。新会话标题为“新对话”；与 AI 助手和 AI 工作台共用 `frontend/src/utils/sessionTitle.ts` 的触发策略及 `chatApi.generateSessionTitle()`，在首轮成功完成后生成，在第 3、6、9、12 条用户消息成功完成后刷新，标题锁定或超过第 12 轮时停止。服务端统一经 `ChatSessionManagement.generate_session_title()` 生成，遇到旧会话“科研发现”占位值也按默认标题处理；用户重命名会锁定标题。
+
 ---
 
 ## 14. 功能开关与双重门禁

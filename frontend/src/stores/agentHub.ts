@@ -50,6 +50,7 @@ import { agentApi, adminAgentApi } from '@/api/agent'
 import { chatApi } from '@/api/chat'
 import apiClient from '@/api/client'
 import { reportChatDiagnostic } from '@/utils/chatDiagnostics'
+import { shouldGenerateSessionTitle } from '@/utils/sessionTitle'
 import {
   normalizePlanConfirmation,
   useAgentChatStream,
@@ -1565,8 +1566,8 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     const session = sessions.value.find((s) => s.id === id)
     if (!session || session.title_locked) return
     try {
-      const res = await apiClient.post<{ title: string }>(`/chat/sessions/${id}/generate-title`)
-      if (res.data?.title) session.title = res.data.title
+      const title = await chatApi.generateSessionTitle(id)
+      if (title) session.title = title
     } catch (e) {
       console.error('生成会话标题失败:', e)
       // 首轮 LLM 失败时把“生成中...”占位回退，避免历史列表标题卡在占位文案
@@ -2119,8 +2120,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // 仅首轮显示“生成中...”占位，刷新轮静默替换，避免已成型标题闪烁成占位文案。
     const userCount = session.messages.filter((m) => m.role === 'user').length
     const isFirstTurn = userCount === 1
-    const shouldGenerateTitle =
-      !session.title_locked && userCount <= 12 && (isFirstTurn || userCount % 3 === 0)
+    const shouldGenerateTitle = shouldGenerateSessionTitle(userCount, session.title_locked)
     if (isFirstTurn) session.title = '生成中...'
 
     // 构建送后端的上下文（含历史，排除当前 AI 占位）
@@ -2857,8 +2857,10 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       },
     )
 
-    if (shouldGenerateTitle && !isStreaming.value) {
+    if (shouldGenerateTitle && !isStreaming.value && aiMsg.status === 'complete') {
       void generateSessionTitle(session.id)
+    } else if (isFirstTurn && session.title === '生成中...') {
+      session.title = '新对话'
     }
 
     // 兜底：若流异常中断未触发 onDone/onError（极罕见，onDone 已有内部兜底）

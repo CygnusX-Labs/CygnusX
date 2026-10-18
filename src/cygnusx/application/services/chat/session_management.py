@@ -125,7 +125,7 @@ class ChatSessionManagement:
     def _is_default_session_title(title: str | None) -> bool:
         """判断标题是否仍是创建时的默认占位（尚无 LLM 生成的真实标题）。"""
         t = (title or "").strip()
-        if not t or t in {"新对话", "生成中...", "新会话"}:
+        if not t or t in {"新对话", "生成中...", "新会话", "科研发现"}:
             return True
         return bool(re.fullmatch(r"与 .+ 的对话", t)) or bool(
             re.fullmatch(r"新会话 \d{2}-\d{2}", t)

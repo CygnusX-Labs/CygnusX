@@ -139,6 +139,12 @@ export const chatApi = {
     const response = await apiClient.patch(`/chat/sessions/${sessionId}`, { title })
     return response.data
   },
+  async generateSessionTitle(sessionId: string): Promise<string> {
+    const response = await apiClient.post<{ title: string }>(
+      `/chat/sessions/${encodeURIComponent(sessionId)}/generate-title`,
+    )
+    return response.data.title
+  },
   /**
    * 人类（JWT 会话）批准一次待确认的工具/流程调用。
    * 优先用服务端确认卡下发的人类通道 URL（tool-invocations 或 tool-confirmations），

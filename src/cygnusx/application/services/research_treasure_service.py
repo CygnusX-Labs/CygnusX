@@ -318,7 +318,7 @@ class ResearchTreasureService:
             session_id=str(uuid.uuid4()),
             user_id=user_id,
             model_id=provider.id,
-            title=title.strip() or "科研发现",
+            title=title.strip() or "新对话",
             status="active",
             mode="chat",
             sandbox_meta={
@@ -373,6 +373,7 @@ class ResearchTreasureService:
         session = await self._owned_session(user_id, session_id)
         if title is not None:
             session.title = title.strip() or session.title
+            session.title_locked = True
         if status == "archived":
             session.status = "archived"
         await self._db.flush()

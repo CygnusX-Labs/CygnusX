@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { chatApi } from './chat'
 import type { TreasureIslandProps } from '@/types/treasureIsland'
 
 export interface ResearchCapabilities {
@@ -55,6 +56,7 @@ export interface DiscoveryProposal {
 export interface ResearchSession {
   session_id: string
   title: string
+  title_locked?: boolean
   project_id: string | null
   model_id: string
   status: string
@@ -97,6 +99,9 @@ export const researchAgentApi = {
   },
   async updateSession(sessionId: string, value: { title?: string; status?: 'archived' }): Promise<ResearchSession> {
     return (await apiClient.patch<ResearchSession>(`/research-agent/sessions/${encodeURIComponent(sessionId)}`, value)).data
+  },
+  async generateSessionTitle(sessionId: string): Promise<string> {
+    return chatApi.generateSessionTitle(sessionId)
   },
   async literature(sessionId: string, kind: string, id: string): ReturnType<NonNullable<TreasureIslandProps['loadLiterature']>> {
     return (await apiClient.post(`/research-agent/sessions/${encodeURIComponent(sessionId)}/literature`, { kind, id })).data

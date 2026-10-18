@@ -7,6 +7,7 @@ import { projectsApi, type ProjectItem } from '@/api/projects'
 import { researchAgentApi, researchFailure, researchStreamUrl, type ResearchCapabilities, type ResearchMessage, type ResearchSession } from '@/api/researchAgent'
 import TreasureOriginalDisplay from '@/components/research/TreasureOriginalDisplay.vue'
 import { generateId } from '@/utils/id'
+import { shouldGenerateSessionTitle } from '@/utils/sessionTitle'
 
 const capabilities = ref<ResearchCapabilities | null>(null)
 const accessError = ref('')
@@ -91,11 +92,11 @@ async function send(submitted?: string) {
   messages.value.push(assistant)
   sending.value = true
   let hasPlatformTool = false
+  let streamEnded = false
   try {
     let cursor = 0
-    let ended = false
     let lastError: unknown
-    for (let attempt = 0; attempt < 4 && !ended; attempt++) {
+    for (let attempt = 0; attempt < 4 && !streamEnded; attempt++) {
       if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 250 * 2 ** (attempt - 1)))
       if (generation !== sessionGeneration) return
       const activeController = new AbortController()
@@ -125,8 +126,8 @@ async function send(submitted?: string) {
           }
         }, cursor)
         cursor = result.lastEventId
-        ended = result.ended
-        if (!ended && attempt === 3) break
+        streamEnded = result.ended
+        if (!streamEnded && attempt === 3) break
       } catch (error) {
         lastError = error
         if ((error as Error).name === 'AbortError') throw error
@@ -134,7 +135,7 @@ async function send(submitted?: string) {
         if (status || attempt === 3) throw error
       }
     }
-    if (generation === sessionGeneration && !ended && assistant.status === 'streaming') {
+    if (generation === sessionGeneration && !streamEnded && assistant.status === 'streaming') {
       assistant.status = 'interrupted'
       streamError.value = lastError
         ? researchFailure(lastError)
@@ -147,6 +148,22 @@ async function send(submitted?: string) {
     if (generation === sessionGeneration) {
       sending.value = false
       controller.value = null
+      const userMessageCount = messages.value.filter(item => item.role === 'user').length
+      if (
+        streamEnded && !streamError.value
+        && shouldGenerateSessionTitle(userMessageCount, currentSession.value?.title_locked)
+      ) {
+        try {
+          const title = await researchAgentApi.generateSessionTitle(sessionId)
+          if (generation === sessionGeneration && title) {
+            const session = sessions.value.find(item => item.session_id === sessionId)
+            if (session) session.title = title
+            if (currentSession.value?.session_id === sessionId) currentSession.value.title = title
+          }
+        } catch {
+          // Title generation is best-effort and must not affect the completed reply.
+        }
+      }
       if (hasPlatformTool && capabilities.value?.prepare_import) void workflow.action({ type: 'records.refresh' }, !workflow.view.open)
     }
     await nextTick()
@@ -205,7 +222,11 @@ async function editSession(id: string, title?: string) {
     if (generation !== sessionGeneration) return
     if (title) {
       const row = sessions.value.find(item => item.session_id === id)
-      if (row) row.title = title
+      if (row) {
+        row.title = title
+        row.title_locked = true
+      }
+      if (currentSession.value?.session_id === id) currentSession.value.title_locked = true
     } else {
       sessions.value = sessions.value.filter(item => item.session_id !== id)
       if (currentSession.value?.session_id === id) { stopCurrentStream(); currentSession.value = null; messages.value = [] }

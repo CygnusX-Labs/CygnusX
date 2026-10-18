@@ -15,6 +15,10 @@ def test_fallback_session_title_truncates_long_message():
     assert len(title) == 16
 
 
+def test_research_placeholder_title_is_eligible_for_first_turn_fallback():
+    assert ChatService._is_default_session_title("科研发现")
+
+
 def test_clean_session_title_strips_third_person_narration():
     assert (
         ChatService._clean_session_title("用户想要处理VCF文件并询问安装")

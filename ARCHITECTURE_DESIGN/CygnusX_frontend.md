@@ -937,6 +937,18 @@ AI 消息流中的产物画廊（`MessageArtifactGallery`）与 Studio 右栏产
 - **打印**统一使用 `frontend/src/utils/blobPrint.ts` 的 `printBlobUrl()`（隐藏 iframe 触发打印，最长 60s 后移除）；不要在业务组件内重复实现。
 - 打印/下载按钮使用图标 + 文字，提供 `aria-label` 或可读文本，缩放百分比用 `aria-live="polite"` 播报；缩放过渡在 `prefers-reduced-motion` 下关闭。
 
+### 18.5 跨入口会话标题规范（强制）
+
+AI 助手（`AgentWorkspace`）、AI 工作台（`StudioView`）和科研寻宝鼠（`TreasureResearchWorkbench`）的持久会话统一使用 `POST /api/v1/chat/sessions/{session_id}/generate-title`，由 `ChatSessionManagement.generate_session_title()` 生成并落库。前端调度策略唯一实现为 `frontend/src/utils/sessionTitle.ts`：首条成功完成的用户轮次生成标题，之后在第 3、6、9、12 条用户消息成功完成后刷新；第 12 轮后停止。标题锁定后停止自动更新。
+
+- 首轮生成前允许显示“生成中...”；新会话初始标题统一为“新对话”。
+- LLM 产出使用对话锚点与最近消息，清洗成简短主题短语；生成失败或产出不合格时回退到首条用户消息，不能让固定页面名长期留在历史列表。
+- 用户手动重命名必须设置 `title_locked=true`，后续自动生成不得覆盖。
+- 只有成功收到流式终态后才触发生成；错误、取消或中断不更新标题。
+- 独立悬浮 AI 助手只保存 localStorage 临时上下文，没有服务端历史会话，因此不单独生成标题；弃用的 Model-first `chatSession` 不属于当前三个入口。
+
+**权威实现**：`frontend/src/utils/sessionTitle.ts`、`frontend/src/api/chat.ts`、`src/cygnusx/application/services/chat/session_management.py`。
+
 ## 19. 终端与代码沙箱
 
 ### 19.1 终端 UI
