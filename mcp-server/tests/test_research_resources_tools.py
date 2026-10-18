@@ -65,3 +65,19 @@ async def test_provider_client_is_reused_and_closed_by_lifespan_hook():
     assert first is second
     await close_provider_clients()
     assert first.is_closed
+
+
+@pytest.mark.asyncio
+async def test_research_tools_use_authenticated_platform_bridge_when_api_is_present():
+    class FakeAPI:
+        async def research_data(self, tool_name, arguments):
+            return {"success": True, "tool": tool_name, "arguments": arguments}
+
+    mcp = FastMCP("research-bridge-test")
+    resources.register_pathways(mcp, FakeAPI())
+    result = await mcp.call_tool("cygnusx_pathway_get", {"stable_id": "R-HSA-1"})
+    assert result.structured_content == {
+        "success": True,
+        "tool": "cygnusx_pathway_get",
+        "arguments": {"stable_id": "R-HSA-1"},
+    }

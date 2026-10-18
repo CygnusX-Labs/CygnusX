@@ -70,6 +70,12 @@ class CygnusXAPIClient:
             raise ValueError("unsupported BioThings action")
         return await self.post(f"/biothings/{database}/{action}", json=arguments)
 
+    async def research_data(self, tool_name: str, arguments: dict[str, Any]) -> dict:
+        """Call a fixed, authenticated platform research-data adapter."""
+        if not tool_name.startswith("cygnusx_"):
+            raise ValueError("unsupported research-data tool")
+        return await self.post(f"/research-data/{tool_name}", json=arguments)
+
     # ===== Tasks =====
     async def list_tasks(self, status: str | None = None) -> dict:
         params = {}

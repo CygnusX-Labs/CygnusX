@@ -2,9 +2,9 @@
 
 > **用途**：本文件记录 CygnusX MCP（Model Context Protocol）子系统的完整架构现状、"Agent 自生成 MCP"可行性分析与三阶段提案的历史注记（§4），以及 MCP 构建师 `agent-mcp-builder` 的最终落地实现（§5，as-built）。
 >
-> **最后更新**：2026-09-18
+> **最后更新**：2026-10-18
 >
-> **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
+> **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-18 已补登记 `cygnusx-biothings` 10 个与 `cygnusx-research-data` 26 个；2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
 
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
 
@@ -32,7 +32,7 @@ MCP Builder 是另一条受控入口：Agent 在 Studio 中生成候选代码，
 
 ```mermaid
 flowchart TB
-    Preset[代码 Preset\nplatform · pipelines · seqout · tools_schema] --> Sync[MCPService.ensure_presets]
+    Preset[代码 Preset\nplatform · biothings · research-data · pipelines · seqout · tools_schema] --> Sync[MCPService.ensure_presets]
     Admin[Admin API 注册外部 Server] --> Registry[(mcp_servers\n工具快照 · 状态 · 配置)]
     Sync --> Registry
     Agent[Agent YAML mcp_ids / 请求 extra_mcp_servers] --> Assemble[AgentContext 装配\n权限 · Tool Pack · capability 裁剪]
@@ -140,6 +140,18 @@ list_available_pipelines, check_workspace_data
 **seqout**（26 个工具，公共数据库检索 MCP——SEQOUT_SERVER_NAME="seqout"，完整覆盖
 GEO/SRA/ENA/GSA 项目搜索、样本清单、accession 解析等；定义在 `presets.py`
 `SEQOUT_PRESET_TOOLS`，preset 分发见 `get_preset_by_name()`）。
+
+**cygnusx-biothings**（10 个只读工具，定义在 `biothings_preset.py`）：
+MyGene、MyVariant、MyChem 的 search/get/resolve 与 provider describe；内部 handler、
+外部 `mcp-server/tools/biothings.py` 和 `/api/v1/biothings/*` 共同使用
+`application/services/biothings_service.py`。
+
+**cygnusx-research-data**（26 个只读工具，定义在 `research_preset.py`）：
+Ensembl、Gramene、Dfam、Expression Atlas、UniProt、InterPro、RCSB、AlphaFold、
+Reactome、ClinVar、Open Targets、Europe PMC 的身份、目录、注释与证据查询。
+固定 provider 适配由 `application/services/research_data_service.py` 提供；外部入口经
+`/api/v1/research-data/{tool_name}` 认证桥接到同一服务。结构/矩阵/FASTA 大资产、
+表达定量、Reactome 分析、InterProScan 和 STRING 仍未注册。
 
 **cygnusx-tools**（动态构建）：从 `tools_schema.yaml` + 启用了 `ai.enabled=True` 的 Flow 配置动态生成。
 

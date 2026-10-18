@@ -28,6 +28,11 @@ from cygnusx.infrastructure.mcp.pipeline_preset import (
     CYGNUSX_PIPELINES_SERVER_NAME,
     build_pipeline_preset,
 )
+from cygnusx.infrastructure.mcp.research_preset import (
+    CYGNUSX_RESEARCH_SERVER_NAME,
+    RESEARCH_HANDLERS,
+    RESEARCH_TOOLS,
+)
 
 # seqout builtin preset 的确定性 UUID
 SEQOUT_SERVER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "seqout.builtin")
@@ -2397,6 +2402,13 @@ SEQOUT_HANDLERS = {t["name"]: _seqout_handler for t in SEQOUT_PRESET_TOOLS}
 
 # 预设服务定义
 PRESET_SERVERS: list[dict[str, Any]] = [
+    {
+        "name": CYGNUSX_RESEARCH_SERVER_NAME,
+        "description": "只读科研数据库 MCP：Ensembl、Gramene、Dfam、Expression Atlas、UniProt、InterPro、RCSB、AlphaFold、Reactome、ClinVar、Open Targets、Europe PMC",
+        "transport": "builtin",
+        "tools": RESEARCH_TOOLS,
+        "handlers": RESEARCH_HANDLERS,
+    },
     {
         "name": CYGNUSX_BIOTHINGS_SERVER_NAME,
         "description": "只读科研数据库 MCP：MyGene、MyVariant 与 MyChem，要求显式物种/assembly并限制查询规模",

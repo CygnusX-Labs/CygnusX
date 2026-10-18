@@ -33,6 +33,7 @@ from cygnusx.api.v1 import (
     prompts,
     reminders,
     reports,
+    research_data,
     research_agent,
     research_claims,
     research_delivery,
@@ -78,6 +79,7 @@ api_router.include_router(agent_tools.router, prefix="/agent-tools", tags=["Agen
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(biothings.router, prefix="/biothings", tags=["BioThings"])
+api_router.include_router(research_data.router, prefix="/research-data", tags=["ResearchData"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["SiteSettings"])
 api_router.include_router(platform_config.router, prefix="/platform", tags=["PlatformConfig"])
 api_router.include_router(site_content.router, prefix="/site-content", tags=["SiteContent"])

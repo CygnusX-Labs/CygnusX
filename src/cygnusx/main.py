@@ -191,7 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning(f"内置聊天助手初始化失败，降级运行: {e}")
 
     async def _init_mcp_presets() -> None:
-        # 初始化/同步内置 MCP 预设（含 cygnusx-biothings 与平台/流程/工具箱预设），
+        # 初始化/同步内置 MCP 预设（含 BioThings、Research Data 与平台/流程/工具箱预设），
         # 确保预设工具清单（含新增的工作区文件工具）随代码演进同步进库，供 Agent 上下文组装使用。
         try:
             from cygnusx.application.services.mcp_service import MCPService
@@ -399,8 +399,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         knowledge_index_task.cancel()
     provider_probe_task.cancel()
     from cygnusx.application.services.biothings_service import close_biothings_clients
+    from cygnusx.application.services.research_data_service import close_research_clients
 
     await close_biothings_clients()
+    await close_research_clients()
     from cygnusx.infrastructure.database.session import close_db
 
     await close_db()

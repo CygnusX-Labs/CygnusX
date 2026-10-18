@@ -23,6 +23,7 @@ from cygnusx.infrastructure.mcp.presets import (
     PLATFORM_PRESET_TOOLS,
     _platform_submit_download,
 )
+from cygnusx.infrastructure.mcp.research_preset import RESEARCH_HANDLERS, RESEARCH_TOOLS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTERNAL_TOOLS_YAML = REPO_ROOT / "mcp-server" / "tools.yaml"
@@ -55,6 +56,17 @@ def test_pipeline_tool_names_match_external_tools_yaml() -> None:
         f"内外流水线工具名漂移: 仅内部 {internal_names - external_names}, "
         f"仅外部 {external_names - internal_names}"
     )
+
+
+def test_research_data_tool_names_match_external_tools_yaml() -> None:
+    internal_names = {tool["name"] for tool in RESEARCH_TOOLS}
+    external_names = {
+        tool["name"]
+        for group_id in ("genome", "plant_te", "expression", "pathways", "protein_structure", "clinical_literature")
+        for tool in _external_groups()[group_id]
+    }
+    assert internal_names == external_names
+    assert internal_names == set(RESEARCH_HANDLERS)
 
 
 def test_external_pipeline_submits_declare_confirmation_gate() -> None:

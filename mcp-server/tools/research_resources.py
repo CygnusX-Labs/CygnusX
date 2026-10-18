@@ -6,6 +6,8 @@ Large assets and unverified analysis endpoints are intentionally not exposed her
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -16,6 +18,23 @@ import httpx
 from fastmcp import FastMCP
 
 from tools.research_common import envelope, provider_client
+
+
+def _tool(mcp: FastMCP, api: Any):
+    """Register a tool; production calls use the authenticated platform bridge."""
+
+    def decorator(fn: Any) -> Any:
+        if api is None:
+            return mcp.tool()(fn)
+
+        @functools.wraps(fn)
+        async def bridged(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            bound = inspect.signature(fn).bind(*args, **kwargs)
+            return await api.research_data(fn.__name__, dict(bound.arguments))
+
+        return mcp.tool()(bridged)
+
+    return decorator
 
 PROVIDERS = {
     "ensembl": "https://rest.ensembl.org",
@@ -154,7 +173,7 @@ def _error(provider: str, exc: Exception) -> dict[str, Any]:
 
 
 def register_genome(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_genome_lookup(species: str, identifier: str) -> dict[str, Any]:
         """Look up a gene/transcript/protein on Ensembl; species must be explicit."""
         try:
@@ -178,7 +197,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Ensembl", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_genome_homology(
         species: str, identifier: str, target_species: str = ""
     ) -> dict[str, Any]:
@@ -209,7 +228,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Ensembl", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_genome_region(
         species: str, region: str, feature: str = "gene", limit: int = 50
     ) -> dict[str, Any]:
@@ -239,7 +258,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Ensembl", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_genome_sequence(
         identifier: str, sequence_type: str = "cdna"
     ) -> dict[str, Any]:
@@ -270,7 +289,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
 
 
 def register_plant_te(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_plant_search(query: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
         """Search Gramene v69 gene/plant knowledge index with bounded paging."""
         try:
@@ -298,7 +317,7 @@ def register_plant_te(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Gramene", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_plant_get(identifier: str) -> dict[str, Any]:
         """Get Gramene gene records for an explicit ID; preserves provider taxonomy identifiers."""
         try:
@@ -318,7 +337,7 @@ def register_plant_te(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Gramene", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_te_search(
         query: str = "", classification: str = "", clade: str = "", limit: int = 10
     ) -> dict[str, Any]:
@@ -345,7 +364,7 @@ def register_plant_te(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Dfam", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_te_get(accession: str) -> dict[str, Any]:
         """Get a Dfam family summary by accession; large family assets are excluded."""
         try:
@@ -359,7 +378,7 @@ def register_plant_te(mcp: FastMCP, _api: Any) -> None:
 
 
 def register_expression(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_expression_studies(
         query: str = "", single_cell: bool = False, limit: int = 20
     ) -> dict[str, Any]:
@@ -387,7 +406,7 @@ def register_expression(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Expression Atlas", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_expression_manifest(
         accession: str, single_cell: bool = False
     ) -> dict[str, Any]:
@@ -424,7 +443,7 @@ def register_expression(mcp: FastMCP, _api: Any) -> None:
 
 
 def register_pathways(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_pathway_get(stable_id: str) -> dict[str, Any]:
         """Get Reactome pathway/reaction knowledge by stable ID (not enrichment analysis)."""
         try:
@@ -447,7 +466,7 @@ def register_pathways(mcp: FastMCP, _api: Any) -> None:
 
 
 def register_protein(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_protein_resolve(
         query: str, organism_id: int = 9606, reviewed_only: bool = False, limit: int = 10
     ) -> dict[str, Any]:
@@ -479,7 +498,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("UniProt", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_protein_features(accession: str, section: str = "all") -> dict[str, Any]:
         """Get UniProt entry identity and bounded feature sections; full JSON is not passed through."""
         try:
@@ -520,7 +539,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("UniProt", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_protein_sequence(accession: str) -> dict[str, Any]:
         """Return a UniProt FASTA sequence only when at most 3000 residues; large export is disabled."""
         try:
@@ -551,7 +570,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("UniProt", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_domain_get(accession: str, limit: int = 20) -> dict[str, Any]:
         """Get InterPro family/domain hits and their reported protein locations."""
         try:
@@ -572,7 +591,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("InterPro", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_domain_proteins(interpro_id: str, limit: int = 20) -> dict[str, Any]:
         """List UniProt proteins associated with an InterPro accession."""
         try:
@@ -588,7 +607,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("InterPro", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_structure_search(uniprot_accession: str, limit: int = 20) -> dict[str, Any]:
         """Find experimental RCSB polymer entities matching an exact UniProt accession."""
         try:
@@ -622,7 +641,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("RCSB", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_structure_get(entry_id: str) -> dict[str, Any]:
         """Get bounded RCSB entry metadata; ions/cofactors are not identified as drugs."""
         try:
@@ -634,7 +653,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("RCSB", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_structure_prediction(
         uniprot_accession: str, isoform: str = ""
     ) -> dict[str, Any]:
@@ -665,7 +684,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
 
 
 def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_clinvar_search(term: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
         """Search ClinVar with E-utilities; result IDs are Entrez UIDs, not VCV/SCV IDs."""
         try:
@@ -695,7 +714,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("ClinVar", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_clinvar_get(vcv_accession: str) -> dict[str, Any]:
         """Fetch a ClinVar VCV XML record by explicit accession; raw XML is not returned."""
         try:
@@ -725,7 +744,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("ClinVar", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_target_search(
         query: str, entity: str = "target", limit: int = 10
     ) -> dict[str, Any]:
@@ -762,7 +781,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Open Targets", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_target_associations(target_id: str, limit: int = 10) -> dict[str, Any]:
         """Get Open Targets target-to-disease associations using a fixed query template."""
         try:
@@ -791,7 +810,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Open Targets", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_target_evidence(
         target_id: str, disease_id: str, limit: int = 10
     ) -> dict[str, Any]:
@@ -823,7 +842,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Open Targets", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_literature_get(
         source: str, article_id: str, section: str = "metadata"
     ) -> dict[str, Any]:
@@ -864,7 +883,7 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
         except Exception as exc:
             return _error("Europe PMC", exc)
 
-    @mcp.tool()
+    @_tool(mcp, _api)
     async def cygnusx_literature_annotations(article_ids: list[str]) -> dict[str, Any]:
         """Fetch Europe PMC annotations for up to 20 explicit source-qualified article IDs."""
         try:
