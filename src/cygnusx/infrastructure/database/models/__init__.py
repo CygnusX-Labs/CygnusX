@@ -62,6 +62,8 @@ from cygnusx.infrastructure.database.models.dataset import (
     DatasetVersionModel,
 )
 from cygnusx.infrastructure.database.models.download_execution import (
+    DownloadExecutionAdmissionModel,
+    DownloadExecutionBudgetModel,
     DownloadExecutionReceiptNonceModel,
 )
 from cygnusx.infrastructure.database.models.festival import FestivalClaimModel
@@ -156,6 +158,8 @@ __all__ = [
     "DatasetModel",
     "DatasetVersionModel",
     "DownloadExecutionReceiptNonceModel",
+    "DownloadExecutionAdmissionModel",
+    "DownloadExecutionBudgetModel",
     "DatasetSourceModel",
     "DatasetAssetModel",
     "DatasetSampleModel",

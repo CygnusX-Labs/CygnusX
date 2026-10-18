@@ -12,7 +12,7 @@
 | 数据来源 | 平台 REST API（`X-API-Key` 认证，httpx 客户端） | 直接 import 服务层，零网络开销 |
 | Prompts | ✅ 5 个工作流引导 prompt | ❌ 无（仅 tools + 系统提示后缀） |
 | Resources | ✅ 4 个只读资源 URI | ❌ 无 |
-| Tools | 默认配置实测 71 个（含 Seqout 26 个，以运行注册表为准） | ✅ 平台 22 + 流水线 10 + 工具箱（动态） |
+| Tools | 默认配置启动自检 109 个（含 Seqout 26 个，以运行注册表为准） | ✅ 平台 22 + BioThings 10 + 流水线 10 + 工具箱（动态） |
 
 两套接口对重叠能力**同名对齐**（`list_workspace_files` / `search_workspace_files` / `rna_seq_*` / `atac_seq_*` / `check_workspace_data` / `list_available_pipelines`），保证内外双端同能力同名。
 
@@ -20,7 +20,7 @@
 
 ## 一、外部 MCP Server 能力清单
 
-### 1.1 Tools（默认配置实测 71 个）
+### 1.1 Tools（默认配置启动注册 109 个；以启动自检为准）
 
 返回格式统一为 `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}`；
 写工具创建服务端 PENDING 记录，人类通过平台 JWT 端点批准，随后携带
@@ -103,6 +103,43 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 | `cygnusx_get_user_info()` | 当前用户信息与存储配额 | ✅ |
 | `cygnusx_get_platform_status()` | 平台概览：任务统计、可用流程、存储 | ✅ |
 
+#### 🔬 biothings — BioThings 科研数据库（`tools/biothings.py`，10 个）
+
+首批支持 MyGene、MyVariant、MyChem。工具固定调用官方 HTTPS provider，只提供只读查询；基因查询/映射要求显式物种，变异操作要求显式 `hg19`/`hg38`，批量最多 100 项、普通分页最多 50 条、字段投影最多 30 项。`biothings_describe` 返回 provider metadata 与最多 500 个字段目录项，并标记目录是否裁剪。
+
+| 工具 | 能力 |
+|---|---|
+| `cygnusx_gene_search` / `cygnusx_gene_get` / `cygnusx_gene_resolve` | 基因检索、详情、显式 scopes 批量映射 |
+| `cygnusx_variant_search` / `cygnusx_variant_get` / `cygnusx_variant_resolve` | 变异检索、详情、显式 scopes 批量映射；assembly 必填 |
+| `cygnusx_chem_search` / `cygnusx_chem_get` / `cygnusx_chem_resolve` | 化合物候选、详情、显式 scopes 批量映射 |
+| `biothings_describe(database)` | provider metadata 与字段目录（`gene` / `variant` / `chem`） |
+
+外部 FastMCP 与平台内部 BUILTIN 均注册同名的 10 个 BioThings 工具，并复用平台 `application/services/biothings_service.py`。外部工具只经带 `X-API-Key` 的固定 `/api/v1/biothings/{database}/{action}` 路由调用平台，数据库、action 与字段均由服务端 allowlist 校验；平台 API 的认证/审计链和共同的结果预算覆盖两个入口。生产级跨 worker 缓存/限流、统一 provenance、provider 熔断及真实 provider contract 仍待补齐。
+
+#### 🔬 研究数据资源覆盖与状态
+
+| 资源 | 当前外部 MCP 能力/复用 | 状态与边界 |
+|---|---|---|
+| MyGene | 外部工具及内部 `cygnusx-biothings` BUILTIN：`cygnusx_gene_search/get/resolve`、`biothings_describe` | 两端复用共享服务与认证 API；species 在 search/resolve 必填；真实 provider contract 待验收 |
+| MyVariant | 外部工具及内部 BUILTIN：`cygnusx_variant_search/get/resolve`、`biothings_describe` | 两端复用共享服务与认证 API；hg19/hg38 必填；GET/POST参数响应语义待真实合约验收 |
+| MyChem | 外部工具及内部 BUILTIN：`cygnusx_chem_search/get/resolve`、`biothings_describe` | 两端复用共享服务与认证 API；保留候选身份；真实 API 合约待验收 |
+| Ensembl Plants | `cygnusx_genome_lookup/homology/region/sequence` | 已实现外部受限查询；返回物种校验；高流量序列导出关闭。旧 `ensmbl` 行/绑定未更改，Agent 绑定前需核对去重 |
+| Gramene | `cygnusx_plant_search/get` | 已实现 v69 固定路径；provider taxon_id 不视为 NCBI taxid |
+| Dfam | `cygnusx_te_search/get` | 已实现家族元数据查询；`cygnusx_te_asset` 未开放，缺平台文件下载/校验/归属链 |
+| Expression Atlas | `cygnusx_expression_studies/manifest(single_cell=false)` | 已实现目录元数据过滤和单进程 6h 缓存（10 MiB 上游预算）；不是表达值 API；跨 worker 缓存和文件 manifest 未接平台 |
+| Single Cell Expression Atlas | `cygnusx_expression_studies/manifest(single_cell=true)` | 已实现目录元数据过滤和单进程 6h 缓存；定量查询与 H5AD/矩阵资产未开放 |
+| STRING | 无新增同义工具 | 待实现：官方 Streamable HTTP initialize/list/call 和工具白名单尚未验证；避免先造第二套 REST 同义工具 |
+| Europe PMC | 保留平台既有 `europe_pmc_search`；新增 `cygnusx_literature_get/annotations` | 外部查询已实现；原内部 server ID、工具绑定与统一缓存未在运行 registry 盘点 |
+| ClinVar | `cygnusx_clinvar_search/get` | 已实现受限 E-utilities 查询/XML投影；ClinVar 分类不形成临床建议；NCBI共享限流未接 |
+| Open Targets | `cygnusx_target_search/associations/evidence` | 固定 GraphQL 模板已实现；当前 SDL/schema 哈希与真实请求待验收 |
+| UniProt | `cygnusx_protein_resolve/features/sequence` | 已实现 bounded search/features 与 ≤3000 residue FASTA；长序列文件导出未接 |
+| RCSB PDB | `cygnusx_structure_search/get` | 已实现实验结构候选/条目元数据查询；mmCIF 下载及entity/chain覆盖投影待补 |
+| AlphaFold DB | `cygnusx_structure_prediction` | 已实现模型候选元数据；结构/PAE文件下载与哈希校验未开放；明确标记为预测 |
+| Reactome | `cygnusx_pathway_get` | 已实现通路知识查询；`cygnusx_pathway_analyze` 未开放，缺背景/映射率/FDR实测 |
+| InterPro | `cygnusx_domain_get/domain_proteins` | 已实现已注释蛋白域/家族查询；新序列扫描需 InterProScan Flow，未开放 |
+
+表中“已注册”指代码声明并接入相应注册路径，不表示已部署或通过真实 provider contract。当前内部仅 BioThings 10 个与外部同名并共用服务；其余研究工具仍只在外部 FastMCP 注册。默认配置实际注册 109 个外部工具，数量以启动自检及 `tools.yaml` 为准；本次外部 MCP 新增 36 个工具。
+
 #### 🔗 pipelines — 完整分析流水线（`tools/pipelines.py`，10 个，与内部 preset 同名对齐）
 
 四段式 **prepare → submit → status → results**：
@@ -163,7 +200,11 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 | 下载 | `platform_submit_download` | SRA/GEO、多云对象存储、直链三类下载；**要求先经 ask_user 确认**登录号与目录 | 写 |
 | 下载 | `platform_list_downloads` / `platform_get_download_progress` | 下载任务与逐 run 进度 | 只读 |
 
-### 2.2 `cygnusx-pipelines`（pipeline_preset.py，10 个）
+### 2.2 `cygnusx-biothings`（biothings_preset.py，10 个）
+
+复用与外部 FastMCP 一致的固定工具名，覆盖 MyGene/MyVariant/MyChem search/get/resolve 与 `biothings_describe`。通过 `ensure_presets()` 使用 uuid5 固定 ID 幂等种子化，工具快照变化纳入现有版本管理。内部 handler 与外部认证 API 均委托同一 `biothings_service.py`；部署级共享缓存/限流、provider 熔断、provenance 与跨端 schema digest 仍待接通。
+
+### 2.3 `cygnusx-pipelines`（pipeline_preset.py，10 个）
 
 与外部 `tools/pipelines.py` 完全同名对齐（见 §1.1 pipelines 表）；handler 要求携带 `ToolInvocationContext`（用户上下文），否则拒绝执行。prepare 返回 UI 预检卡。
 
@@ -281,3 +322,4 @@ uv run python pipelines_main.py
 AI 助手接入配置（QoderCN CLI / Claude Code 的 `mcpServers` 片段、SSE URL 形式、API Key 创建步骤）见 [mcp_config_example.jsonc](./mcp_config_example.jsonc)。
 
 工具组开关：`config.yaml` 的 `tool_groups.<group>: false` 即可整组下线（如关闭 `sandbox` 或 `analysis` 收敛写操作面）。
+科研数据库工具组可分别通过 `tool_groups.biothings: false`、`tool_groups.genome: false`、`tool_groups.plant_te: false`、`tool_groups.expression: false`、`tool_groups.pathways: false`、`tool_groups.protein_structure: false` 或 `tool_groups.clinical_literature: false` 分域关闭。针对性检查（在 `mcp-server/` 下）：`PYTHONPATH=.:.venv/lib/python3.11/site-packages pytest tests/test_biothings_tools.py tests/test_research_resources_tools.py -q`。

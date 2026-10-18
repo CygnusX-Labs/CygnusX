@@ -19,6 +19,11 @@
       "sha256": "48e110ea51e8429c93d5e34b9441cb775ad3194557ecb31f9a4600a3434780d8"
     },
     {
+      "path": "alembic/versions/dwnadmission01_add_download_execution_admissions.py",
+      "sha256": "41020ac7558d4037f6deb017c2105e8e40af72dbb079de78464b44188a6f78b2",
+      "size_bytes": 3941
+    },
+    {
       "path": "alembic/versions/resstream01_add_research_request_event_resume.py",
       "size_bytes": 679,
       "sha256": "3b484a5fe18be877cabf4cbe472eb667bc4ab2900d1288922499a2a761f0b79f"
@@ -65,13 +70,13 @@
     },
     {
       "path": "docs/implementation/cygnusx-agent-runtime-acceptance-compass.md",
-      "size_bytes": 12688,
-      "sha256": "24797e6a2b8db7116839f560425e567802aa2566b2396e383aca0c9bbbb5e243"
+      "sha256": "8a05a8d687437684f2a1f54ebe4fa1f38a173ceda864a3fff7f078fa40d0b856",
+      "size_bytes": 12835
     },
     {
       "path": "docs/implementation/cygnusx-g3-e2-trusted-http-runtime.md",
-      "size_bytes": 9953,
-      "sha256": "8778e967e674a5864ad0142dbad8c09bcedcc1e66b80b30c1cb3ce1608f28a2d"
+      "sha256": "7ed5f75b6afdae74d27629c36943e36c35074655a84da4f8ab3ec2df3a2e63ab",
+      "size_bytes": 10339
     },
     {
       "path": "docs/implementation/cygnusx-iat-r2-runtime-evidence-closure.md",
@@ -105,23 +110,23 @@
     },
     {
       "path": "docs/implementation/罗盘.md",
-      "size_bytes": 6829,
-      "sha256": "cbb5ca34ba0287f8e60d92f0cb48984745ee2dec9fd9c9c6f6608da20d4402ee"
+      "sha256": "4559d674c0d490314aef9201e89579f83ff2e7c87c642ee26f6941ce2b77283f",
+      "size_bytes": 6968
     },
     {
       "path": "docs/info/26.10.18/04_验收证据与S6-S7交接模板.md",
-      "size_bytes": 6107,
-      "sha256": "f4c195c1bfeeb5c5f51c8bec580b976f7eb875e86dca67d64c0e6493174a2c53"
+      "sha256": "e2fd34e63e53692384cd88c75f7422869d0a06f6ad80ea3c118df459ed903353",
+      "size_bytes": 6186
     },
     {
       "path": "docs/info/26.10.18/CygnusX_Integration_Test_Matrix_2026-10-18.csv",
-      "size_bytes": 41996,
-      "sha256": "6c2d58166ce32f99be78e06b38d85a6921ea8e64ad1bb001a184e5bcea9c0228"
+      "sha256": "63c4fa59f97d7eed05661ada006938d5f854a46ff278952ffb3e4518e0f01ced",
+      "size_bytes": 42148
     },
     {
       "path": "evidence/g3-e2-20261018/admission-source-audit.md",
-      "size_bytes": 3479,
-      "sha256": "c9efb8ead4d9bd4ab474039a7f5708c944e512a10ba9a9ef28089bcb1a40188e"
+      "sha256": "0cbdc33ccb39185636c70685a592191788c5c13b83d2d2503b65658a7ff0b093",
+      "size_bytes": 4696
     },
     {
       "path": "evidence/g3-e2-20261018/host-preflight-continued.json",
@@ -155,8 +160,8 @@
     },
     {
       "path": "evidence/g3-e2-20261018/isolated-regression.txt",
-      "size_bytes": 11510,
-      "sha256": "352ced8c7c05b6712d97833a88774c57a0c2f0ff3c3ed73a4e42c60328339842"
+      "sha256": "47ae650119aef350038ad1819b5c4f0c6e0dfec91baedf0e1ace637feb11dea8",
+      "size_bytes": 12347
     },
     {
       "path": "evidence/g3-e2-20261018/real-http-boundary.txt",
@@ -210,8 +215,8 @@
     },
     {
       "path": "evidence/iat-r3-20261018/handoff.md",
-      "size_bytes": 15004,
-      "sha256": "572e42a02b4e96bdccc0570e3a68a8f3907db412c010fd5d3cbd90c6a035d5d0"
+      "sha256": "10668f1145949c5a3321cf7c949928580adbebd63db5b19fe30a0a1ddf51d31d",
+      "size_bytes": 15129
     },
     {
       "path": "evidence/iat-r3-20261018/matrix-and-gateway-regression.txt",
@@ -354,9 +359,24 @@
       "sha256": "3bcb2ba95f24b1d91b9a9cc52f63773b3d04864e5964877500bf0cd1a19727b7"
     },
     {
+      "path": "src/cygnusx/infrastructure/database/models/__init__.py",
+      "sha256": "1bd3aa55bf36f5ca8c5d0c2a0b362e4111f76c5f24fc1e7169474fd502fb2f1a",
+      "size_bytes": 8907
+    },
+    {
       "path": "src/cygnusx/infrastructure/database/models/chat.py",
       "size_bytes": 23989,
       "sha256": "cf4b939b8fefda2df68e76ee078cdfc5ca723469d4fa6cd16a4a840bd6ebaadf"
+    },
+    {
+      "path": "src/cygnusx/infrastructure/database/models/download_execution.py",
+      "sha256": "d92783006a4ca5f116c4c07e66e44e0544b08c7a7236fb9315a6e9ee43ab8a5b",
+      "size_bytes": 4525
+    },
+    {
+      "path": "src/cygnusx/infrastructure/database/repositories/download_execution_admission.py",
+      "sha256": "5bd758b0bd582b97f2aeb27e95901097308cf93e36892158fb61b40828bea563",
+      "size_bytes": 8100
     },
     {
       "path": "src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py",
@@ -392,6 +412,11 @@
       "path": "tests/unit/test_deterministic_test_provider.py",
       "size_bytes": 4630,
       "sha256": "8dbdaaff1d596d2e014313932c27b3736deca66242e80d6f0cf49a7a15680aa1"
+    },
+    {
+      "path": "tests/unit/test_download_execution_admission.py",
+      "sha256": "cdbaf16b10cb602b36c597cf52032c18d893742c33b3720ed8b219b1457d5d4a",
+      "size_bytes": 7082
     },
     {
       "path": "tests/unit/test_download_execution_boundary_probe.py",

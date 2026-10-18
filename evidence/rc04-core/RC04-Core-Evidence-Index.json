@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-18",
+  "timezone": "Asia/Shanghai",
+  "acceptance": "BLOCKED_NOT_ACCEPTED",
+  "current_candidate": {
+    "run_id": null,
+    "source_commit": "621bf678c58eae1e527d6dc5a105c561a4655130",
+    "branch": "main",
+    "working_tree": "dirty; 36 status records; index empty; frontend tree matches HEAD",
+    "image_digest": null,
+    "docker_runtime": "BLOCKED: docker info denied; no isolated acceptance env file",
+    "uncommitted_task_change": {
+      "path": "deploy/acceptance/ra02_runner.py",
+      "sha256": "c1db801572b9990204ea6b6a0fac821677b7eb938a39c2685fb79fe56920ffc7",
+      "description": "adds RA02 positive attempt_count update assertion; static checks only"
+    }
+  },
+  "frontend_current_source_checks": {
+    "vitest": "PASS: 597 tests across 88 files",
+    "type_check": "PASS: npm run type-check",
+    "production_build": "PASS: npm run build",
+    "dependency_install": "BLOCKED: clean archive npm ci failed to resolve registry.npmmirror.com (EAI_AGAIN)",
+    "dependency_install_log": {
+      "path": "/tmp/rc04-frontend-head-kQXLE4/npm-cache/_logs/2026-10-18T08_18_14_595Z-debug-0.log",
+      "sha256": "6510461c6ae2b1e3a8eca085c749d662e6e56b5804c9a36996e552b22c6d5532"
+    },
+    "scope": "frontend source equals current HEAD; checks used preinstalled workspace node_modules"
+  },
+  "historical_run": {
+    "run_id": "ri095-authorized-20261017-attempt1",
+    "source_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+    "browser_result": "31/34; historical only",
+    "artifact_index": {
+      "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/artifact-index.json",
+      "sha256": "6b8d4cbbd4e1d2a309bf89165fa19239e11d5346ec3ec852d019d7edffc16b08",
+      "records": 68,
+      "verified_paths_sizes_sha256": "68/68"
+    },
+    "source_hash_comparison": {
+      "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/source-hashes.json",
+      "sha256": "37549c5b8b8f03fefbbd603634a5051c67b25cce240d8d975f89ae05b0e4d456",
+      "entries": 13,
+      "matching_current_working_copy": 8,
+      "different": 5
+    },
+    "ra02": {
+      "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/ra02/ra02-results.txt",
+      "sha256": "fc9b948c5ad441626bda54f7e28129050cb09e6d089ef407cbca1fb517f46423",
+      "coverage": "11 assertions; does not establish new case 12"
+    },
+    "rollback_flags": {
+      "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/rollback/flags.txt",
+      "finding": "READS/WRITES/PDF recorded true; current runtime state unknown"
+    }
+  },
+  "historical_credential_redaction_audit": {
+    "finding": "Two raw historical logs contain JWT-shaped access/refresh token fields; original files preserved and must remain access restricted",
+    "raw_artifacts_verified_unchanged": "68/68 historical artifact paths, sizes and SHA-256 verified",
+    "restricted_originals": [
+      {
+        "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/auth/e2e-auth.log",
+        "sha256": "e47760fb18c11e7d949c026a05581da2647240e4428135e16c4439cc342510e1",
+        "mode": "0600"
+      },
+      {
+        "path": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/delivery-chain/e2e-all.log",
+        "sha256": "bc63f9f6f408befdb1aef1bda96f71cd86a42011370f7f340bbd226959c25cab",
+        "mode": "0600"
+      }
+    ],
+    "redacted_derivatives": [
+      {
+        "path": "evidence/rc04-core/redacted-history/e2e-auth.redacted.txt",
+        "sha256": "3df58388da474e2336d5bb4e452c6cfbc333db315c66b412aa84bb553d5f6535",
+        "redacted_jwt_markers": 2,
+        "remaining_jwt_pattern": false
+      },
+      {
+        "path": "evidence/rc04-core/redacted-history/e2e-all.redacted.txt",
+        "sha256": "6839be3c800b44ef34b7c66bac92bce9ea2af9dbddddf2de7d9e4238e3ecac1a",
+        "redacted_jwt_markers": 2,
+        "remaining_jwt_pattern": false
+      }
+    ],
+    "security_signoff": "BLOCKED_PENDING_ACCESS_RESTRICTION_AND_CREDENTIAL_DISPOSITION"
+  },
+  "historical_browser_assertion_audit": {
+    "results_file": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/browser/browser-results.json",
+    "recorded_rows": 34,
+    "passed": 31,
+    "failed": 3,
+    "failed_assertion": "export_ready at all three viewports",
+    "recorded_assertions": {
+      "global": ["browser.launch_sandboxed"],
+      "per_viewport": ["login", "project_list", "project_detail", "delivery_panel_present", "export_preview_available", "preview_shows_details", "export_ready", "refresh_persists", "keyboard_focus", "no_horizontal_overflow", "console_clean"]
+    },
+    "zip_download_assertion": "not emitted because it is conditional on export_ready",
+    "not_proven": ["fresh_export", "existing_ready_job", "zip_download", "sha256_comparison", "idempotent_creation", "error_polling", "revoked_download"]
+  },
+  "fault_injection_definition_audit": {
+    "numbered_fi01_fi06_mapping": "NOT_DEFINED_IN_AUTHORITATIVE_PLANS; no mapping invented",
+    "required_dimensions_from_plan": ["validating failure", "rendering failure", "publishing failure", "publish succeeded but DB state commit failed", "duplicate task delivery/reconcile", "permission revocation/retry/download"],
+    "stage_injector": "NOT_FOUND_IN_ACCEPTANCE_SOURCE",
+    "status": "BLOCKED"
+  },
+  "current_static_checks": [
+    {"name": "acceptance ruff check and format", "status": "PASS_STATIC"},
+    {"name": "acceptance checks.py config rejection and worker registry", "status": "PASS_STATIC; runtime NOT_RUN"},
+    {"name": "browser-preflight syntax", "status": "PASS_STATIC; no browser run"},
+    {"name": "frontend Vitest", "status": "PASS; 597 tests / 88 files; frontend tree matches HEAD"},
+    {"name": "frontend type-check", "status": "PASS; frontend tree matches HEAD"},
+    {"name": "frontend production build", "status": "PASS; frontend tree matches HEAD; existing dependencies"},
+    {"name": "RA02 runner case 12", "status": "PASS_STATIC; Ruff and py_compile pass; no PostgreSQL execution"}
+  ],
+  "gates": {
+    "RC04-00": "BLOCKED",
+    "RC04-01": "BLOCKED",
+    "RC04-02": "BLOCKED",
+    "RC04-03": "BLOCKED",
+    "RC04-04": "BLOCKED",
+    "browser_34_rows_across_3_viewports": "BLOCKED",
+    "frontend_install_build": "PARTIAL: tests/type-check/build PASS using existing dependencies; clean npm ci BLOCKED by registry DNS",
+    "docker_build_and_digest": "NOT_RUN",
+    "security_signoff_and_current_rollback": "BLOCKED"
+  },
+  "related_reports": [
+    "docs/implementation/RC04-Core-Final-Implementation.md",
+    "docs/implementation/RC04-Core-Gate-Results.md",
+    "docs/implementation/RC04-Core-Remaining-Blockers.md"
+  ],
+  "index_self_hash": "excluded"
+}

@@ -209,6 +209,149 @@ groups:
         description: "检查当前 API Key 所属用户工作区内的数据完整性"
         read_only: true
 
+  - id: biothings
+    module: tools.biothings
+    description: "BioThings 科研数据库 — MyGene/MyVariant/MyChem 固定只读适配"
+    tools:
+      - name: cygnusx_gene_search
+        description: "按指定物种检索 MyGene 基因注释"
+        read_only: true
+      - name: cygnusx_gene_get
+        description: "按 Entrez 或 Ensembl Gene ID 获取 MyGene 注释"
+        read_only: true
+      - name: cygnusx_gene_resolve
+        description: "按显式 scopes 和物种批量映射基因标识符"
+        read_only: true
+      - name: cygnusx_variant_search
+        description: "按明确 hg19/hg38 assembly 检索 MyVariant"
+        read_only: true
+      - name: cygnusx_variant_get
+        description: "按明确 assembly 获取 MyVariant 注释"
+        read_only: true
+      - name: cygnusx_variant_resolve
+        description: "按显式 scopes 和 assembly 批量映射变异标识符"
+        read_only: true
+      - name: cygnusx_chem_search
+        description: "检索 MyChem 化合物候选"
+        read_only: true
+      - name: cygnusx_chem_get
+        description: "按支持的化学标识符获取 MyChem 注释"
+        read_only: true
+      - name: cygnusx_chem_resolve
+        description: "按显式 scopes 批量映射化合物标识符"
+        read_only: true
+      - name: biothings_describe
+        description: "获取 BioThings provider metadata 与字段目录"
+        read_only: true
+
+  - id: genome
+    module: tools.research_resources
+    description: "Ensembl植物基因对象、同源、区间和短序列查询"
+    tools:
+      - name: cygnusx_genome_lookup
+        description: "按物种和ID查询Ensembl基因对象"
+        read_only: true
+      - name: cygnusx_genome_homology
+        description: "查询Ensembl plants orthologues"
+        read_only: true
+      - name: cygnusx_genome_region
+        description: "查询Ensembl植物基因组区间注释"
+        read_only: true
+      - name: cygnusx_genome_sequence
+        description: "查询Ensembl短序列并限制内联长度"
+        read_only: true
+
+  - id: plant_te
+    module: tools.research_resources
+    description: "Gramene植物知识与Dfam转座元件家族检索"
+    tools:
+      - name: cygnusx_plant_search
+        description: "搜索Gramene v69植物基因与知识条目"
+        read_only: true
+      - name: cygnusx_plant_get
+        description: "按ID获取Gramene基因详情"
+        read_only: true
+      - name: cygnusx_te_search
+        description: "按名称、分类路径和clade检索Dfam家族"
+        read_only: true
+      - name: cygnusx_te_get
+        description: "按Dfam accession查询TE家族摘要"
+        read_only: true
+
+  - id: expression
+    module: tools.research_resources
+    description: "Expression Atlas与Single Cell Atlas研究目录（非表达值查询）"
+    tools:
+      - name: cygnusx_expression_studies
+        description: "检索bulk或单细胞Atlas研究目录"
+        read_only: true
+      - name: cygnusx_expression_manifest
+        description: "读取Atlas实验目录元数据，不假设下载文件存在"
+        read_only: true
+
+  - id: pathways
+    module: tools.research_resources
+    description: "Reactome通路知识查询；富集分析未开放"
+    tools:
+      - name: cygnusx_pathway_get
+        description: "按stable ID查询Reactome通路/反应知识"
+        read_only: true
+
+  - id: protein_structure
+    module: tools.research_resources
+    description: "UniProt、InterPro、RCSB PDB和AlphaFold只读查询"
+    tools:
+      - name: cygnusx_protein_resolve
+        description: "按物种和reviewed策略解析UniProt蛋白"
+        read_only: true
+      - name: cygnusx_protein_features
+        description: "读取UniProt功能、定位或features摘要"
+        read_only: true
+      - name: cygnusx_protein_sequence
+        description: "获取不超过3000残基的UniProt FASTA"
+        read_only: true
+      - name: cygnusx_domain_get
+        description: "查询蛋白的InterPro家族/结构域及位置"
+        read_only: true
+      - name: cygnusx_domain_proteins
+        description: "查询InterPro条目关联蛋白"
+        read_only: true
+      - name: cygnusx_structure_search
+        description: "按UniProt accession搜索实验PDB实体"
+        read_only: true
+      - name: cygnusx_structure_get
+        description: "按PDB entry ID读取实验结构元数据"
+        read_only: true
+      - name: cygnusx_structure_prediction
+        description: "查询AlphaFold预测模型和置信度元数据"
+        read_only: true
+
+  - id: clinical_literature
+    module: tools.research_resources
+    description: "ClinVar、Open Targets和Europe PMC证据/文献只读查询"
+    tools:
+      - name: cygnusx_clinvar_search
+        description: "检索ClinVar记录并返回Entrez UID语义"
+        read_only: true
+      - name: cygnusx_clinvar_get
+        description: "按VCV accession读取ClinVar摘要"
+        read_only: true
+      - name: cygnusx_target_search
+        description: "使用固定GraphQL模板检索Open Targets实体"
+        read_only: true
+      - name: cygnusx_target_associations
+        description: "读取Open Targets靶点-疾病关联"
+        read_only: true
+      - name: cygnusx_target_evidence
+        description: "读取Open Targets靶点/疾病证据摘要"
+        read_only: true
+      - name: cygnusx_literature_get
+        description: "按MED/PMC/PPR来源查询Europe PMC文章与引用"
+        read_only: true
+      - name: cygnusx_literature_annotations
+        description: "按source-qualified文章ID读取Europe PMC注释"
+        read_only: true
+
   - id: seqout
     module: tools.seqout
     description: "公共数据库检索 — 完整覆盖 seqout.org API（搜索/项目/样本/统计/下载等）"

@@ -62,6 +62,14 @@ class CygnusXAPIClient:
     async def delete(self, path: str, **kwargs: Any) -> Any:
         return await self._request("DELETE", path, **kwargs)
 
+    async def biothings(self, database: str, action: str, arguments: dict[str, Any]) -> dict:
+        """Call the authenticated platform BioThings adapter using fixed route components."""
+        if database not in {"gene", "variant", "chem"}:
+            raise ValueError("unsupported BioThings database")
+        if action not in {"search", "get", "resolve", "describe"}:
+            raise ValueError("unsupported BioThings action")
+        return await self.post(f"/biothings/{database}/{action}", json=arguments)
+
     # ===== Tasks =====
     async def list_tasks(self, status: str | None = None) -> dict:
         params = {}

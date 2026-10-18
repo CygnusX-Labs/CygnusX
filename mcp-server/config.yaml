@@ -40,6 +40,13 @@ tool_groups:
   platform: true     # 平台信息 (user_info/platform_status)
   pipelines: true    # 完整分析流程 (RNA-seq/ATAC-seq prepare/submit/status/results)
   seqout: true       # 公共数据库检索 (seqout_search/project_detail/sample_manifest/resolve)
+  biothings: true    # 科研数据库 (MyGene/MyVariant/MyChem，10 个只读工具)
+  genome: true       # Ensembl lookup/homology/region/sequence
+  plant_te: true     # Gramene植物知识与Dfam TE查询
+  expression: true   # Expression Atlas与Single Cell study目录
+  pathways: true     # Reactome知识查询
+  protein_structure: true # UniProt/InterPro/RCSB/AlphaFold只读查询
+  clinical_literature: true # ClinVar/Open Targets/Europe PMC
 
 # MCP 工具固定化（阶段 3）：旧 RNA/ATAC 四件套发现开关。
 # true=旧工具可用（默认，现状/回退）；false=同名工具变为迁移 stub，

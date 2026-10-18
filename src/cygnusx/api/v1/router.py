@@ -9,6 +9,7 @@ from cygnusx.api.v1 import (
     ai,
     announcements,
     auth,
+    biothings,
     chat,
     cookies,
     datasets,
@@ -76,6 +77,7 @@ api_router.include_router(research_claims.router, tags=["ResearchEvidence"])
 api_router.include_router(agent_tools.router, prefix="/agent-tools", tags=["AgentTools"])
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(biothings.router, prefix="/biothings", tags=["BioThings"])
 api_router.include_router(site_settings.router, prefix="/site-settings", tags=["SiteSettings"])
 api_router.include_router(platform_config.router, prefix="/platform", tags=["PlatformConfig"])
 api_router.include_router(site_content.router, prefix="/site-content", tags=["SiteContent"])

@@ -7,11 +7,10 @@ import importlib
 from pathlib import Path
 from typing import Any
 
-from fastmcp import FastMCP
-
 from client.api_client import CygnusXAPIClient
 from core.config import settings
 from core.logger import logger
+from fastmcp import FastMCP
 
 _GROUP_REGISTRY: dict[str, str] = {
     "tasks": "tools.tasks",
@@ -25,6 +24,13 @@ _GROUP_REGISTRY: dict[str, str] = {
     "platform": "tools.platform",
     "pipelines": "tools.pipelines",
     "seqout": "tools.seqout",
+    "biothings": "tools.biothings",
+    "genome": "tools.research_resources",
+    "plant_te": "tools.research_resources",
+    "expression": "tools.research_resources",
+    "pathways": "tools.research_resources",
+    "protein_structure": "tools.research_resources",
+    "clinical_literature": "tools.research_resources",
 }
 
 _TOOLS_YAML = Path(__file__).resolve().parent.parent / "tools.yaml"
@@ -104,7 +110,20 @@ def register_all_tools(mcp: FastMCP, api: CygnusXAPIClient) -> None:
             logger.info(f"工具组 [{group_id}] 已禁用，跳过注册")
             continue
         module = importlib.import_module(module_path)
-        module.register(mcp, api)
+        if group_id == "genome":
+            module.register_genome(mcp, api)
+        elif group_id == "plant_te":
+            module.register_plant_te(mcp, api)
+        elif group_id == "expression":
+            module.register_expression(mcp, api)
+        elif group_id == "pathways":
+            module.register_pathways(mcp, api)
+        elif group_id == "protein_structure":
+            module.register_protein(mcp, api)
+        elif group_id == "clinical_literature":
+            module.register_clinical_literature(mcp, api)
+        else:
+            module.register(mcp, api)
         registered_groups.add(group_id)
         logger.debug(f"工具组 [{group_id}] 注册完成")
 

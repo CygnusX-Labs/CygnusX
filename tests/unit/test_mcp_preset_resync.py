@@ -210,3 +210,19 @@ async def test_cygnusx_tools_id_holding_foreign_record_is_untouched(monkeypatch)
 
     assert impostor.name == "someone-else"
     assert impostor.tools == []
+
+
+@pytest.mark.unit
+async def test_preset_sync_preserves_admin_disabled_state():
+    server = _cygnusx_server("old_tool", is_enabled=False)
+    service, _db = _make_service(server)
+    preset = {
+        "name": CYGNUSX_TOOLS_SERVER_NAME,
+        "description": "updated",
+        "tools": [_tool("new_tool")],
+    }
+
+    await service._sync_preset_server(server, preset, force_preset_sync=False)
+
+    assert server.is_enabled is False
+    assert [tool.tool_name for tool in server.tools] == ["new_tool"]

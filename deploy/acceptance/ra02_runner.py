@@ -165,6 +165,11 @@ def main():
                 "23505",
                 report_job_insert(DUP, "rrk11", "sdf", "queued", 0),
             ),
+            (
+                "12_legal_attempt_count_update",
+                "00000",
+                f"UPDATE project_report_jobs SET attempt_count=1 WHERE id='{RJFROZEN}'::uuid",
+            ),
         ):
             got, detail = "00000", ""
             try:

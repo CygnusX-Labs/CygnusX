@@ -7,6 +7,7 @@ from hmac import compare_digest
 from client.api_client import api
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from tools.research_common import close_provider_clients
 
 from core.config import settings
 
@@ -27,6 +28,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
         yield
     finally:
         await api.aclose()
+        await close_provider_clients()
 
 
 def run_server(server: FastMCP, transport: str, port: int) -> None:

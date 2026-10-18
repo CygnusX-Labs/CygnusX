@@ -65,6 +65,8 @@ from cygnusx.infrastructure.mcp.conda_meta_preset import (
     CONDA_META_MCP_TIMEOUT,
 )
 from cygnusx.infrastructure.mcp.presets import (
+    CYGNUSX_BIOTHINGS_SERVER_ID,
+    CYGNUSX_BIOTHINGS_SERVER_NAME,
     CYGNUSX_PIPELINES_SERVER_ID,
     CYGNUSX_PIPELINES_SERVER_NAME,
     CYGNUSX_PLATFORM_SERVER_ID,
@@ -274,6 +276,7 @@ class MCPService:
         # 预设身份归一化：把历史随机 ID 的预设记录对齐到确定性常量 ID，再走下方按名同步。
         # 每个归一化在独立 savepoint 内执行，单个失败不中止后续预设的初始化。
         for preset_name, preset_id in (
+            (CYGNUSX_BIOTHINGS_SERVER_NAME, CYGNUSX_BIOTHINGS_SERVER_ID),
             (CYGNUSX_PIPELINES_SERVER_NAME, CYGNUSX_PIPELINES_SERVER_ID),
             ("cygnusx-platform", CYGNUSX_PLATFORM_SERVER_ID),
             (CYGNUSX_TOOLS_SERVER_NAME, CYGNUSX_TOOLS_SERVER_ID),
@@ -300,6 +303,7 @@ class MCPService:
                 # 预设工具随代码演进（如新增工作区文件工具），需把最新工具清单同步进库，
                 # 否则已存在部署的 builtin 预设工具不会出现在 LLM 工具清单里。
                 if preset["name"] in (
+                    CYGNUSX_BIOTHINGS_SERVER_NAME,
                     CYGNUSX_PIPELINES_SERVER_NAME,
                     "cygnusx-platform",
                     SEQOUT_SERVER_NAME,
@@ -307,7 +311,9 @@ class MCPService:
                     await self._sync_preset_server(existing, preset, force_preset_sync)
                 continue
             preset_id = (
-                CYGNUSX_PLATFORM_SERVER_ID
+                CYGNUSX_BIOTHINGS_SERVER_ID
+                if preset["name"] == CYGNUSX_BIOTHINGS_SERVER_NAME
+                else CYGNUSX_PLATFORM_SERVER_ID
                 if preset["name"] == "cygnusx-platform"
                 else SEQOUT_SERVER_ID
                 if preset["name"] == SEQOUT_SERVER_NAME
@@ -407,7 +413,6 @@ class MCPService:
         if preset_desc and existing.description != preset_desc:
             existing.description = preset_desc
         existing.status = ServerStatus.ONLINE
-        existing.is_enabled = True
         await self._repo.save(existing)
 
     async def _ensure_conda_meta_mcp(self) -> None:

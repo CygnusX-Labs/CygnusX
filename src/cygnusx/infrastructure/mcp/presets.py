@@ -17,6 +17,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.tool_bridge_service import get_tool_bridge_service
+from cygnusx.infrastructure.mcp.biothings_preset import (
+    BIOTHINGS_HANDLERS,
+    BIOTHINGS_TOOLS,
+    CYGNUSX_BIOTHINGS_SERVER_ID,
+    CYGNUSX_BIOTHINGS_SERVER_NAME,
+)
 from cygnusx.infrastructure.mcp.pipeline_preset import (
     CYGNUSX_PIPELINES_SERVER_ID,
     CYGNUSX_PIPELINES_SERVER_NAME,
@@ -1468,8 +1474,9 @@ async def _seqout_handler(
     context: ToolInvocationContext | None = None,
 ) -> dict[str, Any]:
     """Seqout builtin preset 的统一 handler — 调用 seqout.org API"""
-    import httpx
     import json
+
+    import httpx
 
     BASE_URL = "https://seqout.org/api"
 
@@ -2391,6 +2398,13 @@ SEQOUT_HANDLERS = {t["name"]: _seqout_handler for t in SEQOUT_PRESET_TOOLS}
 # 预设服务定义
 PRESET_SERVERS: list[dict[str, Any]] = [
     {
+        "name": CYGNUSX_BIOTHINGS_SERVER_NAME,
+        "description": "只读科研数据库 MCP：MyGene、MyVariant 与 MyChem，要求显式物种/assembly并限制查询规模",
+        "transport": "builtin",
+        "tools": BIOTHINGS_TOOLS,
+        "handlers": BIOTHINGS_HANDLERS,
+    },
+    {
         "name": "cygnusx-platform",
         "description": "平台操作 MCP - Europe PMC 文献检索、任务管理、流程查询、当前用户与饼干（积分）余额查询、Agent 技能绑定查询、协作室 Agent 能力目录与当前房间状态查询、沙箱执行、结果读取、数据下载（SRA/GEO 公共数据库与多云存储）",
         "transport": "builtin",
@@ -2519,6 +2533,10 @@ def get_preset_by_name(name: str) -> dict[str, Any] | None:
 
 __all__ = [
     "PRESET_SERVERS",
+    "BIOTHINGS_HANDLERS",
+    "BIOTHINGS_TOOLS",
+    "CYGNUSX_BIOTHINGS_SERVER_ID",
+    "CYGNUSX_BIOTHINGS_SERVER_NAME",
     "CYGNUSX_TOOLS_SERVER_ID",
     "CYGNUSX_TOOLS_SERVER_NAME",
     "CYGNUSX_PLATFORM_SERVER_ID",

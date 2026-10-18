@@ -162,3 +162,12 @@ S4-A/S4-B0 focused isolated regression: 34 passed, 1 existing Pydantic deprecati
 
 These suites do not exercise a Supervisor server, host enforcement, Worker lifecycle
 integration, PostgreSQL, Redis, Broker, deployed Node/API, or browser acceptance.
+# 2026-10-18 admission source and resolver implementation
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run pytest tests/unit/test_download_execution_admission.py -q -m unit
+result: 4 passed, 1 existing Pydantic deprecation warning
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run ruff check src/cygnusx/infrastructure/database/models/download_execution.py src/cygnusx/infrastructure/database/repositories/download_execution_admission.py tests/unit/test_download_execution_admission.py alembic/versions/dwnadmission01_add_download_execution_admissions.py
+result: All checks passed
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run mypy src/cygnusx/infrastructure/database/repositories/download_execution_admission.py
+result: Success, no issues found
+UV_CACHE_DIR=/tmp/uv-omic-hub uv run python scripts/check_migrations.py
+result: migration topology healthy; one Alembic head
