@@ -854,6 +854,37 @@ Plan 分析计划卡片（`PlanCard`）是 Plan 模式下展示任务步骤与�
 - 新增或修改 Plan 卡片时，至少验证：桌面与窄屏边界对齐、折叠摘要、全部完成自动折叠、手动展开后不再自动收起、深浅主题对比度、状态实时推进和无横向滚动。
 - 组件测试应覆盖标题行折叠/展开、`X/N` 进度更新和自动折叠护栏；不得只验证静态文案。
 
+### 18.1.3 回复后的 Follow-up Action Panel（强制）
+
+**适用入口与权威实现**：AI 助手 `AgentSandbox` 与 AI 工作台 `StudioView` 共用 `KimiMessageList → KimiMessageItem → SuggestionChips`。Follow-up 是消息下方的轻量独立面板，内部继续使用横向胶囊建议，不改为纵向列表或等宽卡片。
+
+#### 宽度、层级与间距
+
+- 面板与上方 AI Message 必须继承同一个消息内容列的实际宽度：`width: 100%`、`max-width: 100%`、`min-width: 0`、`box-sizing: border-box`。左右边界与消息卡片外边框对齐；禁止独立 `800px` 上限、固定 `1060px` 或额外水平缩进，也不能只改 width 而保留父级的不同 max-width。
+- 展示顺序固定为 **AI Message → Follow-up Panel → Message Actions**。点赞、点踩、复制保持面板外的独立同级操作栏，三者左边界一致；不得将操作栏包进面板，不改变事件与行为。
+- 面板距 AI Message `10–12px`（当前采用 `12px`），操作栏距面板 `8–12px`（当前采用 `8px`）。
+- 外层采用接近消息卡片的深色背景、`1px` 低对比边框、`12–14px` 圆角、桌面 `16–20px` 内边距。当前复用 `--chat-ai-card`、`--bubble-border` / `--chat-border`、`--card-radius`，内边距为 `16px 20px`。禁止强烈渐变、亮紫色实心背景、大面积阴影、发光或额外装饰性嵌套边框。
+
+#### Header 与胶囊标签
+
+- Header 仅含品牌蓝紫色 Sparkles 图标与“你可以继续”，不附加说明文字。标题 `13–14px`、字重 `500`，颜色使用正文文字令牌以较上一版次级文字提亮；与胶囊组间距约 `12px`。
+- 胶囊组使用 `display: flex`、`flex-wrap: wrap`、`gap: 10px`，按内容自然排布。此处 `10px` 为本面板的专项间距规则。
+- 每个胶囊使用 `width: fit-content`、`max-width: 100%`、最小高度 `38–40px`（当前 `40px`）、横向 padding `16–20px`、`9999px` 圆角、字号 `13–14px`、字重 `500`。高度允许随长文本换行增加，不裁切文字。
+- 标签与 ArrowUpRight 间距 `8px`；不展示重复 Enter 提示。表面与边框复用 `--chat-chip-*`；正文、Header、Hover 与焦点复用 `--text-*`、`--surface-highlight`、`--border-focus`、`--chat-accent`，同时兼容深浅主题。
+
+#### 文本、响应式与交互
+
+- 当前建议结构是 `label/prompt/action`，没有独立 title 字段；展示现有 label，发送原始完整 prompt。不得改消息协议、建议生成逻辑、Agent Prompt 或 Runtime 来适配样式；若以后已有独立展示 title，应优先使用该字段，但不影响完整 prompt。
+- 长标签自然换行，`overflow-wrap: anywhere` 防止连续英文或路径撑破容器；不得按固定字符数截断。若窄屏采用视觉省略，必须提供完整可访问名称和完整内容访问方式。
+- Desktop 与 Tablet 均随消息内容列缩放、自然换行。Mobile（≤767px）外层 padding 降为 `12–14px`（当前 `12px`），保持触摸区域且不得产生横向溢出。
+- Hover 轻微提亮背景、增强低饱和蓝紫边框与箭头，过渡 `150–180ms`（当前 `160ms`），尊重 reduced-motion。原生 button 支持 Tab / Enter / Space，保留清晰 focus-visible。
+- 保留结构化建议优先、历史 Markdown 兜底、最多 4 条及 `send` / `prefill` 语义。只有最后一条已完成助手回复且当前无流式输出时展示；发送、会话上下文、取消和中断沿用原链路。
+- 组件阻止同帧重复激活；`suggestionsDisabled` 从列表传到按钮。Studio 在发送前异步读取产物列表期间通过 `suggestionSending` 禁用全部建议，finally 释放；运行中沿用 isStreaming 门禁。
+
+#### 验收要求
+
+必须检查桌面与移动端的消息/面板左右边界和等宽、面板材质、横向换行、长标签无不必要截断与溢出、深色主题一致性，以及点击/键盘/禁用/历史恢复/流式前后的行为。提供实际修改文件、关键 CSS、Desktop/Mobile 截图与真实测试结果。jsdom、类型检查和构建通过不能替代实际浏览器布局及截图验收；当前浏览器运行受到工具沙箱限制，截图验收尚未完成，不得表述为已通过。
+
 ### 18.2 流式输出
 
 - 使用 `useChatStream` / `useAgentChatStream` 处理 SSE 或 WebSocket 流。

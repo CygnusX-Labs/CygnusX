@@ -9,7 +9,7 @@
  */
 
 export interface SuggestedFollowUp {
-  /** 胶囊上展示的短标签（≤12 字，超出截断） */
+  /** 胶囊上展示的标签（保留完整标题，由布局自然换行） */
   label: string
   /** 点击后发送 / 填入输入框的完整文案（条目全文） */
   prompt: string
@@ -19,9 +19,6 @@ export interface SuggestedFollowUp {
 
 /** 单个消息最多渲染的建议条数 */
 export const MAX_SUGGESTIONS = 4
-
-/** label 最大长度（超出截断并加省略号） */
-const LABEL_MAX_LENGTH = 12
 
 /** 章节标题变体（正则特殊字符已转义，用于 includes 匹配） */
 const SECTION_TITLES = [
@@ -60,7 +57,7 @@ function stripInlineMarkdown(text: string): string {
     .trim()
 }
 
-/** label 取冒号/破折号前的短名；无分隔符或前缀超长时截断前 12 字 */
+/** label 取冒号/破折号前的标题；无分隔符时保留全文，不按字符数截断。 */
 function extractLabel(text: string): string {
   let cut = -1
   for (const separator of ['：', ':', '—', '–', ' - ']) {
@@ -68,8 +65,7 @@ function extractLabel(text: string): string {
     if (idx > 0 && (cut < 0 || idx < cut)) cut = idx
   }
   const base = cut > 0 ? text.slice(0, cut).trim() : text
-  if (!base) return text.slice(0, LABEL_MAX_LENGTH)
-  return base.length > LABEL_MAX_LENGTH ? `${base.slice(0, LABEL_MAX_LENGTH)}…` : base
+  return base || text
 }
 
 function extractItems(sectionLines: string[]): string[] {

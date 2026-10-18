@@ -66,6 +66,7 @@ interface Props {
   sessionId?: string
   /** 建议追问 Chips 总开关（默认关闭，页面侧显式开启，出问题时一行即可隐藏） */
   suggestionsEnabled?: boolean
+  suggestionsDisabled?: boolean
   /** 由消息列表判定：本条是最后一条已完成的 assistant 消息且当前无流式输出 */
   showSuggestions?: boolean
 }
@@ -82,6 +83,7 @@ const props = withDefaults(defineProps<Props>(), {
   modelName: 'AI 助手',
   sessionId: '',
   suggestionsEnabled: false,
+  suggestionsDisabled: false,
   showSuggestions: false,
 })
 
@@ -1248,11 +1250,12 @@ function handleEdit() {
           </template>
         </div>
 
-        <!-- 建议追问：回复完成后展示"可选下一步"竖向卡片（行尾带 ↵ Enter 提示），独立于消息主链路，
-             出问题把父级 suggestionsEnabled 关掉即可整体隐藏 -->
+        <!-- 建议追问：回复完成后展示轻量横向胶囊，发送/填入仍由当前会话处理。 -->
         <SuggestionChips
           v-if="followUpSuggestions.length"
           :suggestions="followUpSuggestions"
+          class="message-followups"
+          :disabled="suggestionsDisabled || streamingActive"
           @send="(prompt) => emit('suggestionSend', prompt)"
           @prefill="(prompt) => emit('suggestionPrefill', prompt)"
         />
@@ -1567,6 +1570,11 @@ function handleEdit() {
   color: #fff;
   font-size: 14px;
 }
+.message-followups {
+  width: 100%;
+  max-width: 100%;
+}
+
 .kimi-message-item.assistant .message-content.ai-card {
   position: relative;
   width: 100%;

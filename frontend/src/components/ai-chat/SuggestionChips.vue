@@ -1,156 +1,156 @@
 <script setup lang="ts">
-/**
- * 建议追问卡片（Suggested Follow-ups）。
- * 渲染在 assistant 回复气泡/产物卡片下方的竖向可点击卡片列表：
- * - action='send'：emit('send', prompt)，由页面侧走与输入框相同的发送 action，
- *   行尾显示 ↵ Enter 键位提示，示意"点击即发送"；
- * - action='prefill'：emit('prefill', prompt)，由页面侧写入输入框并聚焦，
- *   行尾显示 ✎ 提示"填入输入框待补充"。
- * suggestions 为空时不渲染任何占位；组件独立挂载，出问题一行 v-if 即可隐藏。
- * 卡片整行展示完整 label（不截断），完整 prompt 同时入 title/aria-label；
- * 可访问性：每个条目为原生 button（Tab 聚焦、Enter/Space 触发）；
- * 动画仅 transform/opacity 且 ≤200ms，尊重 prefers-reduced-motion。
- */
+/** 只负责建议展示与事件转发；会话、发送与流式状态由上层维护。 */
+import { nextTick, ref } from 'vue'
+import { ArrowUpRight } from '@vicons/carbon'
+import { SparklesOutline } from '@vicons/ionicons5'
 import type { SuggestedFollowUp } from '@/utils/nextStepSuggestions'
 
-interface Props {
+const props = withDefaults(defineProps<{
   suggestions: SuggestedFollowUp[]
-}
-
-const props = defineProps<Props>()
+  disabled?: boolean
+}>(), { disabled: false })
 
 const emit = defineEmits<{
   send: [prompt: string]
   prefill: [prompt: string]
 }>()
 
-function handleClick(item: SuggestedFollowUp) {
-  if (item.action === 'prefill') {
-    emit('prefill', item.prompt)
-  } else {
-    emit('send', item.prompt)
+// 先同步关闭本轮交互，覆盖父级发送状态更新并卸载建议前的同帧重复点击。
+const activating = ref(false)
+async function handleClick(item: SuggestedFollowUp) {
+  if (props.disabled || activating.value) return
+  activating.value = true
+  try {
+    if (item.action === 'prefill') emit('prefill', item.prompt)
+    else emit('send', item.prompt)
+  } finally {
+    await nextTick()
+    activating.value = false
   }
 }
 
-function cardAriaLabel(item: SuggestedFollowUp): string {
-  return item.action === 'prefill'
-    ? `建议追问（填入输入框待补充）：${item.prompt}`
-    : `建议追问（直接发送）：${item.prompt}`
+function chipAriaLabel(item: SuggestedFollowUp): string {
+  return `${item.label}；${item.action === 'prefill' ? '填入输入框待补充' : '直接发送'}：${item.prompt}`
 }
 </script>
 
 <template>
-  <div v-if="props.suggestions.length" class="suggestion-cards" role="group" aria-label="建议追问">
-    <button
-      v-for="(item, index) in props.suggestions"
-      :key="index"
-      type="button"
-      class="suggestion-card"
-      :class="{ 'is-prefill': item.action === 'prefill' }"
-      :title="item.prompt"
-      :aria-label="cardAriaLabel(item)"
-      @click="handleClick(item)"
-    >
-      <span class="suggestion-card__label">{{ item.label }}</span>
-      <span
-        v-if="item.action === 'prefill'"
-        class="suggestion-card__key"
-        aria-hidden="true"
-        title="填入输入框待补充"
-      >✎</span>
-      <span v-else class="suggestion-card__key" aria-hidden="true"><span class="suggestion-card__enter">↵</span> Enter</span>
-    </button>
+  <div v-if="props.suggestions.length" class="suggestion-chips" role="group" aria-label="你可以继续">
+    <div class="suggestion-chips__header">
+      <SparklesOutline class="suggestion-chips__sparkle" aria-hidden="true" />
+      <span>你可以继续</span>
+    </div>
+    <div class="suggestion-chips__items">
+      <button
+        v-for="(item, index) in props.suggestions"
+        :key="index"
+        type="button"
+        class="suggestion-chip"
+        :disabled="props.disabled || activating"
+        :title="`${item.label}\n${item.action === 'prefill' ? '填入输入框待补充：' : ''}${item.prompt}`"
+        :aria-label="chipAriaLabel(item)"
+        @click="handleClick(item)"
+      >
+        <span class="suggestion-chip__label">{{ item.label }}</span>
+        <ArrowUpRight class="suggestion-chip__arrow" aria-hidden="true" />
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
-.suggestion-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-  animation: suggestion-cards-in 0.18s ease-out both;
+.suggestion-chips {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: var(--space-md, 12px);
+  padding: var(--space-lg, 16px) var(--space-xl, 20px);
+  border: 1px solid var(--bubble-border, var(--chat-border));
+  border-radius: var(--card-radius, 12px);
+  background: var(--chat-ai-card);
 }
 
-.suggestion-card {
+.suggestion-chips__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.12));
-  border-radius: 10px;
-  background: var(--bg-card, #fff);
-  color: var(--chat-text-primary, var(--n-text-color));
+  gap: var(--space-sm, 8px);
+  margin-bottom: var(--space-md, 12px);
+  color: var(--text-primary, var(--chat-text-primary));
   font-size: 13px;
-  line-height: 1.6;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.suggestion-chips__sparkle {
+  width: 16px;
+  height: 16px;
+  color: var(--chat-accent);
+}
+
+.suggestion-chips__items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 8px 16px;
+  border: 1px solid var(--chat-chip-border);
+  border-radius: 9999px;
+  background: var(--chat-chip-bg);
+  color: var(--text-primary, var(--chat-text-primary));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
-.suggestion-card:hover {
-  background: var(--brand-primary-light, #eef1ff);
-  border-color: var(--stardust-blue, #2e5bff);
+.suggestion-chip:not(:disabled):hover {
+  background: var(--surface-highlight, var(--chat-surface-hover));
+  border-color: var(--border-focus, var(--chat-accent));
 }
 
-.suggestion-card:focus-visible {
-  outline: 2px solid var(--stardust-blue, #2e5bff);
-  outline-offset: 1px;
+.suggestion-chip:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 3px;
 }
 
-/* 整行展示完整文案，不截断 */
-.suggestion-card__label {
-  flex: 1 1 auto;
+.suggestion-chip:disabled { opacity: 0.55; cursor: default; }
+
+.suggestion-chip__label {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-/* 行尾键位提示：示意"点击即发送/填入"，kbd 风格 */
-.suggestion-card__key {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border: 1px solid var(--stardust-border-soft, rgba(46, 91, 255, 0.16));
-  border-radius: 6px;
-  background: var(--chat-surface, rgba(128, 128, 128, 0.06));
-  color: var(--chat-text-secondary, rgba(128, 128, 128, 0.9));
-  font-size: 11px;
-  line-height: 1.4;
-  white-space: nowrap;
+.suggestion-chip__arrow {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary, var(--chat-text-secondary));
+  transition: color 0.16s ease;
 }
 
-.suggestion-card__enter {
-  font-size: 12px;
-}
+.suggestion-chip:not(:disabled):hover .suggestion-chip__arrow { color: var(--chat-accent); }
 
-.suggestion-card:hover .suggestion-card__key {
-  border-color: var(--stardust-blue, #2e5bff);
-  color: var(--stardust-blue, #2e5bff);
-}
-
-@keyframes suggestion-cards-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@media (max-width: 767px) {
+  .suggestion-chips { padding: var(--space-md, 12px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .suggestion-cards {
-    animation: none;
-  }
-
-  .suggestion-card {
-    transition: none;
-  }
+  .suggestion-chip, .suggestion-chip__arrow { transition: none; }
 }
 </style>

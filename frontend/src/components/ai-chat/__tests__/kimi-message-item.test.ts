@@ -12,7 +12,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { NMessageProvider } from 'naive-ui'
 
 // lottie-web / vue-echarts import 时依赖完整浏览器 API，打桩
-vi.mock('vue3-lottie', () => ({ Vue3Lottie: { template: '<div />' } }))
+vi.mock('vue3-lottie', () => ({ Vue3Lottie: { template: '<div />', methods: { setSpeed: vi.fn() } } }))
 vi.mock('vue-echarts', () => ({ default: { template: '<div />' } }))
 const studioApiMocks = vi.hoisted(() => ({
   fetchArtifactBlob: vi.fn().mockResolvedValue('blob:heatmap-preview'),
@@ -573,5 +573,67 @@ describe('KimiMessageItem 超频专家产物折叠', () => {
 
     expect(el.querySelector('.worker-result-toggle')).toBeNull()
     expect(el.textContent).toContain('MANAGER_REPORT_TAIL')
+  })
+})
+
+describe('Follow-up 历史恢复与流式门禁', () => {
+  it('恢复结构化历史建议、完整 prompt 与 prefill 行为，流式时隐藏，结束后恢复', async () => {
+    // 此用例切换 Transition 分支，不能使用文件级同步 rAF 桩（会重入 Vue patch）。
+    const originalRaf = global.requestAnimationFrame
+    const originalCancelRaf = global.cancelAnimationFrame
+    global.requestAnimationFrame = (cb) => setTimeout(() => cb(0), 16) as unknown as number
+    global.cancelAnimationFrame = (id) => clearTimeout(id)
+    const send = vi.fn(), prefill = vi.fn()
+    const suggestions = [
+      { label: '探索 TP53', prompt: '完整科研指令：比较所有样本的 TP53 变异证据', action: 'send' },
+      { label: '补充资料', prompt: '请提供原始文件完整路径', action: 'prefill' },
+    ]
+    const state = reactive({
+      message: { ...baseMsg, content: '历史回复', status: 'complete', suggestions },
+      suggestionsEnabled: true,
+      showSuggestions: true,
+      isStreaming: false,
+      suggestionsDisabled: false,
+      streamingContent: '正在继续分析',
+      onSuggestionSend: send,
+      onSuggestionPrefill: prefill,
+    })
+    const { el, app } = mountItem(state)
+    try {
+      const buttons = () => el.querySelectorAll<HTMLButtonElement>('.suggestion-chip')
+      expect(buttons()).toHaveLength(2)
+      buttons()[0].click()
+      await nextTick()
+      await nextTick()
+      buttons()[1].click()
+      expect(send).toHaveBeenCalledWith(suggestions[0].prompt)
+      expect(prefill).toHaveBeenCalledWith(suggestions[1].prompt)
+      state.suggestionsDisabled = true
+      await nextTick()
+      expect([...buttons()].every((button) => button.disabled)).toBe(true)
+      state.isStreaming = true
+      await nextTick()
+      expect(buttons()).toHaveLength(0)
+      state.isStreaming = false
+      state.suggestionsDisabled = false
+      await nextTick()
+      expect(buttons()).toHaveLength(2)
+    } finally {
+      app.unmount()
+      el.remove()
+      global.requestAnimationFrame = originalRaf
+      global.cancelAnimationFrame = originalCancelRaf
+    }
+  })
+
+  it('没有结构化字段的旧消息从 Markdown 恢复完整标签', () => {
+    const label = '探索 TP53 与 β-catenin 相关通路的所有数据集'
+    const { el, app } = mountItem({
+      message: { ...baseMsg, content: `分析结束\n\n可选下一步\n1. ${label}`, status: 'complete' },
+      suggestionsEnabled: true,
+      showSuggestions: true,
+    })
+    try { expect(el.querySelector('.suggestion-chip')?.textContent).toContain(label) }
+    finally { app.unmount(); el.remove() }
   })
 })

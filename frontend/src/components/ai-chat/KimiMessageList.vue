@@ -24,6 +24,7 @@ interface Props {
   taskUnderstanding?: TaskUnderstanding | null
   /** 建议追问 Chips 总开关（默认关闭；开启后由本列表决定哪条 assistant 消息展示 chips） */
   suggestionsEnabled?: boolean
+  suggestionsDisabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -40,6 +41,7 @@ const props = withDefaults(defineProps<Props>(), {
   targetMessageId: '',
   taskUnderstanding: null,
   suggestionsEnabled: false,
+  suggestionsDisabled: false,
 })
 
 const firstUserMessageIndex = computed(() => props.messages.findIndex((message) => message.role === 'user'))
@@ -353,6 +355,7 @@ onUnmounted(() => {
             :agent-color="agentColor"
             :session-id="sessionId"
             :suggestions-enabled="suggestionsEnabled"
+            :suggestions-disabled="suggestionsDisabled || isTyping"
             :show-suggestions="item.id === suggestionMessageId"
             @feedback="(id, type) => emit('feedback', id, type)"
             @copy="(mode) => emit('copy', mode)"

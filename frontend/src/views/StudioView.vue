@@ -743,8 +743,15 @@ function handleCorrectCollaborationRoute(route: CollaborationRouteInfo) {
 }
 
 /** 建议追问 Chips：send 直接走与输入框回车完全相同的发送链路 */
-function handleSuggestionSend(prompt: string) {
-  void handleSend(prompt)
+const suggestionSending = ref(false)
+async function handleSuggestionSend(prompt: string) {
+  if (suggestionSending.value || store.isStreaming) return
+  suggestionSending.value = true
+  try {
+    await handleSend(prompt)
+  } finally {
+    suggestionSending.value = false
+  }
 }
 
 /** 建议追问 Chips：prefill 只写入输入框并聚焦、光标置于文末，不发送 */
@@ -1297,6 +1304,7 @@ function formatSessionTime(iso: string): string {
               :target-message-id="String(route.query.message || '')"
               :task-understanding="taskUnderstanding"
               suggestions-enabled
+              :suggestions-disabled="suggestionSending || store.isStreaming"
               @copy="handleCopy"
               @feedback="(id, type) => store.submitMessageFeedback(id, type)"
               @regenerate="handleRegenerate"

@@ -54,11 +54,11 @@ describe('parseNextStepSuggestions', () => {
     expect(suggestions[MAX_SUGGESTIONS - 1].label).toBe('建议4')
   })
 
-  it('条目无冒号/破折号时 label 截断前 12 字并加省略号', () => {
+  it('条目无冒号/破折号时保留完整 label，由组件自然换行', () => {
     const [suggestion] = parseNextStepSuggestions(
       '可选下一步\n1. 这是一条没有任何分隔符的超长建议条目文本内容',
     )
-    expect(suggestion.label).toBe('这是一条没有任何分隔符的…')
+    expect(suggestion.label).toBe(suggestion.prompt)
     expect(suggestion.prompt).toBe('这是一条没有任何分隔符的超长建议条目文本内容')
   })
 
