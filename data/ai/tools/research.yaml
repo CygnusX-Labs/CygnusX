@@ -66,3 +66,5 @@ mcp_tools:
     - cygnusx_target_evidence
     - cygnusx_literature_get
     - cygnusx_literature_annotations
+    - cygnusx_string_resolve
+    - cygnusx_string_network

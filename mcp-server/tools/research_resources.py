@@ -6,12 +6,14 @@ Large assets and unverified analysis endpoints are intentionally not exposed her
 from __future__ import annotations
 
 import asyncio
+import csv
 import functools
 import inspect
+import io
 import re
 import time
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
@@ -30,11 +32,13 @@ def _tool(mcp: FastMCP, api: Any):
         @functools.wraps(fn)
         async def bridged(*args: Any, **kwargs: Any) -> dict[str, Any]:
             bound = inspect.signature(fn).bind(*args, **kwargs)
-            return await api.research_data(fn.__name__, dict(bound.arguments))
+            arguments = {key: value for key, value in bound.arguments.items() if value is not None}
+            return await api.research_data(fn.__name__, arguments)
 
         return mcp.tool()(bridged)
 
     return decorator
+
 
 PROVIDERS = {
     "ensembl": "https://rest.ensembl.org",
@@ -52,6 +56,7 @@ PROVIDERS = {
     "opentargets": "https://api.platform.opentargets.org/api/v4/graphql",
     "europepmc": "https://www.ebi.ac.uk/europepmc/webservices/rest",
     "europepmc_annotations": "https://www.ebi.ac.uk/europepmc/annotations_api",
+    "string": "https://version-12-5.string-db.org/api/tsv",
 }
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_ATLAS_DIRECTORY_BYTES = 10 * 1024 * 1024
@@ -62,6 +67,8 @@ _ACCESSION = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 _PDB_ID = re.compile(r"^[0-9][A-Za-z0-9]{3}$")
 _ATLAS_CACHE: dict[str, tuple[float, Any]] = {}
 _ATLAS_CACHE_LOCK = asyncio.Lock()
+_STRING_RATE_LOCK = asyncio.Lock()
+_STRING_LAST_REQUEST = 0.0
 
 
 async def _request_json(
@@ -91,6 +98,58 @@ async def _request_json(
     if "json" not in response.headers.get("content-type", "").lower():
         raise ValueError("provider returned a non-JSON response")
     return response.json()
+
+
+async def _request_text(provider: str, path: str, *, accept: str = "text/plain") -> str:
+    if provider not in PROVIDERS:
+        raise ValueError("unknown provider")
+    if path.startswith("/") or ".." in path.split("/"):
+        raise ValueError("provider path must be relative and fixed by the adapter")
+    request = provider_client(TIMEOUT).build_request(
+        "GET", f"{PROVIDERS[provider]}/{path}"
+    )
+    request.headers["accept"] = accept
+    response = await provider_client(TIMEOUT).send(request)
+    response.raise_for_status()
+    if len(response.content) > 4096:
+        raise ValueError("provider text response exceeds 4096 bytes")
+    content_type = response.headers.get("content-type", "").lower()
+    if "html" in content_type or "text/plain" not in content_type:
+        raise ValueError("provider returned a non-text response")
+    return response.text.strip()
+
+
+async def _request_string_tsv(method: str, params: dict[str, Any]) -> list[dict[str, str]]:
+    global _STRING_LAST_REQUEST
+    if method not in {"get_string_ids", "interaction_partners"}:
+        raise ValueError("unsupported fixed STRING method")
+    async with _STRING_RATE_LOCK:
+        remaining = 1.0 - (time.monotonic() - _STRING_LAST_REQUEST)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        client = provider_client(TIMEOUT)
+        request = client.build_request(
+            "GET",
+            f"{PROVIDERS['string']}/{method}",
+            params=params,
+            headers={"accept": "text/tab-separated-values"},
+        )
+        _STRING_LAST_REQUEST = time.monotonic()
+        response = await client.send(request, stream=True)
+    try:
+        response.raise_for_status()
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
+                raise ValueError("STRING response exceeds 2 MiB")
+            body.extend(chunk)
+        content_type = response.headers.get("content-type", "").lower()
+        if "html" in content_type or "tab-separated-values" not in content_type:
+            raise ValueError("STRING returned a non-TSV response")
+        text = bytes(body).decode(response.encoding or "utf-8")
+        return list(csv.DictReader(io.StringIO(text), delimiter="\t"))
+    finally:
+        await response.aclose()
 
 
 async def _atlas_directory(provider: str) -> Any:
@@ -131,6 +190,8 @@ async def _request_xml(provider: str, path: str, params: dict[str, Any]) -> ET.E
         raise ValueError("provider response exceeds 2 MiB")
     if "xml" not in response.headers.get("content-type", "").lower():
         raise ValueError("provider returned a non-XML response")
+    if re.search(rb"<!\s*(?:DOCTYPE|ENTITY)\b", response.content, re.IGNORECASE):
+        raise ValueError("provider XML DTD and entity declarations are not accepted")
     return ET.fromstring(response.content)
 
 
@@ -230,7 +291,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
 
     @_tool(mcp, _api)
     async def cygnusx_genome_region(
-        species: str, region: str, feature: str = "gene", limit: int = 50
+        species: str, region: str, feature: str = "gene"
     ) -> dict[str, Any]:
         """Query Ensembl region overlaps. Region syntax and species are explicit."""
         try:
@@ -244,8 +305,6 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
                 f"overlap/region/{quote(species, safe='')}/{quote(region, safe=':')}",
                 params={"feature": feature},
             )
-            if isinstance(result, list):
-                result = result[: _limit(limit)]
             return _envelope(
                 "Ensembl region overlap",
                 {
@@ -262,7 +321,7 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
     async def cygnusx_genome_sequence(
         identifier: str, sequence_type: str = "cdna"
     ) -> dict[str, Any]:
-        """Retrieve a short Ensembl sequence; large sequences are returned as bounded previews."""
+        """按 Ensembl stable ID 读取 genomic、cdna、cds 或 protein 序列（默认 cdna）；返回序列长度和最多 3000 字符的预览及截断标记，不提供完整序列文件下载。"""
         try:
             identifier = _identifier(identifier)
             if sequence_type not in {"genomic", "cdna", "cds", "protein"}:
@@ -290,26 +349,25 @@ def register_genome(mcp: FastMCP, _api: Any) -> None:
 
 def register_plant_te(mcp: FastMCP, _api: Any) -> None:
     @_tool(mcp, _api)
-    async def cygnusx_plant_search(query: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
+    async def cygnusx_plant_search(query: str, limit: int = 10) -> dict[str, Any]:
         """Search Gramene v69 gene/plant knowledge index with bounded paging."""
         try:
             query = query.strip()
-            if not query or len(query) > 512 or offset < 0 or offset > 10000:
-                raise ValueError("query must be 1-512 characters; offset must be 0-10000")
+            if not query or len(query) > 2048:
+                raise ValueError("query must be 1-2048 characters")
             if any(char in query for char in ":()[]{}^~*?"):
                 raise ValueError("plant search accepts literal terms, not raw Solr expressions")
             query = f'"{query.replace(chr(34), chr(92) + chr(34))}"'
             result = await _request_json(
                 "gramene",
                 "search",
-                params={"q": query, "rows": _limit(limit), "start": offset, "wt": "json"},
+                params={"q": query, "rows": _limit(limit), "wt": "json"},
             )
             return _envelope(
                 "Gramene v69 search",
                 {
                     "release": "v69",
                     "query": query,
-                    "offset": offset,
                     "result": result,
                     "taxonomy_note": "Gramene taxon_id is provider-specific; do not treat as NCBI taxid.",
                 },
@@ -319,7 +377,7 @@ def register_plant_te(mcp: FastMCP, _api: Any) -> None:
 
     @_tool(mcp, _api)
     async def cygnusx_plant_get(identifier: str) -> dict[str, Any]:
-        """Get Gramene gene records for an explicit ID; preserves provider taxonomy identifiers."""
+        """按 Gramene gene identifier 查询 Gramene v69 基因详情并保留原始 provider 记录；结果中的 taxon_id 是 Gramene 专用标识，不能直接当作 NCBI taxid。"""
         try:
             identifier = _identifier(identifier)
             result = await _request_json(
@@ -382,7 +440,7 @@ def register_expression(mcp: FastMCP, _api: Any) -> None:
     async def cygnusx_expression_studies(
         query: str = "", single_cell: bool = False, limit: int = 20
     ) -> dict[str, Any]:
-        """Search cached-format bulk or single-cell Atlas study directory; no expression values."""
+        """在缓存的 Expression Atlas bulk 或单细胞研究目录中按 query 做不区分大小写的字面子串筛选；single_cell 选择目录，limit 限制返回条数。结果是研究元数据，不含基因表达定量值。"""
         try:
             provider = "sc_atlas" if single_cell else "atlas"
             data = await _atlas_directory(provider)
@@ -444,18 +502,17 @@ def register_expression(mcp: FastMCP, _api: Any) -> None:
 
 def register_pathways(mcp: FastMCP, _api: Any) -> None:
     @_tool(mcp, _api)
-    async def cygnusx_pathway_get(stable_id: str) -> dict[str, Any]:
+    async def cygnusx_pathway_get(pathway_id: str) -> dict[str, Any]:
         """Get Reactome pathway/reaction knowledge by stable ID (not enrichment analysis)."""
         try:
-            stable_id = _identifier(stable_id, "Reactome stable ID")
-            version, pathway = (
-                await _request_json("reactome", "database/version"),
-                await _request_json("reactome", f"query/{quote(stable_id, safe='')}"),
-            )
+            pathway_id = _identifier(pathway_id, "Reactome stable ID")
+            version, pathway = await _request_text(
+                "reactome", "database/version"
+            ), await _request_json("reactome", f"query/{quote(pathway_id, safe='')}")
             return _envelope(
                 "Reactome pathway knowledge",
                 {
-                    "stable_id": stable_id,
+                    "pathway_id": pathway_id,
                     "release": version,
                     "result": pathway,
                     "note": "Knowledge lookup only; it does not infer enrichment or causal direction.",
@@ -467,23 +524,25 @@ def register_pathways(mcp: FastMCP, _api: Any) -> None:
 
 def register_protein(mcp: FastMCP, _api: Any) -> None:
     @_tool(mcp, _api)
-    async def cygnusx_protein_resolve(
-        query: str, organism_id: int = 9606, reviewed_only: bool = False, limit: int = 10
-    ) -> dict[str, Any]:
+    async def cygnusx_protein_resolve(query: str, organism_id: int | None = None) -> dict[str, Any]:
         """Resolve a UniProt protein accession/name with explicit taxonomy and review filtering."""
         try:
-            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", query.strip()) or organism_id <= 0:
-                raise ValueError("query and positive organism_id are required")
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", query.strip()) or (
+                organism_id is not None and organism_id <= 0
+            ):
+                raise ValueError("query and optional positive organism_id are required")
             fields = "accession,id,protein_name,gene_names,organism_id,length,reviewed"
+            provider_query = f"(gene_exact:{query.strip()} OR accession:{query.strip()})"
+            if organism_id is not None:
+                provider_query += f" AND (organism_id:{organism_id})"
             result = await _request_json(
                 "uniprot",
                 "uniprotkb/search",
                 params={
-                    "query": f"(gene_exact:{query.strip()} OR accession:{query.strip()}) AND (organism_id:{organism_id})"
-                    + (" AND (reviewed:true)" if reviewed_only else ""),
+                    "query": provider_query,
                     "fields": fields,
                     "format": "json",
-                    "size": _limit(limit),
+                    "size": 10,
                 },
             )
             return _envelope(
@@ -491,7 +550,6 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
                 {
                     "query": query,
                     "organism_id": organism_id,
-                    "reviewed_only": reviewed_only,
                     "result": result,
                 },
             )
@@ -608,10 +666,10 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
             return _error("InterPro", exc)
 
     @_tool(mcp, _api)
-    async def cygnusx_structure_search(uniprot_accession: str, limit: int = 20) -> dict[str, Any]:
+    async def cygnusx_structure_search(accession: str) -> dict[str, Any]:
         """Find experimental RCSB polymer entities matching an exact UniProt accession."""
         try:
-            accession = _identifier(uniprot_accession, "UniProt accession")
+            accession = _identifier(accession, "UniProt accession")
             query = {
                 "query": {
                     "type": "terminal",
@@ -625,7 +683,7 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
                 },
                 "return_type": "polymer_entity",
                 "request_options": {
-                    "paginate": {"start": 0, "rows": _limit(limit)},
+                    "paginate": {"start": 0, "rows": 10},
                     "results_content_type": ["experimental"],
                 },
             }
@@ -654,26 +712,17 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
             return _error("RCSB", exc)
 
     @_tool(mcp, _api)
-    async def cygnusx_structure_prediction(
-        uniprot_accession: str, isoform: str = ""
-    ) -> dict[str, Any]:
+    async def cygnusx_structure_prediction(accession: str) -> dict[str, Any]:
         """List AlphaFold model candidates; predicted structures remain distinct from experimental PDB entries."""
         try:
-            accession = _identifier(uniprot_accession, "UniProt accession")
-            if isoform:
-                isoform = _identifier(isoform, "isoform")
-                if not isoform.startswith(accession + "-"):
-                    raise ValueError("isoform must belong to the supplied UniProt accession")
+            accession = _identifier(accession, "UniProt accession")
             models = await _request_json("alphafold", f"prediction/{quote(accession, safe='')}")
             if not isinstance(models, list):
                 raise ValueError("AlphaFold response is not a model list")
-            if isoform:
-                models = [item for item in models if item.get("uniprotAccession") == isoform]
             return _envelope(
                 "AlphaFold predicted model candidates",
                 {
                     "uniprot_accession": accession,
-                    "isoform": isoform or None,
                     "model_type": "predicted",
                     "models": models[:20],
                     "note": "pLDDT is local confidence; it is not experimental resolution or causal evidence.",
@@ -685,28 +734,26 @@ def register_protein(mcp: FastMCP, _api: Any) -> None:
 
 def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
     @_tool(mcp, _api)
-    async def cygnusx_clinvar_search(term: str, limit: int = 10, offset: int = 0) -> dict[str, Any]:
+    async def cygnusx_clinvar_search(query: str) -> dict[str, Any]:
         """Search ClinVar with E-utilities; result IDs are Entrez UIDs, not VCV/SCV IDs."""
         try:
-            term = term.strip()
-            if not term or len(term) > 512 or offset < 0 or offset > 10000:
-                raise ValueError("term must be 1-512 characters; offset must be 0-10000")
+            query = query.strip()
+            if not query or len(query) > 1024:
+                raise ValueError("query must be 1-1024 characters")
             result = await _request_json(
                 "clinvar",
                 "esearch.fcgi",
                 params={
                     "db": "clinvar",
-                    "term": term,
+                    "term": query,
                     "retmode": "json",
-                    "retmax": _limit(limit),
-                    "retstart": offset,
+                    "retmax": 20,
                 },
             )
             return _envelope(
                 "ClinVar search",
                 {
-                    "term": term,
-                    "offset": offset,
+                    "term": query,
                     "id_semantics": "Entrez UID; not VCV/RCV/SCV",
                     "result": result,
                 },
@@ -715,26 +762,113 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
             return _error("ClinVar", exc)
 
     @_tool(mcp, _api)
-    async def cygnusx_clinvar_get(vcv_accession: str) -> dict[str, Any]:
-        """Fetch a ClinVar VCV XML record by explicit accession; raw XML is not returned."""
+    async def cygnusx_clinvar_get(
+        vcv_accession: str | None = None,
+        identifier: str | None = None,
+        identifier_type: Literal["VCV", "RCV", "SCV", "VariationID", "AlleleID"] | None = None,
+    ) -> dict[str, Any]:
+        """Fetch ClinVar evidence by VCV, RCV, SCV, or Variation ID; Allele ID is unsupported."""
         try:
-            vcv_accession = _identifier(vcv_accession, "VCV accession")
-            if not re.fullmatch(r"VCV[0-9]+(?:\.[0-9]+)?", vcv_accession):
-                raise ValueError("vcv_accession must use the VCV accession form")
-            root = await _request_xml(
-                "clinvar",
-                "efetch.fcgi",
-                params={
-                    "db": "clinvar",
-                    "id": vcv_accession,
-                    "rettype": "vcv",
-                    "retmode": "xml",
-                },
+            if vcv_accession is not None:
+                if identifier is not None or identifier_type is not None:
+                    raise ValueError("use vcv_accession or identifier with identifier_type, not both")
+                identifier, identifier_type = vcv_accession, "VCV"
+            elif identifier is None or identifier_type is None:
+                raise ValueError("provide vcv_accession or identifier with identifier_type")
+            identifier = _identifier(identifier, f"{identifier_type} identifier")
+            if identifier_type == "AlleleID":
+                raise ValueError("Allele ID is unsupported; it is not interchangeable with Variation ID")
+            patterns = {
+                "VCV": r"VCV[0-9]+(?:\.[0-9]+)?",
+                "RCV": r"RCV[0-9]+(?:\.[0-9]+)?",
+                "SCV": r"SCV[0-9]+(?:\.[0-9]+)?",
+                "VariationID": r"[0-9]+",
+            }
+            if identifier_type not in patterns or not re.fullmatch(patterns[identifier_type], identifier):
+                raise ValueError("identifier does not match the selected ClinVar identifier type")
+            requested_id, separator, requested_version = identifier.partition(".")
+            if identifier_type == "SCV":
+                search = await _request_json(
+                    "clinvar",
+                    "esearch.fcgi",
+                    {
+                        "db": "clinvar",
+                        "term": f"{requested_id}[clv_acc]",
+                        "retmode": "json",
+                        "retmax": 1,
+                    },
+                )
+                id_list = search.get("esearchresult", {}).get("idlist", [])
+                uid = id_list[0] if id_list else None
+                if not uid or not uid.isdigit():
+                    raise ValueError("ClinVar did not resolve the requested SCV accession")
+                root = await _request_xml(
+                    "clinvar",
+                    "efetch.fcgi",
+                    {
+                        "db": "clinvar",
+                        "id": uid,
+                        "rettype": "vcv",
+                        "retmode": "xml",
+                        "is_variationid": "true",
+                        "from_esearch": "true",
+                    },
+                )
+            else:
+                rettype = "clinvarset" if identifier_type == "RCV" else "vcv"
+                params = {"db": "clinvar", "id": identifier, "rettype": rettype, "retmode": "xml"}
+                if identifier_type == "VariationID":
+                    params.update({"is_variationid": "true", "from_esearch": "true"})
+                root = await _request_xml("clinvar", "efetch.fcgi", params)
+            archive = next((node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "VariationArchive"), None)
+            clinvar_set = next((node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "ClinVarSet"), None)
+            record_element = archive if archive is not None else clinvar_set
+            accessions = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "ClinVarAccession"]
+            target_type = "RCV" if identifier_type == "RCV" else "SCV"
+            accession_node = next(
+                (
+                    node
+                    for node in accessions
+                    if node.attrib.get("Type") == target_type
+                    and (
+                        identifier_type != "SCV"
+                        or (node.attrib.get("Accession") or node.attrib.get("Acc")) == requested_id
+                    )
+                ),
+                None,
             )
+            returned_accession = (
+                archive.attrib.get("Accession")
+                if identifier_type == "VCV" and archive is not None
+                else accession_node.attrib.get("Acc") if accession_node is not None else None
+            )
+            returned_version = (
+                archive.attrib.get("Version")
+                if identifier_type == "VCV" and archive is not None
+                else accession_node.attrib.get("Version") if accession_node is not None else None
+            )
+            if identifier_type in {"VCV", "RCV"} and returned_accession != requested_id:
+                raise ValueError(f"ClinVar returned a different {identifier_type} accession")
+            if (identifier_type == "VCV" and archive is None) or (
+                identifier_type == "RCV" and clinvar_set is None
+            ):
+                raise ValueError(f"ClinVar returned a non-{identifier_type} record")
+            if separator and returned_version != requested_version:
+                raise ValueError(f"ClinVar returned a different {identifier_type} version")
+            if identifier_type == "VariationID" and (archive is None or archive.attrib.get("VariationID") != requested_id):
+                raise ValueError("ClinVar returned a different Variation ID")
+            if identifier_type == "SCV":
+                scv = next((node for node in accessions if node.attrib.get("Type") == "SCV" and
+                            (node.attrib.get("Accession") or node.attrib.get("Acc")) == requested_id), None)
+                if scv is None or separator and scv.attrib.get("Version") != requested_version:
+                    raise ValueError("ClinVar response does not match the requested SCV accession/version")
+            if record_element is None:
+                raise ValueError("ClinVar returned no VCV or RCV record")
             return _envelope(
-                "ClinVar VCV summary",
+                f"ClinVar {identifier_type} summary",
                 {
-                    "vcv_accession": vcv_accession,
+                    "requested_identifier": identifier,
+                    "identifier_type": identifier_type,
                     "xml_root": root.tag.rsplit("}", 1)[-1],
                     "record_facts": _xml_projection(root),
                     "truncated": sum(1 for _ in root.iter()) > 500,
@@ -843,46 +977,169 @@ def register_clinical_literature(mcp: FastMCP, _api: Any) -> None:
             return _error("Open Targets", exc)
 
     @_tool(mcp, _api)
-    async def cygnusx_literature_get(
-        source: str, article_id: str, section: str = "metadata"
-    ) -> dict[str, Any]:
+    async def cygnusx_literature_get(article_id: str, source: str = "MED") -> dict[str, Any]:
         """Get Europe PMC article metadata/references/citations or accessible OA full-text XML."""
         try:
-            if source not in {"MED", "PMC", "PPR"}:
-                raise ValueError("source must be MED, PMC or PPR")
+            if source not in {"MED", "PMC"}:
+                raise ValueError("source must be MED or PMC")
             article_id = _identifier(article_id, "article ID")
-            if section not in {"metadata", "references", "citations", "full_text"}:
-                raise ValueError("unsupported literature section")
-            suffix = {
-                "metadata": "",
-                "references": "/references",
-                "citations": "/citations",
-                "full_text": "/fullTextXML",
-            }[section]
-            path = (
-                f"{quote(article_id, safe='')}{suffix}"
-                if section == "full_text" and source == "PMC"
-                else (f"{quote(source, safe='')}/{quote(article_id, safe='')}{suffix}")
-            )
-            if section == "full_text":
-                raise ValueError(
-                    "OA full-text XML is not exposed until license-aware parsing and byte budgeting are connected"
-                )
+            path = f"article/{quote(source, safe='')}/{quote(article_id, safe='')}"
             result = await _request_json(
-                "europepmc", path, params={"format": "json", "pageSize": 20}
+                "europepmc", path, params={"format": "json", "resultType": "core"}
             )
             return _envelope(
                 "Europe PMC article record",
                 {
                     "source": source,
                     "article_id": article_id,
-                    "section": section,
                     "result": result,
                 },
             )
         except Exception as exc:
             return _error("Europe PMC", exc)
 
+    register_literature_annotations(mcp, _api)
+
+
+def register_string(mcp: FastMCP, _api: Any) -> None:
+    @_tool(mcp, _api)
+    async def cygnusx_string_resolve(
+        identifier: str, taxon_id: int, limit: int = 10
+    ) -> dict[str, Any]:
+        """Resolve one identifier against a required NCBI taxon and preserve all bounded candidates."""
+        try:
+            identifier = identifier.strip()
+            if not identifier or len(identifier) > 128 or not 1 <= taxon_id <= 1_000_000:
+                raise ValueError("identifier and a valid NCBI taxon_id are required")
+            if not 1 <= limit <= 20:
+                raise ValueError("limit must be between 1 and 20")
+            rows = await _request_string_tsv(
+                "get_string_ids",
+                {
+                    "identifiers": identifier,
+                    "species": taxon_id,
+                    "limit": limit,
+                    "caller_identity": "CygnusX",
+                },
+            )
+            candidates = [
+                {
+                    "string_id": row.get("stringId", ""),
+                    "taxon_id": row.get("ncbiTaxonId", ""),
+                    "taxon_name": row.get("taxonName", ""),
+                    "preferred_name": row.get("preferredName", ""),
+                    "annotation": row.get("annotation", "")[:512],
+                }
+                for row in rows[:limit]
+                if row.get("stringId") and row.get("ncbiTaxonId") == str(taxon_id)
+            ]
+            return _envelope(
+                "STRING identifier candidates",
+                {
+                    "input_identifier": identifier,
+                    "taxon_id": taxon_id,
+                    "found": bool(candidates),
+                    "candidate_count": len(candidates),
+                    "candidates": candidates,
+                    "selection_note": "Ambiguous candidates are preserved; choose an explicit STRING ID before querying partners.",
+                    "release": "12.5",
+                },
+            )
+        except Exception as exc:
+            return _error("STRING", exc)
+
+    @_tool(mcp, _api)
+    async def cygnusx_string_network(
+        string_id: str,
+        taxon_id: int,
+        network_type: Literal["functional", "physical", "regulatory"],
+        required_score: int = 400,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Get bounded STRING partners for an explicit taxon-matched ID and network type; scores are not causal probabilities."""
+        try:
+            string_id = string_id.strip()
+            if (
+                not re.fullmatch(r"[0-9]+\.[A-Za-z0-9_.-]{1,64}", string_id)
+                or string_id.partition(".")[0] != str(taxon_id)
+                or not 1 <= taxon_id <= 1_000_000
+            ):
+                raise ValueError("string_id must match the explicit taxon_id")
+            if network_type not in {"functional", "physical", "regulatory"}:
+                raise ValueError("network_type must be functional, physical, or regulatory")
+            if not 0 <= required_score <= 1000 or not 1 <= limit <= 50:
+                raise ValueError("required_score must be 0-1000 and limit must be 1-50")
+            rows = await _request_string_tsv(
+                "interaction_partners",
+                {
+                    "identifiers": string_id,
+                    "species": taxon_id,
+                    "network_type": network_type,
+                    "required_score": required_score,
+                    "limit": limit,
+                    "add_color_nodes": 0,
+                    "add_white_nodes": 0,
+                    "caller_identity": "CygnusX",
+                },
+            )
+            partners = []
+            for row in rows[:limit]:
+                item: dict[str, Any] = dict(row)
+                if network_type == "regulatory":
+                    source_id = row.get("source_string_id")
+                    target_id = row.get("target_string_id")
+                    item["partner_string_id"] = (
+                        target_id if source_id == string_id else source_id if target_id == string_id else None
+                    )
+                    item["partner_preferred_name"] = (
+                        row.get("target_preferred_name")
+                        if source_id == string_id
+                        else row.get("source_preferred_name") if target_id == string_id else None
+                    )
+                else:
+                    a_id = row.get("stringId_A")
+                    b_id = row.get("stringId_B")
+                    item["partner_string_id"] = (
+                        b_id if a_id == string_id else a_id if b_id == string_id else None
+                    )
+                    item["partner_preferred_name"] = (
+                        row.get("preferredName_B")
+                        if a_id == string_id
+                        else row.get("preferredName_A") if b_id == string_id else None
+                    )
+                if not item["partner_string_id"]:
+                    raise ValueError("STRING returned a network row unrelated to the requested ID")
+                for key, value in row.items():
+                    if key.endswith("score"):
+                        try:
+                            item[key] = float(value)
+                        except (TypeError, ValueError):
+                            item[key] = value
+                partners.append(item)
+            return _envelope(
+                f"STRING {network_type} protein partners",
+                {
+                    "string_id": string_id,
+                    "taxon_id": taxon_id,
+                    "network_type": network_type,
+                    "required_score": required_score,
+                    "returned": len(partners),
+                    "has_more": len(rows) > len(partners),
+                    "partners": partners,
+                    "interpretation": (
+                        "Regulatory rows are directional source-to-target relationships; signs may be unavailable."
+                        if network_type == "regulatory"
+                        else "Scores are STRING association confidence/evidence scores, not causal probabilities."
+                    ),
+                    "release": "12.5",
+                },
+            )
+        except Exception as exc:
+            return _error("STRING", exc)
+
+
+
+def register_literature_annotations(mcp: FastMCP, _api: Any) -> None:
     @_tool(mcp, _api)
     async def cygnusx_literature_annotations(article_ids: list[str]) -> dict[str, Any]:
         """Fetch Europe PMC annotations for up to 20 explicit source-qualified article IDs."""

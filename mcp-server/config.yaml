@@ -47,6 +47,7 @@ tool_groups:
   pathways: true     # Reactome知识查询
   protein_structure: true # UniProt/InterPro/RCSB/AlphaFold只读查询
   clinical_literature: true # ClinVar/Open Targets/Europe PMC
+  string_interactions: true # STRING v12.5 read-only mapping and partner queries
 
 # MCP 工具固定化（阶段 3）：旧 RNA/ATAC 四件套发现开关。
 # true=旧工具可用（默认，现状/回退）；false=同名工具变为迁移 stub，

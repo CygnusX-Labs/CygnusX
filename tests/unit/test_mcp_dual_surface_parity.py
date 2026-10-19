@@ -7,6 +7,7 @@ builtin presets（cygnusx-platform / cygnusx-pipelines / cygnusx-tools）共享�
 
 from __future__ import annotations
 
+import ast
 import inspect
 import re
 from pathlib import Path
@@ -28,6 +29,7 @@ from cygnusx.infrastructure.mcp.research_preset import RESEARCH_HANDLERS, RESEAR
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTERNAL_TOOLS_YAML = REPO_ROOT / "mcp-server" / "tools.yaml"
 EXTERNAL_PIPELINES_PY = REPO_ROOT / "mcp-server" / "tools" / "pipelines.py"
+EXTERNAL_RESEARCH_PY = REPO_ROOT / "mcp-server" / "tools" / "research_resources.py"
 
 
 def _external_groups() -> dict[str, list[dict]]:
@@ -62,11 +64,64 @@ def test_research_data_tool_names_match_external_tools_yaml() -> None:
     internal_names = {tool["name"] for tool in RESEARCH_TOOLS}
     external_names = {
         tool["name"]
-        for group_id in ("genome", "plant_te", "expression", "pathways", "protein_structure", "clinical_literature")
+        for group_id in (
+            "genome",
+            "plant_te",
+            "expression",
+            "pathways",
+            "protein_structure",
+            "clinical_literature",
+            "string_interactions",
+        )
         for tool in _external_groups()[group_id]
     }
     assert internal_names == external_names
     assert internal_names == set(RESEARCH_HANDLERS)
+
+
+def test_research_data_external_signatures_match_builtin_schemas() -> None:
+    tree = ast.parse(EXTERNAL_RESEARCH_PY.read_text(encoding="utf-8"))
+    external: dict[str, tuple[set[str], set[str]]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef) or not node.name.startswith("cygnusx_"):
+            continue
+        names = [argument.arg for argument in node.args.args]
+        defaulted = (
+            {
+                name
+                for name, _ in zip(
+                    names[-len(node.args.defaults) :], node.args.defaults, strict=True
+                )
+            }
+            if node.args.defaults
+            else set()
+        )
+        external[node.name] = (set(names), set(names) - defaulted)
+
+    internal = {
+        tool["name"]: (
+            set(tool["inputSchema"]["properties"]),
+            set(tool["inputSchema"].get("required", [])),
+        )
+        for tool in RESEARCH_TOOLS
+    }
+    assert external == internal
+
+    clinvar_fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "cygnusx_clinvar_get"
+    )
+    type_argument = next(arg for arg in clinvar_fn.args.args if arg.arg == "identifier_type")
+    literal_type = type_argument.annotation.left
+    assert isinstance(literal_type, ast.Subscript)
+    assert isinstance(literal_type.value, ast.Name) and literal_type.value.id == "Literal"
+    internal_clinvar = next(
+        tool for tool in RESEARCH_TOOLS if tool["name"] == "cygnusx_clinvar_get"
+    )
+    assert list(ast.literal_eval(literal_type.slice)) == internal_clinvar["inputSchema"]["properties"][
+        "identifier_type"
+    ]["enum"]
 
 
 def test_external_pipeline_submits_declare_confirmation_gate() -> None:

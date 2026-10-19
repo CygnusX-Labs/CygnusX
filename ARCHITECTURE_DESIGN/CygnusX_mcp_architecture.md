@@ -2,7 +2,7 @@
 
 > **用途**：本文件记录 CygnusX MCP（Model Context Protocol）子系统的完整架构现状、"Agent 自生成 MCP"可行性分析与三阶段提案的历史注记（§4），以及 MCP 构建师 `agent-mcp-builder` 的最终落地实现（§5，as-built）。
 >
-> **最后更新**：2026-10-18
+> **最后更新**：2026-10-19
 >
 > **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-18 已补登记 `cygnusx-biothings` 10 个与 `cygnusx-research-data` 26 个；2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
 
@@ -146,12 +146,57 @@ MyGene、MyVariant、MyChem 的 search/get/resolve 与 provider describe；内�
 外部 `mcp-server/tools/biothings.py` 和 `/api/v1/biothings/*` 共同使用
 `application/services/biothings_service.py`。
 
-**cygnusx-research-data**（26 个只读工具，定义在 `research_preset.py`）：
+**cygnusx-research-data**（28 个只读工具，定义在 `research_preset.py`）：
 Ensembl、Gramene、Dfam、Expression Atlas、UniProt、InterPro、RCSB、AlphaFold、
-Reactome、ClinVar、Open Targets、Europe PMC 的身份、目录、注释与证据查询。
+Reactome、ClinVar、Open Targets、Europe PMC、STRING 的身份、目录、注释与证据查询。
 固定 provider 适配由 `application/services/research_data_service.py` 提供；外部入口经
 `/api/v1/research-data/{tool_name}` 认证桥接到同一服务。结构/矩阵/FASTA 大资产、
-表达定量、Reactome 分析、InterProScan 和 STRING 仍未注册。
+表达定量、Reactome 分析、InterProScan 仍未注册。STRING仅开放固定v12.5 TSV REST上的
+身份映射和有界network query；MCP→平台认证链、Agent授权和部署状态按证据目录单独验收。
+
+API Key scope 对外部只读数据库桥接使用 `research:read`：仅 POST 到
+`/api/v1/biothings/*` 与 `/api/v1/research-data/*` 可使用该 scope；服务端仍以固定
+database/action 与 Research preset 工具白名单校验路由，不接受任意 URL。流程目录和任务
+读取/提交继续使用各自独立的 `flows:read`、`tasks:read`、`tasks:submit` 等 scope。
+
+**2026-10-19 科研数据库接入现状补充**：17 项范围中的 MyGene/MyVariant/MyChem 由
+`cygnusx-biothings` 覆盖；Ensembl Plants、Gramene、Dfam、Expression Atlas、Single Cell
+Atlas、Europe PMC、ClinVar、Open Targets、UniProt、RCSB PDB、AlphaFold DB、Reactome、
+InterPro 与 STRING 由 `cygnusx-research-data` 的固定 host/path adapter 覆盖。STRING 经官方独立
+Streamable HTTP MCP 实测后未采用该托管实现：托管服务无不可变版本 pin，报告版本与官方 API
+版本页不一致，且其完整工具面尚未映射到平台权限和输出预算；当前改用固定v12.5 REST的两个窄工具。
+其TP53身份映射及physical/regulatory provider样例成功，但尚未经过MCP wire→认证平台REST验收。
+2026-10-19隔离复验中，16项既有
+provider均经外部STDIO MCP→认证平台REST尝试只读样例，15项业务成功，Expression Atlas bulk
+目录超时；ClinVar另经STDIO、Streamable HTTP、SSE各完成正向调用。Open Targets样例有71条
+搜索结果、`partial=false`及0 GraphQL errors。除Atlas目录外，应用服务未发现结果缓存；Atlas
+single-cell目录在隔离API进程首次请求成功，bulk首次请求超时。BioThings 与 research-data adapter 的 JSON 及 FASTA/文本响应使用流式
+读取，超过 2 MiB 累计上限即停止读取并关闭响应；Atlas 目录另有独立 10 MiB 上限。
+Reactome 的 `database/version` 使用 `Accept: text/plain`；Europe PMC
+文章详情使用 `/article/{source}/{id}` 和 `resultType=core`。MyVariant 普通检索使用 GET，
+显式 scopes 的批量 resolve 使用 form POST `/query`；`assembly=hg19|hg38` 会进入返回上下文，
+并确保字段投影包含相应的 `dbsnp.hg19`/`dbsnp.hg38`。同一 `rs699` 的真实 adapter GET 与
+POST 样例均返回 hg38 genomic ID `chr1:g.230710048A>G`；没有执行 liftover。完整逐项状态与脱敏协议/探测
+记录见 `evidence/mcp-external-validation-2026-10-18/report.md`、
+`provider-status.tsv`、`provider-verification-matrix.tsv`。四面 MCP 工具清单均为111项且
+一致；详细验收仍以证据目录为准，不以本架构摘要替代。
+
+ClinVar 内置 `cygnusx_clinvar_get` 保留旧 `vcv_accession` 参数，并支持显式的 VCV、RCV、SCV
+和 Variation ID 类型。VCV 使用 E-utilities `rettype=vcv`，RCV 使用 `rettype=clinvarset`；SCV
+先用 JSON ESearch 的 `[clv_acc]` 精确查找，再取对应 VCV 并核对 SCV accession/version；Variation
+ID 使用 `is_variationid=true&from_esearch=true`。返回记录保留 VCV/RCV 版本、Variation ID 和 SCV
+版本列表，不把 Entrez UID 或 ClinVar Allele ID 当作同一种标识。Allele ID 尚不支持，明确拒绝。
+XML 解析入口拒绝 DTD/ENTITY 并限制 2 MiB 响应；按输出预算裁剪并显式标记缺失的分类/review
+sections。VCV、RCV、SCV、Variation ID 各有真实 NCBI adapter 直连样例及 mock transport 回归；
+另有VCV000014206经外部MCP→隔离认证平台REST→ClinVar的正向样例；逐项cache状态和未覆盖能力见`provider-verification-matrix.tsv`。
+外部研究桥接在构造平台REST参数时省略默认`None`字段，保留显式false和空集合；这避免`vcv_accession`兼容调用附带的null字段覆盖ClinVar服务端参数判定。回归见`mcp-server/tests/test_research_resources_tools.py`。
+
+MCP 工具清单出站前另有脱敏 `provider_tool_manifest` 运行事件，记录最终 Provider
+payload 中去重后的工具 schema；Agent 装配路径支持导出工具快照与裁剪原因。2026-10-19已对
+19个Agent执行真实隔离DB上下文装配并导出脱敏快照，工具数72–98，见`agent-loading-summary.tsv`。
+platform-only上下文将BioThings/Research Data裁为0；flows-only身份的MCP研究工具调用被REST scope
+拒绝。快照停在AgentContext层，未逐Agent执行Provider发送，也未形成持久化的逐次Provider审计记录；
+单个受限样例不覆盖所有capability/case规则。
 
 **cygnusx-tools**（动态构建）：从 `tools_schema.yaml` + 启用了 `ai.enabled=True` 的 Flow 配置动态生成。
 

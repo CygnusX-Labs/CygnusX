@@ -16,19 +16,19 @@ groups:
     description: "统一 Run 监控与计划确认"
     tools:
       - name: cygnusx_list_runs
-        description: "列出统一 Run"
+        description: "列出当前 API 身份可访问的 Run；可按 project_slug 和 status 过滤，返回平台 Run 记录及匹配总数摘要。"
         read_only: true
       - name: cygnusx_get_run_status
-        description: "获取 Run 状态"
+        description: "按 run_id 查询平台 Run 记录；返回记录中的当前状态及关联 task_id（若有），不提交或修改任务。"
         read_only: true
       - name: cygnusx_get_run_logs
-        description: "获取 Run 事件日志"
+        description: "按 run_id 读取平台持久化事件日志；limit 默认 200 并限制在 1–500，data 返回事件列表及平台提供的事件元数据。"
         read_only: true
       - name: cygnusx_verify_artifact
-        description: "查询 Run 产物及校验摘要"
+        description: "按 run_id 查询已登记的产物及平台返回的校验摘要（包括可用的 checksum）；此工具读取平台记录，不自行重算文件完整性。"
         read_only: true
       - name: cygnusx_confirm_run_plan
-        description: "确认 Run 计划"
+        description: "确认指定 run_id 的计划属于有副作用操作：首次调用创建待网页审批记录；仅在人类批准后携带服务端 confirmation_id 重试才会确认并进入任务队列。user_confirmed 布尔值不能授权。"
         read_only: false
         requires_confirm: true
 
@@ -37,23 +37,23 @@ groups:
     description: "任务管理 — 查看、监控、取消分析任务"
     tools:
       - name: cygnusx_list_tasks
-        description: "列出用户的分析任务"
+        description: "列出当前用户的分析任务；可按任务状态筛选，省略 status 时返回全部任务。"
         read_only: true
       - name: cygnusx_get_task
-        description: "获取任务详情"
+        description: "按 task_id 查询当前用户任务的完整详情，包括状态、参数和结果元数据。"
         read_only: true
       - name: cygnusx_get_task_progress
-        description: "获取任务进度（轮询用）"
+        description: "按 task_id 查询任务状态与进度，并标记任务是否已结束；适合轮询监控。"
         read_only: true
       - name: cygnusx_get_task_logs
-        description: "获取任务执行日志"
+        description: "按 task_id 读取最近的任务执行日志；lines 控制返回条数并受服务端上限约束。"
         read_only: true
       - name: cygnusx_cancel_task
-        description: "取消任务"
+        description: "申请取消当前用户的任务。首次调用返回网页确认记录；获批后须携带 confirmation_id 重试。"
         read_only: false
         requires_confirm: true
       - name: cygnusx_get_task_dag
-        description: "获取 DAG 工作流图"
+        description: "按 task_id 获取任务依赖 DAG，用于查看分析步骤及其依赖关系。"
         read_only: true
 
   - id: flows
@@ -75,11 +75,11 @@ groups:
     description: "分析提交 — 配置并提交分析任务"
     tools:
       - name: cygnusx_submit_analysis
-        description: "提交分析任务"
+        description: "提交指定 flow_id 的分析任务，可传 parameters、sample_sheet 和 comparisons。首次调用返回待网页审批的 confirmation_id；获批后携带该 ID 重试才会提交，并返回任务记录。"
         read_only: false
         requires_confirm: true
       - name: cygnusx_preview_analysis
-        description: "验证参数（dry-run）"
+        description: "对 flow_id 执行只读浅预检：检查必填 parameters 是否提供及所需 sample_sheet 是否非空，返回缺项或可继续提交的提示；不验证完整类型/枚举约束、不创建任务也不提交分析。"
         read_only: true
       - name: cygnusx_prepare
         description: "预检任意已开放流程参数并创建确认记录（固定工具；提交请走 cygnusx_submit）"
@@ -98,7 +98,7 @@ groups:
         read_only: false
         requires_confirm: true
       - name: cygnusx_list_downloads
-        description: "列出下载任务"
+        description: "列出当前用户的数据下载任务，返回任务名称、状态、进度和产物目录；不启动或修改下载任务。"
         read_only: true
       - name: cygnusx_get_download_progress
         description: "获取逐 run 分阶段下载进度"
@@ -109,25 +109,25 @@ groups:
     description: "文件浏览 — 查看用户数据和分析结果"
     tools:
       - name: list_workspace_files
-        description: "列出当前用户工作区文件和文件夹"
+        description: "列出当前用户工作区中的文件和文件夹；可用相对 path 限定目录、用 pattern 匹配名称。"
         read_only: true
       - name: search_workspace_files
-        description: "递归搜索当前用户工作区文件"
+        description: "在当前用户已索引的工作区路径中搜索文件和目录名称；limit 限制返回条数，最大 50。"
         read_only: true
       - name: cygnusx_list_files
-        description: "列出用户文件"
+        description: "列出当前用户指定目录下可见的文件；directory 省略时列出根目录。"
         read_only: true
       - name: cygnusx_get_file_tree
-        description: "获取文件树"
+        description: "获取当前用户可见文件的目录树，按来源分组并返回文件元数据。"
         read_only: true
       - name: cygnusx_list_directories
-        description: "列出目录"
+        description: "列出当前用户有权访问的工作区目录。"
         read_only: true
       - name: cygnusx_get_task_outputs
-        description: "获取任务输出文件"
+        description: "按 task_id 获取任务工作目录、结果路径及任务记录；不会读取或下载输出文件内容。"
         read_only: true
       - name: cygnusx_read_file_content
-        description: "读取文本文件内容"
+        description: "读取当前用户工作区内文本文件的前 max_lines 行预览；路径须相对工作区，行数受服务端上限约束。"
         read_only: true
 
   - id: reports
@@ -135,13 +135,13 @@ groups:
     description: "报告 — 查看分析报告"
     tools:
       - name: cygnusx_list_reports
-        description: "列出报告"
+        description: "列出当前用户的分析报告；可用 flow_id 或 keyword 过滤，返回报告元数据，摘要最多展示 20 条。"
         read_only: true
       - name: cygnusx_get_report
-        description: "获取报告详情"
+        description: "按 report_id 获取分析报告元数据，包括标题、关联流程、创建时间及文件清单；摘要最多展示 10 个文件名。"
         read_only: true
       - name: cygnusx_get_report_content
-        description: "获取报告内容"
+        description: "按 report_id 获取报告 HTML 主文件；字符串内容仅在摘要和 preview 中截取前 3000 个字符。"
         read_only: true
 
   - id: sandbox
@@ -149,16 +149,16 @@ groups:
     description: "沙箱执行 — 在 mambaforge 环境中运行代码"
     tools:
       - name: cygnusx_sandbox_create
-        description: "创建/复用沙箱会话"
+        description: "创建或复用指定 language 的 Python/R 沙箱会话；返回 session_id、语言和状态，成功后可用该 ID 调用代码执行工具。"
         read_only: false
       - name: cygnusx_sandbox_execute
-        description: "执行代码"
+        description: "在沙箱中运行 code，可指定 session_id 和 timeout；timeout 会限制在服务端允许范围内，返回 stdout、stderr、退出状态及图表计数。"
         read_only: false
       - name: cygnusx_sandbox_list
-        description: "列出会话"
+        description: "列出当前用户活跃的沙箱会话，返回 session_id、语言、状态和创建时间；不会创建会话。"
         read_only: true
       - name: cygnusx_sandbox_destroy
-        description: "销毁会话"
+        description: "按 session_id 结束并删除指定沙箱会话以释放容器资源；此操作不可继续使用该会话。"
         read_only: false
 
   - id: platform
@@ -197,7 +197,7 @@ groups:
         read_only: false
         requires_confirm: true
       - name: atac_seq_status
-        description: "查询 ATAC-seq 任务状态和进度"
+        description: "[DEPRECATED] 按 task_id 查询 ATAC-seq 任务当前状态及平台提供的进度信息；这是旧版流程专用入口，新集成优先使用 cygnusx_get_task_progress。"
         read_only: true
       - name: atac_seq_results
         description: "获取 ATAC-seq 结果摘要和产物清单"
@@ -214,7 +214,7 @@ groups:
     description: "BioThings 科研数据库 — MyGene/MyVariant/MyChem 固定只读适配"
     tools:
       - name: cygnusx_gene_search
-        description: "按指定物种检索 MyGene 基因注释"
+        description: "在 MyGene 中按 query 搜索基因候选；species 必填，limit/offset 控制分页（limit 上限 50），fields 可选定返回字段。结果保留候选匹配，不自动替用户选择唯一基因。"
         read_only: true
       - name: cygnusx_gene_get
         description: "按 Entrez 或 Ensembl Gene ID 获取 MyGene 注释"
@@ -232,7 +232,7 @@ groups:
         description: "按显式 scopes 和 assembly 批量映射变异标识符"
         read_only: true
       - name: cygnusx_chem_search
-        description: "检索 MyChem 化合物候选"
+        description: "在 MyChem 中按 query 搜索化合物注释候选；limit/offset 控制分页，fields 可选定返回字段。不同盐型或化学身份作为独立候选保留；这不是结构相似性或药物对接搜索。"
         read_only: true
       - name: cygnusx_chem_get
         description: "按支持的化学标识符获取 MyChem 注释"
@@ -258,7 +258,7 @@ groups:
         description: "查询Ensembl植物基因组区间注释"
         read_only: true
       - name: cygnusx_genome_sequence
-        description: "查询Ensembl短序列并限制内联长度"
+        description: "按 Ensembl stable ID 读取 genomic、cdna、cds 或 protein 序列（默认 cdna）；返回序列长度和最多 3000 字符的预览及截断标记，不提供完整序列文件下载。"
         read_only: true
 
   - id: plant_te
@@ -269,7 +269,7 @@ groups:
         description: "搜索Gramene v69植物基因与知识条目"
         read_only: true
       - name: cygnusx_plant_get
-        description: "按ID获取Gramene基因详情"
+        description: "按 Gramene gene identifier 查询 Gramene v69 基因详情并保留原始 provider 记录；结果中的 taxon_id 是 Gramene 专用标识，不能直接当作 NCBI taxid。"
         read_only: true
       - name: cygnusx_te_search
         description: "按名称、分类路径和clade检索Dfam家族"
@@ -283,7 +283,7 @@ groups:
     description: "Expression Atlas与Single Cell Atlas研究目录（非表达值查询）"
     tools:
       - name: cygnusx_expression_studies
-        description: "检索bulk或单细胞Atlas研究目录"
+        description: "在缓存的 Expression Atlas bulk 或单细胞研究目录中按 query 做不区分大小写的字面子串筛选；single_cell 选择目录，limit 限制返回条数。结果是研究元数据，不含基因表达定量值。"
         read_only: true
       - name: cygnusx_expression_manifest
         description: "读取Atlas实验目录元数据，不假设下载文件存在"
@@ -334,7 +334,7 @@ groups:
         description: "检索ClinVar记录并返回Entrez UID语义"
         read_only: true
       - name: cygnusx_clinvar_get
-        description: "按VCV accession读取ClinVar摘要"
+        description: "按VCV、RCV、SCV或Variation ID读取ClinVar证据；Allele ID暂不支持"
         read_only: true
       - name: cygnusx_target_search
         description: "使用固定GraphQL模板检索Open Targets实体"
@@ -350,6 +350,17 @@ groups:
         read_only: true
       - name: cygnusx_literature_annotations
         description: "按source-qualified文章ID读取Europe PMC注释"
+        read_only: true
+
+  - id: string_interactions
+    module: tools.research_resources
+    description: "STRING v12.5 蛋白标识映射与分类型只读互作查询"
+    tools:
+      - name: cygnusx_string_resolve
+        description: "按必填NCBI taxon_id解析蛋白标识，保留有界候选而不自动选择；返回STRING ID、首选名和注释。"
+        read_only: true
+      - name: cygnusx_string_network
+        description: "按显式STRING ID、匹配的taxon_id和functional/physical/regulatory类型读取有界互作；含方向的调控记录按source到target表示，分数是关联证据强度，不是因果概率。"
         read_only: true
 
   - id: seqout
@@ -393,7 +404,7 @@ groups:
         description: "获取单个运行的下载链接"
         read_only: true
       - name: seqout_get_sample_metadata
-        description: "获取样本元数据"
+        description: "按 GSM、SRR 等 accession 查询公共组学样本元数据，返回原始样本记录；不推断处理组或对照组。"
         read_only: true
       - name: seqout_get_sample_detail
         description: "获取完整的样本详细信息"

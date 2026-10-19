@@ -12,7 +12,7 @@
 | 数据来源 | 平台 REST API（`X-API-Key` 认证，httpx 客户端） | 直接 import 服务层，零网络开销 |
 | Prompts | ✅ 5 个工作流引导 prompt | ❌ 无（仅 tools + 系统提示后缀） |
 | Resources | ✅ 4 个只读资源 URI | ❌ 无 |
-| Tools | 默认配置启动自检 109 个（含 Seqout 26 个，以运行注册表为准） | ✅ 平台 22 + BioThings 10 + Research Data 26 + 流水线 10 + 工具箱（动态） |
+| Tools | 默认配置启动自检 111 个（含 Seqout 26 个，以运行注册表为准） | ✅ 平台 22 + BioThings 10 + Research Data 28 + 流水线 10 + 工具箱（动态） |
 
 两套接口对重叠能力**同名对齐**（`list_workspace_files` / `search_workspace_files` / `rna_seq_*` / `atac_seq_*` / `check_workspace_data` / `list_available_pipelines`），保证内外双端同能力同名。
 
@@ -20,7 +20,7 @@
 
 ## 一、外部 MCP Server 能力清单
 
-### 1.1 Tools（默认配置启动注册 109 个；以启动自检为准）
+### 1.1 Tools（默认配置启动注册 111 个；以启动自检为准）
 
 返回格式统一为 `{"success": bool, "summary": str, "data": Any, "next_steps"?: list[str]}`；
 写工具创建服务端 PENDING 记录，人类通过平台 JWT 端点批准，随后携带
@@ -128,7 +128,7 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 | Dfam | `cygnusx_te_search/get` | 已实现家族元数据查询；`cygnusx_te_asset` 未开放，缺平台文件下载/校验/归属链 |
 | Expression Atlas | `cygnusx_expression_studies/manifest(single_cell=false)` | 已实现目录元数据过滤和单进程 6h 缓存（10 MiB 上游预算）；不是表达值 API；跨 worker 缓存和文件 manifest 未接平台 |
 | Single Cell Expression Atlas | `cygnusx_expression_studies/manifest(single_cell=true)` | 已实现目录元数据过滤和单进程 6h 缓存；定量查询与 H5AD/矩阵资产未开放 |
-| STRING | 无新增同义工具 | 待实现：官方 Streamable HTTP initialize/list/call 和工具白名单尚未验证；避免先造第二套 REST 同义工具 |
+| STRING | `cygnusx_string_resolve`、`cygnusx_string_network`；外部 bridge / 内置 research-data preset 同名 | 工作树新增固定 v12.5 TSV REST adapter；明确 taxon，候选不自动合并；functional/physical/regulatory 分开；不自动加节点；每项有界且平台服务共享 Redis 限速 | 进程内 FastMCP→provider 的 TP53 mapping、physical 和 regulatory 小样例成功；MCP wire→认证平台 REST 尚未复测，Agent权限、cache与部署未验证。官方托管 MCP 仍不注册（无 immutable pin，曾报告 v12.0）；直连证据见 `evidence/mcp-external-validation-2026-10-18/string-rest-direct-probe-2026-10-19.json`，官方探测保留于 `string-official-mcp-probe-2026-10-19.json` |
 | Europe PMC | 保留平台既有 `europe_pmc_search`；外部/内部新增 `cygnusx_literature_get` 与外部 annotations | 文章详情已内置固定查询；全文/注释资产与统一缓存待验收 |
 | ClinVar | 外部 `cygnusx_clinvar_search/get`；内部 `cygnusx_clinvar_search` | 受限 E-utilities 查询；ClinVar 分类不形成临床建议；NCBI共享限流未接 |
 | Open Targets | `cygnusx_target_search/associations/evidence` | 固定 GraphQL 模板已实现；当前 SDL/schema 哈希与真实请求待验收 |
@@ -138,7 +138,7 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 | Reactome | 外部/内部 `cygnusx_pathway_get` | 已实现通路知识查询；`cygnusx_pathway_analyze` 未开放，缺背景/映射率/FDR实测 |
 | InterPro | `cygnusx_domain_get/domain_proteins` | 已实现已注释蛋白域/家族查询；新序列扫描需 InterProScan Flow，未开放 |
 
-表中“已注册”指代码声明并接入相应注册路径，不表示已部署或通过真实 provider contract。当前内部 BioThings 10 个与 Research Data 26 个已注册；两组外部入口均通过带 `X-API-Key` 的平台 REST 桥接，业务逻辑由对应 application service 统一执行。默认配置实际注册 109 个外部工具，数量以启动自检及 `tools.yaml` 为准；本次外部 MCP 新增 36 个工具。
+表中“已注册”指代码声明并接入相应注册路径，不表示已部署或通过真实 provider contract。当前内部 BioThings 10 个与 Research Data 28 个已注册；两组外部入口均通过带 `X-API-Key` 的平台 REST 桥接，业务逻辑由对应 application service 统一执行。默认配置实际注册 111 个外部工具，数量以启动自检及 `tools.yaml` 为准；本次外部 MCP 新增 38 个工具。
 
 #### 🔗 pipelines — 完整分析流水线（`tools/pipelines.py`，10 个，与内部 preset 同名对齐）
 
@@ -172,7 +172,7 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 |---|---|---|
 | `new_analysis` | `flow_id="rna_seq"` | 看流程详情 → 查文件 → 配参数 → preview 验证 → 确认提交 → 轮询进度 → 查结果，每步向用户确认 |
 | `interpret_results` | `task_id` | 确认完成 → 取输出 → 读 DEG 表/QC 报告/计数矩阵 → 总结显著差异基因、上下调比例 → 建议富集方向 |
-| `optimize_in_sandbox` | `task_id` | 先 `find` 探明实际结果文件（勿臆测路径）→ pandas 读取 → 调阈值/火山图/热图/GO-KEGG → 发表级图表 |
+| `optimize_in_sandbox` | `task_id` | 先用 `cygnusx_list_files` / `cygnusx_read_file_content` 查找并预览当前用户可见结果文件；不可见时停止 → pandas 读取已确认路径 → 调阈值/火山图/热图/GO-KEGG → 发表级图表；不得调用 shell 或 subprocess |
 | `download_and_analyze` | `accession, flow_id="rna_seq"` | 提交下载 → 监控进度 → 查 `raw_data` → 配参分析 → 监控 → 解读 |
 | `troubleshoot_task` | `task_id` | 查状态与错误 → 拉日志 → 分类归因（内存/参考基因组/样本表/conda）→ 修复建议与重提交 |
 
@@ -204,9 +204,9 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 
 复用与外部 FastMCP 一致的固定工具名，覆盖 MyGene/MyVariant/MyChem search/get/resolve 与 `biothings_describe`。通过 `ensure_presets()` 使用 uuid5 固定 ID 幂等种子化，工具快照变化纳入现有版本管理。内部 handler 与外部认证 API 均委托同一 `biothings_service.py`；部署级共享缓存/限流、provider 熔断、provenance 与跨端 schema digest 仍待接通。
 
-### 2.3 `cygnusx-research-data`（research_preset.py，26 个）
+### 2.3 `cygnusx-research-data`（research_preset.py，28 个）
 
-内置只读查询覆盖 Ensembl、Gramene、Dfam、Expression Atlas、UniProt、InterPro、RCSB、AlphaFold、Reactome、ClinVar、Open Targets 和 Europe PMC 的目录、身份、注释与证据查询。所有 provider host、路径、方法和字段均由 `research_data_service.py` 固定，参数校验在 HTTP 前执行，结果限制为 3000 UTF-8 字节。外部 FastMCP 通过 `/api/v1/research-data/{tool_name}` 认证桥接到同一服务；大结构/PAE/HMM/表达矩阵、Reactome 分析、表达定量、InterProScan 和 STRING 仍关闭，避免把未验收的资产或分析动作注册成可用工具。
+内置只读查询覆盖 Ensembl、Gramene、Dfam、Expression Atlas、UniProt、InterPro、RCSB、AlphaFold、Reactome、ClinVar、Open Targets、Europe PMC 和 STRING 的目录、身份、注释与证据查询。所有 provider host、路径、方法和字段均由 `research_data_service.py` 固定，参数校验在 HTTP 前执行，结果限制为 3000 UTF-8 字节。外部 FastMCP 通过 `/api/v1/research-data/{tool_name}` 认证桥接到同一服务；STRING 仅开放版本固定的ID映射和有界 network query。大结构/PAE/HMM/表达矩阵、Reactome 分析、表达定量和 InterProScan 仍关闭，避免把未验收的资产或分析动作注册成可用工具。
 
 ### 2.4 `cygnusx-pipelines`（pipeline_preset.py，10 个）
 
@@ -268,7 +268,7 @@ HTTP/SSE 仅允许回环监听，必须配置独立的 `CYGNUSX_HTTP_TOKEN`（�
 
 **请求数据流**：AI 助手 → MCP `tools/call` → FastMCP 路由到工具函数 → `api.<method>()` → 平台 REST `/api/v1/*` → 服务层 → 结果裁剪（limits clamp）→ 统一 `{success, summary, data, next_steps}` 返回。
 
-科研数据库外部工具通过 `api.research_data()` 调用固定的 `/api/v1/research-data/{tool_name}`；平台只接受已登记的 26 个工具名，provider host、路径、HTTP 方法和 GraphQL 模板均由服务层控制。
+科研数据库外部工具通过 `api.research_data()` 调用固定的 `/api/v1/research-data/{tool_name}`；平台只接受已登记的 28 个工具名，provider host、路径、HTTP 方法和 GraphQL 模板均由服务层控制。
 
 ### 3.3 内部 Preset 执行机制
 

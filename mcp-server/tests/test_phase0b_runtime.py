@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "isolated-phase0b-incoming-token-123456789"
 
 
+def input_schema(tool):
+    """Support FastMCP 2.x and 3.x Tool field names in protocol tests."""
+    return getattr(tool, "input_schema", getattr(tool, "inputSchema", {}))
+
+
 def isolated_env():
     return {
         **os.environ,
@@ -36,33 +41,47 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
         except PermissionError:
-            self.skipTest("BLOCKED: restricted I/O sandbox; real STDIO initialization also timed out")
+            self.skipTest(
+                "BLOCKED: restricted I/O sandbox; real STDIO initialization also timed out"
+            )
 
     async def test_stdio_main_schema_and_boolean_rejection(self):
         self.require_unrestricted_io()
         with tempfile.TemporaryFile(mode="w+") as log:
-            transport = StdioTransport(sys.executable, ["main.py"], env=isolated_env(), cwd=str(ROOT), log_file=log)
+            transport = StdioTransport(
+                sys.executable, ["main.py"], env=isolated_env(), cwd=str(ROOT), log_file=log
+            )
             async with Client(transport, timeout=10) as client:
                 tools = await client.list_tools()
-                self.assertEqual(len(tools), 71)
+                self.assertEqual(len(tools), 111)
                 tool = next(t for t in tools if t.name == "cygnusx_submit_analysis")
-                self.assertIn("confirmation_id", tool.inputSchema["properties"])
-                result = await client.call_tool(tool.name, {"flow_id": "rna_seq", "user_confirmed": True})
+                self.assertIn("confirmation_id", input_schema(tool)["properties"])
+                result = await client.call_tool(
+                    tool.name, {"flow_id": "rna_seq", "user_confirmed": True}
+                )
                 self.assertFalse(result.data["success"])
                 self.assertIn("user_confirmed", result.data["summary"])
                 with self.assertRaises(ToolError):
                     await client.call_tool(tool.name, {})
-                result = await client.call_tool("cygnusx_get_task_progress", {"task_id": "isolated"})
+                result = await client.call_tool(
+                    "cygnusx_get_task_progress", {"task_id": "isolated"}
+                )
                 self.assertFalse(result.data["success"])
 
     async def test_stdio_pipeline_entry(self):
         self.require_unrestricted_io()
         with tempfile.TemporaryFile(mode="w+") as log:
-            transport = StdioTransport(sys.executable, ["pipelines_main.py"], env=isolated_env(), cwd=str(ROOT), log_file=log)
+            transport = StdioTransport(
+                sys.executable,
+                ["pipelines_main.py"],
+                env=isolated_env(),
+                cwd=str(ROOT),
+                log_file=log,
+            )
             async with Client(transport, timeout=10) as client:
                 tools = await client.list_tools()
                 self.assertGreater(len(tools), 0)
-                self.assertTrue(all(t.inputSchema["type"] == "object" for t in tools))
+                self.assertTrue(all(input_schema(t)["type"] == "object" for t in tools))
 
     async def check_http(self, transport, path):
         try:
@@ -73,29 +92,45 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.skipTest(f"BLOCKED: loopback binding forbidden: {error}")
         with tempfile.TemporaryFile(mode="w+") as log:
             process = await asyncio.create_subprocess_exec(
-                sys.executable, "main.py", "--transport", transport, "--port", str(port),
-                cwd=ROOT, env=isolated_env(), stdout=log, stderr=log,
+                sys.executable,
+                "main.py",
+                "--transport",
+                transport,
+                "--port",
+                str(port),
+                cwd=ROOT,
+                env=isolated_env(),
+                stdout=log,
+                stderr=log,
             )
             try:
                 url = f"http://127.0.0.1:{port}{path}"
                 async with httpx.AsyncClient(trust_env=False, timeout=1) as http:
+                    request = http.get if transport == "sse" else http.post
+                    request_kwargs = {} if transport == "sse" else {"json": {}}
                     for _ in range(100):
                         if process.returncode is not None:
                             log.seek(0)
                             self.fail(log.read())
                         try:
-                            denied = await http.post(url, json={})
+                            denied = await request(url, **request_kwargs)
                             break
                         except httpx.ConnectError:
                             await asyncio.sleep(0.1)
                     else:
                         self.fail("MCP startup timed out")
                     self.assertEqual(denied.status_code, 401)
-                    forged = await http.post(url, json={}, headers={"Authorization": "Bearer forged", "X-User-Id": "owner"})
+                    forged = await request(
+                        url,
+                        **request_kwargs,
+                        headers={"Authorization": "Bearer forged", "X-User-Id": "owner"},
+                    )
                     self.assertEqual(forged.status_code, 401)
                 async with Client(url, auth=TOKEN, timeout=10) as client:
-                    self.assertEqual(len(await client.list_tools()), 71)
-                    result = await client.call_tool("cygnusx_submit_analysis", {"flow_id": "rna_seq", "user_confirmed": True})
+                    self.assertEqual(len(await client.list_tools()), 111)
+                    result = await client.call_tool(
+                        "cygnusx_submit_analysis", {"flow_id": "rna_seq", "user_confirmed": True}
+                    )
                     self.assertFalse(result.data["success"])
             finally:
                 if process.returncode is None:
@@ -201,10 +236,20 @@ class InProcessTests(unittest.IsolatedAsyncioTestCase):
         main.api.get_task = AsyncMock(side_effect=CygnusXAPIError(503, "isolated failure"))
         async with Client(main.mcp, timeout=5) as client:
             tools = await client.list_tools()
-            self.assertEqual(len(tools), 71)
+            self.assertEqual(len(tools), 111)
+            self.assertTrue(all(tool.description and tool.description.strip() for tool in tools))
+            self.assertTrue(
+                all(
+                    input_schema(tool).get("type") == "object"
+                    and isinstance(input_schema(tool).get("properties"), dict)
+                    for tool in tools
+                )
+            )
             tool = next(t for t in tools if t.name == "cygnusx_submit_analysis")
-            self.assertIn("confirmation_id", tool.inputSchema["properties"])
-            result = await client.call_tool(tool.name, {"flow_id": "rna_seq", "user_confirmed": True})
+            self.assertIn("confirmation_id", input_schema(tool)["properties"])
+            result = await client.call_tool(
+                tool.name, {"flow_id": "rna_seq", "user_confirmed": True}
+            )
             self.assertFalse(result.data["success"])
             with self.assertRaises(ToolError):
                 await client.call_tool(tool.name, {})
@@ -217,4 +262,5 @@ if __name__ == "__main__":
     sys.path.insert(0, str(ROOT))
     os.environ.update(isolated_env())
     import main  # noqa: F401 - Register outside the event loop, like the real entry point.
+
     unittest.main()
