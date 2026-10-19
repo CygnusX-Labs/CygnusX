@@ -193,7 +193,7 @@ flowchart TD
 
 ## Development roadmap and long-term vision
 
-CygnusX follows a staged research and engineering program. **M1 is the near-term acceptance target; M2 is a proposed scientific-agent research direction; M3 is a long-term cross-domain hypothesis to validate.** These milestones are not declarations that the full functionality is currently available.
+CygnusX follows a staged research and engineering program. **M1 is the near-term acceptance target; M2 is the next scientific-agent research phase, formally starting on January 1, 2027; M3 is a long-term cross-domain hypothesis to validate.** These milestones are not declarations that the full functionality is currently available.
 
 ### M1 — Reproducible Multi-Omics Infrastructure
 
@@ -217,6 +217,22 @@ flowchart LR
 **Milestone evidence:** approved real datasets and study design, frozen workflows and parameters, input and image digests, execution records, scientific result checks, actual BioReport output, delivery manifest, and independent replay against predefined numerical/statistical tolerances. Start with a small RNA-seq case, then assess transfer to a second omics workflow.
 
 ### M2 — Expert-Governed, Provenance-Aware Iterative Scientific Discovery
+
+#### Next-stage research direction — Scientific Discovery Core
+
+**Formal start: January 1, 2027.** This phase will advance CygnusX BioOps from reproducible scientific computing toward expert-governed, evidence-driven scientific discovery. Scientific Discovery Core is the focus of the M2 research program, with three complementary capabilities:
+
+| Capability | Research focus |
+| --- | --- |
+| **Scientific Reasoning** | Transform research questions into testable hypotheses and scientifically reviewable study designs. |
+| **Scientific Validation** | Evaluate analytical results, methodological validity, and evidence-backed scientific claims. |
+| **Research Evolution** | Preserve research knowledge and propose evidence-grounded follow-up investigations. |
+
+Together, these capabilities aim to establish a closed-loop research framework:
+
+**Hypothesis → Planning → Expert Review → Controlled Execution → Evidence Evaluation → Validation → Iteration**
+
+The start date marks the formal launch of this research phase. Capabilities will be introduced incrementally after the underlying scientific computing and execution infrastructure meets its acceptance requirements. The long-term objective is general-purpose, expert-governed, provenance-aware agentic scientific computing infrastructure, initially validated through real multi-omics research.
 
 **Goal:** Extend validated computation into a human–AI scientific collaboration loop in which Agents can formulate **testable** hypotheses, propose methods, submit plans for expert review, analyze results, evaluate claims against evidence, and suggest warranted follow-up studies.
 
