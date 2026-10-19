@@ -1,0 +1,70 @@
+{
+  "observed_at_utc": "2026-10-18T19:12:00Z",
+  "probe": "execute_research(cygnusx_clinvar_get)",
+  "transport": "direct_https_adapter",
+  "platform_verified": false,
+  "provider_verified": true,
+  "cache_status": "not_instrumented",
+  "samples": [
+    {
+      "identifier_type": "VCV",
+      "input": "VCV000014206",
+      "request": "EFetch db=clinvar, rettype=vcv, id=VCV000014206",
+      "success": true,
+      "returned_record": {
+        "record_type": "VCV",
+        "accession": "VCV000014206",
+        "version": "1",
+        "variation_id": "14206",
+        "scv_accessions": [
+          {"accession": "SCV000035529", "version": "2"}
+        ]
+      }
+    },
+    {
+      "identifier_type": "RCV",
+      "input": "RCV000015270.27",
+      "request": "EFetch db=clinvar, rettype=clinvarset, id=RCV000015270.27",
+      "success": true,
+      "returned_record": {
+        "record_type": "RCV",
+        "accession": "RCV000015270",
+        "version": "27",
+        "scv_accessions": [
+          {"accession": "SCV000035529", "version": "2"}
+        ]
+      }
+    },
+    {
+      "identifier_type": "SCV",
+      "input": "SCV000035529.2",
+      "request": "JSON ESearch term=SCV000035529[clv_acc], then EFetch VCV using returned Variation ID with is_variationid=true&from_esearch=true",
+      "success": true,
+      "returned_record": {
+        "record_type": "VCV",
+        "accession": "VCV000014206",
+        "version": "1",
+        "variation_id": "14206",
+        "matched_scv": {"accession": "SCV000035529", "version": "2"}
+      }
+    },
+    {
+      "identifier_type": "VariationID",
+      "input": "14206",
+      "request": "EFetch db=clinvar, rettype=vcv, id=14206, is_variationid=true, from_esearch=true",
+      "success": true,
+      "returned_record": {
+        "record_type": "VCV",
+        "accession": "VCV000014206",
+        "version": "1",
+        "variation_id": "14206"
+      }
+    }
+  ],
+  "limitations": [
+    "These are provider-direct adapter probes; they did not traverse FastMCP, platform REST authentication, Agent context, or platform audit tracing.",
+    "No cache bypass or cache miss instrumentation was available.",
+    "ClinVar Allele ID remains unsupported and is rejected before network access; it is not coerced to Variation ID.",
+    "An initial SCV ESearch XML attempt was rejected because the provider response contained a DTD; SCV lookup was changed to JSON ESearch, preserving XML DTD/ENTITY rejection for EFetch."
+  ]
+}

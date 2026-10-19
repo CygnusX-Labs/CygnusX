@@ -119,10 +119,10 @@ async def stream_message(
 
 
 @router.post("/sessions/{session_id}/cancel")
-async def cancel_session(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> dict[str, bool]:
+async def cancel_session(session_id: str, current_user_id: CurrentUserId, db: DbSession) -> dict[str, str]:
     service = _service(db)
     await service.ensure_access(current_user_id)
-    return {"cancelled": await service.cancel(current_user_id, session_id)}
+    return {"status": await service.cancel(current_user_id, session_id)}
 
 
 @router.patch("/sessions/{session_id}")

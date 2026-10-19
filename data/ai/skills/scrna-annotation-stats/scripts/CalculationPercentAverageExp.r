@@ -4,7 +4,7 @@
 # log4r init module
 log4r_init <- function(){
   require(log4r)
-  local_logger <- log4r::logger()
+  logger <- log4r::logger()
   my_layout <- function(level, ...) {
     require(crayon)
     if (level == 'INFO'){
@@ -27,8 +27,8 @@ log4r_init <- function(){
       }
     }
   }
-  local_logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
-  return(local_logger)
+  logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
+  return(logger)
 }
 # CalculationPercentAverageExp
 CalculationPercentAverageExp <- function(seurat_obj, gene = gene_list, group_by = 'celltype') {
@@ -37,14 +37,14 @@ CalculationPercentAverageExp <- function(seurat_obj, gene = gene_list, group_by 
   require(tidyverse)
   
   # init log4r
-  local_logger <- log4r_init()
+  logger <- log4r_init()
   
   seurat_obj@meta.data[[group_by]] <- factor(seurat_obj@meta.data[[group_by]]) 
   
   # 计算 Percent_Expressing
   data <- scCustomize::Percent_Expressing(seurat_obj, gene, threshold = 0, group_by = group_by)
   
-  info(local_logger,"Calculation Gene Percent Average Exp")
+  info(logger,"Calculation Gene Percent Average Exp")
   
   # 处理 Percent_Expressing 结果格式
   data_Percent_Expressing <- data %>%
@@ -55,7 +55,7 @@ CalculationPercentAverageExp <- function(seurat_obj, gene = gene_list, group_by 
   # 计算 AverageExpression
   data <- AverageExpression(seurat_obj, features = gene, assays = 'RNA', return.seurat = FALSE, group.by = group_by)
   
-  info(local_logger,"Calculation Gene Average Expression")
+  info(logger,"Calculation Gene Average Expression")
   
   data <- as.data.frame(data) %>%
     rownames_to_column(var = "gene")

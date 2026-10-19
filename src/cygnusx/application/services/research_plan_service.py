@@ -155,9 +155,12 @@ class ResearchPlanService:
             events=[{"kind": "PLAN_PREPARED", "at": datetime.now(UTC).isoformat()}],
         )
         self.db.add(row)
+        # Persist the referenced version before updating the immediate self-FK.
+        # Both flushes remain in the caller's transaction and roll back together.
+        await self.db.flush()
         if previous:
             previous.superseded_by = plan_id
-        await self.db.flush()
+            await self.db.flush()
         return await self.view(owner, project, plan_id)
 
     async def owned(

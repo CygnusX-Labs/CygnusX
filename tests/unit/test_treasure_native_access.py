@@ -150,9 +150,28 @@ async def test_capability_remains_readable_when_native_disabled(env: SimpleNames
     response = await request(env, "GET", "/capabilities")
     assert response.status_code == 200
     body = response.json()
+    assert {
+        "native_ui_enabled", "enabled", "read_sessions", "read_discovery",
+        "prepare_import", "prepare_analysis", "project_required_for_prepare",
+        "write_execution", "write_tools_enabled", "reason_code", "cancellation_mode",
+        "read_only", "supported_events",
+    } <= body.keys()
     assert body["reason_code"] == "FEATURE_DISABLED"
     assert not any(body[name] for name in ("enabled", "read_sessions", "read_discovery",
                                          "prepare_import", "prepare_analysis", "write_execution"))
+    assert body["write_execution"] is False
+    assert body["write_tools_enabled"] is False
+
+
+async def test_cancel_route_exposes_signal_state_not_completion(env: SimpleNamespace, monkeypatch) -> None:
+    async def accepted(self: Any, user_id: str, session_id: str) -> str:
+        assert session_id == "global"
+        return "accepted"
+
+    monkeypatch.setattr(research.ResearchTreasureService, "cancel", accepted)
+    response = await request(env, "POST", "/sessions/global/cancel")
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
 
 
 @pytest.mark.parametrize("method,path,body", [
@@ -461,9 +480,57 @@ async def test_cancel_endpoint_reaches_active_stream_from_another_service_instan
     )
     assert (await anext(events))["delta"] == "partial"
     cancel_service = research.ResearchTreasureService(env.db)
-    assert await cancel_service.cancel(str(env.owner), "global")
+    assert await cancel_service.cancel(str(env.owner), "global") == "accepted"
     terminal = await anext(events)
     assert terminal["event"] == "cancel"
+    with pytest.raises(StopAsyncIteration):
+        await anext(events)
+
+
+async def test_cancel_without_local_producer_reports_unknown(env: SimpleNamespace) -> None:
+    service = research.ResearchTreasureService(env.db)
+    assert await service.cancel(str(env.owner), "global") == "unknown"
+
+
+async def test_cancel_persists_signal_for_remote_producer(env: SimpleNamespace) -> None:
+    assistant = env.db.sync.scalar(
+        select(ChatMessageModel).where(ChatMessageModel.message_id == "global")
+    )
+    assert assistant is not None
+    assistant.status = "streaming"
+    env.db.sync.commit()
+
+    service = research.ResearchTreasureService(env.db)
+    assert await service.cancel(str(env.owner), "global") == "accepted"
+
+    env.db.sync.refresh(assistant)
+    assert assistant.metadata_json["cancel_requested"] is True
+    assert "cancel_requested_at" in assistant.metadata_json
+
+
+async def test_remote_cancel_signal_terminates_stream_on_next_event(
+    env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def provider(self: Any, model_id: Any) -> Any:
+        return SimpleNamespace(model="isolated-test-model")
+
+    async def stream(self: Any, **_: Any) -> AsyncIterator[dict[str, Any]]:
+        yield {"event": "delta", "delta": "partial"}
+        await asyncio.sleep(0.2)
+        yield {"event": "delta", "delta": "late"}
+
+    monkeypatch.setattr(research.ResearchTreasureService, "_provider", provider)
+    monkeypatch.setattr(research.TreasureAgentAdapter, "stream", stream)
+    research.ResearchTreasureService._active_cancels.clear()
+    request_id = uuid4()
+    running = research.ResearchTreasureService(env.db)
+    events = running.stream_message(str(env.owner), "global", "read", None, "zh", request_id)
+    assert (await anext(events))["delta"] == "partial"
+    research.ResearchTreasureService._active_cancels.clear()
+
+    remote = research.ResearchTreasureService(env.db)
+    assert await remote.cancel(str(env.owner), "global") == "accepted"
+    assert (await anext(events))["event"] == "cancel"
     with pytest.raises(StopAsyncIteration):
         await anext(events)
 
@@ -521,6 +588,55 @@ async def test_literature_is_authenticated_session_owned_and_input_validated(
         "kind": "pubmed", "id": "12345678",
     })).status_code == 403
     assert len(calls) == 1
+
+
+async def test_node_adapter_does_not_inherit_host_proxy_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_client = research.httpx.AsyncClient
+    client_options: list[dict[str, Any]] = []
+
+    async def handler(request: Any) -> Any:
+        if request.url.path.endswith("/discovery"):
+            if request.headers.get("accept") == "text/event-stream":
+                return research.httpx.Response(
+                    200, text='data: {"event":"end"}\n\ndata: [DONE]\n\n'
+                )
+            return research.httpx.Response(200, json={"status": "ok", "title": "paper"})
+        raise AssertionError(f"unexpected Node URL: {request.url}")
+
+    transport = research.httpx.MockTransport(handler)
+
+    def client_factory(**kwargs: Any) -> Any:
+        client_options.append(dict(kwargs))
+        return original_client(transport=transport, **kwargs)
+
+    monkeypatch.setattr(research.httpx, "AsyncClient", client_factory)
+    settings = SimpleNamespace(
+        treasure_agent_url="http://node.internal",
+        treasure_agent_internal_token="isolated-test-token",
+        treasure_agent_timeout_seconds=5,
+    )
+    adapter = research.TreasureAgentAdapter(settings)
+
+    detail = await adapter.literature(
+        kind="pubmed", identifier="12345", principal_id="user-1"
+    )
+    assert detail["status"] == "ok"
+    events = [
+        event async for event in adapter.stream(
+            messages=[{"role": "user", "content": "find papers"}],
+            model="test-model",
+            lang="en",
+            cancel_event=asyncio.Event(),
+            principal_id="user-1",
+            project_id=None,
+            session_id="session-1",
+        )
+    ]
+    assert events == [{"event": "end"}]
+    assert len(client_options) == 2
+    assert all(options["trust_env"] is False for options in client_options)
 
 
 @pytest.mark.parametrize("terminal", ["end", "eof"])

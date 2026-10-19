@@ -1,0 +1,5 @@
+ version_num 
+-------------
+ dwnscope06
+(1 row)
+

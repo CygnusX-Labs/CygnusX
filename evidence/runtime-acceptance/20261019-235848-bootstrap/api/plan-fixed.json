@@ -1,0 +1,850 @@
+[
+  {
+    "name": "login.admin_d48ea1",
+    "method": "POST",
+    "path": "/auth/login",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "token_type": "bearer",
+      "expires_in": 1800,
+      "first_login": true,
+      "requires_2fa": false,
+      "challenge_token": null
+    }
+  },
+  {
+    "name": "register.owner",
+    "method": "POST",
+    "path": "/auth/register",
+    "status": 201,
+    "ok": true,
+    "body": {
+      "id": "cad7d991-0123-4c34-9456-fee2147aba56",
+      "username": "accept_owner_d48ea1",
+      "email": "accept_owner_d48ea1@example.invalid",
+      "role": "user",
+      "status": "pending",
+      "avatar_url": null,
+      "nickname": null,
+      "preferences": {},
+      "storage_quota": 536870912000,
+      "used_storage": 0,
+      "last_login_at": null,
+      "disabled_modules": [],
+      "created_at": "2026-10-19T16:12:25.678611Z",
+      "updated_at": "2026-10-19T16:12:25.678611Z"
+    }
+  },
+  {
+    "name": "approve.owner",
+    "method": "PUT",
+    "path": "/admin/users/cad7d991-0123-4c34-9456-fee2147aba56/approve",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "id": "cad7d991-0123-4c34-9456-fee2147aba56",
+      "username": "accept_owner_d48ea1",
+      "status": "active"
+    }
+  },
+  {
+    "name": "modules.owner",
+    "method": "PUT",
+    "path": "/admin/users/cad7d991-0123-4c34-9456-fee2147aba56/modules",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "id": "cad7d991-0123-4c34-9456-fee2147aba56",
+      "disabled_modules": []
+    }
+  },
+  {
+    "name": "login.accept_owner_d48ea1",
+    "method": "POST",
+    "path": "/auth/login",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "token_type": "bearer",
+      "expires_in": 1800,
+      "first_login": true,
+      "requires_2fa": false,
+      "challenge_token": null
+    }
+  },
+  {
+    "name": "register.other",
+    "method": "POST",
+    "path": "/auth/register",
+    "status": 201,
+    "ok": true,
+    "body": {
+      "id": "08583b86-ca43-4a52-83bd-86f47215d50e",
+      "username": "accept_other_d48ea1",
+      "email": "accept_other_d48ea1@example.invalid",
+      "role": "user",
+      "status": "pending",
+      "avatar_url": null,
+      "nickname": null,
+      "preferences": {},
+      "storage_quota": 536870912000,
+      "used_storage": 0,
+      "last_login_at": null,
+      "disabled_modules": [],
+      "created_at": "2026-10-19T16:12:26.315043Z",
+      "updated_at": "2026-10-19T16:12:26.315043Z"
+    }
+  },
+  {
+    "name": "approve.other",
+    "method": "PUT",
+    "path": "/admin/users/08583b86-ca43-4a52-83bd-86f47215d50e/approve",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "id": "08583b86-ca43-4a52-83bd-86f47215d50e",
+      "username": "accept_other_d48ea1",
+      "status": "active"
+    }
+  },
+  {
+    "name": "modules.other",
+    "method": "PUT",
+    "path": "/admin/users/08583b86-ca43-4a52-83bd-86f47215d50e/modules",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "id": "08583b86-ca43-4a52-83bd-86f47215d50e",
+      "disabled_modules": []
+    }
+  },
+  {
+    "name": "login.accept_other_d48ea1",
+    "method": "POST",
+    "path": "/auth/login",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "token_type": "bearer",
+      "expires_in": 1800,
+      "first_login": true,
+      "requires_2fa": false,
+      "challenge_token": null
+    }
+  },
+  {
+    "name": "project.create",
+    "method": "POST",
+    "path": "/projects",
+    "status": 201,
+    "ok": true,
+    "body": {
+      "id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "name": "Bootstrap acceptance — no scientific corpus",
+      "slug": "Bootstrap_acceptance_no_scientific_corpus",
+      "description": "",
+      "customer": "",
+      "status": "active",
+      "settings": null,
+      "created_at": "2026-10-19T16:12:26.828633+00:00",
+      "updated_at": "2026-10-19T16:12:26.828633+00:00"
+    }
+  },
+  {
+    "name": "RP.create",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "5b859270-1470-4b10-ac88-8847d1137616",
+      "version": 1,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "status": "READY_FOR_REVIEW",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:26.858766Z",
+      "reviewed_at": null,
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.idempotent",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "5b859270-1470-4b10-ac88-8847d1137616",
+      "version": 1,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "status": "READY_FOR_REVIEW",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:26.858766Z",
+      "reviewed_at": null,
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.key_conflict",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans",
+    "status": 409,
+    "ok": true,
+    "body": {
+      "detail": "request_key 已绑定不同计划"
+    }
+  },
+  {
+    "name": "RP.list",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans",
+    "status": 200,
+    "ok": true,
+    "body": [
+      {
+        "schema_version": "cygnusx.research_plan.v1",
+        "plan_id": "5b859270-1470-4b10-ac88-8847d1137616",
+        "version": 1,
+        "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+        "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+        "status": "READY_FOR_REVIEW",
+        "mode": "PLAN_ONLY",
+        "draft": {
+          "schema_version": "cygnusx.research_plan.v1",
+          "research_question": "验收计划版本与人工审阅，不运行计算或发布报告",
+          "assumptions": [],
+          "steps": [
+            {
+              "step_id": "publish",
+              "kind": "REPORT_PUBLISH",
+              "goal": "保持发布阻断",
+              "depends_on": [],
+              "arguments": {},
+              "bindings": [],
+              "failure_policy": "STOP_AND_RECONCILE"
+            }
+          ],
+          "budget": {
+            "max_tool_calls": 20,
+            "max_elapsed_seconds": 300,
+            "max_model_tokens": 10000,
+            "max_retries": 0,
+            "estimated_compute_seconds": null,
+            "estimated_storage_bytes": null
+          }
+        },
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "capability_id": "",
+            "effect": "REPORT_PUBLISH",
+            "approval_required": true,
+            "expected_output": "published_report",
+            "status": "WAITING_INPUT",
+            "invocation_id": null,
+            "task_id": null,
+            "error_code": null,
+            "result_manifest_sha256": null,
+            "reports": []
+          }
+        ],
+        "gaps": [
+          "LIVE_EXECUTION_BLOCKED",
+          "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+        ],
+        "created_at": "2026-10-19T16:12:26.858766Z",
+        "reviewed_at": null,
+        "superseded_by": null
+      }
+    ]
+  },
+  {
+    "name": "RP.cross_owner",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616",
+    "status": 404,
+    "ok": true,
+    "body": {
+      "detail": "项目不存在或无权访问"
+    }
+  },
+  {
+    "name": "RP.unauthenticated",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616",
+    "status": 401,
+    "ok": true,
+    "body": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "name": "key.create",
+    "method": "POST",
+    "path": "/auth/api-keys",
+    "status": 201,
+    "ok": true,
+    "body": {
+      "id": "07ab1fc3-3b6c-43bc-9e6c-2b613f777bd4",
+      "name": "acceptance-jwt-boundary",
+      "key_prefix": "omh_e0uveTrs",
+      "scopes": [
+        "*"
+      ],
+      "created_at": "2026-10-19T16:12:26.987563+00:00"
+    }
+  },
+  {
+    "name": "RP.api_key_review_denied",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/review",
+    "status": 401,
+    "ok": true,
+    "body": {
+      "detail": "确认批准必须使用登录用户 JWT"
+    }
+  },
+  {
+    "name": "RP.stale_review",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/review",
+    "status": 409,
+    "ok": true,
+    "body": {
+      "detail": "计划已变化，需重新审阅"
+    }
+  },
+  {
+    "name": "RP.review",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/review",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "5b859270-1470-4b10-ac88-8847d1137616",
+      "version": 1,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "status": "APPROVED",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:26.858766Z",
+      "reviewed_at": "2026-10-19T16:12:27.055137Z",
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.review_idempotent",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/review",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "5b859270-1470-4b10-ac88-8847d1137616",
+      "version": 1,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "status": "APPROVED",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:26.858766Z",
+      "reviewed_at": "2026-10-19T16:12:27.055137Z",
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.revise",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/versions",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "11333a05-a5dc-46d0-9c57-3017cb71d39f",
+      "version": 2,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "4a3c39969fede903d971739ec09adcb934e2ecaaa9bae76644e355880b9bb445",
+      "status": "READY_FOR_REVIEW",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告；修订后需重新审阅",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:27.111470Z",
+      "reviewed_at": null,
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.superseded_review",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/5b859270-1470-4b10-ac88-8847d1137616/review",
+    "status": 409,
+    "ok": true,
+    "body": {
+      "detail": "计划已变化，需重新审阅"
+    }
+  },
+  {
+    "name": "RP.refresh_v2",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/11333a05-a5dc-46d0-9c57-3017cb71d39f",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "plan_id": "11333a05-a5dc-46d0-9c57-3017cb71d39f",
+      "version": 2,
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "digest": "4a3c39969fede903d971739ec09adcb934e2ecaaa9bae76644e355880b9bb445",
+      "status": "READY_FOR_REVIEW",
+      "mode": "PLAN_ONLY",
+      "draft": {
+        "schema_version": "cygnusx.research_plan.v1",
+        "research_question": "验收计划版本与人工审阅，不运行计算或发布报告；修订后需重新审阅",
+        "assumptions": [],
+        "steps": [
+          {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "depends_on": [],
+            "arguments": {},
+            "bindings": [],
+            "failure_policy": "STOP_AND_RECONCILE"
+          }
+        ],
+        "budget": {
+          "max_tool_calls": 20,
+          "max_elapsed_seconds": 300,
+          "max_model_tokens": 10000,
+          "max_retries": 0,
+          "estimated_compute_seconds": null,
+          "estimated_storage_bytes": null
+        }
+      },
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "capability_id": "",
+          "effect": "REPORT_PUBLISH",
+          "approval_required": true,
+          "expected_output": "published_report",
+          "status": "WAITING_INPUT",
+          "invocation_id": null,
+          "task_id": null,
+          "error_code": null,
+          "result_manifest_sha256": null,
+          "reports": []
+        }
+      ],
+      "gaps": [
+        "LIVE_EXECUTION_BLOCKED",
+        "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+      ],
+      "created_at": "2026-10-19T16:12:27.111470Z",
+      "reviewed_at": null,
+      "superseded_by": null
+    }
+  },
+  {
+    "name": "RP.forbidden_input",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans",
+    "status": 422,
+    "ok": true,
+    "body": {
+      "detail": "请求参数校验失败",
+      "errors": [
+        {
+          "type": "value_error",
+          "loc": [
+            "body",
+            "draft",
+            "steps",
+            0
+          ],
+          "msg": "Value error, trusted identity, credentials or execution fields are forbidden",
+          "input": {
+            "step_id": "publish",
+            "kind": "REPORT_PUBLISH",
+            "goal": "保持发布阻断",
+            "arguments": {
+              "shell": "echo forbidden"
+            }
+          },
+          "ctx": {
+            "error": "trusted identity, credentials or execution fields are forbidden"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "RE.project_empty",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-delivery",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "datasets": [],
+      "runtime_admission": "BLOCKED",
+      "truncated": false
+    }
+  },
+  {
+    "name": "RE.cross_owner",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-delivery",
+    "status": 404,
+    "ok": true,
+    "body": {
+      "detail": "项目不存在或无权访问"
+    }
+  },
+  {
+    "name": "RE.unknown_task",
+    "method": "GET",
+    "path": "/tasks/9d2f11e7-bd1a-4e47-8a3f-3b50be106a29/provenance",
+    "status": 404,
+    "ok": true,
+    "body": {
+      "detail": "Task not found"
+    }
+  },
+  {
+    "name": "RE.unknown_report",
+    "method": "GET",
+    "path": "/reports/4bbaf435-db09-4eb4-beb9-49ca2dc6cd1e/provenance",
+    "status": 404,
+    "ok": true,
+    "body": {
+      "detail": "Report not found"
+    }
+  },
+  {
+    "name": "PE.inventory_empty",
+    "method": "GET",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/delivery-inventory",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+      "datasets": [],
+      "runtime_admission": "BLOCKED",
+      "truncated": false,
+      "association_status": "VERIFIED_ASSOCIATION",
+      "association_scope": "explicit_dataset_links_only",
+      "historical_tasks": {
+        "status": "NOT_RECORDED",
+        "reason": "NO_PROJECT_FK_NO_BACKFILL"
+      },
+      "export_enabled": false
+    }
+  },
+  {
+    "name": "PE.prepare_writes_closed",
+    "method": "POST",
+    "path": "/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/exports/prepare",
+    "status": 200,
+    "ok": false,
+    "body": {
+      "manifest": {
+        "schema_version": "cygnusx.project_delivery.v1",
+        "digest_policy": "sorted_utf8_json.v1",
+        "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+        "owner_id": "cad7d991-0123-4c34-9456-fee2147aba56",
+        "selection": {
+          "kind": "evidence",
+          "task_ids": [],
+          "report_ids": []
+        },
+        "files": [
+          {
+            "path": "README.md",
+            "source_kind": "instructions",
+            "source_id": null,
+            "task_id": null,
+            "size": 668,
+            "sha256": "48000b73399a85995276e79797ba07341d301259c03b1671dcb480bdd1d4ff66"
+          },
+          {
+            "path": "verify_project_delivery.py",
+            "source_kind": "verifier",
+            "source_id": null,
+            "task_id": null,
+            "size": 4401,
+            "sha256": "511c1a400f24c79a4ba42c18cf4815be68749379a02b99d37da29bfc2c6f642e"
+          }
+        ],
+        "references": [
+          {
+            "kind": "project",
+            "id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+            "task_id": null,
+            "status": "VERIFIED_ASSOCIATION",
+            "disposition": "reference_only",
+            "reason": null,
+            "digest": null,
+            "version": null,
+            "snapshot_id": null,
+            "result_observation_id": null,
+            "parent_id": null,
+            "dataset_version_id": null,
+            "analysis_link_id": null
+          },
+          {
+            "kind": "historical_association",
+            "id": null,
+            "task_id": null,
+            "status": "NOT_RECORDED",
+            "disposition": "unverified",
+            "reason": "NO_PROJECT_FK_NO_BACKFILL",
+            "digest": null,
+            "version": null,
+            "snapshot_id": null,
+            "result_observation_id": null,
+            "parent_id": null,
+            "dataset_version_id": null,
+            "analysis_link_id": null
+          }
+        ],
+        "gaps": [
+          "HISTORICAL_ASSOCIATION_COVERAGE_NOT_RECORDED",
+          "REPRODUCTION_NOT_RUN"
+        ],
+        "evidence_status": "partial",
+        "reproduction_status": "NOT_RUN",
+        "association_scope": "explicit_dataset_links_only",
+        "redaction_policy": "project_delivery_allowlist.v1"
+      },
+      "manifest_digest": "f2b5cbb005529cf7026c807eb93b5d6acb666f397a9920c04848254f27354fbf"
+    }
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "observed_at_utc": "2026-10-18T18:50:21Z",
+  "service_adapter_verified_at_utc": "2026-10-18T18:55:50Z",
+  "provider": "ClinVar",
+  "request": {
+    "method": "GET",
+    "endpoint": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+    "params": {
+      "db": "clinvar",
+      "rettype": "vcv",
+      "id": "VCV000014206"
+    }
+  },
+  "attempted": true,
+  "transport": "direct_https_contract_probe",
+  "platform_verified": false,
+  "result": {
+    "http_status": 200,
+    "content_type": "text/xml; charset=UTF-8",
+    "response_bytes": 10524,
+    "xml_root": "ClinVarResult-Set",
+    "projection": {
+      "accession": "VCV000014206",
+      "version": "1",
+      "variation_id": "14206",
+      "submission_count": "1",
+      "submitter_count": "1",
+      "germline_classification_entries": 3,
+      "somatic_clinical_impact_entries": 0,
+      "oncogenicity_entries": 0,
+      "review_status_entries": 3,
+      "submission_evidence_entries": 1,
+      "included_review_status_entries": 2,
+      "included_classification_entries": {
+        "germline": 2,
+        "somatic_clinical_impact": 0,
+        "oncogenicity": 0
+      }
+    },
+    "adapter_envelope_bytes": 1516,
+    "top_level_truncated": false,
+    "projection_truncated": true,
+    "truncated_sections": ["classifications", "review_statuses"]
+  },
+  "limitations": [
+    "One public VCV record only; this is not a broad semantic validation.",
+    "The request bypassed FastMCP, platform REST authentication, Agent context, and cache behavior.",
+    "No RCV, SCV, Variation ID, or Allele ID input modes were tested."
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "Id": "sha256:98bd3550232854202ff4785cb4f4ec4ad627abb83cbce8f2edeabad9a1282b26",
+  "RepoDigests": [
+    "127.0.0.1:32769/app@sha256:b51fb088bb681559a35a6c3386edee9e0bc02141e8e3bee1695901f1b8597a7c"
+  ],
+  "Config": {
+    "ArgsEscaped": true,
+    "Cmd": [
+      "celery",
+      "-A",
+      "cygnusx.infrastructure.celery_app.celery",
+      "worker",
+      "-Q",
+      "analysis",
+      "--loglevel=info"
+    ],
+    "Entrypoint": [
+      "/usr/local/bin/worker-entrypoint"
+    ],
+    "Env": [
+      "PATH=/app/.venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "LANG=C.UTF-8",
+      "GPG_KEY=A035C8C19219BA821ECEA86B64E628F8D684696D",
+      "PYTHON_VERSION=3.11.16",
+      "PYTHON_SHA256=91bcdebfdde239a003ae93738a7fce0f9230fee5c4bc2b86f6e6e8c6f98aabe8",
+      "APP_ENV=production",
+      "HOME=/tmp/cygnusx-home",
+      "MAMBA_ROOT_PREFIX=/data/cygnusx/.mamba",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONUNBUFFERED=1",
+      "PYTHONPATH=/app/src",
+      "SNAKEMAKE_CONDA_PREFIX=/data/cygnusx/.conda_envs",
+      "TERM=xterm-256color",
+      "XDG_CACHE_HOME=/data/cygnusx/.cache"
+    ],
+    "Labels": {
+      "cygnusx.dirty-source-sha256": "ebef48335434468665135aa37424fccdc3f7c5b0f83882879a8eb6aad0e27bc6",
+      "org.opencontainers.image.revision": "ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79"
+    },
+    "OnBuild": null,
+    "User": "10001:10001",
+    "Volumes": null,
+    "WorkingDir": "/app"
+  }
+}

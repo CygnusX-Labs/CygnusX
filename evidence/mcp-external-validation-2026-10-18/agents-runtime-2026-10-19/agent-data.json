@@ -1,0 +1,3360 @@
+{
+  "agent_id": "agent-data",
+  "agent_name": "数据管理员",
+  "biothings_count": 10,
+  "bound_servers": [
+    {
+      "enabled": true,
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+    },
+    {
+      "enabled": true,
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+    },
+    {
+      "enabled": true,
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+    },
+    {
+      "enabled": true,
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+    },
+    {
+      "enabled": true,
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+    }
+  ],
+  "captured_at_utc": "2026-10-18T19:32:59.681163+00:00",
+  "context_ref": "mcp-acceptance-20261019-isolated",
+  "final_tool_manifest": {
+    "manifest_sha256": "e3eaf2ae3a16378220483389d0c19f9afcbb67876065d66740fd1e59d320627b",
+    "schema_bytes": 19898,
+    "tool_count": 90,
+    "tools": [
+      {
+        "contract_digest": "d3115d1b006429538ac42735da2ae5aecada8ea0d801d5a7ab6620e359b109ff",
+        "description": "Ensembl object lookup",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "identifier": {
+              "type": "string"
+            },
+            "species": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "species",
+            "identifier"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_genome_lookup",
+        "schema_bytes": 156,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "8f11a5d9dbb0042ae4b9c2356cc6fe632880ec216b038372a69686dfbe713eca",
+        "description": "Search Gramene plant records",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_plant_search",
+        "schema_bytes": 173,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "0a0d1ab05684eff24de1dd7af2859deab84babec828772daf21271f946bdf833",
+        "description": "Resolve proteins through UniProt",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "organism_id": {
+              "type": "integer"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_protein_resolve",
+        "schema_bytes": 141,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "7d02dadf63ee90f3f1f180bbb4b789d40f1dfa3d01a45f7abd33f8038b37578c",
+        "description": "Search experimental RCSB structures by reference accession",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_structure_search",
+        "schema_bytes": 116,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "b9b52687d07f903aa517d42abe2d7ecb4d06d497a4a8c3ce728fffe64c5c1005",
+        "description": "Retrieve AlphaFold prediction metadata",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_structure_prediction",
+        "schema_bytes": 116,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "af32d1acbce9a1236a1f5691c89978d19c02dc1b802aac90645e87cbe6738116",
+        "description": "Retrieve Reactome pathway knowledge",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "pathway_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pathway_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_pathway_get",
+        "schema_bytes": 118,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "ecaff77541875320617f4e2e606847197c0777a95f0bf24d68d7663518da39de",
+        "description": "Search ClinVar identifiers and evidence records",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_clinvar_search",
+        "schema_bytes": 108,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "7f33a2f8fabcbc8ed2a8f3fd8a7eb1a39355d7ec8d29abd2e0badb166d49476f",
+        "description": "Retrieve bounded Europe PMC article metadata",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "article_id": {
+              "type": "string"
+            },
+            "source": {
+              "default": "MED",
+              "enum": [
+                "MED",
+                "PMC"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "article_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_literature_get",
+        "schema_bytes": 182,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "389c249b9f96d385783e2e9faa20da42e0596f988bdda4e4441d1ddc19d3c77c",
+        "description": "Query Ensembl plant orthologues",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "identifier": {
+              "type": "string"
+            },
+            "species": {
+              "type": "string"
+            },
+            "target_species": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "species",
+            "identifier"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_genome_homology",
+        "schema_bytes": 191,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "65e61304345d814bd6f193f98b4497a44e70fab8a63947f1d3930dda1a598984",
+        "description": "Query bounded Ensembl region overlaps",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "feature": {
+              "default": "gene",
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "species": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "species",
+            "region"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_genome_region",
+        "schema_bytes": 193,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "aaf35e2a9969f9028fac80361266d57d63522d328cbbd809dfaf97fd83688dc3",
+        "description": "Retrieve a bounded Ensembl sequence preview",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "identifier": {
+              "type": "string"
+            },
+            "sequence_type": {
+              "default": "cdna",
+              "enum": [
+                "genomic",
+                "cdna",
+                "cds",
+                "protein"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_genome_sequence",
+        "schema_bytes": 211,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "53d7c8a52b2b13eae6995d74890cbb82926e5cdd4c05f566f16f8b7c6939620e",
+        "description": "Get a Gramene gene record",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "identifier": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_plant_get",
+        "schema_bytes": 118,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "295e9c7195835c658e5a4202140e9f940aa3e720557b950b46701c96b012ca63",
+        "description": "Search Dfam transposable-element families",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "clade": {
+              "type": "string"
+            },
+            "classification": {
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "name": "cygnusx_te_search",
+        "schema_bytes": 227,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "d64be300dbdf91e781caf905bb4bdc8c252c959ad16e900d2bd2d76c52eeb12e",
+        "description": "Get a Dfam family summary",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_te_get",
+        "schema_bytes": 116,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "9cea1615dc80a81da739fe8b2a2ef6c3ddc631cc50fcfd1b879ad0c63198c31c",
+        "description": "Search Expression Atlas study metadata",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "type": "string"
+            },
+            "single_cell": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "name": "cygnusx_expression_studies",
+        "schema_bytes": 215,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "f08f313f10ebab21dc1b29870654d1f9c05eabe9f6b851b9c6439649027b3773",
+        "description": "Resolve Expression Atlas manifest metadata",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            },
+            "single_cell": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_expression_manifest",
+        "schema_bytes": 165,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "4deedaaa4bd26c781be02039215358fcdd8a8bb3259bc61350b26acfe25886b1",
+        "description": "Read bounded UniProt feature sections",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            },
+            "section": {
+              "default": "all",
+              "enum": [
+                "all",
+                "function",
+                "location",
+                "features"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_protein_features",
+        "schema_bytes": 208,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "5ed85963c380a8dbd666adf7fc13cf4ba316c983adca64be1a6d39b0b3ec4be6",
+        "description": "Retrieve a UniProt FASTA sequence within inline limits",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_protein_sequence",
+        "schema_bytes": 116,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "720fd3c9695efb05e42267a01967af5a28e7ab3d442b71c1a0b68ac7267c4bb8",
+        "description": "Get InterPro domains and families for a protein",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "accession": {
+              "type": "string"
+            },
+            "limit": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_domain_get",
+        "schema_bytes": 181,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "aeb2dcbcd34adbbbec2e8fdb17295a20ed48ca3249e6c57b34fef321ea7396da",
+        "description": "List proteins for an InterPro entry",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "interpro_id": {
+              "type": "string"
+            },
+            "limit": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "interpro_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_domain_proteins",
+        "schema_bytes": 185,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "a3b6d1f561456c9b29b649fe222df741b5ae3997764679b7bb3fa14ca3706ba9",
+        "description": "Get bounded RCSB experimental structure metadata",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "entry_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "entry_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_structure_get",
+        "schema_bytes": 114,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "929fef090d5076d89ce7f3eb93a94643e20fb87d9d2450222645e2b104302532",
+        "description": "Get bounded ClinVar evidence by VCV, RCV, SCV, or Variation ID; Allele ID is unsupported",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "identifier": {
+              "maxLength": 32,
+              "type": "string"
+            },
+            "identifier_type": {
+              "enum": [
+                "VCV",
+                "RCV",
+                "SCV",
+                "VariationID",
+                "AlleleID"
+              ],
+              "type": "string"
+            },
+            "vcv_accession": {
+              "maxLength": 32,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "name": "cygnusx_clinvar_get",
+        "schema_bytes": 258,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "bdb39f65cc83483985c7984ee59df18bd17fb8b81ea0717e85417a4a701f12bc",
+        "description": "Search Open Targets entities with a fixed query",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "entity": {
+              "default": "target",
+              "enum": [
+                "target",
+                "disease",
+                "drug"
+              ],
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_target_search",
+        "schema_bytes": 254,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "a934cab5d7d37e0fec891e3eb8bcc6b00d7bb54bee3e2d5c2effef406b04cbcb",
+        "description": "Read Open Targets target associations",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_target_associations",
+        "schema_bytes": 181,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "48a43bd3f7d1d918479589bfa0c532c3fd35af1f575b42a5d861a4e9843109b6",
+        "description": "Read Open Targets evidence rows",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "disease_id": {
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_id",
+            "disease_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_target_evidence",
+        "schema_bytes": 225,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "ede0a4cdd5fdaf9cbc1e6ebd6ac103d1dbf6a2bd61edbe5d74b263a9e033243c",
+        "description": "Read bounded Europe PMC annotations",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "article_ids": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "article_ids"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_literature_annotations",
+        "schema_bytes": 172,
+        "server": "cygnusx-research-data",
+        "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b"
+      },
+      {
+        "contract_digest": "459c0bb3ebd58099abe44e36c808b1d2cd90a21116ec67779acb04e18f2fa462",
+        "description": "Read-only MyGene/MyVariant/MyChem search query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "offset": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "query": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            "species": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "query",
+            "species"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_gene_search",
+        "schema_bytes": 384,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "59d7fce31bf9e6a38e8ee19cfad2468456da236ec1cdf3b4e9ba196f145c48e5",
+        "description": "Read-only MyGene/MyVariant/MyChem get query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifier": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "species": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier",
+            "species"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_gene_get",
+        "schema_bytes": 260,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "f8b3955bf39e27ec844f49e8c223e6de197f6482cca07bf6bad211eabb1ae642",
+        "description": "Read-only MyGene/MyVariant/MyChem resolve query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifiers": {
+              "items": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "scopes": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "species": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifiers",
+            "scopes",
+            "species"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_gene_resolve",
+        "schema_bytes": 381,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "07971ed0aaa201210432180013c4ebc6ad205b9450b97abcda62c9023769079a",
+        "description": "Read-only MyGene/MyVariant/MyChem search query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "assembly": {
+              "enum": [
+                "hg19",
+                "hg38"
+              ],
+              "type": "string"
+            },
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "offset": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "query": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "query",
+            "assembly"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_variant_search",
+        "schema_bytes": 379,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "3217733665a23292942a5730e3064034b8ed74548fe7594b1755f0762fe823dc",
+        "description": "Read-only MyGene/MyVariant/MyChem get query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "assembly": {
+              "enum": [
+                "hg19",
+                "hg38"
+              ],
+              "type": "string"
+            },
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifier": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier",
+            "assembly"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_variant_get",
+        "schema_bytes": 255,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "8e5cbaa1f2a41e6c2458d9570d3b8cdd7c0818b9ccc9211ea4963a0e518a8363",
+        "description": "Read-only MyGene/MyVariant/MyChem resolve query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "assembly": {
+              "enum": [
+                "hg19",
+                "hg38"
+              ],
+              "type": "string"
+            },
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifiers": {
+              "items": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "scopes": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifiers",
+            "scopes",
+            "assembly"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_variant_resolve",
+        "schema_bytes": 376,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "8d15b68bee63538b788a97ac12306d13da0ec4e7d68b64c84329a1575ebbe54d",
+        "description": "Read-only MyGene/MyVariant/MyChem search query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "limit": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "offset": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "query": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_chem_search",
+        "schema_bytes": 316,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "38f09227873743675dc807bbc60bfdd1f3ac62b573d64ffb1d9419373befb9c3",
+        "description": "Read-only MyGene/MyVariant/MyChem get query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifier": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifier"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_chem_get",
+        "schema_bytes": 192,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "4c2d8bc009300cb3e9adf7bf0e6384c9a1af1cf6015b22257810d9c1415b995b",
+        "description": "Read-only MyGene/MyVariant/MyChem resolve query with bounded parameters.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "maxLength": 3840,
+              "type": "string"
+            },
+            "identifiers": {
+              "items": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "scopes": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "identifiers",
+            "scopes"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_chem_resolve",
+        "schema_bytes": 313,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "7e417fa873c5a18e032d26a2d4910fbb2c12af359324ce1f83b3a76a1deb69a3",
+        "description": "Describe the supported BioThings provider and default field profile.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "database": {
+              "enum": [
+                "gene",
+                "variant",
+                "chem"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "database"
+          ],
+          "type": "object"
+        },
+        "name": "biothings_describe",
+        "schema_bytes": 147,
+        "server": "cygnusx-biothings",
+        "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e"
+      },
+      {
+        "contract_digest": "c46000dfe57b735b1fb102fea05bd58567ebf9943e45d7b59466052dd69a028d",
+        "description": "检索 Europe PMC 权威生物医学论文，并按用户问题对标题与摘要进行语义/词项混合重排。适合基因、疾病机制、单细胞、肿瘤免疫、组学方法和临床研究证据检索。返回题名、摘要、作者、期刊、年份、PMID/PMCID/DOI、开放获取状态和可追溯链接。只读且不下载全文；研究问答通常保留最相关的 5-8 篇。",
+        "inputSchema": {
+          "properties": {
+            "max_results": {
+              "default": 8,
+              "description": "返回数量；研究问答推荐 5-8",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "open_access_only": {
+              "default": false,
+              "description": "是否仅返回开放获取论文",
+              "type": "boolean"
+            },
+            "query": {
+              "description": "英文联合检索式；建议使用 2-4 个核心概念并以 AND/OR 连接",
+              "type": "string"
+            },
+            "year_from": {
+              "description": "可选起始发表年份",
+              "type": "integer"
+            },
+            "year_to": {
+              "description": "可选结束发表年份",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "europe_pmc_search",
+        "schema_bytes": 542,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "19c0b3d46d07e6c15b5367bf09da1a526c38716a70ea95cd1de3780263835543",
+        "description": "检索 arXiv 的开放获取预印本，适合作为材料、计算机、物理、数学等非生物医学领域的文献检索源。返回题名、作者、年份、来源、链接和摘要；不下载全文。",
+        "inputSchema": {
+          "properties": {
+            "max_results": {
+              "default": 8,
+              "description": "返回数量；研究问答推荐 5-8",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "英文或英文关键词检索式",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "arxiv_search",
+        "schema_bytes": 253,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "c0c134b58363e222c595b5a3ac8de95005b49026e188331bfa089fb5e4aa38a2",
+        "description": "查询某个 Agent（智能体）当前绑定的技能（Skill）列表：技能 ID、名称、描述、版本、是否已安装并启用。用户问「你/某 Agent 绑定了哪些技能、会什么、能用什么技能包」时必须调用本工具获取实时绑定关系，禁止凭记忆或猜测作答；省略 agent_id 时查询当前对话的 Agent。",
+        "inputSchema": {
+          "properties": {
+            "agent_id": {
+              "description": "Agent ID（如 agent-scrna）；省略时查询当前对话的 Agent",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "platform_list_agent_skills",
+        "schema_bytes": 146,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "c9f3b5181571563241570e2c7f9714a3ab907f838a8b0b6eaad89659a332a853",
+        "description": "列出当前会话用户工作区指定目录的直接子项，返回 file_id、名称、文件/文件夹类型、大小、相对路径和修改时间。用户询问工作区有什么文件时必须调用。",
+        "inputSchema": {
+          "properties": {
+            "path": {
+              "description": "工作区内相对目录，留空表示根目录；禁止绝对路径和 ..",
+              "type": "string"
+            },
+            "pattern": {
+              "description": "可选 glob 过滤，如 *.csv、sample_*.fastq.gz",
+              "type": "string"
+            },
+            "recursive": {
+              "default": false,
+              "description": "是否递归列出目录下所有文件；用户询问有哪些数据文件时设为 true",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_workspace_files",
+        "schema_bytes": 397,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "fd6d29ba1293e1deb2e03c2e611306aa383207a5ac6bcdb3f6e8578551ffe4ed",
+        "description": "从当前会话用户工作区根目录递归按文件名模糊搜索，返回 file_id、名称、相对路径和修改时间。用户要求寻找某个数据文件时必须调用。",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "文件名搜索词",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "search_workspace_files",
+        "schema_bytes": 179,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "39c866ac7212ceb85092193ccd3086607f3b93220f5c14a9ac0270afc31d08f8",
+        "description": "按 file_id 读取工作区文本文件内容预览（默认前 100KB，超出截断）；PDF 返回最多 50,000 字符的分页文本；二进制/测序文件（BAM/CRAM/FASTQ 等）只返回元数据。",
+        "inputSchema": {
+          "properties": {
+            "file_id": {
+              "description": "文件 ID，形如 file://{uuid} 或 upload://{hex}（来自列表或 @ 引用）",
+              "type": "string"
+            },
+            "max_bytes": {
+              "default": 102400,
+              "description": "最多读取字节数",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "file_id"
+          ],
+          "type": "object"
+        },
+        "name": "workspace_read_file",
+        "schema_bytes": 267,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "a2b0d8af32562db86c79a9401efbba650f42c1808ada1f13494d7e392db2f05b",
+        "description": "按会话 ID 检索该聊天窗口中用户上传过的文件（聊天上传文件名内嵌会话标记）。session_id 留空时默认使用当前会话。需要找回本会话之前上传的数据文件时调用。",
+        "inputSchema": {
+          "properties": {
+            "session_id": {
+              "description": "聊天会话 ID（UUID），留空表示当前会话",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "find_session_uploads",
+        "schema_bytes": 132,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "e5494fa73921e3d48586f755b5244eea8ca57d386a8e88405728f539534fedda",
+        "description": "按 file_id 返回工作区文件的元数据（名称、大小、类型、目录、创建时间），不读内容。",
+        "inputSchema": {
+          "properties": {
+            "file_id": {
+              "description": "文件 ID，形如 file://{uuid} 或 upload://{hex}",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file_id"
+          ],
+          "type": "object"
+        },
+        "name": "workspace_get_file_info",
+        "schema_bytes": 151,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "e97b86a44ceb26c9347edef45ddb4402171e37806f1046bb73df771783c86c09",
+        "description": "在 GEO/SRA/ENA/GSA 等公共数据库中搜索匹配的组学项目",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 5,
+              "description": "最多返回的项目数量",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "检索关键词（如:'CD8 T cell exhaust','HCC single cell'）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_search",
+        "schema_bytes": 267,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "030841696c91724a8ca386694fd1563e706e718fe9ed15e7cc339b2596736165",
+        "description": "仅搜索 GEO 数据库中的基因表达数据集",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "检索关键词",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_search_geo",
+        "schema_bytes": 175,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "5858afaacf3a9f915e912a04dc33aa707eda045935f241891ff4b8f742d021fc",
+        "description": "仅搜索 SRA 数据库中的测序原始数据项目",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "检索关键词",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_search_sra",
+        "schema_bytes": 175,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "b016f185aa8e27126c4c7ec89610fb6c32cc6397d3460eac8b637d743c881b15",
+        "description": "使用元数据过滤器结构化搜索（按物种、实验类型等）",
+        "inputSchema": {
+          "properties": {
+            "assay": {
+              "description": "实验类型（可选）",
+              "type": "string"
+            },
+            "limit": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "organism": {
+              "description": "物种名称（可选）",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "seqout_search_structured",
+        "schema_bytes": 233,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "c831080ca0ea47a84784adb4dc892bd280dc388f5f9040c20855e2b3a1223dfe",
+        "description": "获取项目详情（实验设计、平台、文献引用）",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "项目登录号（GSE/PRJNA 等）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_project_detail",
+        "schema_bytes": 138,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "f0e9a583dae91ea43a1254303c91be1d99be8fd10cc36bd101009c26d4915c7a",
+        "description": "获取项目标题和描述信息",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "项目登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_project_metadata",
+        "schema_bytes": 119,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "4147451e33449ca7b7ddaf67ebab8eb5d08651008652ebe5a24d81d8f7198ac5",
+        "description": "获取项目引用文献 (BibTeX 格式)",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "项目登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_project_citation",
+        "schema_bytes": 119,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "621be65ad684dd732422ec322983ec31dc512b5dabc80ba4120320bb81fd8cf1",
+        "description": "获取 AI 增强的样本元数据",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "项目登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_project_enriched",
+        "schema_bytes": 119,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "6de5abd6699410d7056d59329fcfcd0cc6fb84696001bcfba838f4c85588b542",
+        "description": "列出研究中的所有实验",
+        "inputSchema": {
+          "properties": {
+            "study_accession": {
+              "description": "研究登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "study_accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_experiments",
+        "schema_bytes": 131,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "7f9540ab422295f0cdd1a3b1c6614f153dca3c48beedff7e96381ea07217fb3f",
+        "description": "列出 FASTQ 下载链接",
+        "inputSchema": {
+          "properties": {
+            "study_accession": {
+              "description": "研究登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "study_accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_runs",
+        "schema_bytes": 131,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "c339b61a2940a683ee87f0ea8f2f6316e6fa28c0e0d384693548650175b05512",
+        "description": "获取单个运行的下载链接",
+        "inputSchema": {
+          "properties": {
+            "run_accession": {
+              "description": "运行登录号（SRR 等）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_run_download",
+        "schema_bytes": 140,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "ebade138d0ddf994e9ecfd5242ea0a8505471b7ead43f474fe436b7acd1e80d5",
+        "description": "获取样本元数据",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "样本登录号（GSM 等）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_sample_metadata",
+        "schema_bytes": 132,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "e3e7c9bb9faf5bac7ca73505567ec923c50516b2ba02dd8cf11495ccb8322bb9",
+        "description": "获取完整的样本详细信息",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "样本登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_sample_detail",
+        "schema_bytes": 119,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "2a5f7451838a7c9225f598c1e9f2a3a0820400e5d5f2e07b4f14725c6de961de",
+        "description": "获取数据集的样本清单，包含样本组织来源、实验处理组与对照组标记",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "GEO Series 编号（如 'GSE123456'）",
+              "type": "string"
+            },
+            "max_samples": {
+              "default": 30,
+              "description": "返回的最大样本数量预览",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_sample_manifest",
+        "schema_bytes": 264,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "21f293345528f1d9567ba35449b404946fc92c48d787a6815ba12b43a5d9be1f",
+        "description": "反查样本归属的项目编号（从 GSM/SRR 反查 GSE/PRJNA）",
+        "inputSchema": {
+          "properties": {
+            "accession": {
+              "description": "样本或 Run 编号（如:'GSM456789','SRR1234567'）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_resolve_accession",
+        "schema_bytes": 158,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "feac9746d760f1beceb49a3d93a3e8a3f79c4420a0f42fc845f98974adff4fe1",
+        "description": "将 BioProject 解析到研究级别",
+        "inputSchema": {
+          "properties": {
+            "prj_accession": {
+              "description": "BioProject 登录号",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prj_accession"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_resolve_prj",
+        "schema_bytes": 132,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "a70ffbd8f6ebc2c779dc1eb7d0e3c18171c3c16b979db88b1e590e0285ebb804",
+        "description": "查询本体论术语信息",
+        "inputSchema": {
+          "properties": {
+            "term": {
+              "description": "术语 ID 或名称",
+              "type": "string"
+            }
+          },
+          "required": [
+            "term"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_ontology_term",
+        "schema_bytes": 113,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "967d5d5b159d85a77a9b1a31b4dadfa08b7b6752910e8c0f9f91c7a5de4230ef",
+        "description": "列出所有支持的物种",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_organisms",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "4ce712f85494206ca767305fc63cdaf64bf875904fb4d4da357a79fd7ac34cd8",
+        "description": "获取物种的常用名称",
+        "inputSchema": {
+          "properties": {
+            "organism_id": {
+              "description": "物种 ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "organism_id"
+          ],
+          "type": "object"
+        },
+        "name": "seqout_get_common_name",
+        "schema_bytes": 117,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "d80606a82ab0ac17f1ca56d5a7754156e83c916503469849a065ad8cb4c0e98e",
+        "description": "获取 Beacon 元数据",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_beacon_info",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "14a1f7b963b93ad919489290cfc2bf007fc67c7d7f573c90445ba9c9e0a4398d",
+        "description": "浏览测序运行记录",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_beacon_runs",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "eb2822a31c3be46fffe27a203a4cc8833432e64ddf89308011fe8e9fb1b7ca70",
+        "description": "获取数据库增长统计",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_stats_growth",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "3e0b0d83809d7148d6ef5aa780e23e46685282031481551156f68ae6ecb13dec",
+        "description": "获取每个物种的实验总数",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_organism_totals",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "3dbbefb993b9d19e92fac50dde317cf31e8229f5617d7f2e9a5f4fa57ec06588",
+        "description": "获取平台实验总数或过滤选项",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_platform_totals",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "73f642dacf2081336d711dfa9b24a52bad5fbf036c641d51038a6a0c786836b0",
+        "description": "获取 TSV 格式的下载链接",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_download_links",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "6139bb8bc0463a91b916babc1e1ad8cc576eaecabed156bd4833e51656b6c8bb",
+        "description": "下载合并的元数据 CSV",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "seqout_get_metadata_csv",
+        "schema_bytes": 33,
+        "server": "seqout",
+        "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7"
+      },
+      {
+        "contract_digest": "28ad928c89d12051eea6120a32ba260c7088245a52b7b893f4cc9c14ad82a158",
+        "description": "将当前会话交接给白名单中的下一位专业 Agent。必须提供已完成工作、用户诉求和工作区产物摘要；不能用于绕过 Agent 授权。",
+        "inputSchema": {
+          "properties": {
+            "artifacts": {
+              "description": "用户 workspace 内相关产物的相对路径",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "constraints": {
+              "description": "分组、参考基因组和输出格式等约束",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "handoff_summary": {
+              "description": "已完成工作的自包含摘要",
+              "type": "string"
+            },
+            "reason": {
+              "description": "转交原因，回转交时必须说明新增信息",
+              "type": "string"
+            },
+            "target_agent": {
+              "description": "白名单中的目标 Agent ID",
+              "type": "string"
+            },
+            "user_intent": {
+              "description": "用户当前希望继续完成的任务",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_agent",
+            "reason",
+            "handoff_summary",
+            "user_intent"
+          ],
+          "type": "object"
+        },
+        "name": "transfer_to_agent",
+        "schema_bytes": 691,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "3af693ece5815af5bee9c582d15589f8952285370f5b47140ad5aaebe6b79e7e",
+        "description": "只读检索并审查 Skill。先按标签、分析步骤、文件类型和关键词筛选候选， 再读取候选 Skill 的完整 SKILL.md，返回最适合用户任务的 skill_id、理由、 置信度和缺失条件。不得执行沙箱或修改工作区。\n",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 5,
+              "description": "返回候选数量",
+              "maximum": 5,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "用户的完整分析任务、数据类型和交付要求",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "skill_route",
+        "schema_bytes": 251,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "259cc1f05c80a44702651066be2152a2935ec3496150ddc498f3130f5c75a0f8",
+        "description": "仅在用户已确认后，为需要多人协作、人工审批、长耗时执行或交付验收的任务创建 AgentTeams Case。 不得用于普通问答、轻量并行或意图不明确的请求。\n",
+        "inputSchema": {
+          "properties": {
+            "consultation_summary": {
+              "description": "可选。由多专家会诊升级而来时携带的结论摘要，供预检与审批追溯。",
+              "maxLength": 1800,
+              "type": "string"
+            },
+            "flow_id": {
+              "description": "已在平台白名单中的流程 ID",
+              "type": "string"
+            },
+            "objective": {
+              "description": "自包含的交付目标，不含原始样本内容或凭证",
+              "maxLength": 500,
+              "type": "string"
+            },
+            "origin_consultation_id": {
+              "description": "可选。由多专家会诊升级而来时携带的会诊来源 ID。",
+              "maxLength": 256,
+              "type": "string"
+            },
+            "project_id": {
+              "description": "当前受控会话已绑定的项目引用 ID",
+              "type": "string"
+            },
+            "sample_context_refs": {
+              "description": "仅样本上下文引用，不得包含原始样本内容",
+              "items": {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "objective",
+            "project_id",
+            "flow_id"
+          ],
+          "type": "object"
+        },
+        "name": "create_agentteams_case",
+        "schema_bytes": 917,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "bdce989495a3010fd6da82c3a8813c8f97b3d150e07f4a2ac339094f1b4c5285",
+        "description": "读取当前用户任务的状态、flow、参数快照、产物清单、QC metrics 与失败摘录。",
+        "inputSchema": {
+          "properties": {
+            "task_id": {
+              "description": "当前用户拥有的 Pipeline 任务 UUID（不是 bioops_ 开头的 AgentTeams Case ID，Case 未产生任务时不要调用本工具）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "type": "object"
+        },
+        "name": "task_result_summary",
+        "schema_bytes": 238,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "4ed9842a5cbac223b3ec9b89df5d63e7b757d82f554c563ef8c4899ea6ac1855",
+        "description": "读取当前绑定协作室的用户与 Agent 回复正文。仅可读取当前房间；需要翻查更早消息或按需查看已持久化思考过程时调用。",
+        "inputSchema": {
+          "properties": {
+            "after": {
+              "description": "可选 ISO 时间游标，仅返回该时间之后的消息",
+              "type": "string"
+            },
+            "before": {
+              "description": "可选 ISO 时间游标，仅返回该时间之前的消息",
+              "type": "string"
+            },
+            "include_thinking": {
+              "default": false,
+              "description": "是否按需返回 MinIO 已持久化的 Agent 思考过程",
+              "type": "boolean"
+            },
+            "limit": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "room_id": {
+              "description": "当前协作室 ID；建议省略，省略时自动使用调用上下文绑定的房间；如填写必须是绑定房间（room- 前缀的命名空间形式亦可）",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "name": "room_messages_read",
+        "schema_bytes": 657,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "992a55f092e2c0ec2ce299de9ce5aab91c317a0932e149eeae98ccebc34464bf",
+        "description": "查询当前协作室未立项或已立项前的房间事件时间线；不替代 case_facts_query，且不会计入 Case 运营指标。",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "room_id": {
+              "description": "当前协作室 ID；建议省略，省略时自动使用调用上下文绑定的房间；如填写必须是绑定房间（room- 前缀的命名空间形式亦可）",
+              "type": "string"
+            },
+            "template": {
+              "default": "event_timeline",
+              "enum": [
+                "event_timeline",
+                "messages"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "name": "room_facts_query",
+        "schema_bytes": 415,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "5629108c69907350f6dfe4ee4c1848f5ea089b610f507491cc493dea813502ed",
+        "description": "预览当前用户任务目录内的文本产物头部；拒绝绝对路径、路径穿越和符号链接。",
+        "inputSchema": {
+          "properties": {
+            "max_bytes": {
+              "default": 20000,
+              "maximum": 20000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "path": {
+              "description": "相对于任务根目录的文件路径",
+              "type": "string"
+            },
+            "task_id": {
+              "description": "当前用户拥有的 Pipeline 任务 UUID（不是 bioops_ 开头的 AgentTeams Case ID，Case 未产生任务时不要调用本工具）",
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id",
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "task_file_preview",
+        "schema_bytes": 401,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "9563f7b0abe48b7ef0bf9a37227ec49d43008c78787007d2c57d62b7256fa8f1",
+        "description": "按 requester_ref 隔离，预览当前用户 workspace 内的文本文件头部。",
+        "inputSchema": {
+          "properties": {
+            "max_bytes": {
+              "default": 20000,
+              "maximum": 20000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "path": {
+              "description": "相对于当前用户 workspace 的文件路径",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "workspace_file_preview",
+        "schema_bytes": 216,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "cddee064d5831bc0a0da64d61c6cb957e00d6056afa7d4532aefd6f8983030d4",
+        "description": "拉取 Case 内上游产物到当前工作目录；大文件走私有 MinIO，不向 Agent 暴露预签名 URL。",
+        "inputSchema": {
+          "properties": {
+            "artifact_ref": {
+              "description": "s3 URI 或当前用户 workspace 相对路径",
+              "type": "string"
+            },
+            "case_id": {
+              "type": "string"
+            },
+            "dest_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "case_id",
+            "artifact_ref"
+          ],
+          "type": "object"
+        },
+        "name": "artifact_fetch",
+        "schema_bytes": 223,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "4bedd17b1db9ce4c24abc0cb87982e9fb5b9381aa5cd4ecb18e00d6f3ab7f87c",
+        "description": "对比当前用户多个任务的指定 QC metrics 字段。",
+        "inputSchema": {
+          "properties": {
+            "fields": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "type": "array"
+            },
+            "task_ids": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "task_ids",
+            "fields"
+          ],
+          "type": "object"
+        },
+        "name": "task_compare_metrics",
+        "schema_bytes": 225,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "36b2025ea657a7cbce8438edf5341bfdfce884eee98e0863eac5c841b3643559",
+        "description": "查询 FlowRegistry 中指定 QC metric 的确定性硬规则阈值与规则版本。",
+        "inputSchema": {
+          "properties": {
+            "flow_id": {
+              "description": "FlowRegistry flow.id 或 bridge_workflow",
+              "type": "string"
+            },
+            "metric_name": {
+              "enum": [
+                "mapping_rate",
+                "q30",
+                "duplicate_rate"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "flow_id",
+            "metric_name"
+          ],
+          "type": "object"
+        },
+        "name": "rule_threshold_lookup",
+        "schema_bytes": 233,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "6449a38fb65a2b7859acaf8a517d0b0710c27434a7a4d559ca6ec770a3bb7b31",
+        "description": "自省查询（F4）：查当前 Case 的已登记产物及版本、事件时间线、待办审批、产物血缘一级展开。 处理\"这个产物是哪来的/上次判了什么/还有什么没批\"类问题前先查这里，不要凭上下文记忆回答。 scope 强制限定当前 Case，越权与受限关键词查询会被拒并记审计。 template=schema 可取表/列说明文档正文（渐进暴露）。",
+        "inputSchema": {
+          "properties": {
+            "case_id": {
+              "description": "当前协作 Case ID（必须是本房间绑定的 Case）",
+              "type": "string"
+            },
+            "limit": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "params": {
+              "description": "模板参数（如 artifact_id / work_item_id / event_type / since）",
+              "type": "object"
+            },
+            "sql": {
+              "description": "受限 SQL（单表 SELECT，表白名单 case_artifact_versions/case_artifact_dependencies/qc_verification_checks，服务端强制注入 case_id 过滤）；与 template 二选一",
+              "maxLength": 2000,
+              "type": "string"
+            },
+            "template": {
+              "description": "预置查询模板；与 sql 二选一",
+              "enum": [
+                "artifact_versions",
+                "event_timeline",
+                "pending_approvals",
+                "artifact_lineage",
+                "schema"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "case_id"
+          ],
+          "type": "object"
+        },
+        "name": "case_facts_query",
+        "schema_bytes": 754,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "9e096f85f4c734ffdb159518797a4d0c64d9a1dcdaa4cb7b61edfea7577e5f79",
+        "description": "保存用户明确透露、跨会话仍有价值的研究偏好或项目事实。禁止保存密钥、密码、Token、原始数据内容或临时细节。",
+        "inputSchema": {
+          "properties": {
+            "content": {
+              "description": "一句自包含的长期记忆，最多 200 字符",
+              "type": "string"
+            },
+            "keywords": {
+              "description": "用于后续召回的关键词，最多 8 个",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "description": "记忆范围",
+              "enum": [
+                "profile",
+                "project",
+                "preference",
+                "summary"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "content",
+            "scope"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_save_memory",
+        "schema_bytes": 381,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "a4cd819823fd32f952e7c8b9197c830704983e6c805ca4d031cc54bc6d09bced",
+        "description": "修正或更新一条已有的跨会话用户记忆。",
+        "inputSchema": {
+          "properties": {
+            "content": {
+              "description": "更新后的一句自包含记忆，最多 200 字符",
+              "type": "string"
+            },
+            "keywords": {
+              "description": "新的召回关键词",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "memory_id": {
+              "description": "要更新的记忆 ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_id",
+            "content"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_update_memory",
+        "schema_bytes": 325,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "9c398793e27ae776ea4eca19994b02858ffa8f15ace65b377a838bab216c86b9",
+        "description": "遗忘用户明确要求删除的一条跨会话记忆。",
+        "inputSchema": {
+          "properties": {
+            "memory_id": {
+              "description": "要遗忘的记忆 ID",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_id"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_forget_memory",
+        "schema_bytes": 125,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "39a63a972d9c488aa74c53d2b198d8e6912d1584c1508e3ab4eba5d117b111a0",
+        "description": "在当前用户自己的跨会话记忆中检索与当前任务相关的信息。",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 5,
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "要检索的研究项目、物种、数据类型或偏好",
+              "type": "string"
+            },
+            "scope": {
+              "description": "可选范围过滤",
+              "enum": [
+                "profile",
+                "project",
+                "preference",
+                "summary"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_search_memory",
+        "schema_bytes": 330,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "231d611693dd62e2f312213175390fc2572ef0c69e09c49fadb5125dee6aeb4c",
+        "description": "使用乐观锁更新当前 Agent 的命名记忆块。调用前必须先读取当前块内容和 version，并只提交增量修改。",
+        "inputSchema": {
+          "properties": {
+            "block_name": {
+              "enum": [
+                "profile",
+                "preferences",
+                "current_focus"
+              ],
+              "type": "string"
+            },
+            "content": {
+              "description": "更新后的完整块内容",
+              "type": "string"
+            },
+            "expected_version": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "block_name",
+            "content",
+            "expected_version"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_update_memory_block",
+        "schema_bytes": 289,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "4b084ae5b0b86e17d0a423bc350ee70fd430745e2022a8321346d322e6063e98",
+        "description": "对无排序基因列表做 GO/KEGG 富集，返回分来源通路表和气泡图。适用于“这些基因富集到什么通路”“做 GO 或 KEGG 注释”；全基因按 log2FC 等分数排序时请改用 GSEA，原始 counts 请改用 DEG。输入 species_id 和每行一个 gene_text，gene_text 也支持 upload://file_id。",
+        "inputSchema": {
+          "properties": {
+            "gene_text": {
+              "description": "每行一个基因符号或 Entrez ID；也支持 upload://file_id 引用已上传的基因列表文件",
+              "type": "string"
+            },
+            "species_id": {
+              "description": "物种 ID，如 human、mouse、rat",
+              "type": "string"
+            }
+          },
+          "required": [
+            "species_id",
+            "gene_text"
+          ],
+          "type": "object"
+        },
+        "name": "cygnusx_run_kegg_enrichment",
+        "schema_bytes": 303,
+        "server": "cygnusx-tools",
+        "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29"
+      },
+      {
+        "contract_digest": "7f9cf32e2963d0c1c8e349cafeb76a09e459a9351887f635565217e9dccd02ee",
+        "description": "加载已挂载技能的完整指令（SKILL.md 正文）。任务命中某技能描述时必须先调用本工具获取执行步骤，不要猜测技能内容。",
+        "inputSchema": {
+          "properties": {
+            "skill_id": {
+              "description": "技能唯一 ID（md5=MD5 manifest verifier）",
+              "enum": [
+                "md5"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill_id"
+          ],
+          "type": "object"
+        },
+        "name": "use_skill",
+        "schema_bytes": 163,
+        "server": "runtime",
+        "server_id": "unknown"
+      },
+      {
+        "contract_digest": "2cf855ca4f6621a6f617454d1e38586554511aaacc9156fbf92891db28194293",
+        "description": "按需读取技能文件夹内 references/ 或 assets/ 下的资源文件内容。仅在技能正文要求查阅某份参考资料时调用。",
+        "inputSchema": {
+          "properties": {
+            "path": {
+              "description": "技能文件夹内相对路径，如 references/guide.md",
+              "type": "string"
+            },
+            "skill_id": {
+              "enum": [
+                "md5"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill_id",
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "skill_resource",
+        "schema_bytes": 205,
+        "server": "runtime",
+        "server_id": "unknown"
+      }
+    ]
+  },
+  "identity_ref": "ddc827a5d771b8f84ed624eae7ef22a88a111437f3782ee38776be6a59ac8cab",
+  "research_data_count": 26,
+  "status": "assembled",
+  "tool_filter_decisions": [
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "ability_catalog_query"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "artifact_fetch"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "arxiv_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "biothings_describe"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "case_facts_query"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "create_agentteams_case"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_chem_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_chem_resolve"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_chem_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_clinvar_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_clinvar_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_domain_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_domain_proteins"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_expression_manifest"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_expression_studies"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_forget_memory"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_gene_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_gene_resolve"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_gene_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_genome_homology"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_genome_lookup"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_genome_region"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_genome_sequence"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_get_analysis_task_status"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_get_analysis_task_summary"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_literature_annotations"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_literature_get"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_blast"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_expression_explorer"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_fastq_qc"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_format_converter"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_id_converter"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_jbrowse"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_plot_workshop"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_primer_forge"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_seq_manipulator"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_terminal"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_venn_upset"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_open_wetlab_calculators"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_pathway_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_plant_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_plant_search"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_plot_manhattan"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_plot_volcano"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_prepare"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_prepare_atac_seq_submission"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_prepare_rna_seq_submission"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_protein_features"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_protein_resolve"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_protein_sequence"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_reminder_complete"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_reminder_snooze"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_run_deg_analysis"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_run_gsea"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_run_kegg_enrichment"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_run_synteny"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_save_memory"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_schedule_cancel"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_schedule_create"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_schedule_list"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_schedule_update"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_search_memory"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_structure_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_structure_prediction"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_structure_search"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_submit"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_target_associations"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_target_evidence"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_target_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_te_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-research-data",
+      "server_id": "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
+      "tool_name": "cygnusx_te_search"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_toolbox_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_update_memory"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "cygnusx_update_memory_block"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_variant_get"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_variant_resolve"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-biothings",
+      "server_id": "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+      "tool_name": "cygnusx_variant_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "europe_pmc_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "find_session_uploads"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "list_workspace_files"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "parallel_subagents"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_admin_health_check"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_get_current_time"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_get_download_progress"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_get_task"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_get_user_info"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_list_agent_skills"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_list_downloads"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_list_flows"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_list_tasks"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_read_file"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_sandbox_execute"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "platform_submit_download"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "room_facts_query"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "room_messages_read"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "room_state_query"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "rule_threshold_lookup"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "search_workspace_files"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_beacon_info"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_beacon_runs"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_common_name"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_download_links"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_experiments"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_metadata_csv"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_ontology_term"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_organism_totals"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_organisms"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_platform_totals"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_project_citation"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_project_detail"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_project_enriched"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_project_metadata"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_run_download"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_runs"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_sample_detail"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_sample_manifest"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_sample_metadata"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_get_stats_growth"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_resolve_accession"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_resolve_prj"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_search"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_search_geo"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_search_sra"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "seqout",
+      "server_id": "d206d761-fd72-5b5c-9680-62e90a9878e7",
+      "tool_name": "seqout_search_structured"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "runtime",
+      "server_id": "unknown",
+      "tool_name": "skill_resource"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "skill_route"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "task_compare_metrics"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "task_file_preview"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "task_result_summary"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "transfer_to_agent"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "runtime",
+      "server_id": "unknown",
+      "tool_name": "use_skill"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-tools",
+      "server_id": "dda1f524-339b-5131-8ca3-46caedeeeb29",
+      "tool_name": "workspace_file_preview"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "workspace_get_file_info"
+    },
+    {
+      "included": false,
+      "reason": "pack_disabled",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "workspace_list_files"
+    },
+    {
+      "included": true,
+      "reason": "included",
+      "server": "cygnusx-platform",
+      "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+      "tool_name": "workspace_read_file"
+    }
+  ],
+  "user_capabilities_customized": false
+}

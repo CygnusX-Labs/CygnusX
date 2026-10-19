@@ -1,0 +1,43 @@
+{
+  "status": "blocked_precondition",
+  "checked_at_utc": "2026-10-18T18:27:46Z",
+  "scope": "MCP R3/R4/R5 isolated business acceptance",
+  "platform_instance": {
+    "configured": false,
+    "base_url": "dummy_loopback_only",
+    "reason": "No isolated platform instance or dedicated test tenant was supplied."
+  },
+  "platform_identity": {
+    "configured": false,
+    "key_value_recorded": false,
+    "reason": "No dedicated test API key or test user identity was available."
+  },
+  "mcp_http_token": {
+    "configured": true,
+    "value_recorded": false,
+    "scope": "local synthetic transport probe only"
+  },
+  "isolated_runtime": {
+    "database_preset_snapshot": false,
+    "redis": false,
+    "test_assets": false,
+    "trace_correlation": false
+  },
+  "local_runtime_recheck": {
+    "compose_database_healthy": true,
+    "compose_redis_healthy": true,
+    "platform_api_health_http": 200,
+    "isolated_tenant_or_test_user_confirmed": false,
+    "platform_api_key_configured": false,
+    "mcp_http_token_configured": false,
+    "notes": "A local Compose stack and API health endpoint are available. Only DATABASE_URL is configured among the inspected test/auth keys; neither local services nor the health endpoint establish tenant isolation or an authorized business-test identity. No authenticated business call was attempted."
+  },
+  "unblock_requirements": [
+    "isolated platform base URL and dedicated test tenant",
+    "dedicated platform API key injected through existing secret management",
+    "readable test flow, run, report, and workspace assets",
+    "read-only preset/capability snapshot and trace correlation"
+  ],
+  "secret_values_included": false,
+  "rechecked_at_utc": "2026-10-18T18:27:46Z"
+}

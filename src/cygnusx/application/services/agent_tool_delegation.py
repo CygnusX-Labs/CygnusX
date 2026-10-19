@@ -28,6 +28,34 @@ def _key() -> str:
     ).hexdigest()
 
 
+def _validate_claim_shapes(claims: dict[str, Any]) -> None:
+    """Reject validly signed JWTs whose authorization claims have wrong types."""
+    if any(not isinstance(claims.get(name), str) or not claims[name] for name in (
+        "sub", "session_id", "jti",
+    )):
+        raise ValueError("DELEGATION_CLAIM_TYPE_INVALID")
+    project_id = claims.get("project_id")
+    if project_id is not None and (
+        not isinstance(project_id, str) or not project_id
+    ):
+        raise ValueError("DELEGATION_CLAIM_TYPE_INVALID")
+    scopes = claims.get("scopes")
+    if not isinstance(scopes, list) or not scopes or any(
+        not isinstance(scope, str) or not scope for scope in scopes
+    ):
+        raise ValueError("DELEGATION_CLAIM_TYPE_INVALID")
+    token_version = claims.get("token_version")
+    if (
+        not isinstance(token_version, int)
+        or isinstance(token_version, bool)
+        or token_version < 0
+    ):
+        raise ValueError("DELEGATION_CLAIM_TYPE_INVALID")
+    uuid.UUID(claims["sub"])
+    if project_id is not None:
+        uuid.UUID(project_id)
+
+
 async def issue_delegation(context: ToolInvocationContext) -> str:
     user = await context.db.get(UserModel, uuid.UUID(context.user_id))
     if user is None or user.status != "active":
@@ -77,8 +105,9 @@ async def verify_delegation(
                 ]
             },
         )
+        _validate_claim_shapes(claims)
         uuid.UUID(call_id)
-    except (jwt.PyJWTError, ValueError) as exc:
+    except (jwt.PyJWTError, TypeError, ValueError) as exc:
         raise AuthenticationError("委托无效或过期") from exc
     gateway = AgentToolGateway(db)
     context = await gateway.context(

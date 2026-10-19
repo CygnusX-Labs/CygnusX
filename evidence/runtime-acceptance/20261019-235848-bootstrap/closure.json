@@ -1,0 +1,57 @@
+{
+  "private_env_flags": {
+    "ACCEPTANCE_READS": false,
+    "ACCEPTANCE_WRITES": false,
+    "ACCEPTANCE_PDF": false
+  },
+  "closed_preflight_exit": 0,
+  "containers": {
+    "api-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:30:00.467947516Z"
+    },
+    "worker-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:30:00.970851106Z"
+    },
+    "beat-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:29:59.390336684Z"
+    },
+    "frontend-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:29:58.417451761Z"
+    },
+    "postgres-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:29:58.533110016Z"
+    },
+    "redis-1": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:29:58.479775905Z"
+    },
+    "browser": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:30:11.184531854Z"
+    },
+    "registry": {
+      "status": "exited",
+      "running": false,
+      "finished_at": "2026-10-19T16:30:11.341620602Z"
+    }
+  },
+  "volumes_retained": [
+    "cygnusx-20261019-235848-bootstrap_postgres-data",
+    "cygnusx-20261019-235848-bootstrap_private-storage",
+    "cygnusx-20261019-235848-bootstrap_redis-data"
+  ],
+  "production_config_modified": false,
+  "note": "Last running read/plan flags were true. Services stopped before private env flags set false; not restarted."
+}

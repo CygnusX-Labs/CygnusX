@@ -214,6 +214,8 @@ class AgentContext:
     mcp_servers: list[MCPServer] = field(default_factory=list)
     skills: list[Skill] = field(default_factory=list)
     features: dict[str, Any] = field(default_factory=dict)
+    # 脱敏的候选工具裁剪记录，供 Provider 边界验收导出；不含用户消息或凭据。
+    tool_filter_decisions: list[dict[str, Any]] = field(default_factory=list)
     user_capabilities_customized: bool = False
     temperature: float = 0.7
     max_tokens: int = 65536
@@ -222,9 +224,12 @@ class AgentContext:
 class AgentService:
     """Agent 模板应用服务"""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self, db: AsyncSession, *, reconcile_model_bindings_on_read: bool = True
+    ) -> None:
         self._db = db
         self._mcp_repo = SqlAlchemyMCPServerRepository(db)
+        self._reconcile_model_bindings_on_read = reconcile_model_bindings_on_read
 
     # --- 内置 Agent 初始化 ---
 
@@ -452,7 +457,8 @@ class AgentService:
         return result.scalar_one_or_none()
 
     async def get_agent_dto(self, agent_id: str) -> AgentTemplateDTO:
-        await self._reconcile_model_bindings()
+        if self._reconcile_model_bindings_on_read:
+            await self._reconcile_model_bindings()
         agent = await self.get_agent(agent_id)
         if not agent:
             raise NotFoundError("Agent 不存在")
@@ -830,7 +836,8 @@ class AgentService:
 
         Agent 自身不存在时返回 None；模型缺失/未启用通过 ChatChunk.error 在调用方处理。
         """
-        await self._reconcile_model_bindings()
+        if self._reconcile_model_bindings_on_read:
+            await self._reconcile_model_bindings()
         agent = await self.get_agent(agent_id)
         if agent is None or not agent.is_active:
             return None
@@ -861,12 +868,14 @@ class AgentService:
                     self._append_persona_prompt(agent.system_prompt, agent), agent
                 ),
                 features=runtime_features,
+                tool_filter_decisions=[],
                 user_capabilities_customized=user_capabilities_customized,
             )
 
         # 2. 收集绑定的 MCP server 及其工具，转成 OpenAI tools
         mcp_servers: list[MCPServer] = []
         tools: list[dict[str, Any]] = []
+        tool_filter_decisions: list[dict[str, Any]] = []
         tool_pack_config = self._tool_pack_config(runtime_features)
         mcp_uuids: list[uuid.UUID] = [
             u for u in (self._parse_uuid(mid) for mid in runtime_mcp_ids) if u is not None
@@ -892,9 +901,29 @@ class AgentService:
             for server in mcp_servers:
                 # 离线/被禁用的外部 MCP 不向 LLM 暴露工具，避免模型选到必失败的慢工具。
                 if not server.is_enabled:
+                    tool_filter_decisions.extend(
+                        {
+                            "tool_name": str(tool.tool_name),
+                            "server": str(server.name),
+                            "server_id": str(server.id),
+                            "included": False,
+                            "reason": "server_disabled",
+                        }
+                        for tool in (server.tools or [])
+                    )
                     continue
                 # 审批链：builder 实验池 MCP 未通过人工审核不得挂载执行。
                 if not _mcp_mount_allowed_for_agent(server):
+                    tool_filter_decisions.extend(
+                        {
+                            "tool_name": str(tool.tool_name),
+                            "server": str(server.name),
+                            "server_id": str(server.id),
+                            "included": False,
+                            "reason": "server_review_denied",
+                        }
+                        for tool in (server.tools or [])
+                    )
                     continue
                 allowed_names = tool_pack_config["mcp_tools"].get(str(server.id))
                 if allowed_names is None:
@@ -904,7 +933,25 @@ class AgentService:
                     )
                 for t in server.tools:
                     if allowed_names and t.tool_name not in allowed_names:
+                        tool_filter_decisions.append(
+                            {
+                                "tool_name": str(t.tool_name),
+                                "server": str(server.name),
+                                "server_id": str(server.id),
+                                "included": False,
+                                "reason": "pack_disabled",
+                            }
+                        )
                         continue
+                    tool_filter_decisions.append(
+                        {
+                            "tool_name": str(t.tool_name),
+                            "server": str(server.name),
+                            "server_id": str(server.id),
+                            "included": True,
+                            "reason": "included",
+                        }
+                    )
                     tools.append(
                         {
                             "type": "function",
@@ -971,15 +1018,28 @@ class AgentService:
 
         # 2.5 自动注入 cygnusx-tools builtin preset（显式选中，或为空时保持默认）
         cygnusx_tools_server = self._build_cygnusx_tools_server()
+        builtin_tools: list[dict[str, Any]] = []
         if cygnusx_tools_server and (cygnusx_selected or not mcp_uuids):
             mcp_servers.append(cygnusx_tools_server)
             builtin_tools = schema_loader.to_openai_tools()
             allowed_builtin_names = tool_pack_config["builtin_tools"]
             if allowed_builtin_names:
+                allowed_builtin_set = set(allowed_builtin_names)
+                tool_filter_decisions.extend(
+                    {
+                        "tool_name": str(tool.get("function", {}).get("name") or ""),
+                        "server": CYGNUSX_TOOLS_SERVER_NAME,
+                        "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                        "included": False,
+                        "reason": "pack_disabled",
+                    }
+                    for tool in builtin_tools
+                    if str(tool.get("function", {}).get("name") or "") not in allowed_builtin_set
+                )
                 builtin_tools = [
                     tool
                     for tool in builtin_tools
-                    if tool.get("function", {}).get("name") in allowed_builtin_names
+                    if tool.get("function", {}).get("name") in allowed_builtin_set
                 ]
             builtin_tools = self._filter_runtime_builtin_tools(
                 builtin_tools,
@@ -1016,19 +1076,64 @@ class AgentService:
                         if "platform_ai" not in tool_capability.agents:
                             continue
                         if tool_capability.capability_id == "dataset.discover" and "downloads" in denied:
+                            tool_filter_decisions.append(
+                                {
+                                    "tool_name": tool_capability.tool_name,
+                                    "server": CYGNUSX_TOOLS_SERVER_NAME,
+                                    "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                                    "included": False,
+                                    "reason": "user_denied",
+                                }
+                            )
                             continue
                         module = ("flows" if tool_capability.capability_id.startswith("analysis.") else
                                   "tasks" if tool_capability.capability_id.startswith("tasks.") else
                                   "files" if tool_capability.capability_id.startswith("dataset.") else "downloads")
                         if tool_capability.capability_id.startswith("research."):
                             if denied & {"files", "tasks", "reports"}:
+                                tool_filter_decisions.append(
+                                    {
+                                        "tool_name": tool_capability.tool_name,
+                                        "server": CYGNUSX_TOOLS_SERVER_NAME,
+                                        "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                                        "included": False,
+                                        "reason": "user_denied",
+                                    }
+                                )
                                 continue
                             module = "reports"
                         if module in denied or "ai-assistant" in denied:
+                            tool_filter_decisions.append(
+                                {
+                                    "tool_name": tool_capability.tool_name,
+                                    "server": CYGNUSX_TOOLS_SERVER_NAME,
+                                    "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                                    "included": False,
+                                    "reason": "user_denied",
+                                }
+                            )
                             continue
                         if tool_capability.side_effect == "confirmation" and "files" in denied:
+                            tool_filter_decisions.append(
+                                {
+                                    "tool_name": tool_capability.tool_name,
+                                    "server": CYGNUSX_TOOLS_SERVER_NAME,
+                                    "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                                    "included": False,
+                                    "reason": "user_denied",
+                                }
+                            )
                             continue
                         if allowed_builtin_names and tool_capability.tool_name not in allowed_builtin_names:
+                            tool_filter_decisions.append(
+                                {
+                                    "tool_name": tool_capability.tool_name,
+                                    "server": CYGNUSX_TOOLS_SERVER_NAME,
+                                    "server_id": str(CYGNUSX_TOOLS_SERVER_ID),
+                                    "included": False,
+                                    "reason": "pack_disabled",
+                                }
+                            )
                             continue
                         # Both chat runtimes locate a server through server.tools.
                         # A model function alone is not a dispatchable MCP capability.
@@ -1069,6 +1174,38 @@ class AgentService:
             )
             if tool_hint:
                 system_prompt = f"{system_prompt}\n\n{tool_hint}" if system_prompt else tool_hint
+
+        # Include runtime-injected preset and skill tools in the same audit shape.
+        # Exclusion records above remain authoritative for candidates removed early;
+        # this pass records only tools that survived into the assembled context.
+        recorded = {
+            (str(item.get("server_id") or ""), str(item.get("tool_name") or ""))
+            for item in tool_filter_decisions
+        }
+        source_by_name = {
+            str(tool.tool_name): (str(server.name), str(server.id))
+            for server in mcp_servers
+            for tool in (server.tools or [])
+        }
+        for item in tools:
+            if not isinstance(item, dict):
+                continue
+            name = str((item.get("function") or {}).get("name") or "").strip()
+            if not name:
+                continue
+            server_name, server_id = source_by_name.get(name, ("runtime", "unknown"))
+            key = (server_id, name)
+            if key not in recorded:
+                tool_filter_decisions.append(
+                    {
+                        "tool_name": name,
+                        "server": server_name,
+                        "server_id": server_id,
+                        "included": True,
+                        "reason": "included",
+                    }
+                )
+                recorded.add(key)
         if self._has_builtin_tool(builtin_tools, "create_agentteams_case"):
             system_prompt = (
                 f"{system_prompt}\n\n{AGENTTEAMS_CASE_SYSTEM_PROMPT_SUFFIX}"
@@ -1095,6 +1232,7 @@ class AgentService:
             mcp_servers=mcp_servers,
             skills=skills,
             features=runtime_features,
+            tool_filter_decisions=tool_filter_decisions,
             user_capabilities_customized=user_capabilities_customized,
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,

@@ -1,0 +1,29 @@
+MCP regression verification (2026-10-18)
+Environment: mcp-server/.venv, FastMCP 3.4.4, dummy platform URL 127.0.0.1:1, synthetic test-only API key. No live platform/provider identity was used.
+
+Focused command:
+cd mcp-server && PYTHONPATH=. pytest -q tests/test_biothings_tools.py tests/test_research_resources_tools.py tests/test_tool_descriptions.py tests/test_phase0b_runtime.py
+
+Result: 24 passed. Includes description fallback and exact-name behavior, all 12 amended descriptions, all 109 runtime/client schemas, STDIO, Streamable HTTP, SSE, loopback/auth rejection, and boolean self-confirmation rejection.
+
+Complete external MCP suite:
+cd mcp-server && PYTHONPATH=. pytest -q tests
+
+Result: 56 collected, 43 passed, 13 failed, 0 skipped. All 13 failures are in tests/test_seqout_tools.py; the failures expose stale or mismatched test fixtures/contracts (GSE IDs sent to ENA/SRA endpoints, nonexistent SRR fixture, outdated response key expectations, and required query parameters omitted). They remain unresolved and prevent claiming a fully green suite. Full failure details were observed in the pytest output during this run; the failure names are summarized in report.md.
+
+Failed test names:
+test_seqout_search_sra
+test_seqout_get_experiments
+test_seqout_get_runs
+test_seqout_get_run_download
+test_seqout_get_sample_metadata
+test_seqout_resolve_accession
+test_seqout_get_organisms
+test_seqout_get_common_name
+test_seqout_get_stats_growth
+test_seqout_get_download_links
+test_seqout_get_metadata_csv
+test_all_tools_output_format_consistency
+test_invalid_accession_handling
+
+The SSE helper now uses GET for /sse. All three external transports initialized and returned tools/list in the four-surface capture; details and raw tool contracts are in current-*-tools.json and schema-diff.json.

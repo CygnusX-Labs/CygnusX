@@ -179,7 +179,7 @@ class AgentContextBuilder:
     def _clone_assembly(assembled: Any) -> Any:
         """隔离每次 Runtime 调用可变的工具与功能配置。"""
         clone = copy.copy(assembled)
-        for attribute in ("tools", "features"):
+        for attribute in ("tools", "features", "tool_filter_decisions"):
             value = getattr(assembled, attribute, None)
             if value is not None:
                 setattr(clone, attribute, copy.deepcopy(value))

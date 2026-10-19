@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cygnusx.application.schemas.download import DownloadRequest
@@ -24,6 +24,7 @@ from cygnusx.infrastructure.database.models.project import ProjectModel
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.infrastructure.download.reliability import intent_digest
+from cygnusx.infrastructure.download.trusted_execution import deterministic_execution_id
 
 MAX_BYTES = (1 << 63) - 1
 
@@ -76,10 +77,16 @@ def _profile(environment_id: str) -> dict[str, Any]:
     return profile
 
 
+def get_execution_admission_profile(environment_id: str) -> dict[str, Any]:
+    """Return a validated server-owned profile for a trusted execution adapter."""
+    return _profile(environment_id)
+
+
 async def _facts(
     session: AsyncSession, *, ingestion_id: UUID, task_id: UUID, owner_id: UUID,
     project_id: UUID, confirmation_id: str, request_digest: str, limit_bytes: int,
     expires_at: datetime, now: datetime, allowed_destinations: list[dict[str, Any]],
+    task_statuses: tuple[str, ...] = ("queued",),
 ) -> str:
     """Re-read original rows, never accept a caller's assertion of approval."""
     ingestion = (await session.execute(select(DatasetIngestionModel).where(
@@ -104,7 +111,7 @@ async def _facts(
         or ingestion.task_ids != [str(task_id)]
         or ingestion.confirmation_id != confirmation_id
         or ingestion.parameters_hash != request_digest
-        or task.user_id != owner_id or task.status != "queued"
+        or task.user_id != owner_id or task.status not in task_statuses
         or task.flow_id != "ebi_download"):
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_FACTS_REJECTED")
     bound = ingestion.normalized_request
@@ -232,6 +239,7 @@ async def issue_processed_http_admission(
 async def resolve_execution_admission(
     session: AsyncSession, admission_id: UUID, budget_id: UUID, *, task_id: UUID,
     owner_id: UUID, caller_id: str, now: datetime | None = None,
+    allow_consumed: bool | None = False,
 ) -> tuple[DownloadExecutionAdmissionModel, DownloadExecutionBudgetModel]:
     current = _utc(now or datetime.now(UTC))
     pair = (await session.execute(select(
@@ -245,7 +253,10 @@ async def resolve_execution_admission(
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_REJECTED")
     admission, budget = pair
     profile = _profile(admission.environment_id)
-    if (admission.status != "READY" or admission.revoked
+    allowed_statuses = {"CONSUMED"} if allow_consumed is True else (
+        {"READY", "CONSUMED"} if allow_consumed is None else {"READY"}
+    )
+    if (admission.status not in allowed_statuses or admission.revoked
         or _utc(admission.expires_at) <= current or admission.task_id != task_id
         or admission.owner_id != owner_id or admission.caller_id != caller_id
         or caller_id != profile["caller_id"]
@@ -260,7 +271,8 @@ async def resolve_execution_admission(
             "allowed_destinations",
         ))
         or budget.disk_block_limit_bytes != profile["disk_block_limit_bytes"]
-        or budget.disk_inodes_limit != profile["disk_inodes_limit"]):
+        or budget.disk_inodes_limit != profile["disk_inodes_limit"]
+        or admission.status == "CONSUMED" and admission.execution_id is None):
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_REJECTED")
     source_digest = await _facts(
         session, ingestion_id=admission.ingestion_id, task_id=task_id, owner_id=owner_id,
@@ -268,6 +280,7 @@ async def resolve_execution_admission(
         request_digest=admission.request_digest, limit_bytes=budget.limit_bytes,
         expires_at=admission.expires_at, now=current,
         allowed_destinations=admission.allowed_destinations,
+        task_statuses=("running",) if admission.status == "CONSUMED" else ("queued", "running"),
     )
     if source_digest != admission.source_digest:
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_SOURCE_CHANGED")
@@ -279,7 +292,7 @@ async def consume_execution_admission(
     request_digest: str, caller_id: str, now: datetime | None = None,
     budget_id: UUID | None = None, attempt_id: UUID | None = None,
     expected_epoch: int | None = None, tool_digest: str | None = None,
-    environment_id: str | None = None,
+    environment_id: str | None = None, execution_id: UUID | None = None,
 ) -> DownloadExecutionAdmissionModel:
     current = _utc(now or datetime.now(UTC))
     if attempt_id is None or expected_epoch is None or tool_digest is None or environment_id is None:
@@ -298,17 +311,34 @@ async def consume_execution_admission(
         or expected_epoch != admission.execution_epoch
         or (attempt_id is not None and attempt_id != admission.attempt_id)):
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_REJECTED")
+    expected_identity = deterministic_execution_id(
+        task_id, admission.attempt_id, expected_epoch + 1
+    )
+    execution_identity = execution_id or expected_identity
+    if execution_identity != expected_identity:
+        raise DownloadExecutionAdmissionError("DOWNLOAD_EXECUTION_ID_INVALID")
     changed = (await session.execute(update(DownloadExecutionAdmissionModel).where(
         DownloadExecutionAdmissionModel.id == admission_id,
         DownloadExecutionAdmissionModel.status == "READY",
         DownloadExecutionAdmissionModel.revoked.is_(False),
         DownloadExecutionAdmissionModel.execution_epoch == expected_epoch,
         DownloadExecutionAdmissionModel.attempt_id == admission.attempt_id,
-    ).values(status="CONSUMED", consumed_at=current, execution_epoch=expected_epoch + 1)
+    ).values(
+        status="CONSUMED",
+        consumed_at=current,
+        execution_epoch=expected_epoch + 1,
+        execution_id=execution_identity,
+    )
         .returning(DownloadExecutionAdmissionModel.id))).scalar_one_or_none()
     if changed is None:
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_REJECTED")
     await session.flush()
+    # Keep the identity-map object coherent for callers and lightweight test
+    # sessions that intentionally do not implement AsyncSession.refresh().
+    admission.status = "CONSUMED"
+    admission.consumed_at = current
+    admission.execution_epoch = expected_epoch + 1
+    admission.execution_id = execution_identity
     return admission
 
 
@@ -326,9 +356,94 @@ async def reserve_execution_budget(
         DownloadExecutionBudgetModel.limit_bytes - DownloadExecutionBudgetModel.reserved_bytes
         >= amount,
     ).values(reserved_bytes=DownloadExecutionBudgetModel.reserved_bytes + amount)
-        .returning(DownloadExecutionBudgetModel.id))
+        .returning(DownloadExecutionBudgetModel.id)
+        .execution_options(synchronize_session=False))
     if result.scalar_one_or_none() is None:
         raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_EXCEEDED")
+    return (await session.execute(select(DownloadExecutionBudgetModel).where(
+        DownloadExecutionBudgetModel.id == budget_id
+    ).execution_options(populate_existing=True))).scalar_one()
+
+
+async def _settle_execution_budget(
+    session: AsyncSession,
+    admission_id: UUID,
+    budget_id: UUID,
+    *,
+    task_id: UUID,
+    attempt_id: UUID,
+    execution_epoch: int,
+    policy_revision: str,
+    rx_admitted_bytes: int,
+    rx_limit_bytes: int,
+    disk_limit_bytes: int,
+    inode_limit: int,
+) -> DownloadExecutionBudgetModel:
+    """Settle a reservation after the receipt repository authenticates it.
+
+    The receipt verifier and this mutation must share the caller's transaction so
+    replay protection, terminal admission state, and budget accounting commit or
+    roll back together. Keep this low-level mutation private to the repository package.
+    """
+    if any(not _positive(value) for value in (
+        rx_limit_bytes, disk_limit_bytes, inode_limit,
+    )) or not isinstance(rx_admitted_bytes, int) or isinstance(rx_admitted_bytes, bool) \
+            or rx_admitted_bytes < 0:
+        raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_MEASUREMENT_INVALID")
+
+    pair = (await session.execute(select(
+        DownloadExecutionAdmissionModel, DownloadExecutionBudgetModel
+    ).join(DownloadExecutionBudgetModel,
+        DownloadExecutionBudgetModel.id == DownloadExecutionAdmissionModel.budget_id
+    ).where(DownloadExecutionAdmissionModel.id == admission_id,
+        DownloadExecutionAdmissionModel.budget_id == budget_id
+    ).with_for_update())).one_or_none()
+    if pair is None:
+        raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_BINDING_REJECTED")
+    admission, budget = pair
+    if (
+        admission.task_id != task_id
+        or admission.attempt_id != attempt_id
+        or admission.execution_epoch != execution_epoch
+        or admission.policy_revision != policy_revision
+        or admission.status not in {"CONSUMED", "RECONCILIATION_REQUIRED"}
+        or budget.status != "ACTIVE"
+        or budget.policy_revision != policy_revision
+        or budget.admitted_bytes is not None and budget.admitted_bytes > budget.reserved_bytes
+        or rx_limit_bytes != budget.limit_bytes
+        or disk_limit_bytes != budget.disk_block_limit_bytes
+        or inode_limit != budget.disk_inodes_limit
+        or rx_admitted_bytes > admission.reserved_bytes
+    ):
+        raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_BINDING_REJECTED")
+
+    prior_admitted = func.coalesce(DownloadExecutionBudgetModel.admitted_bytes, 0)
+    settled = await session.execute(update(DownloadExecutionBudgetModel).where(
+        DownloadExecutionBudgetModel.id == budget_id,
+        DownloadExecutionBudgetModel.status == "ACTIVE",
+        DownloadExecutionBudgetModel.reserved_bytes >= admission.reserved_bytes,
+        DownloadExecutionBudgetModel.limit_bytes - prior_admitted >= rx_admitted_bytes,
+        DownloadExecutionBudgetModel.reserved_bytes - admission.reserved_bytes
+        + rx_admitted_bytes >= prior_admitted + rx_admitted_bytes,
+    ).values(
+        reserved_bytes=(DownloadExecutionBudgetModel.reserved_bytes
+                        - admission.reserved_bytes + rx_admitted_bytes),
+        admitted_bytes=prior_admitted + rx_admitted_bytes,
+    ).returning(DownloadExecutionBudgetModel.id))
+    if settled.scalar_one_or_none() is None:
+        raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_SETTLEMENT_REJECTED")
+
+    changed = await session.execute(update(DownloadExecutionAdmissionModel).where(
+        DownloadExecutionAdmissionModel.id == admission_id,
+        DownloadExecutionAdmissionModel.budget_id == budget_id,
+        DownloadExecutionAdmissionModel.task_id == task_id,
+        DownloadExecutionAdmissionModel.attempt_id == attempt_id,
+        DownloadExecutionAdmissionModel.execution_epoch == execution_epoch,
+        DownloadExecutionAdmissionModel.status.in_({"CONSUMED", "RECONCILIATION_REQUIRED"}),
+    ).values(status="SETTLED").returning(DownloadExecutionAdmissionModel.id))
+    if changed.scalar_one_or_none() is None:
+        raise DownloadExecutionAdmissionError("DOWNLOAD_BUDGET_SETTLEMENT_REJECTED")
+    await session.flush()
     return (await session.execute(select(DownloadExecutionBudgetModel).where(
         DownloadExecutionBudgetModel.id == budget_id
     ))).scalar_one()
@@ -340,7 +455,7 @@ async def revoke_execution_admission(session: AsyncSession, admission_id: UUID) 
     ).with_for_update())).scalar_one_or_none()
     if admission is None:
         raise DownloadExecutionAdmissionError("DOWNLOAD_ADMISSION_NOT_FOUND")
-    if admission.revoked:
+    if admission.revoked or admission.status in {"REVOKED", "SETTLED"}:
         return
     admission.revoked = True
     if admission.status == "READY":

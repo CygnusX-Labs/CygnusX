@@ -409,6 +409,12 @@ class LangGraphOrchestratorEngine:
         async def _aggregate(state: OrchestratorState) -> dict[str, Any]:
             return await aggregate_node(state, deps)
 
+        async def _route_after_plan_generate(state: OrchestratorState) -> str:
+            return route_after_plan_generate(state)
+
+        async def _route_after_plan_confirm(state: OrchestratorState) -> str:
+            return route_after_plan_confirm(state)
+
         builder: StateGraph[OrchestratorState] = StateGraph(OrchestratorState)
         builder.add_node("plan_generate", _plan_generate)
         builder.add_node("plan_confirm", _plan_confirm)
@@ -417,12 +423,12 @@ class LangGraphOrchestratorEngine:
         builder.set_entry_point("plan_generate")
         builder.add_conditional_edges(
             "plan_generate",
-            route_after_plan_generate,
+            _route_after_plan_generate,
             {"plan_confirm": "plan_confirm", "end": END},
         )
         builder.add_conditional_edges(
             "plan_confirm",
-            route_after_plan_confirm,
+            _route_after_plan_confirm,
             {
                 "dispatch": "dispatch",
                 "plan_generate": "plan_generate",

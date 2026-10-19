@@ -25,6 +25,16 @@ USER_ID = "00000000-0000-0000-0000-000000000001"
 TASK_ID = "00000000-0000-0000-0000-000000000002"
 
 
+@pytest.fixture(autouse=True)
+def _inline_local_storage_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep storage-only unit tests independent from the restricted executor pool."""
+
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
+
+
 class _Rows:
     def all(self):
         return []

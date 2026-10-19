@@ -1,0 +1,4 @@
+command: .venv/bin/python scripts/check_migrations.py
+exit: 0
+result: 迁移文件内部依赖检查通过 / 拓扑连通 / head 唯一
+date: 2026-10-19

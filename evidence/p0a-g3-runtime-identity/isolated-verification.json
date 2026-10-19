@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-18",
+  "status": "PASS_ISOLATED",
+  "runtime_status": "BLOCKED",
+  "gates": {
+    "DOWNLOAD_TRANSPORT_RUNTIME_ACCEPTED": false,
+    "WRITE_RUNTIME_ACCEPTED": false
+  },
+  "commands": [
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_registration_contract.py tests/unit/test_download_worker_supervisor.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_supervisor_client.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_execution_admission.py tests/unit/test_p0a_approval_snapshot.py -q -m unit",
+      "result": "125 passed"
+    },
+    {
+      "command": ".venv/bin/python scripts/check_migrations.py",
+      "result": "passed"
+    },
+    {
+      "command": ".venv/bin/python -m ruff check src/cygnusx/infrastructure/download src/cygnusx/infrastructure/database/repositories/download_execution_admission.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py",
+      "result": "passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_execution_admission.py tests/unit/test_p0a_migration_contract.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py -q -m unit",
+      "result": "71 passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_supervisor_server.py tests/unit/test_download_worker_supervisor.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_execution_admission.py tests/unit/test_p0a_migration_contract.py -q -m unit",
+      "result": "77 passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_trusted_execution_contract.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_worker_supervisor.py -q -m unit",
+      "result": "59 passed"
+    }
+  ],
+  "runtime_evidence": [],
+  "runtime_blocker": "No explicitly authorized independent PostgreSQL or Supervisor OS environment was available; no business database or download transport was started."
+}

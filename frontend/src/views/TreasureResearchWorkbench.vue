@@ -172,10 +172,13 @@ async function send(submitted?: string) {
 
 async function cancel() {
   if (!currentSession.value) return
+  const sessionId = currentSession.value.session_id
   controller.value?.abort()
-  await researchAgentApi.cancel(currentSession.value.session_id).catch(() => undefined)
+  const result = await researchAgentApi.cancel(sessionId).catch(() => ({ status: 'unknown' as const }))
   sending.value = false
-  streamError.value = '已停止接收回复。当前服务尚不保证跨进程取消；重新打开会话可查看已保存快照。'
+  streamError.value = result.status === 'accepted'
+    ? '已向当前服务进程发送停止信号；任务是否已停止尚未确认。重新打开会话可查看已保存内容。'
+    : '已停止接收回复，但当前服务未确认任务状态；任务可能由其他进程处理。重新打开会话可查看已保存内容。'
 }
 
 async function changeProject(value: string) {

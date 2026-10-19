@@ -1,0 +1,1 @@
+{"result":{"serverInfo":{"name":"CygnusX","version":"3.4.4"},"protocolVersion":"2025-11-25","capabilities":{"experimental":{},"logging":{},"prompts":{"listChanged":true},"resources":{"subscribe":false,"listChanged":true},"tools":{"listChanged":true},"extensions":{"io.modelcontextprotocol/ui":{}}},"instructions":"CygnusX 多组学分析平台 MCP Server — 任务管理、数据下载、流程分析、结果解读、沙箱执行"}}

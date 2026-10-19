@@ -1,16 +1,25 @@
 """Real Task SQL transactions and filesystem; no broker, subprocess or network."""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.exc import IntegrityError
 
 from cygnusx.application.schemas.download import DownloadRequest
 from cygnusx.application.services import download_service as module
 from cygnusx.core.exceptions import ConflictError
+from cygnusx.domain.task.entities import Task
 from cygnusx.infrastructure.database.models.task import TaskModel
+from cygnusx.infrastructure.database.repositories.task_repository import (
+    TaskIdempotencyKeyConflictError,
+    TaskRepositoryImpl,
+    _is_idempotency_key_conflict,
+)
 from cygnusx.infrastructure.download import policy, reliability
 from cygnusx.infrastructure.storage.backend import LocalStorageBackend
 from tests.unit.test_download_registration_contract import download_env as download_env
@@ -27,16 +36,35 @@ pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 def env(download_env, monkeypatch):
     e = download_env
     e.db.sync_session = e.db.sync
+    engine = e.db.sync.get_bind()
+
+    def explicit_sqlite_begin(connection):
+        connection.exec_driver_sql("BEGIN")
+
+    event.listen(engine, "begin", explicit_sqlite_begin)
     monkeypatch.setattr(module, "get_path_factory", lambda: e.factory)
     monkeypatch.setattr(module, "ensure_download_available", lambda *a: None)
     monkeypatch.setattr(policy, "require_download_runtime", lambda *a: None)
+
+    @asynccontextmanager
+    async def begin_nested():
+        with e.db.sync.begin_nested():
+            yield
+
+    monkeypatch.setattr(e.db, "begin_nested", begin_nested)
     original_dispatch = reliability.dispatch_download
     send = Mock(return_value=True)
     monkeypatch.setattr(reliability, "dispatch_download", send)
     service = module.DownloadService(e.db, LocalStorageBackend(e.factory))
-    return SimpleNamespace(
-        **vars(e), submit=service.submit, send=send, original_dispatch=original_dispatch
+    yield SimpleNamespace(
+        **(vars(e) | {
+            "service": service,
+            "submit": service.submit,
+            "send": send,
+            "original_dispatch": original_dispatch,
+        })
     )
+    event.remove(engine, "begin", explicit_sqlite_begin)
 
 
 async def test_commit_then_dispatch_and_duplicate_intent(env):
@@ -81,6 +109,51 @@ async def test_key_conflict_and_owner_project_scope(env):
     await env.db.rollback()
     other = await env.submit(str(env.other), req)
     assert other.id != first.id
+
+
+async def test_duplicate_download_key_integrity_error_is_scoped_and_recoverable(env):
+    first = await env.submit(
+        str(env.owner), DownloadRequest(accession="SRR123", request_key="same")
+    )
+    await env.db.commit()
+    row = await env.db.get(TaskModel, first.id)
+    assert row is not None and row.idempotency_key
+
+    with pytest.raises(TaskIdempotencyKeyConflictError):
+        await TaskRepositoryImpl(env.db).save(
+            Task(
+                id=uuid4(),
+                flow_id="ebi_download",
+                user_id=env.owner,
+                idempotency_key=row.idempotency_key,
+            )
+        )
+
+    assert await env.db.get(TaskModel, first.id) is not None
+    assert len(env.db.sync.scalars(select(TaskModel)).all()) == 1
+
+
+async def test_other_integrity_errors_are_not_classified_as_idempotency_conflicts():
+    error = IntegrityError("insert failed", {}, Exception("UNIQUE constraint failed: tasks.id"))
+    assert not _is_idempotency_key_conflict(error)
+
+
+async def test_concurrent_idempotency_conflict_returns_stable_409_and_cleans_only_own_dir(
+    env, monkeypatch
+):
+    async def lose_insert_race(**kwargs):
+        raise TaskIdempotencyKeyConflictError
+
+    monkeypatch.setattr(env.service._domain, "submit", lose_insert_race)
+    request = DownloadRequest(accession="SRR123", request_key="racing-key")
+    with pytest.raises(ConflictError) as exc_info:
+        await env.submit(str(env.owner), request)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "DOWNLOAD_REQUEST_CONFLICT"
+    work_dirs = list(env.factory.user_root(str(env.owner)).glob("downloads/SRR123-*"))
+    assert work_dirs == []
+    env.send.assert_not_called()
 
 
 async def test_workdirs_unique_and_links_refused(env, tmp_path):
@@ -155,6 +228,34 @@ async def test_cancelled_task_cannot_be_resurrected(env):
     stale.status = TaskStatus.SUCCESS
     saved = await repo.save(stale)
     assert saved.status == TaskStatus.CANCELLED
+
+
+async def test_stale_worker_save_preserves_execution_binding(env):
+    response = await env.submit(str(env.owner), DownloadRequest(accession="SRR123"))
+    await env.db.commit()
+    repo = TaskRepositoryImpl(env.db)
+    stale = await repo.get_by_id(response.id)
+    assert stale is not None
+    row = await env.db.get(TaskModel, response.id)
+    assert row is not None
+    row.parameters = {
+        **row.parameters,
+        "_download_execution_binding": {
+            "version": 1,
+            "admission_ref": "admission-id",
+            "budget_ref": "budget-id",
+        },
+    }
+    await env.db.flush()
+
+    await repo.save(stale)
+    saved = await repo.get_by_id(response.id)
+    assert saved is not None
+    assert saved.parameters["_download_execution_binding"] == {
+        "version": 1,
+        "admission_ref": "admission-id",
+        "budget_ref": "budget-id",
+    }
 
 
 @pytest.mark.parametrize("status", ["running", "success", "failed", "cancelled"])

@@ -1,0 +1,34 @@
+[
+  {
+    "comparison": "runtime_vs_runtime",
+    "left_count": 111,
+    "right_count": 111,
+    "missing_names": [],
+    "extra_names": [],
+    "schema_or_description_changed": []
+  },
+  {
+    "comparison": "runtime_vs_stdio",
+    "left_count": 111,
+    "right_count": 111,
+    "missing_names": [],
+    "extra_names": [],
+    "schema_or_description_changed": []
+  },
+  {
+    "comparison": "runtime_vs_streamable_http",
+    "left_count": 111,
+    "right_count": 111,
+    "missing_names": [],
+    "extra_names": [],
+    "schema_or_description_changed": []
+  },
+  {
+    "comparison": "runtime_vs_sse",
+    "left_count": 111,
+    "right_count": 111,
+    "missing_names": [],
+    "extra_names": [],
+    "schema_or_description_changed": []
+  }
+]

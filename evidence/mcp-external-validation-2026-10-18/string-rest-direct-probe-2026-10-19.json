@@ -1,0 +1,95 @@
+{
+  "attempted": true,
+  "business_success": true,
+  "cache_status": "not_observed",
+  "captured_at_utc": "2026-10-18T20:12:20Z",
+  "calls": [
+    {
+      "operation": "get_string_ids",
+      "input": {
+        "identifier": "TP53",
+        "taxon_id": 9606,
+        "limit": 3
+      },
+      "provider_response_summary": {
+        "candidate_count": 1,
+        "string_id": "9606.ENSP00000269305",
+        "preferred_name": "TP53",
+        "taxon_id": "9606"
+      },
+      "result": "success"
+    },
+    {
+      "operation": "interaction_partners",
+      "network_type": "physical",
+      "input": {
+        "string_id": "9606.ENSP00000269305",
+        "taxon_id": 9606,
+        "required_score": 400,
+        "limit": 3,
+        "add_color_nodes": 0,
+        "add_white_nodes": 0
+      },
+      "provider_response_summary": {
+        "returned": 3,
+        "first_row": {
+          "stringId_A": "9606.ENSP00000269305",
+          "preferredName_A": "TP53",
+          "stringId_B": "9606.ENSP00000212015",
+          "preferredName_B": "SIRT1",
+          "score": "0.999",
+          "escore": "0.999",
+          "tscore": "0.553"
+        }
+      },
+      "result": "success"
+    },
+    {
+      "operation": "interaction_partners",
+      "network_type": "regulatory",
+      "input": {
+        "string_id": "9606.ENSP00000269305",
+        "taxon_id": 9606,
+        "required_score": 400,
+        "limit": 1,
+        "add_color_nodes": 0,
+        "add_white_nodes": 0
+      },
+      "provider_response_summary": {
+        "source_string_id": "9606.ENSP00000269305",
+        "source_preferred_name": "TP53",
+        "target_string_id": "9606.ENSP00000258149",
+        "target_preferred_name": "MDM2",
+        "combined_score": "0.996",
+        "sign": "n/a"
+      },
+      "result": "success"
+    }
+  ],
+  "release": "12.5",
+  "adapter_projection_followup": {
+    "captured_at_utc": "2026-10-18T20:18:58Z",
+    "transport": "in_process_fastmcp_call_tool_to_fixed_rest",
+    "resolve_success": true,
+    "string_id": "9606.ENSP00000269305",
+    "network_type": "physical",
+    "network_success": true,
+    "returned": 1,
+    "partner_string_id": "9606.ENSP00000212015",
+    "partner_preferred_name": "SIRT1",
+    "raw_stringId_A": "9606.ENSP00000269305",
+    "raw_stringId_B": "9606.ENSP00000212015",
+    "score": 0.999
+  },
+  "scope": "Local FastMCP call_tool through the external adapter with api=None; adapter made direct HTTPS requests to fixed STRING v12.5 TSV REST endpoints.",
+  "transport_verified": false,
+  "platform_verified": false,
+  "provider_verified": true,
+  "notes": [
+    "This is not an external MCP wire-protocol probe and did not pass through authenticated CygnusX platform REST.",
+    "The adapter was tested for fixed-host requests, bounded results, explicit taxon, and network_type selection; the one-request-per-second Redis Lua limiter has unit coverage with a fake Redis client only, not a live multi-worker Redis test.",
+    "HTTP response body is TSV; STRING association scores are not causal probabilities.",
+    "The network rows retain raw provider endpoints and add a normalized partner_string_id/partner_preferred_name field in the adapter projection.",
+    "No cache-miss bypass or cache behavior was observed."
+  ]
+}

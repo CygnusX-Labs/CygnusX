@@ -1,5 +1,6 @@
 """P0-A real ORM bindings on isolated SQLite; no PG concurrency certification."""
 
+import base64
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import select
 
 from cygnusx.application.schemas.download import DownloadRequest
@@ -14,10 +17,19 @@ from cygnusx.infrastructure.database.models.dataset import DatasetIngestionModel
 from cygnusx.infrastructure.database.models.download_execution import (
     DownloadExecutionAdmissionModel,
     DownloadExecutionBudgetModel,
+    DownloadExecutionReceiptNonceModel,
 )
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.repositories import download_execution_admission as repo
+from cygnusx.infrastructure.database.repositories.download_execution_receipt import (
+    settle_execution_budget_from_receipt_in_transaction,
+)
 from cygnusx.infrastructure.download.reliability import intent_digest, notify_after_commit
+from cygnusx.infrastructure.download.trusted_execution import (
+    ExecutionBoundaryObservation,
+    ExecutionReceiptClaims,
+    SignedExecutionReceipt,
+)
 from tests.unit.test_dataset_phase3 import registry as registry
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
@@ -26,8 +38,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 @pytest.fixture
 def admission_db(registry, monkeypatch):
     db, _, owner, _, project, *_ = registry
+    monkeypatch.setattr(db, "get_bind", lambda: db.sync.get_bind())
     for model in (DatasetIngestionModel, TaskModel, DownloadExecutionBudgetModel,
-                  DownloadExecutionAdmissionModel):
+                  DownloadExecutionAdmissionModel, DownloadExecutionReceiptNonceModel):
         model.__table__.create(db.sync.bind)
     iid, tid = uuid4(), uuid4()
     expires = datetime.now(UTC) + timedelta(minutes=5)
@@ -84,6 +97,38 @@ def claim(kwargs, admission):
         environment_id="isolated")
 
 
+def signed_terminal_receipt(admission, kwargs, *, now, rx_bytes=40, state="stopped"):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    execution_id, scope_ref = uuid4(), uuid4()
+    observation = ExecutionBoundaryObservation(
+        task_id=kwargs["task_id"], scope_ref=scope_ref, execution_id=execution_id,
+        execution_epoch=admission.execution_epoch, policy_revision="policy-1",
+        state=state, reason="cancelled", rx_admitted_bytes=rx_bytes,
+        rx_observed_bytes=rx_bytes, rx_dropped_bytes=0, rx_limit_bytes=100,
+        disk_peak_allocated_bytes=512, disk_limit_bytes=4096,
+        inode_peak_used=2, inode_limit=10, started_at=now - 2, stopped_at=now - 1,
+        live_processes=0, cgroup_populated=False, egress_revoked=True,
+        quota_enforced=True, cleanup_complete=True, returncode=1,
+    )
+    claims = ExecutionReceiptClaims(
+        supervisor_id="supervisor-acceptance", task_id=kwargs["task_id"],
+        attempt_id=admission.attempt_id, execution_id=execution_id, scope_ref=scope_ref,
+        execution_epoch=admission.execution_epoch, policy_revision="policy-1",
+        environment_id="isolated", binary_sha256="b" * 64, nonce=uuid4(),
+        issued_at=now, expires_at=now + 30, artifact_manifest_sha256="c" * 64,
+        observation=observation,
+    )
+    payload = json.dumps(
+        claims.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    ).encode()
+    signature = base64.urlsafe_b64encode(private_key.sign(payload)).decode().rstrip("=")
+    return SignedExecutionReceipt(claims=claims, signature=signature), public_key, execution_id, scope_ref
+
+
 async def test_processed_http_admission_is_bound_and_consumed_once(admission_db):
     db, kwargs, *_ = admission_db
     admission = await repo.issue_processed_http_admission(db, **kwargs)
@@ -92,8 +137,26 @@ async def test_processed_http_admission_is_bound_and_consumed_once(admission_db)
     args = claim(kwargs, admission)
     consumed = await repo.consume_execution_admission(db, admission.id, **args)
     assert consumed.status == "CONSUMED" and consumed.execution_epoch == 1
+    first_identity = consumed.execution_id
+    first_budget = (budget.reserved_bytes, budget.admitted_bytes)
     with pytest.raises(repo.DownloadExecutionAdmissionError):
         await repo.consume_execution_admission(db, admission.id, **args)
+    replayed = await db.get(DownloadExecutionAdmissionModel, admission.id)
+    replayed_budget = await db.get(DownloadExecutionBudgetModel, admission.budget_id)
+    assert replayed is not None and replayed.execution_epoch == 1
+    assert replayed.execution_id == first_identity
+    assert replayed_budget is not None
+    assert (replayed_budget.reserved_bytes, replayed_budget.admitted_bytes) == first_budget
+
+
+async def test_claim_rejects_non_deterministic_execution_identity(admission_db):
+    db, kwargs, *_ = admission_db
+    admission = await repo.issue_processed_http_admission(db, **kwargs)
+    with pytest.raises(repo.DownloadExecutionAdmissionError, match="EXECUTION_ID_INVALID"):
+        await repo.consume_execution_admission(
+            db, admission.id, **{**claim(kwargs, admission), "execution_id": uuid4()}
+        )
+    assert admission.status == "READY"
 
 
 async def test_resolver_requires_both_server_issued_references(admission_db):
@@ -161,6 +224,120 @@ async def test_claimed_revoke_keeps_unknown_budget(admission_db):
     await repo.revoke_execution_admission(db, admission.id)
     budget = await db.get(DownloadExecutionBudgetModel, admission.budget_id)
     assert admission.status == "RECONCILIATION_REQUIRED"
+    assert budget.reserved_bytes == 100 and budget.admitted_bytes is None
+
+
+async def test_verified_stopped_receipt_settles_actual_rx_and_releases_remainder(admission_db):
+    db, kwargs, *_ = admission_db
+    admission = await repo.issue_processed_http_admission(db, **kwargs)
+    await repo.consume_execution_admission(db, admission.id, **claim(kwargs, admission))
+    await repo.revoke_execution_admission(db, admission.id)
+    assert admission.status == "RECONCILIATION_REQUIRED"
+    await db.commit()
+    now = int(datetime.now(UTC).timestamp())
+    receipt, public_key, execution_id, scope_ref = signed_terminal_receipt(
+        admission, kwargs, now=now,
+    )
+
+    budget = await settle_execution_budget_from_receipt_in_transaction(
+        db, admission.id, admission.budget_id, receipt,
+        supervisor_public_key=public_key,
+        expected_supervisor_id="supervisor-acceptance",
+        expected_execution_id=execution_id,
+        expected_scope_ref=scope_ref,
+        expected_binary_sha256="b" * 64,
+        expected_artifact_manifest_sha256="c" * 64,
+        now_epoch_seconds=now,
+    )
+    assert admission.status == "SETTLED"
+    assert budget.reserved_bytes == 40 and budget.admitted_bytes == 40
+    budget = await repo.reserve_execution_budget(db, budget.id, amount=60)
+    assert budget.reserved_bytes == 100 and budget.admitted_bytes == 40
+    with pytest.raises(repo.DownloadExecutionAdmissionError, match="EXCEEDED"):
+        await repo.reserve_execution_budget(db, budget.id, amount=1)
+    await db.commit()
+    with pytest.raises(repo.DownloadExecutionAdmissionError, match="BINDING_REJECTED"):
+        await settle_execution_budget_from_receipt_in_transaction(
+            db, admission.id, admission.budget_id, receipt,
+            supervisor_public_key=public_key,
+            expected_supervisor_id="supervisor-acceptance",
+            expected_execution_id=execution_id,
+            expected_scope_ref=scope_ref,
+            expected_binary_sha256="b" * 64,
+            expected_artifact_manifest_sha256="c" * 64,
+            now_epoch_seconds=now,
+        )
+
+
+async def test_revoke_cannot_reopen_a_settled_admission(admission_db):
+    db, kwargs, *_ = admission_db
+    admission = await repo.issue_processed_http_admission(db, **kwargs)
+    await repo.consume_execution_admission(db, admission.id, **claim(kwargs, admission))
+    await db.commit()
+    now = int(datetime.now(UTC).timestamp())
+    receipt, public_key, execution_id, scope_ref = signed_terminal_receipt(
+        admission, kwargs, now=now,
+    )
+    budget = await settle_execution_budget_from_receipt_in_transaction(
+        db, admission.id, admission.budget_id, receipt,
+        supervisor_public_key=public_key,
+        expected_supervisor_id="supervisor-acceptance",
+        expected_execution_id=execution_id,
+        expected_scope_ref=scope_ref,
+        expected_binary_sha256="b" * 64,
+        expected_artifact_manifest_sha256="c" * 64,
+        now_epoch_seconds=now,
+    )
+    await db.commit()
+    settled_reserved = budget.reserved_bytes
+    settled_admitted = budget.admitted_bytes
+
+    await repo.revoke_execution_admission(db, admission.id)
+    await db.commit()
+
+    assert admission.status == "SETTLED"
+    assert admission.revoked is False
+    assert budget.reserved_bytes == settled_reserved == 40
+    assert budget.admitted_bytes == settled_admitted == 40
+    replacement_receipt, _, replacement_execution, replacement_scope = signed_terminal_receipt(
+        admission, kwargs, now=now,
+    )
+    with pytest.raises(repo.DownloadExecutionAdmissionError, match="BINDING_REJECTED"):
+        await settle_execution_budget_from_receipt_in_transaction(
+            db, admission.id, admission.budget_id, replacement_receipt,
+            supervisor_public_key=public_key,
+            expected_supervisor_id="supervisor-acceptance",
+            expected_execution_id=replacement_execution,
+            expected_scope_ref=replacement_scope,
+            expected_binary_sha256="b" * 64,
+            expected_artifact_manifest_sha256="c" * 64,
+            now_epoch_seconds=now,
+        )
+
+
+async def test_unconfirmed_stop_cannot_settle_or_release_budget(admission_db):
+    db, kwargs, *_ = admission_db
+    admission = await repo.issue_processed_http_admission(db, **kwargs)
+    await repo.consume_execution_admission(db, admission.id, **claim(kwargs, admission))
+    await db.commit()
+    now = int(datetime.now(UTC).timestamp())
+    receipt, public_key, execution_id, scope_ref = signed_terminal_receipt(
+        admission, kwargs, now=now, state="unknown",
+    )
+
+    with pytest.raises(repo.DownloadExecutionAdmissionError, match="STOP_UNCONFIRMED"):
+        await settle_execution_budget_from_receipt_in_transaction(
+            db, admission.id, admission.budget_id, receipt,
+            supervisor_public_key=public_key,
+            expected_supervisor_id="supervisor-acceptance",
+            expected_execution_id=execution_id,
+            expected_scope_ref=scope_ref,
+            expected_binary_sha256="b" * 64,
+            expected_artifact_manifest_sha256="c" * 64,
+            now_epoch_seconds=now,
+        )
+    await db.rollback()
+    budget = await db.get(DownloadExecutionBudgetModel, admission.budget_id)
     assert budget.reserved_bytes == 100 and budget.admitted_bytes is None
 
 

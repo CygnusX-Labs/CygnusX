@@ -312,9 +312,9 @@ async def test_lease_requires_no_redirect_and_is_never_replayed() -> None:
         settings=_settings(), transport=httpx.MockTransport(respond)
     )
     try:
-        with pytest.raises(TrustedExecutionUnavailableError, match="REQUEST_FAILED"):
+        with pytest.raises(TrustedExecutionUnavailableError, match="EPOCH_UNKNOWN"):
             await adapter.renew(task_id, scope_ref)
-        assert calls == 1
+        assert calls == 0
     finally:
         await adapter.aclose()
 

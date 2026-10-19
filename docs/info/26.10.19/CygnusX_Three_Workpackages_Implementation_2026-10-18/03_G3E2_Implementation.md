@@ -4,7 +4,9 @@
 
 **目标不是增加接口或再跑一轮 Mock。** 要在明确授权的非生产 Linux 环境建立一个独立、可审计、默认拒绝的可信 OS Supervisor，控制真实 Task 运行前后全过程，并使**首个受审查 HTTP 下载来源/固定工具版本**取得九项真实安全验收。后续 HTTPS、FTP、SRA/ENA、云 CLI 不自动继承认证。
 
-审计真实起点：`infrastructure/download/trusted_execution.py` 已有 Protocol/DTO；`supervisor_client.py` 有 HTTPS+mTLS start/observe/renew/stop/evidence 客户端；FileRegistry 之前存在签名 publication receipt 和 nonce 事务验证；未发现实际 Supervisor 服务端、Worker start 接线、同步强制 RX、全写路径 quota、独立租约回收；九个真实 HTTP 集成测试全部 skip。`download_execution_admission` 仍为未闭合控制平面。
+审计真实起点：`infrastructure/download/trusted_execution.py` 已有 Protocol/DTO；`supervisor_client.py` 有 HTTPS+mTLS start/observe/renew/stop/evidence 客户端；FileRegistry 之前存在签名 publication receipt 和 nonce 事务验证。后续源码增量已补 Supervisor 默认拒绝服务骨架、Worker HTTP 生命周期接线、执行请求构造器及带 Admission 绑定的回执结算；但尚无 Linux enforcement backend、持久 scope journal、默认运行配置或真实 OS/PG/Worker 运行证据，九个真实 HTTP 集成测试仍全部 skip。`download_execution_admission` 的运行闭环仍未认证。
+
+当前离线增量：Worker 从持久 Task/Admission/attempt 派生确定性的 `execution_id`，与 Supervisor 的 Task/epoch scope 保持同一重试身份；新增回归确认重复构造请求完全一致。该修正只改善重试对账契约，不替代真实后端的跨进程 scope 唯一性证明。
 
 **完成定义**：Supervisor 服务端 + P0-A 可信 Admission 引用 + 每 Task 启动前 OS 资源隔离 + 真实跨连接硬 RX + 块/inode 硬配额 + 不依赖 Worker 存活的 lease/cancel + 禁直连出口 + signed OS evidence + FileRegistry/SHA 同 Task 对账 + 九项真运行场景。没有任何一项可使用字段自报替代 OS 强制事实。
 

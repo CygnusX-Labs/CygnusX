@@ -684,8 +684,19 @@ class AgentTeamsService:
             for ref in context_refs or []
             if str(ref.get("kind") or "").strip().lower() not in {"workspace", "project"}
         ]
-        if classify_execution_intent(intent, execution_refs) is not ExecutionIntent.EXECUTE:
-            return None
+        classified = classify_execution_intent(intent, execution_refs)
+        if classified is not ExecutionIntent.EXECUTE:
+            # A real file/asset plus an explicit analysis request may still contain
+            # conversational wording such as "如何进行". Keep the global intent
+            # classifier conservative, but allow Case creation to bind the domain
+            # Flow when the user has supplied an actual input artifact.
+            has_real_input = any(
+                str(ref.get("kind") or "").strip().lower()
+                in {"file", "asset", "dataset", "datafile"}
+                for ref in execution_refs
+            )
+            if not has_real_input or "分析" not in intent:
+                return None
         try:
             route = infer_intent_route(intent)
         except Exception as exc:  # noqa: BLE001 - routing failure must preserve generic chat Case

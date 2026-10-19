@@ -14,6 +14,14 @@ export interface McpTool {
   input_schema: Record<string, unknown>
 }
 
+export interface McpResource {
+  name: string
+  uri: string
+  description: string
+  mime_type: string
+  kind: 'resource' | 'template'
+}
+
 /** MCP 服务（后台可展开表格的单元） */
 export interface McpService {
   id: string

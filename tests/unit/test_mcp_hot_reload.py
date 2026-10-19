@@ -1,13 +1,16 @@
 """MCP 热加载单元测试 — 注册/更新后自动发现工具，免重启容器."""
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
 from cygnusx.application.schemas.mcp import CreateMCPServerDTO, UpdateMCPServerDTO
 from cygnusx.application.services.mcp_service import MCPService
+from cygnusx.domain.mcp.entities import MCPServer
 from cygnusx.domain.mcp.value_objects import ServerStatus
 from cygnusx.infrastructure.database.models.mcp_builder import MCPVersionModel
+from cygnusx.infrastructure.mcp.client import MCPClient
 
 
 class _FakeResult:
@@ -176,3 +179,98 @@ async def test_update_non_connection_field_skips_discovery():
     await service.update_server(server.id, UpdateMCPServerDTO(description="just a note"))
 
     service._client.list_tools.assert_not_awaited()
+
+
+@pytest.mark.unit
+async def test_list_resources_returns_metadata_without_reading_contents():
+    service = _make_service()
+    server = MCPServer(id=uuid4(), name="external", transport="stdio", command="python3")
+    service._repo.get_by_id.return_value = server
+    discovered = [
+        {
+            "name": "catalog",
+            "uri": "research://catalog",
+            "description": "Read-only catalog index",
+            "mime_type": "application/json",
+            "kind": "resource",
+        },
+        {
+            "name": "task output",
+            "uri": "research://tasks/{task_id}",
+            "description": "Task output template",
+            "mime_type": "application/json",
+            "kind": "template",
+        },
+    ]
+    service._client.list_resources = AsyncMock(return_value=discovered)
+
+    result = await service.list_resources(server.id)
+
+    service._client.list_resources.assert_awaited_once_with(server)
+    assert [item.model_dump() for item in result] == discovered
+
+
+@pytest.mark.unit
+async def test_mcp_client_discovers_resource_templates():
+    from mcp.types import (
+        ListResourcesResult,
+        ListResourceTemplatesResult,
+        Resource,
+        ResourceTemplate,
+    )
+
+    class _Session:
+        server_capabilities = MagicMock(resources=MagicMock())
+
+        async def list_resources(self):
+            return ListResourcesResult(
+                resources=[
+                    Resource(name="index", uri="research://index", mime_type="application/json")
+                ]
+            )
+
+        async def list_resource_templates(self):
+            return ListResourceTemplatesResult(
+                resource_templates=[
+                    ResourceTemplate(
+                        name="task",
+                        uri_template="research://tasks/{task_id}",
+                        mime_type="application/json",
+                    )
+                ]
+            )
+
+    client = MCPClient()
+
+    async def _with_session(_server, callback):
+        return await callback(_Session())
+
+    client._with_external_session = _with_session
+    server = MCPServer(id=uuid4(), name="external", transport="stdio", command="python3")
+
+    result = await client.list_resources(server)
+
+    assert [item["kind"] for item in result] == ["resource", "template"]
+    assert result[1]["uri"] == "research://tasks/{task_id}"
+
+
+@pytest.mark.unit
+async def test_mcp_client_skips_resource_discovery_without_capability():
+    class _Session:
+        server_capabilities = MagicMock(resources=None)
+
+        async def list_resources(self):
+            raise AssertionError("resource method must not be called")
+
+        async def list_resource_templates(self):
+            raise AssertionError("template method must not be called")
+
+    client = MCPClient()
+
+    async def _with_session(_server, callback):
+        return await callback(_Session())
+
+    client._with_external_session = _with_session
+    server = MCPServer(id=uuid4(), name="no-resources", transport="stdio", command="python3")
+
+    assert await client.list_resources(server) == []

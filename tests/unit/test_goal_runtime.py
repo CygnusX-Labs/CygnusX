@@ -504,7 +504,12 @@ async def test_goal_step_records_usage_from_done_chunk(monkeypatch: pytest.Monke
     result = await ChatServiceGoalStepExecutor().execute(object(), snapshot)
 
     assert result.content == "checkpoint"
-    assert result.token_usage == {"total_tokens": 18, "prompt_tokens": 0, "completion_tokens": 0}
+    assert result.token_usage == {
+        "total_tokens": 18,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_tokens": 0,
+    }
 
 
 @pytest.mark.asyncio

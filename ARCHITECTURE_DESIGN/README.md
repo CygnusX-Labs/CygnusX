@@ -6,9 +6,11 @@
 
 > 科研交付链现状入口：[CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)（Phase4 受保护代码；运行准入 BLOCKED）。
 
-> 项目科研成果与导出现状同见科研交付架构的RI06–RI09节：ProjectDetail只读聚合、版本化Manifest、独立ProjectExportJob与授权下载已接代码/隔离验证；默认关闭，真实PG/Worker/浏览器未验收。
+> 项目科研成果与导出现状同见科研交付架构的RI06–RI09节：ProjectDetail只读聚合、版本化Manifest、独立ProjectExportJob与授权下载已接代码/隔离验证；默认关闭；真实隔离 PG/Worker 已启动、浏览器预览已验，非空科研成果/ZIP 导出仍受 corpus 门禁阻断。
 
 > 受控研究计划现状：[CygnusX_research_plan_architecture.md](CygnusX_research_plan_architecture.md)（Phase5 PLAN_ONLY；真实执行与评测发布未准入）。
+
+> 三项科研功能运行验收：[CygnusX_Research_Feature_Runtime_Acceptance.md](CygnusX_Research_Feature_Runtime_Acceptance.md)（2026-10-20；真实隔离 Docker/PG、计划审阅及浏览器预览部分通过；真实科研记录/ZIP 因 corpus 门禁 BLOCKED，生产未准入）。
 
 ## 0. 这个架构文档目录如何发挥作用
 

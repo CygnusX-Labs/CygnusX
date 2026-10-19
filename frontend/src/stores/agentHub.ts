@@ -19,6 +19,7 @@ import type {
   AgentCategory,
   AgentTemplate,
   McpLogEntry,
+  McpResource,
   McpService,
   McpTool,
   McpVersion,
@@ -1212,6 +1213,11 @@ export const useAgentHubStore = defineStore('agentHub', () => {
       description: t.description ?? '',
       input_schema: t.input_schema ?? {},
     }))
+  }
+
+  async function fetchMcpResources(id: string): Promise<McpResource[]> {
+    const res = await apiClient.get<McpResource[]>(`/mcp/servers/${id}/resources`)
+    return res.data || []
   }
 
   async function upsertAgent(dto: Partial<AgentTemplate> & { id?: string }): Promise<AgentTemplate | null> {
@@ -3219,7 +3225,7 @@ export const useAgentHubStore = defineStore('agentHub', () => {
     // asset actions
     fetchAgents, fetchMcps, fetchUserSelectableMcps, fetchSkills, initAssets, fetchAvailableModels, fetchSessions,
     fetchStudioSessionIds, markStudioSession,
-    toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpLogs,
+    toggleMcpStatus, addMcpServer, updateMcpServer, removeMcpServer, testMcpServer, fetchMcpTools, fetchMcpResources, fetchMcpLogs,
     fetchMcpVersions, rollbackMcpServer, promoteMcpServer, syncMcpPresets,
     upsertAgent, toggleAgent, deleteAgent, setDefaultAgent,
     previewSkillFromGithub, previewSkillFromZip, previewSkillFromMarkdown, previewSkillFromJson, confirmSkillImport,

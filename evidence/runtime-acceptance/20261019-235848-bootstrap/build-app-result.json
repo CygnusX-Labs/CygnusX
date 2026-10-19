@@ -1,0 +1,1 @@
+{"command": ["docker", "build", "--pull=false", "-t", "cygnusx-research-acceptance:ac2cdca3-20261019-235848-bootstrap", "/tmp/cygnusx-20261019-235848-bootstrap/build"], "exit_code": 0, "start_unix": 1792425541.634112, "end_unix": 1792425547.791903}

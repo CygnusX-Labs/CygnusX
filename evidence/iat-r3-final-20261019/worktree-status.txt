@@ -1,0 +1,215 @@
+ M ARCHITECTURE_DESIGN/CygnusX_download_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_treasure_mouse_architecture.md
+ M ARCHITECTURE_DESIGN/README.md
+ m Protocol/FlowFrame
+ M data/ai/skills/atacflow/SKILL.md
+ M data/ai/skills/rnaflow/SKILL.md
+ M data/ai/skills/scrna-annotation-ref/SKILL.md
+ M data/ai/skills/scrna-annotation-stats/SKILL.md
+ M data/ai/skills/scrna-annotation-stats/scripts/CalculationPercentAverageExp.r
+ M data/ai/skills/scrna-annotation-stats/scripts/DrawCellTypePropDEGGene.r
+ M data/ai/skills/scrna-deg-analysis/SKILL.md
+ M data/ai/skills/scrna-deg-analysis/scripts/FindMarkers_Celltype_group.r
+ M data/ai/skills/scrna-object-convert/SKILL.md
+ M data/ai/skills/scrna-object-convert/scripts/RDS_convert
+ M data/ai/skills/scrna-object-convert/scripts/RDS_utility
+ M data/ai/skills/scrna-pipeline-overview/SKILL.md
+ M data/ai/skills/scrna-quarto-report/SKILL.md
+ M data/ai/skills/scrna-recluster/SKILL.md
+ M data/ai/skills/scrna-recluster/scripts/SingleSampleSubClusterRereduction.r
+ M data/ai/skills/scrna-recluster/scripts/recluster.R
+ M data/ai/skills/scrna-tcell-projectils/SKILL.md
+ M data/ai/skills/scrna-tcell-projectils/scripts/ProjecTIL_Annotation.r
+ M docs/implementation/cygnusx-g3-e2-trusted-http-acceptance.md
+ M docs/implementation/cygnusx-iat-r3-research-workflow-closure.md
+ M docs/implementation/cygnusx-p0a-trusted-admission-budget-binding.md
+ M docs/implementation/cygnusx-s4-reliability-last-gaps.md
+ M docs/implementation/treasure-native-p0-access-and-entry.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/00_Overall_Roadmap.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/01_P0A_Implementation.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/02_IATR3_Implementation.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/03_G3E2_Codex_Prompt.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/03_G3E2_Implementation.md
+ M docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18/README.md
+ M evidence/iat-r3-runtime/commands.json
+ M evidence/runtime-acceptance/artifact-index.json
+ M evidence/s4-residual/acceptance.csv
+ M evidence/s4-residual/commands.json
+ M frontend/scripts/build-treasure-island.mjs
+ M frontend/src/api/researchAgent.ts
+ M frontend/src/components/admin/McpResourceTab.vue
+ M frontend/src/components/research/__tests__/TreasureAccess.test.ts
+ M frontend/src/stores/agentHub.ts
+ M frontend/src/types/agent.ts
+ M frontend/src/views/AboutView.vue
+ M frontend/src/views/TreasureResearchWorkbench.vue
+ M integrations/agentteams/teams/bioops-delivery.yaml
+ M mcp-server/client/api_client.py
+ M mcp-server/prompts/workflows.py
+ M mcp-server/tests/test_seqout_tools.py
+ M mcp-server/tools/analysis.py
+ M mcp-server/tools/biothings.py
+ M mcp-server/tools/pipelines.py
+ M mcp-server/tools/runs.py
+ m pipelines/ATACFlow
+ m pipelines/RNAFlow
+ M pipelines/Treasure-Seeking_Mouse
+ m pipelines/tools
+ M src/cygnusx/api/v1/mcp.py
+ M src/cygnusx/api/v1/research_agent.py
+ M src/cygnusx/api/v1/research_data.py
+ M src/cygnusx/application/schemas/mcp.py
+ M src/cygnusx/application/schemas/research_agent.py
+ M src/cygnusx/application/services/agent_consultation_service.py
+ M src/cygnusx/application/services/agent_context_builder.py
+ M src/cygnusx/application/services/agent_service.py
+ M src/cygnusx/application/services/agent_tool_delegation.py
+ M src/cygnusx/application/services/agentteams_service.py
+ M src/cygnusx/application/services/biothings_service.py
+ M src/cygnusx/application/services/chat/golden_records.py
+ M src/cygnusx/application/services/chat/runtimes/langgraph_runtime.py
+ M src/cygnusx/application/services/chat_service.py
+ M src/cygnusx/application/services/dataset_import_service.py
+ M src/cygnusx/application/services/download_service.py
+ M src/cygnusx/application/services/mcp_service.py
+ M src/cygnusx/application/services/research_search_optimizer.py
+ M src/cygnusx/application/services/research_treasure_service.py
+ M src/cygnusx/domain/download_security.py
+ M src/cygnusx/infrastructure/ai_provider/openai_compatible.py
+ M src/cygnusx/infrastructure/cache/redis_client.py
+ M src/cygnusx/infrastructure/celery_app/tasks/download.py
+ M src/cygnusx/infrastructure/database/models/__init__.py
+ M src/cygnusx/infrastructure/database/models/download_execution.py
+ M src/cygnusx/infrastructure/database/repositories/download_execution_admission.py
+ M src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py
+ M src/cygnusx/infrastructure/database/repositories/task_repository.py
+ M src/cygnusx/infrastructure/download/supervisor_client.py
+ M src/cygnusx/infrastructure/download/supervisor_server.py
+ M src/cygnusx/infrastructure/download/trusted_execution.py
+ M src/cygnusx/infrastructure/execution/langgraph_nodes.py
+ M src/cygnusx/infrastructure/execution/orchestrator_graph.py
+ M src/cygnusx/infrastructure/mcp/client.py
+ M src/cygnusx/middleware/auth.py
+ M tests/unit/chat/test_langgraph_chat_runtime.py
+ M tests/unit/test_agent_handoff_service.py
+ M tests/unit/test_agent_tools_phase2.py
+ M tests/unit/test_agentteams_capability_registry.py
+ M tests/unit/test_agentteams_case_watch_service.py
+ M tests/unit/test_agentteams_data_tools.py
+ M tests/unit/test_agentteams_service.py
+ M tests/unit/test_api_key_scopes.py
+ M tests/unit/test_biothings_preset.py
+ M tests/unit/test_chat_attachment_reading.py
+ M tests/unit/test_chat_sandbox_artifacts.py
+ M tests/unit/test_dataset_import_handoff.py
+ M tests/unit/test_download_execution_admission.py
+ M tests/unit/test_download_log_security.py
+ M tests/unit/test_download_s4a_reliability.py
+ M tests/unit/test_download_supervisor_client.py
+ M tests/unit/test_download_supervisor_server.py
+ M tests/unit/test_download_trusted_execution_contract.py
+ M tests/unit/test_file_service.py
+ M tests/unit/test_file_service_presigned.py
+ M tests/unit/test_general_assistant_regression.py
+ M tests/unit/test_goal_runtime.py
+ M tests/unit/test_lifecycle_download_security.py
+ M tests/unit/test_lifecycle_stabilization.py
+ M tests/unit/test_mcp_agentteams_query_tools.py
+ M tests/unit/test_mcp_hot_reload.py
+ M tests/unit/test_mcp_version_control.py
+ M tests/unit/test_overdrive_execution_service.py
+ M tests/unit/test_p0a_approval_snapshot.py
+ M tests/unit/test_p0a_migration_contract.py
+ M tests/unit/test_provider_retry_policy.py
+ M tests/unit/test_research_search_optimizer.py
+ M tests/unit/test_treasure_native_access.py
+?? ARCHITECTURE_DESIGN/CygnusX_Research_Feature_Runtime_Acceptance.md
+?? alembic/versions/dwnexec04_bind_download_execution_identity.py
+?? alembic/versions/dwnlease03_add_download_execution_lease_nonces.py
+?? alembic/versions/dwnscope05_add_supervisor_scopes.py
+?? alembic/versions/dwnscope06_add_process_identity.py
+?? data/ai/skills/atac-tools/
+?? data/ai/skills/bio-single-cell-batch-integration/
+?? data/ai/skills/bio-single-cell-cell-annotation/
+?? data/ai/skills/bio-single-cell-cell-communication/
+?? data/ai/skills/bio-single-cell-clustering/
+?? data/ai/skills/bio-single-cell-cnv-inference/
+?? data/ai/skills/bio-single-cell-data-io/
+?? data/ai/skills/bio-single-cell-differential-abundance/
+?? data/ai/skills/bio-single-cell-doublet-detection/
+?? data/ai/skills/bio-single-cell-hashing-demultiplexing/
+?? data/ai/skills/bio-single-cell-lineage-tracing/
+?? data/ai/skills/bio-single-cell-markers-annotation/
+?? data/ai/skills/bio-single-cell-metabolite-communication/
+?? data/ai/skills/bio-single-cell-multimodal-integration/
+?? data/ai/skills/bio-single-cell-perturb-seq/
+?? data/ai/skills/bio-single-cell-preprocessing/
+?? data/ai/skills/bio-single-cell-scatac-analysis/
+?? data/ai/skills/bio-single-cell-trajectory-inference/
+?? data/ai/skills/blast/
+?? data/ai/skills/data-deliver/
+?? data/ai/skills/deg/
+?? data/ai/skills/dotplot/
+?? data/ai/skills/enrichments/
+?? data/ai/skills/fastq-screen/
+?? data/ai/skills/gaf2go/
+?? data/ai/skills/gene-matrix/
+?? data/ai/skills/genome-tools/
+?? data/ai/skills/gffconvert/
+?? data/ai/skills/go-annotation/
+?? data/ai/skills/human-mouse-cell-annotation/
+?? data/ai/skills/kegg-pull/
+?? data/ai/skills/library-type/
+?? data/ai/skills/logger-plugin/
+?? data/ai/skills/maftools-gistic2/
+?? data/ai/skills/mcp-server-builder/
+?? data/ai/skills/md5/
+?? data/ai/skills/mutational-patterns/
+?? data/ai/skills/plant-cell-annotation/
+?? data/ai/skills/r-plot-library/
+?? data/ai/skills/rmats/
+?? data/ai/skills/scrna-seq/
+?? data/ai/skills/software-manager/
+?? data/ai/skills/tissue-specific-genes/
+?? data/ai/skills/wgcna/
+?? deploy/download-supervisor/
+?? docs/implementation/cygnusx-g3-e3-linux-runtime-acceptance.md
+?? docs/implementation/cygnusx-g3-e3-os-enforcement-runtime.md
+?? docs/implementation/cygnusx-g3-e3-phase1r-runtime-acceptance.md
+?? docs/implementation/cygnusx-g3-enforced-scope-runtime.md
+?? docs/implementation/cygnusx-p0a-g3-runtime-identity-acceptance.md
+?? docs/info/26.10.19/2026-10-19_20.46.16.png
+?? "docs/info/26.10.19/CygnusX_MCP\345\217\221\345\270\203\345\233\236\346\273\232\346\223\215\344\275\234.md"
+?? "docs/info/26.10.19/CygnusX_MCP\346\225\264\346\224\271\345\256\236\346\226\275\346\270\205\345\215\225_v2.md"
+?? "docs/info/26.10.19/CygnusX_\345\274\200\345\217\221Agent\345\256\236\346\226\275\346\217\220\347\244\272\350\257\215.md"
+?? evidence/followup-ui-panel/
+?? evidence/followup-ui/
+?? evidence/g3-enforced-scope-runtime/
+?? evidence/iat-r3-final-20261019/
+?? evidence/mcp-external-validation-2026-10-18/
+?? evidence/p0a-g3-runtime-identity/
+?? evidence/p0a/budget-settlement-isolated.json
+?? evidence/runtime-acceptance/20261018-local/
+?? evidence/runtime-acceptance/20261019-235848-bootstrap/
+?? evidence/runtime-acceptance/20261019-feature-acceptance/
+?? evidence/runtime-acceptance/20261019-local/
+?? evidence/runtime-acceptance/P0A-IATR3-G3E2-Runtime-Acceptance.md
+?? evidence/s4-residual/sr01-source-hashes.json
+?? evidence/three-workpackages-current-status.json
+?? mcp-server/MCP_EXTERNAL_VALIDATION_REQUEST.md
+?? mcp-server/tests/test_api_client_trace.py
+?? mcp-server/tests/test_prompt_parameter_safety.py
+?? mcp-server/tests/test_tool_descriptions.py
+?? scripts/export_agent_tool_snapshots.py
+?? src/cygnusx/application/services/agent_tool_snapshot.py
+?? src/cygnusx/application/services/tool_manifest.py
+?? src/cygnusx/infrastructure/download/execution_request.py
+?? src/cygnusx/infrastructure/download/linux_scope_backend.py
+?? src/cygnusx/infrastructure/download/supervisor_authority.py
+?? tests/unit/test_agent_tool_snapshot.py
+?? tests/unit/test_download_supervisor_authority.py
+?? tests/unit/test_download_worker_supervisor.py
+?? tests/unit/test_export_agent_tool_snapshots.py
+?? tests/unit/test_linux_scope_backend.py
+?? tests/unit/test_redis_client.py
+?? tests/unit/test_tool_manifest.py

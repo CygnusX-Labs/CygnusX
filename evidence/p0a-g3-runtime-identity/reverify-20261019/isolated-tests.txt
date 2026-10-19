@@ -1,0 +1,5 @@
+command: .venv/bin/python -m pytest tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_execution_admission.py tests/unit/test_p0a_migration_contract.py tests/unit/test_download_worker_supervisor.py -q -m unit
+exit: 0
+result: 77 passed, 1 warning (pydantic deprecation, pre-existing)
+scope: SQLite/AsyncMock isolated only; no PG/OS/runtime claims
+date: 2026-10-19

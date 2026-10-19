@@ -16,7 +16,7 @@
 # log4r logger function
 log4r_init <- function(){
   require(log4r)
-  local_logger <- log4r::logger()
+  logger <- log4r::logger()
   my_layout <- function(level, ...) {
     require(crayon)
     if (level == 'INFO'){
@@ -39,8 +39,8 @@ log4r_init <- function(){
       }
     }
   }
-  local_logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
-  return(local_logger)
+  logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
+  return(logger)
 }
 # Check_Seurat_version for ProjecTILs annotation
 # @Query : Seurat object
@@ -77,20 +77,20 @@ ProjecTILs.classifier.pipeline <- function(scData,ref,name,reduction = 'umap',co
   }else{
     colors <- colors
   }
-  local_logger <- log4r_init()
+  logger <- log4r_init()
   # Check_Seurat_version
   Query <- Check_Seurat_version(scData)
   # ProjecTILs.classifier
   # [FIX-1] 原脚本此处引用未定义变量 UseCore，运行必报错；改为函数参数 cores
-  info(local_logger, paste0('ProjecTILs.classifier power by ',cores,' Core'))
-  info(local_logger, 'Run ProjecTILs.classifier (Only Switch CellType Lables)')
+  info(logger, paste0('ProjecTILs.classifier power by ',cores,' Core'))
+  info(logger, 'Run ProjecTILs.classifier (Only Switch CellType Lables)')
   query.projected <- ProjecTILs.classifier(query = Query,
                                            ncores = cores,
                                            filter.cells = F,
                                            ref = ref)
-  info(local_logger, 'Save Run ProjecTILs.classifie Annotation result ')
+  info(logger, 'Save Run ProjecTILs.classifie Annotation result ')
   saveRDS(query.projected,file.path(save_dir,paste0('ProjecTILs.classifier-',name,'-annotation.rds')))
-  info(local_logger, 'Visablity Run ProjecTILs.classifie Annotation result ')
+  info(logger, 'Visablity Run ProjecTILs.classifie Annotation result ')
   # Visablity
   p <- DimPlot_scCustom(query.projected,group.by = 'functional.cluster',colors_use = colors,
                         reduction = reduction)+
@@ -102,7 +102,7 @@ ProjecTILs.classifier.pipeline <- function(scData,ref,name,reduction = 'umap',co
          width = 6,height = 3.5,plot = p)
   print(p)
   # Draw MarkersDotplot
-  info(local_logger, 'FindClusterMarkersDotplot for ProjecTILs.classifie Annotation result ')
+  info(logger, 'FindClusterMarkersDotplot for ProjecTILs.classifie Annotation result ')
   # [FIX-2] 原脚本此处写死 save_dir='./'（markrt_list.csv 会落到 CWD）；改为继承外层 save_dir
   p <- FindClusterMarkersDotplot(query.projected,group_by = 'functional.cluster',
                                  save_dir=save_dir,
@@ -139,7 +139,7 @@ FindClusterMarkersDotplot <-function(Seurat,group_by = 'Celltype',
   Seurat@meta.data$celltype <- Seurat@meta.data[[group_by]]
   for (i in levels(factor(Seurat@meta.data$celltype))){
     # i <- 'Macrophages'
-    info(local_logger, paste0('scRNA-seq Analysis FindMarkers ',i))
+    info(logger, paste0('scRNA-seq Analysis FindMarkers ',i))
     cells1 <- subset(Seurat@meta.data,celltype == i )  |> rownames()
     cells2 <- subset(Seurat@meta.data,celltype != i )  |> rownames()
     temp_marker <-  FindMarkers(Seurat,
@@ -200,7 +200,7 @@ FindClusterMarkersDotplotaddcelltype <-function(Seurat,group_by = 'Celltype',
   Seurat@meta.data$celltype <- Seurat@meta.data[[group_by]]
   for (i in levels(factor(Seurat@meta.data$celltype))){
     # i <- 'Th1'
-    info(local_logger, paste0('scRNA-seq Analysis FindMarkers ',i))
+    info(logger, paste0('scRNA-seq Analysis FindMarkers ',i))
     cells1 <- subset(Seurat@meta.data,celltype == i )  |> rownames()
     cells2 <- subset(Seurat@meta.data,celltype != i )  |> rownames()
     temp_marker <-  FindMarkers(Seurat,

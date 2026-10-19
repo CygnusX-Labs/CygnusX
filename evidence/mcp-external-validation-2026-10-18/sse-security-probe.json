@@ -1,0 +1,18 @@
+{
+  "tested_at_utc": "2026-10-18T15:14:00Z",
+  "transport": "sse",
+  "listener": "127.0.0.1",
+  "unauthenticated": {
+    "method": "GET",
+    "path": "/sse",
+    "http_status": 401
+  },
+  "authorized_test_token": {
+    "method": "GET",
+    "path": "/sse",
+    "http_status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "token_value_recorded": false
+  },
+  "note": "Corrected the test method for the SSE endpoint. The repository test helper POSTs to /sse and observes 405; the SSE endpoint is authenticated on GET."
+}

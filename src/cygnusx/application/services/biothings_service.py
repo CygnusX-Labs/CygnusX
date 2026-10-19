@@ -56,14 +56,34 @@ def _fields(kind: str, fields: Any) -> str:
     return ",".join(dict.fromkeys(requested))
 
 
-async def _request(kind: str, path: str, params: dict[str, Any]) -> Any:
-    response = await _provider_client().get(f"{_PROVIDERS[kind]}{path}", params=params)
-    response.raise_for_status()
-    if len(response.content) > _MAX_RESPONSE_BYTES:
-        raise ValueError("provider response exceeds the 2 MiB response budget")
-    if "json" not in response.headers.get("content-type", "").lower():
-        raise ValueError("provider returned a non-JSON response")
-    return response.json()
+async def _request(
+    kind: str,
+    path: str,
+    params: dict[str, Any],
+    *,
+    method: str = "GET",
+    form_data: dict[str, Any] | None = None,
+) -> Any:
+    client = _provider_client()
+    request = client.build_request(
+        method,
+        f"{_PROVIDERS[kind]}{path}",
+        params=params if method == "GET" else None,
+        data=form_data,
+    )
+    response = await client.send(request, stream=True)
+    try:
+        response.raise_for_status()
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
+                raise ValueError("provider response exceeds the 2 MiB response budget")
+            body.extend(chunk)
+        if "json" not in response.headers.get("content-type", "").lower():
+            raise ValueError("provider returned a non-JSON response")
+        return json.loads(body)
+    finally:
+        await response.aclose()
 
 
 def _bound_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -128,6 +148,10 @@ async def execute_biothings(
             if assembly not in {"hg19", "hg38"}:
                 raise ValueError("assembly is required and must be hg19 or hg38")
             params["assembly"] = assembly
+            coordinate_field = f"dbsnp.{assembly}"
+            requested_fields = fields.split(",")
+            if coordinate_field not in requested_fields:
+                params["fields"] = ",".join([*requested_fields, coordinate_field])
         if database == "gene" and action in {"search", "resolve"}:
             species = arguments.get("species")
             if not isinstance(species, str) or not species.strip() or len(species) > 128:
@@ -147,6 +171,8 @@ async def execute_biothings(
             params.update(q=query.strip(), size=limit, **{"from": offset})
             result = await _request(database, "/query", params)
             input_context: dict[str, Any] = {"query": query.strip(), "limit": limit, "offset": offset}
+            if database == "variant":
+                input_context["assembly"] = arguments["assembly"]
         elif action == "get":
             identifier = arguments.get("identifier")
             if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 256:
@@ -155,6 +181,8 @@ async def execute_biothings(
                 database, f"/{database}/{quote(identifier.strip(), safe='')}", params
             )
             input_context = {"identifier": identifier.strip()}
+            if database == "variant":
+                input_context["assembly"] = arguments["assembly"]
         else:
             identifiers = arguments.get("identifiers")
             scopes = arguments.get("scopes")
@@ -167,9 +195,17 @@ async def execute_biothings(
                 raise ValueError("each identifier must contain 1 to 256 characters")
             if not isinstance(scopes, str) or not scopes.strip() or len(scopes) > 256:
                 raise ValueError("scopes must explicitly name identifier fields")
-            params.update(q=",".join(identifiers), scopes=scopes.strip(), size=100)
-            result = await _request(database, "/query", params)
+            params.update(q=",".join(identifiers), scopes=scopes.strip())
+            result = await _request(
+                database,
+                "/query",
+                {},
+                method="POST",
+                form_data=params,
+            )
             input_context = {"identifiers": identifiers, "scopes": scopes.strip()}
+            if database == "variant":
+                input_context["assembly"] = arguments["assembly"]
 
         kind_name = {"gene": "MyGene", "variant": "MyVariant", "chem": "MyChem"}[database]
         output = {

@@ -15,11 +15,23 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import PurePosixPath
 from typing import Literal, Protocol
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+EXECUTION_ID_ALGORITHM_VERSION = 1
+
+
+def deterministic_execution_id(task_id: UUID, attempt_id: UUID, execution_epoch: int) -> UUID:
+    """Derive the stable server-owned identity for one execution epoch."""
+    if execution_epoch <= 0:
+        raise ValueError("DOWNLOAD_EXECUTION_EPOCH_INVALID")
+    return uuid5(
+        task_id,
+        f"download-execution:v{EXECUTION_ID_ALGORITHM_VERSION}:{attempt_id}:{execution_epoch}",
+    )
 
 
 class ExecutionBoundaryRequest(BaseModel):

@@ -1,0 +1,10 @@
+[
+  {
+    "type": "error",
+    "text": "WebSocket connection to 'ws://frontend:8080/api/v1/cookies/ws?token=[JWT_REDACTED]' failed: HTTP Authentication failed; no valid credentials available"
+  },
+  {
+    "type": "error",
+    "text": "WebSocket connection to 'ws://frontend:8080/api/v1/cookies/ws?token=[JWT_REDACTED]' failed: HTTP Authentication failed; no valid credentials available"
+  }
+]

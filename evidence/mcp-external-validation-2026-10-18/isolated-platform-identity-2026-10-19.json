@@ -1,0 +1,64 @@
+{
+  "agent_snapshots": {
+    "agent_count": 19,
+    "directory": "agents-runtime-2026-10-19/",
+    "model_calls_made": false,
+    "restricted_context_evidence": "agent-general-restricted-context-2026-10-19.json",
+    "restricted_direct_route_evidence": "agent-general-restricted-invoke-2026-10-19.json"
+  },
+  "checked_at_utc": "2026-10-19T00:00:00Z",
+  "identity": {
+    "credential_values_recorded": false,
+    "identity_ref": "sha256:ddc827a5d771b8f84ed624eae7ef22a88a111437f3782ee38776be6a59ac8cab",
+    "role": "user",
+    "scopes": [
+      "flows:read",
+      "research:read"
+    ]
+  },
+  "isolation": {
+    "alembic_revision": "dwnlease03",
+    "anonymous_container_volume_count": 1,
+    "container_auto_remove": true,
+    "host_bind_mount_count": 0,
+    "host_binding": "127.0.0.1:55439",
+    "image": "pgvector/pgvector:pg14",
+    "migration_head_note": "Newer untracked dwnexec04 migration failed due to a missing download_execution_admissions.execution_id column; test DB was kept at parent revision and no unrelated migration was changed.",
+    "postgres_container": "cygnusx-mcp-acceptance-pg-20261019",
+    "redis_container": "cygnusx-mcp-acceptance-redis-20261019",
+    "redis_host_binding": "127.0.0.1:56389",
+    "volume_note": "Postgres uses an anonymous Docker volume for the lifetime of this disposable container; it is not a host bind mount."
+  },
+  "mcp": {
+    "http_token_separate_from_platform_api_key": true,
+    "positive_chain_evidence": "platform-chain-positive-2026-10-19.json",
+    "positive_provider": "ClinVar",
+    "positive_transports": [
+      "stdio",
+      "streamable-http",
+      "sse"
+    ],
+    "request_ids": [
+      "bcf54732658740669aae86efce87eef0",
+      "a9658ad2aeeb4108ad61840a65f83c31",
+      "01543cc41fdb4011bfa4fd68f099d690"
+    ]
+  },
+  "platform": {
+    "base_url": "http://127.0.0.1:8017",
+    "flows_read_scope": "verified",
+    "health_http_status": 200,
+    "provider_invoked_on_denial": false,
+    "research_read_scope": "verified",
+    "restricted_flows_only_key_research_route_status": 403,
+    "restricted_route_request_id": "3163b3812d334a89a64efcea80c45428"
+  },
+  "remaining_gaps": [
+    "No real test task/report/workspace assets were seeded; Resource business reads remain unverified.",
+    "Only ClinVar has an external MCP to platform to provider positive chain so far.",
+    "Provider calls use real allowlisted public upstreams; no production credential is recorded or used.",
+    "Model-level semantic prompt injection and tool-behavior testing remains unperformed."
+  ],
+  "secret_values_included": false,
+  "status": "partial_acceptance"
+}

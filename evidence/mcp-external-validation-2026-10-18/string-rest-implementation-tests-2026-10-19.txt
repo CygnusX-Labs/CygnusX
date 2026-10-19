@@ -1,0 +1,34 @@
+STRING fixed REST adapter follow-up verification
+Date: 2026-10-19 Asia/Shanghai (2026-10-18 UTC)
+
+Code-level validation
+  cd mcp-server
+  PYTHONPATH=. uv run --project . --with pytest --with pytest-asyncio --with 'fastmcp==3.4.4' pytest -q tests/test_research_resources_tools.py
+  Result: 18 passed.
+
+Platform REST bridge, preset, and parity validation
+  uv run pytest tests/unit/test_research_data_api.py tests/unit/test_research_preset.py tests/unit/test_mcp_dual_surface_parity.py -q
+  Result: 71 passed, 1 existing Pydantic deprecation warning. This includes fixed STRING allowlist/schema delegation and rejection of unsupported network_type values before provider dispatch.
+  STRING regressions preserve ambiguous taxon-matched candidates, enforce explicit ID/taxon pairing, bound returned rows, map physical/regulatory partners, and reject rows unrelated to the requested STRING ID. The Redis Lua rate limiter is tested with a fake Redis client; live Redis and multi-worker concurrency are not covered.
+
+Full external MCP regression
+  cd mcp-server
+  PYTHONPATH=. uv run --project . --with pytest --with pytest-asyncio --with 'fastmcp==3.4.4' pytest -q tests
+  Result: 72 passed, 0 failed, 0 skipped.
+
+Static checks
+  uv run ruff check src/cygnusx/application/services/research_data_service.py src/cygnusx/infrastructure/mcp/research_preset.py tests/unit/test_research_preset.py tests/unit/test_mcp_dual_surface_parity.py mcp-server/tools/research_resources.py mcp-server/tests/test_research_resources_tools.py mcp-server/tests/test_phase0b_runtime.py mcp-server/tests/test_tool_descriptions.py
+  Result: All checks passed.
+  uv run mypy src/cygnusx/application/services/research_data_service.py src/cygnusx/infrastructure/mcp/research_preset.py
+  Result: Success, no issues found in 2 source files.
+
+Current tool inventory
+  PYTHONPATH=. uv run --project mcp-server --with 'fastmcp==3.4.4' evidence/mcp-external-validation-2026-10-18/capture_four_surfaces.py
+  Result: runtime, STDIO, Streamable HTTP, and SSE each returned 111 tools; name/schema/description diffs are empty.
+  Description audit rebuilt from the captured runtime: 111 records, 13 columns, 99 valid, 12 vague, no blank descriptions.
+
+Live provider samples
+  In-process FastMCP call_tool invoked the fixed v12.5 REST resolver and physical network tool directly against STRING.
+  TP53/taxon 9606 resolved to 9606.ENSP00000269305; the normalized physical partner was 9606.ENSP00000212015 (SIRT1), with raw A/B endpoints and score 0.999 preserved.
+  A separate direct TSV sample returned the regulatory edge TP53 -> MDM2 with sign n/a.
+  These were provider-direct samples. No MCP wire call to the CygnusX authenticated REST bridge, cache-miss proof, Agent authorization check, or production deployment was performed.

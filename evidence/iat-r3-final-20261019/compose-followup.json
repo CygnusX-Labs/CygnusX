@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-19T16:04:38.713186+00:00",
+  "scope": "IAT-R3 isolated Compose follow-up; not a G3 executor probe",
+  "command": [
+    "docker",
+    "--host",
+    "unix:///var/run/docker.sock",
+    "ps",
+    "--filter",
+    "label=com.docker.compose.project=cygnusx-20261019-235848-bootstrap",
+    "--format",
+    "{{.ID}} {{.Names}} {{.Status}}"
+  ],
+  "exit_code": 1,
+  "stderr": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: dial unix /var/run/docker.sock: connect: operation not permitted",
+  "startup_record": "evidence/runtime-acceptance/20261019-235848-bootstrap/start-closed-result.json",
+  "startup_record_exit_code": 0,
+  "live_container_status": "UNVERIFIED: daemon inaccessible from current session",
+  "runtime_acceptance": "BLOCKED",
+  "business_e2e": "NOT_RUN"
+}

@@ -13,7 +13,11 @@ export interface ResearchCapabilities {
   write_execution: false
   write_tools_enabled: false
   reason_code: string | null
-  cancellation_mode: 'browser_abort_only'
+  cancellation_mode: 'browser_abort_with_best_effort_signal'
+}
+
+export interface ResearchCancelResponse {
+  status: 'accepted' | 'unknown'
 }
 
 /** Keep server detail/stack traces out of the UI; codes describe the next action. */
@@ -106,8 +110,10 @@ export const researchAgentApi = {
   async literature(sessionId: string, kind: string, id: string): ReturnType<NonNullable<TreasureIslandProps['loadLiterature']>> {
     return (await apiClient.post(`/research-agent/sessions/${encodeURIComponent(sessionId)}/literature`, { kind, id })).data
   },
-  async cancel(sessionId: string): Promise<void> {
-    await apiClient.post(`/research-agent/sessions/${sessionId}/cancel`)
+  async cancel(sessionId: string): Promise<ResearchCancelResponse> {
+    return (await apiClient.post<ResearchCancelResponse>(
+      `/research-agent/sessions/${encodeURIComponent(sessionId)}/cancel`,
+    )).data
   },
 }
 

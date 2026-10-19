@@ -22,8 +22,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from cygnusx.application.services.execution_events import execution_chunk
 from cygnusx.application.services.artifact_manifest import normalize_tool_artifact_payload
+from cygnusx.application.services.execution_events import execution_chunk
 from cygnusx.core.telemetry import get_tracer
 from cygnusx.domain.execution.agent_state import AgentState
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
@@ -175,6 +175,10 @@ async def llm_call_node(state: AgentState, deps: NodeDeps) -> dict[str, Any]:
                     round_text += chunk.content
             elif chunk.type == "tool_calls":
                 tool_calls = chunk.metadata.get("tool_calls", [])
+            elif chunk.type == "provider_tool_manifest":
+                # Preserve the exact post-deduplication manifest for runtime
+                # capture; it contains schemas only, never messages or secrets.
+                await deps.emit_chunk(chunk)
             elif chunk.type == "error":
                 await deps.emit_chunk(chunk)
                 # Provider/API error 仍然是本轮终止；工具错误不会从这里进入，

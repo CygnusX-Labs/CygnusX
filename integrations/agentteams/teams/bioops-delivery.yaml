@@ -87,6 +87,11 @@ workers:
     bridge_identity_env: AGENTTEAMS_AGENT_GENERAL_TOKEN
     work_inbox: "GET /v1/work-items/assigned"
     forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]
+  - identity: agent-explorer
+    skills: [codebase-exploration, dependency-mapping, evidence-indexing]
+    bridge_identity_env: AGENTTEAMS_AGENT_EXPLORER_TOKEN
+    work_inbox: "GET /v1/work-items/assigned"
+    forbidden_capabilities: [workflow_submit, workflow_cancel, database_access, shell, file_write]
   - identity: agent-mcp-builder
     skills: [mcp-schema-review, mcp-reproducibility]
     bridge_identity_env: AGENTTEAMS_AGENT_MCP_BUILDER_TOKEN

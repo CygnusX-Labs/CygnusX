@@ -38,6 +38,7 @@ from cygnusx.infrastructure.database.models.dataset import (
     DatasetIngestionModel,
     DatasetVersionModel,
 )
+from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.infrastructure.database.repositories.dataset_repository import DatasetRepository
 from cygnusx.infrastructure.geo.adapter import GeoMetadataAdapter, accession, trusted_url
@@ -469,6 +470,14 @@ class DatasetImportService:
             or record.normalized_request != row.normalized_request
         ):
             raise ConflictError("预案参数或确认发生变化", code="CONFIRMATION_MISMATCH")
+        if (
+            row.approval_snapshot is not None
+            and record.status == "CONSUMED"
+        ):
+            raise ConflictError(
+                "审批已消费但执行记录未持久化，请重新生成预案",
+                code="RECONCILIATION_REQUIRED",
+            )
         bound = row.normalized_request
         self.validate_approval_snapshot(row, record, owner, project_id)
         if (
@@ -553,7 +562,7 @@ class DatasetImportService:
                     issue_processed_http_admission,
                 )
 
-                await issue_processed_http_admission(
+                admission = await issue_processed_http_admission(
                     self.db,
                     ingestion_id=row.id,
                     task_id=task.id,
@@ -568,6 +577,20 @@ class DatasetImportService:
                     allowed_destinations=profile.get("allowed_destinations", []),
                     expires_at=record.expires_at,
                 )
+                task_row = await self.db.get(TaskModel, task.id)
+                if task_row is None:
+                    raise ConflictError(
+                        "下载任务在写入执行绑定前消失", code="DOWNLOAD_ADMISSION_TASK_MISSING"
+                    )
+                task_row.parameters = {
+                    **(task_row.parameters or {}),
+                    "_download_execution_binding": {
+                        "version": 1,
+                        "admission_ref": str(admission.id),
+                        "budget_ref": str(admission.budget_id),
+                    },
+                }
+                await self.db.flush()
             row.state = "QUEUED"
             # The existing request dependency owns commit and after_commit dispatch.
             await self.db.flush()

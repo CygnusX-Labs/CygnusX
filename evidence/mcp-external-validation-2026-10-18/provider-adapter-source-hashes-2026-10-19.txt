@@ -1,0 +1,7 @@
+22f7bd63ac70059d7839a6c32896eaaf7f65484b5cd99c89c6b42587634b76c8  ../../src/cygnusx/application/services/research_data_service.py
+ef5d636cbc8315617a3b47139ca3d1f6b5ad87508c37015d035a1c63da70b150  ../../src/cygnusx/infrastructure/mcp/research_preset.py
+8f30353ff303b38642b35ceb367f8573f685d215475e6ba6bb6236ebac9efb86  ../../src/cygnusx/api/v1/research_data.py
+d5dc38c54144964dc2ceb0479f7ea84750c192e069bcd4423913902c7c2bd9d9  ../../tests/unit/test_research_preset.py
+b59396821210399ec655eaa33017431ea41629c5b061283684017369aec6df96  ../../tests/unit/test_research_data_api.py
+d4fa6afe582a3cc697ebef828159ad4dcc41484110f2ec8c997ea388e3149c8c  ../../tests/unit/test_mcp_dual_surface_parity.py
+10481980fe244a774931bc84ce7e3a49e7cdd4cca797c308b3d01b232d16a0e9  ../../mcp-server/tools/research_resources.py

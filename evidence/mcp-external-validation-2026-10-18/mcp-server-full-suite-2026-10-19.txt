@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.12, pytest-9.1.1, pluggy-1.7.0
+rootdir: /home/zj/zj_code_libarary/OmicHub
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 67 items
+
+tests/test_api_client_trace.py .                                         [  1%]
+tests/test_biothings_tools.py ...                                        [  5%]
+tests/test_phase0b_runtime.py ........                                   [ 17%]
+tests/test_prompt_parameter_safety.py ....                               [ 23%]
+tests/test_research_resources_tools.py .............                     [ 43%]
+tests/test_seqout_tools.py ................................              [ 91%]
+tests/test_tool_descriptions.py ......                                   [100%]
+
+============================== 67 passed in 6.48s ==============================

@@ -21,6 +21,7 @@ import httpx
 from loguru import logger
 
 from cygnusx.application.services.model_health_monitor import HealthEventKind, ModelHealthMonitor
+from cygnusx.application.services.tool_manifest import build_tool_manifest
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_meter, get_tracer
 from cygnusx.infrastructure.database.models.ai_provider import AIProviderConfigModel
@@ -215,7 +216,7 @@ def merge_token_usage(
 class ChatChunk:
     """流式输出数据块 — SSE 事件的统一抽象"""
 
-    type: str  # "text" | "tool_calls" | "tool_call" | "tool_output" | "tool_result" | "plan" | "ask_request" | "approval_request" | "approval_resolved" | "error" | "done"
+    type: str  # "text" | "tool_calls" | "provider_tool_manifest" | "tool_call" | "tool_output" | "tool_result" | "plan" | "ask_request" | "approval_request" | "approval_resolved" | "error" | "done"
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -465,8 +466,20 @@ class OpenAICompatibleProvider:
             "stream_options": {"include_usage": True},
         }
         if tools:
-            payload["tools"] = _dedupe_tools(tools)
+            serialized_tools = _dedupe_tools(tools)
+            payload["tools"] = serialized_tools
             payload["tool_choice"] = "auto"
+            # This is emitted immediately before the HTTP request, after the same
+            # name de-duplication used for the serialized provider payload.
+            # It contains schemas only; messages and credentials never enter it.
+            yield ChatChunk(
+                type="provider_tool_manifest",
+                metadata={
+                    "provider": self.name,
+                    "model": self.model,
+                    "tool_manifest": build_tool_manifest(serialized_tools),
+                },
+            )
         model_name = f"{self.name} {self.model}".lower()
         if deep_thinking or "deepseek-v4" in model_name:
             # DeepSeek V4 默认可能开启思考；必须显式发送 False，避免路由阶段

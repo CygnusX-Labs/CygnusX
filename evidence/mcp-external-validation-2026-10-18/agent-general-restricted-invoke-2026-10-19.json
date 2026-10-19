@@ -1,0 +1,12 @@
+{
+  "checked_at_utc": "2026-10-19T00:00:00Z",
+  "error_message": "API Key 缺少该操作所需权限范围",
+  "http_status": 403,
+  "key_ref": "isolated flows:read-only key; secret omitted",
+  "limitation": "This verifies API-key scope rejection before provider dispatch; it is not an MCP tool-call authorization test.",
+  "provider_invoked": false,
+  "request_id": "3163b3812d334a89a64efcea80c45428",
+  "route": "POST /api/v1/research-data/cygnusx_clinvar_search",
+  "scope": "scoped API key direct route check",
+  "secret_values_included": false
+}

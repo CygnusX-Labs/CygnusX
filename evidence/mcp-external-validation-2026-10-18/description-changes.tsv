@@ -1,0 +1,14 @@
+name	old_description	new_description	source	reason
+atac_seq_status	查询 ATAC-seq 任务状态和进度	[DEPRECATED] 按 task_id 查询 ATAC-seq 任务当前状态及平台提供的进度信息；这是旧版流程专用入口，新集成优先使用 cygnusx_get_task_progress。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_chem_search	检索 MyChem 化合物候选	在 MyChem 中按 query 搜索化合物注释候选；limit/offset 控制分页，fields 可选定返回字段。不同盐型或化学身份作为独立候选保留；这不是结构相似性或药物对接搜索。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_clinvar_get	按VCV accession读取ClinVar摘要	按VCV、RCV、SCV或Variation ID读取ClinVar证据；Allele ID暂不支持	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_confirm_run_plan	确认 Run 计划	确认指定 run_id 的计划属于有副作用操作：首次调用创建待网页审批记录；仅在人类批准后携带服务端 confirmation_id 重试才会确认并进入任务队列。user_confirmed 布尔值不能授权。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_expression_studies	检索bulk或单细胞Atlas研究目录	在缓存的 Expression Atlas bulk 或单细胞研究目录中按 query 做不区分大小写的字面子串筛选；single_cell 选择目录，limit 限制返回条数。结果是研究元数据，不含基因表达定量值。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_gene_search	按指定物种检索 MyGene 基因注释	在 MyGene 中按 query 搜索基因候选；species 必填，limit/offset 控制分页（limit 上限 50），fields 可选定返回字段。结果保留候选匹配，不自动替用户选择唯一基因。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_genome_sequence	查询Ensembl短序列并限制内联长度	按 Ensembl stable ID 读取 genomic、cdna、cds 或 protein 序列（默认 cdna）；返回序列长度和最多 3000 字符的预览及截断标记，不提供完整序列文件下载。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_get_run_logs	获取 Run 事件日志	按 run_id 读取平台持久化事件日志；limit 默认 200 并限制在 1–500，data 返回事件列表及平台提供的事件元数据。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_get_run_status	获取 Run 状态	按 run_id 查询平台 Run 记录；返回记录中的当前状态及关联 task_id（若有），不提交或修改任务。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_list_runs	列出统一 Run	列出当前 API 身份可访问的 Run；可按 project_slug 和 status 过滤，返回平台 Run 记录及匹配总数摘要。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_plant_get	按ID获取Gramene基因详情	按 Gramene gene identifier 查询 Gramene v69 基因详情并保留原始 provider 记录；结果中的 taxon_id 是 Gramene 专用标识，不能直接当作 NCBI taxid。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_preview_analysis	验证参数（dry-run）	对 flow_id 执行只读浅预检：检查必填 parameters 是否提供及所需 sample_sheet 是否非空，返回缺项或可继续提交的提示；不验证完整类型/枚举约束、不创建任务也不提交分析。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界
+cygnusx_verify_artifact	查询 Run 产物及校验摘要	按 run_id 查询已登记的产物及平台返回的校验摘要（包括可用的 checksum）；此工具读取平台记录，不自行重算文件完整性。	handler docstring; tools.yaml synchronized	修复原审计标记的模糊描述，并补充真实参数、返回语义或行为边界

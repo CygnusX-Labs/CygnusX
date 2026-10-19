@@ -1,0 +1,15 @@
+{
+  "captured_at_utc": "2026-10-18T23:49:58Z",
+  "head_sha": "7c028af698762710f5d0b0dc632a060226ac298a",
+  "mcp_server_tracked_worktree_diff_sha256": "5b16d4ac382c040c9181898485c609313a0dc17c02c0832e910bedc1ca304123",
+  "mcp_server_tracked_worktree_diff_bytes": 36613,
+  "diff_scope_note": "Aggregate tracked mcp-server worktree diff includes pre-existing edits; it is not an attribution of changes to this task. Untracked test/evidence files are listed separately by git status and hashed by checksums.txt.",
+  "runtime": {
+    "python": "3.13.12",
+    "fastmcp": "3.4.4",
+    "tool_count": 109
+  },
+  "dedicated_platform_test_identity": false,
+  "platform_api_key_value_recorded": false,
+  "provider_egress_tested": false
+}

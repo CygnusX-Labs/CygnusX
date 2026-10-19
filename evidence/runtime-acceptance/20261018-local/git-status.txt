@@ -1,0 +1,40 @@
+ M ARCHITECTURE_DESIGN/CygnusX_download_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_treasure_mouse_architecture.md
+ m Protocol/FlowFrame
+ M docs/implementation/cygnusx-iat-r3-research-workflow-closure.md
+ M docs/implementation/cygnusx-p0a-trusted-admission-budget-binding.md
+ M docs/implementation/cygnusx-s4-reliability-last-gaps.md
+ M docs/implementation/treasure-native-p0-access-and-entry.md
+ M evidence/runtime-acceptance/artifact-index.json
+ M evidence/s4-residual/acceptance.csv
+ M evidence/s4-residual/commands.json
+ M frontend/src/api/researchAgent.ts
+ M frontend/src/components/research/__tests__/TreasureAccess.test.ts
+ M frontend/src/views/TreasureResearchWorkbench.vue
+ M mcp-server/prompts/workflows.py
+ M mcp-server/tests/test_phase0b_runtime.py
+ M mcp-server/tools.yaml
+ M mcp-server/tools/__init__.py
+ m pipelines/ATACFlow
+ m pipelines/RNAFlow
+ m pipelines/tools
+ M src/cygnusx/api/v1/research_agent.py
+ M src/cygnusx/application/schemas/research_agent.py
+ M src/cygnusx/application/services/dataset_import_service.py
+ M src/cygnusx/application/services/download_service.py
+ M src/cygnusx/application/services/research_treasure_service.py
+ M src/cygnusx/domain/download_security.py
+ M src/cygnusx/infrastructure/database/repositories/download_execution_admission.py
+ M src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py
+ M src/cygnusx/infrastructure/database/repositories/task_repository.py
+ M tests/unit/test_download_execution_admission.py
+ M tests/unit/test_download_log_security.py
+ M tests/unit/test_download_s4a_reliability.py
+ M tests/unit/test_p0a_approval_snapshot.py
+ M tests/unit/test_treasure_native_access.py
+?? evidence/p0a/budget-settlement-isolated.json
+?? evidence/runtime-acceptance/20261018-local/
+?? evidence/s4-residual/sr01-source-hashes.json
+?? mcp-server/tests/test_tool_descriptions.py
+?? src/cygnusx/infrastructure/download/supervisor_authority.py
+?? tests/unit/test_download_supervisor_authority.py

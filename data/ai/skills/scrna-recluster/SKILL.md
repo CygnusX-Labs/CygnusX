@@ -1,11 +1,13 @@
 ---
 name: 单细胞单样本重聚类
-skill_id: scrna-recluster
-description: 当用户已有单样本 Seurat RDS 对象（整体或某个细胞类型子集），想重新做标准化→高变基因→PCA→聚类→UMAP 的亚群细分时触发。输入为 Seurat RDS 路径，脚本自动确定 PC 截断，输出重聚类 RDS、elbow 图与 summary.json。边界：多样本整合/批次校正走 scrna-pipeline-overview；RDS↔H5AD 等格式转换先走 scrna-object-convert。常见用法是先用 scrna-object-convert 的 subset 功能筛出目标细胞类型，再用本技能重聚类，两者可串链。
+description: 当用户已有单样本 Seurat RDS 对象（整体或某个细胞类型子集），想重新做标准化→高变基因→PCA→聚类→UMAP 的亚群细分时触发。输入为
+  Seurat RDS 路径，脚本自动确定 PC 截断，输出重聚类 RDS、elbow 图与 summary.json。边界：多样本整合/批次校正走 scrna-pipeline-overview；RDS↔H5AD
+  等格式转换先走 scrna-object-convert。常见用法是先用 scrna-object-convert 的 subset 功能筛出目标细胞类型，再用本技能重聚类，两者可串链。
 version: 0.9.1
 author: zj
 icon: 🔬
 category: analysis
+skill_id: scrna-recluster
 ---
 
 # 单细胞单样本重聚类（scrna-recluster）

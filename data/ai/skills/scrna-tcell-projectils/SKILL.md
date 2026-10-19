@@ -1,8 +1,11 @@
 ---
 name: T细胞 ProjecTILs 精细亚型注释
-description: 当用户已从 scRNA-seq 数据中分出 T 细胞子集（Seurat RDS 对象，已含 umap 降维），需要用 ProjecTILs 参考 TIL atlas 做 functional.cluster 精细亚型注释与可视化（UMAP、marker Dotplot）时触发。粗粒度细胞类型注释走 scrna-pipeline-overview/scrna-annotation-ref；T 细胞子集提取先走 scrna-object-convert 的 RDS_utility subset；亚群重聚类走 scrna-recluster。
+description: 当用户已从 scRNA-seq 数据中分出 T 细胞子集（Seurat RDS 对象，已含 umap 降维），需要用 ProjecTILs
+  参考 TIL atlas 做 functional.cluster 精细亚型注释与可视化（UMAP、marker Dotplot）时触发。粗粒度细胞类型注释走
+  scrna-pipeline-overview/scrna-annotation-ref；T 细胞子集提取先走 scrna-object-convert 的 RDS_utility
+  subset；亚群重聚类走 scrna-recluster。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 🎯
 category: analysis
 skill_id: scrna-tcell-projectils

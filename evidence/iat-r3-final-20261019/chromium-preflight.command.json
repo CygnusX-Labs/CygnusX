@@ -1,0 +1,9 @@
+{
+  "command": [
+    "/tmp/iat-browser-venv/bin/python",
+    "/tmp/iat-r3-chromium-preflight.py"
+  ],
+  "exit_code": 1,
+  "scope": "Launch only; business E2E did not start",
+  "log": "chromium-preflight.log"
+}

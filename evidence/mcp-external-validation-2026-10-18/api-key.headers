@@ -1,0 +1,7 @@
+HTTP/1.1 401 Unauthorized
+date: Sun, 18 Oct 2026 14:53:46 GMT
+server: uvicorn
+content-type: application/json
+content-length: 301
+www-authenticate: Bearer error="invalid_token", error_description="Authentication failed. The provided bearer token is invalid, expired, or no longer recognized by the server. To resolve: clear authentication tokens in your MCP client and reconnect. Your client should automatically re-register and obtain new tokens."
+

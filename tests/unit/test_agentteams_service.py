@@ -686,6 +686,22 @@ async def test_health_check_merges_alias_worker_heartbeats_into_canonical_role(
 ) -> None:
     """别名 identity 有心跳时，canonical role 不再被误报为缺心跳。"""
 
+    monkeypatch.setattr(
+        service,
+        "connection_status",
+        AsyncMock(
+            return_value={
+                "connected": True,
+                "enabled": True,
+                "configured": True,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.agentteams_service.AgentTeamsRoomGatewayService.health_check",
+        AsyncMock(return_value={"configured": False, "connected": False}),
+    )
+
     async def fake_request(path: str, **kwargs):
         if path == "/healthz":
             return {"status": "ok"}
@@ -1159,6 +1175,17 @@ async def test_status_uses_bridge_health_not_only_configuration(
 async def test_connection_status_distinguishes_missing_configuration_from_unreachable_bridge(
     service: AgentTeamsService, monkeypatch
 ) -> None:
+    class FakeRedis:
+        async def get(self, _key: str):
+            return None
+
+        async def setex(self, _key: str, _ttl: int, _value: str) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "cygnusx.application.services.agentteams_service.get_redis", lambda: FakeRedis()
+    )
+
     async def failed_request(path: str, **kwargs):
         assert path == "/healthz"
         raise BusinessError("Agent 协作中心暂时不可用")

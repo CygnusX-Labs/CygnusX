@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cygnusx.application.schemas.mcp import (
     CreateMCPServerDTO,
     MCPLogEntryDTO,
+    MCPResourceDTO,
     MCPServerDTO,
     MCPServerVersionDTO,
     MCPToolDTO,
@@ -825,6 +826,17 @@ class MCPService:
         server.status = ServerStatus.ONLINE
         await self._repo.save(server)
         return [_tool_to_dto(t) for t in tools]
+
+    async def list_resources(self, server_id: UUID) -> list[MCPResourceDTO]:
+        """Discover external resource metadata without reading resource contents."""
+        server = await self._repo.get_by_id(server_id)
+        if server is None:
+            raise NotFoundError("MCP Server 不存在")
+        try:
+            resources = await self._client.list_resources(server)
+        except Exception as e:  # noqa: BLE001
+            raise MCPConnectionError(f"MCP Server 资源发现失败: {e}") from e
+        return [MCPResourceDTO(**resource) for resource in resources]
 
     async def invoke_tool(
         self, server_id: UUID, tool_name: str, arguments: dict[str, Any]

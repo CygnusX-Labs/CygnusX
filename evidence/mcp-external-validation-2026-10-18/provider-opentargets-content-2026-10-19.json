@@ -1,0 +1,23 @@
+{
+  "business_success": true,
+  "cache_status": "no_application_result_cache_in_service_code",
+  "checked_at_utc": "2026-10-18T19:49:40.609066+00:00",
+  "graphql_error_count": 0,
+  "hit_count": 1,
+  "hit_ids": [
+    "ENSG00000141510"
+  ],
+  "input": {
+    "entity": "target",
+    "limit": 1,
+    "query": "TP53"
+  },
+  "partial": false,
+  "platform_http_status": 200,
+  "platform_request_id": "2f5e4a4e905341c7ac9ca69142eed476",
+  "provider": "Open Targets",
+  "search_total": 71,
+  "secret_values_included": false,
+  "tool": "cygnusx_target_search",
+  "transport": "external_mcp_stdio_to_isolated_platform_rest"
+}

@@ -112,6 +112,7 @@ def _make_service(server: MCPServer, versions=()) -> tuple[MCPService, _FakeSess
     service._repo = AsyncMock()
     service._repo.get_by_id.return_value = server
     service._repo.save.side_effect = lambda s: s
+    service._autodiscover_tools = AsyncMock()
     return service, db
 
 

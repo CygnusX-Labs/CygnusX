@@ -1,0 +1,44 @@
+{
+  "captured_at_utc": "2026-10-19T00:20:00Z",
+  "snapshot_scope": "static_registry_and_external_protocol_surfaces",
+  "runtime_tool_count": {
+    "in_process": 109,
+    "stdio": 109,
+    "streamable_http": 109,
+    "sse": 109,
+    "source": "current-four-surface-schema-diff.json"
+  },
+  "builtin_presets": [
+    {"name": "cygnusx-platform", "tool_count": 22, "db_is_enabled": "unavailable"},
+    {"name": "cygnusx-pipelines", "tool_count": 10, "db_is_enabled": "unavailable"},
+    {"name": "seqout", "tool_count": 26, "db_is_enabled": "unavailable"},
+    {"name": "cygnusx-biothings", "tool_count": 10, "db_is_enabled": "unavailable"},
+    {"name": "cygnusx-research-data", "tool_count": 26, "db_is_enabled": "unavailable"}
+  ],
+  "enabled_agents_static": {
+    "count": 19,
+    "names_source": "agent-tool-loading.tsv",
+    "runtime_db_state": "unavailable",
+    "runtime_tool_culling": "unavailable"
+  },
+  "contract_digest": {
+    "current_four_surface_schema_equal": true,
+    "per_preset_runtime_digest": "unavailable_without_database_snapshot",
+    "historical_handler_binding_snapshot": "unavailable"
+  },
+  "identity": {
+    "dedicated_platform_test_identity": false,
+    "platform_api_key_value_recorded": false,
+    "secrets_recorded": false
+  },
+  "evidence": [
+    "baseline.json",
+    "agent-tool-loading.tsv",
+    "current-four-surface-schema-diff.json",
+    "schema-diff.json"
+  ],
+  "limitations": [
+    "This is not an AgentService runtime assemble_context export.",
+    "Database is_enabled flags, user/case capability gates and final provider serialization require an isolated test identity."
+  ]
+}

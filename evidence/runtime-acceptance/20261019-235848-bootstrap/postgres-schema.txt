@@ -1,0 +1,51 @@
+     table_name      |   column_name   |        data_type         | is_nullable 
+---------------------+-----------------+--------------------------+-------------
+ mcp_versions        | id              | uuid                     | NO
+ mcp_versions        | mcp_server_id   | uuid                     | NO
+ mcp_versions        | build_id        | uuid                     | YES
+ mcp_versions        | version         | character varying        | NO
+ mcp_versions        | version_tag     | character varying        | NO
+ mcp_versions        | is_major        | boolean                  | NO
+ mcp_versions        | code_snapshot   | text                     | NO
+ mcp_versions        | tools_snapshot  | json                     | YES
+ mcp_versions        | changelog       | text                     | NO
+ mcp_versions        | created_by      | uuid                     | YES
+ mcp_versions        | created_at      | timestamp with time zone | NO
+ mcp_versions        | updated_at      | timestamp with time zone | NO
+ mcp_versions        | config_snapshot | json                     | YES
+ mcp_versions        | source          | character varying        | NO
+ mcp_versions        | contract_digest | character varying        | NO
+ project_export_jobs | id              | uuid                     | NO
+ project_export_jobs | user_id         | uuid                     | NO
+ project_export_jobs | project_id      | uuid                     | NO
+ project_export_jobs | request_key     | character varying        | NO
+ project_export_jobs | manifest_digest | character varying        | NO
+ project_export_jobs | manifest        | json                     | NO
+ project_export_jobs | status          | character varying        | NO
+ project_export_jobs | attempt_count   | integer                  | NO
+ project_export_jobs | retryable       | boolean                  | NO
+ project_export_jobs | error_code      | character varying        | YES
+ project_export_jobs | archive_path    | character varying        | YES
+ project_export_jobs | archive_sha256  | character varying        | YES
+ project_export_jobs | archive_size    | integer                  | YES
+ project_export_jobs | file_record_id  | uuid                     | YES
+ project_export_jobs | created_at      | timestamp with time zone | NO
+ project_export_jobs | updated_at      | timestamp with time zone | NO
+ research_plans      | id              | uuid                     | NO
+ research_plans      | user_id         | uuid                     | NO
+ research_plans      | project_id      | uuid                     | NO
+ research_plans      | series_id       | uuid                     | NO
+ research_plans      | version         | integer                  | NO
+ research_plans      | request_key     | character varying        | NO
+ research_plans      | draft           | json                     | NO
+ research_plans      | digest          | character varying        | NO
+ research_plans      | status          | character varying        | NO
+ research_plans      | steps           | json                     | NO
+ research_plans      | gaps            | json                     | NO
+ research_plans      | events          | json                     | NO
+ research_plans      | reviewed_at     | timestamp with time zone | YES
+ research_plans      | superseded_by   | uuid                     | YES
+ research_plans      | created_at      | timestamp with time zone | NO
+ research_plans      | updated_at      | timestamp with time zone | NO
+(47 rows)
+

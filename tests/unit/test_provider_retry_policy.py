@@ -141,6 +141,40 @@ async def test_provider_5xx_is_marked_retryable(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
+async def test_provider_emits_manifest_for_exact_deduped_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = OpenAICompatibleProvider(
+        AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")
+    )
+    captured: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.ai_provider.openai_compatible.httpx.AsyncClient",
+        lambda **_kwargs: _FakeAsyncClient(
+            ["data: [DONE]\n"], captured_payload=captured
+        ),
+    )
+    tools = [
+        {"type": "function", "function": {"name": "search", "description": "first"}},
+        {"type": "function", "function": {"name": "search", "description": "duplicate"}},
+    ]
+
+    chunks = [
+        chunk
+        async for chunk in provider._stream_once(
+            [{"role": "user", "content": "hi"}], None, 0.7, 32, tools, False
+        )
+    ]
+
+    assert [chunk.type for chunk in chunks] == ["provider_tool_manifest", "done"]
+    manifest = chunks[0].metadata["tool_manifest"]
+    assert manifest["tool_count"] == 1
+    assert manifest["tools"][0]["description"] == "first"
+    assert len(captured) == 1
+    assert len(captured[0]["tools"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_retryable_stream_error_keeps_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = OpenAICompatibleProvider(
         AIProviderConfigModel(name="test", model="qwen-test", base_url="https://example.test")

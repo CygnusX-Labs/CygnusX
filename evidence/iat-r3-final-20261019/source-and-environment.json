@@ -1,0 +1,26 @@
+{
+  "captured_at": "2026-10-19T16:01:14.012646+00:00",
+  "source_digest_sha256": "5452ec298846cd4fa0e4a0a93ba8348124e93ee3f84e2078085a3f7240a25247",
+  "digest_algorithm": "SHA256 of UTF-8 json.dumps(manifest, sort_keys=True, separators=(comma,colon)); manifest keys are repo-relative paths",
+  "source_file_count": 2175,
+  "root_head": "ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79",
+  "treasure_head": "51a401d4e1db249ee467fcaa529847be8fba6a71",
+  "treasure_worktree_status": "",
+  "gates": {
+    "DOWNLOAD_TRANSPORT_RUNTIME_ACCEPTED": false,
+    "WRITE_RUNTIME_ACCEPTED": false
+  },
+  "artifacts_sha256": {
+    "frontend/public/treasure-island/treasure-island.js": "7333e5792238401c60faeb9a2c54179113135ef189061b00adb496a0dd780109",
+    "frontend/dist/index.html": "be75a4048cbd6e78ac50676e0e743dde2d7ffbc52ceba05854a7987062a38b12"
+  },
+  "public_module_inventory_present": false,
+  "runtime_status": "BLOCKED",
+  "loopback_observation": "Earlier in this turn, bind 127.0.0.1 port 0 returned PermissionError: [Errno 1] Operation not permitted; observation only, not re-probed by this metadata command",
+  "postgres_redis": "No dedicated authorized non-production connection was provided; no real DB/Redis run",
+  "browser": "Chromium launch failed; see chromium-preflight.json",
+  "database_records": null,
+  "gateway_audit": null,
+  "screenshots": [],
+  "network_har": null
+}

@@ -91,6 +91,7 @@ async def test_langgraph_runtime_error_stream_emits_failed_terminal_and_done(
         "agent_turn_failed",
         "done",
     ]
+    assert chunks[0].metadata["tool_manifest"]["tool_count"] == 0
     validate_event_sequence(chunks)
     service.update_message_content.assert_awaited_once()
 

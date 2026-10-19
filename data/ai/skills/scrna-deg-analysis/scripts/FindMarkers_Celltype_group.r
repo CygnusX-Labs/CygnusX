@@ -10,7 +10,7 @@
 #      SCRNA_DEG_REF_DIR 的可读报错 (原为 read.csv 直接报错);
 #   3. 修复 logger 作用域 bug: check_parameter / DEG_annotation 为全局函数,
 #      其自由变量 logger 按词法作用域解析到 log4r::logger 构造函数 (closure),
-#      导致 info(local_logger, ...) 报 "object of type 'closure' is not subsettable";
+#      导致 info(logger, ...) 报 "object of type 'closure' is not subsettable";
 #      现改为两个函数新增 logger 形参, 由主函数显式传入;
 #   4. 兼容 ggplot2 4.x: element_line(lineend = 0.05) 在 4.x 下报
 #      "@lineend must be <character> or <NULL>", 统一改为 lineend = "butt" (共 6 处)。
@@ -45,7 +45,7 @@
 # log4r init module
 log4r_init <- function(){
   require(log4r)
-  local_logger <- log4r::logger()
+  logger <- log4r::logger()
   my_layout <- function(level, ...) {
     require(crayon)
     if (level == 'INFO'){
@@ -68,8 +68,8 @@ log4r_init <- function(){
       }
     }
   }
-  local_logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
-  return(local_logger)
+  logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
+  return(logger)
 }
 # check_parameter function (logger 由调用方显式传入, 避免词法作用域解析到 log4r::logger)
 check_parameter <- function(Seurat,Celltype,Pair,
@@ -365,21 +365,21 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
   require(ggplot2)
   require(log4r)
   # loading log module
-  local_logger <- log4r_init()
+  logger <- log4r_init()
   list <- levels(factor(Seurat@meta.data[[`Celltype`]]))
-  info(local_logger, paste0('FindMarkers levels : ',Celltype))
+  info(logger, paste0('FindMarkers levels : ',Celltype))
   check_parameter(Seurat,Celltype,Pair,
-                  Treat,Control,mus_gene_infor,human_gene_infor,local_logger)
+                  Treat,Control,mus_gene_infor,human_gene_infor,logger)
   Seurat@meta.data$Celltype_Rename <-  Seurat@meta.data[[Celltype]]
   Seurat@meta.data <- Seurat@meta.data |> dplyr::rename(Pair = `Pair` )
   for (i in list){
-    info(local_logger, crayon::bgCyan('FindMarkers ################################# DO '))
-    info(local_logger, paste0('FindMarkers Treat group :',Treat))
+    info(logger, crayon::bgCyan('FindMarkers ################################# DO '))
+    info(logger, paste0('FindMarkers Treat group :',Treat))
     cells1 <- subset(Seurat@meta.data,Pair == Treat & Celltype_Rename == i )  |> rownames()
-    info(local_logger, paste0('FindMarkers Control group :',Control))
+    info(logger, paste0('FindMarkers Control group :',Control))
     cells2 <- subset(Seurat@meta.data,Pair == Control & Celltype_Rename == i )  |> rownames()
-    info(local_logger, paste0('FindMarkers ',i,' Celltype ',Treat,' vs ',Control,' Marker'))
-    info(local_logger, paste0('FindMarkers logfc.threshold :',logfc.threshold))
+    info(logger, paste0('FindMarkers ',i,' Celltype ',Treat,' vs ',Control,' Marker'))
+    info(logger, paste0('FindMarkers logfc.threshold :',logfc.threshold))
 
   DEG <- tryCatch({
     FindMarkers(Seurat,
@@ -389,14 +389,14 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
                 logfc.threshold = logfc.threshold,
                 test.use = test)
   }, error = function(e) {
-    info(local_logger, paste0("FindMarkers failed: ", e$message))
+    info(logger, paste0("FindMarkers failed: ", e$message))
     return(NULL)
   })
 
   if (!is.null(DEG)) {
     if (fix_deg_result == TRUE) {
       min_value <- .Machine$double.xmin
-      info(local_logger, paste0("Fix p_val_adj = 0"))
+      info(logger, paste0("Fix p_val_adj = 0"))
       DEG <- DEG |> dplyr::mutate(p_val_adj = ifelse(p_val_adj == 0, min_value, p_val_adj))
     }
 
@@ -405,15 +405,15 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
     }
 
     deg_dir <- file.path(save_dir, paste0(Treat, '_vs_', Control, '-', i))
-    info(local_logger, paste0('FindMarkers Result Save at : ', deg_dir))
+    info(logger, paste0('FindMarkers Result Save at : ', deg_dir))
     dir.create(deg_dir, showWarnings = FALSE)
 
-    info(local_logger, paste0('FindMarkers pct.1 threshold :', pct_1))
+    info(logger, paste0('FindMarkers pct.1 threshold :', pct_1))
 
     filter_deg <- tryCatch({
       DEG |> dplyr::filter(pct.1 > pct_1)
     }, error = function(e) {
-      info(local_logger, paste0("Filtering DEG failed: ", e$message))
+      info(logger, paste0("Filtering DEG failed: ", e$message))
       return(NULL)
     })
 
@@ -421,7 +421,7 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
       filter_deg <- tryCatch({
         DEG_annotation(filter_deg, taxid, mus_gene_infor, human_gene_infor, logger)
       }, error = function(e) {
-        info(local_logger, paste0("DEG annotation failed: ", e$message))
+        info(logger, paste0("DEG annotation failed: ", e$message))
         return(NULL)
       })
 
@@ -432,7 +432,7 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
 
         name <- paste0(Treat, ' vs ', Control, i)
 
-        info(local_logger, paste0('Draw Volcano Plot : ', Treat, ' vs ', Control, i))
+        info(logger, paste0('Draw Volcano Plot : ', Treat, ' vs ', Control, i))
         tryCatch({
           DrawVolcanoSCRNAFC_p_val_adj(
             filter_deg,
@@ -448,14 +448,14 @@ FindMarkers_Celltype_group <- function(Seurat,Celltype = 'celltype',Pair = 'grou
             plot_height = Volcano_plot_height
           )
         }, error = function(e) {
-          info(local_logger, paste0("Drawing Volcano Plot failed: ", e$message))
+          info(logger, paste0("Drawing Volcano Plot failed: ", e$message))
         })
       }
     }
   }
 
   # 记录完成信息
-  info(local_logger, crayon::bgCyan('FindMarkers ################################# DONE '))
+  info(logger, crayon::bgCyan('FindMarkers ################################# DONE '))
   }
 }
 # End

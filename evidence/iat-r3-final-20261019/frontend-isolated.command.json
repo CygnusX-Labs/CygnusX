@@ -1,0 +1,14 @@
+{
+  "name": "frontend-isolated",
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "src/components/research",
+    "src/utils/__tests__/researchAgentSse.test.ts"
+  ],
+  "cwd": "frontend",
+  "exit_code": 0,
+  "duration_seconds": 2.63,
+  "log": "frontend-isolated.log"
+}

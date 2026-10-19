@@ -1,0 +1,1 @@
+{"command": [".venv/bin/python", "scripts/check_migrations.py"], "exit": 0, "duration": 0.409038782119751}

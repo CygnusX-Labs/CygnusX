@@ -2,7 +2,7 @@
 
 **编制日期**：2026-10-18  
 **依据**：`CygnusX_Current_Implementation_Status_Audit_2026-10-18.md`（用户提供、2026-10-18 只读审计）、`cygnusx-iat-r2-runtime-evidence-closure.md`、`download-s4b0-reliability-hardening.md`、`download-s3-e1-trusted-execution-boundary.md`。  
-**本包性质**：规划、工作包实施说明、Codex 执行提示词、验收标准。**不是已经修改仓库或完成真实运行的证明**。
+**本包性质**：规划、工作包实施说明、Codex 执行提示词、验收标准。它本身不是运行证据；当前源码增量与隔离证据以各包的 `docs/implementation/` 报告及 `evidence/` 为准。
 
 ## 先读哪份文件
 
@@ -20,6 +20,22 @@
 | `06_S4_Residual_Reliability.md` | S4 残余故障窗口的独立收尾计划 | 可靠性 Codex D（并行） |
 | `07_Master_Codex_Prompt.md` | 三包协作、文件所有权、统一 Go/No-Go 的总控提示词 | 项目负责人 / Codex 总控 |
 
+当前身份/迁移验收补充报告：`docs/implementation/cygnusx-p0a-g3-runtime-identity-acceptance.md`；其隔离命令摘要在 `evidence/p0a-g3-runtime-identity/isolated-verification.json`，当前工作树快照在 `evidence/p0a-g3-runtime-identity/current-baseline/`。该报告不提升真实 PG、Supervisor OS 或 G3 HTTP 的阻断状态。
+
+## 当前工作树离线复核
+
+以下结果来自当前 dirty 工作树，只证明代码契约或隔离测试，不改变本资料包定义的运行态门禁：
+
+| 范围 | 当前结果 | 证据 |
+|---|---|---|
+| P0-A / Supervisor / trusted execution | `PASS_ISOLATED`；定向后端回归 127 项，Linux fail-closed 4 项 | `tests/unit/test_download_execution_admission.py`、`test_download_supervisor_authority.py`、`test_linux_scope_backend.py` |
+| IAT-R3 后端与 Redis/研究链 | `PASS_ISOLATED`；定向回归 47 项 | `tests/unit/test_treasure_native_access.py`、`test_research_search_optimizer.py`、`test_redis_client.py` |
+| S4 现有可靠性回归 | `PASS_ISOLATED`；76 项 | `tests/unit/test_download_s4a_reliability.py`、`test_lifecycle_download_security.py` |
+| IAT-R3 前端 | 类型检查通过；Vitest 90 文件/611 项；production build 通过 | `evidence/iat-r3-runtime/commands.json` |
+| G3 九项真实 HTTP | `BLOCKED`；集成入口显式 9 skipped | `tests/integration/test_download_trusted_http_boundary.py` |
+
+真实 PostgreSQL、Redis、Worker、Node、Chromium、Linux cgroup/netns/quota 与受控 HTTP 端点仍未获得独立非生产授权；因此 `PASS_RUNTIME`、`PASS_E2E`、S6 和 S7 状态保持原定义，不以以上隔离结果替代。
+
 ## 绝对边界
 
 1. **三个包分别运行、分别验收**：P0-A 的 PG 通过不等于 G3 OS 执行通过；IAT-R3 的页面通过不等于下载成功。
@@ -34,7 +50,7 @@
 - 审计时主仓 `main`、HEAD `d648f54d24affd2bd3787332a49a5f4c96494cef`，多子仓及 React/Vue 前端存在 dirty；Codex 开始时必须重新记录状态。
 - P0-A 已有 dirty `src/cygnusx/infrastructure/database/models/download_execution.py`、`repositories/download_execution_admission.py`、`alembic/versions/dwnadmission01_add_download_execution_admissions.py`，**先保护并检查，禁止重新创建平行模型**。
 - IAT-R3 有确定性 Provider 两 Runtime 隔离轮次、React/Vue typed adapter 与 SSE 回放代码；真实部署、Node 完整聊天、科学页面 Chromium 工作流未通过。
-- G3 有 mTLS supervisor 客户端和签名发布回执验证，**没有实际 Supervisor 服务端**；硬 RX/磁盘配额与九项真实 HTTP 仍未通过。
+- G3 有 mTLS supervisor 客户端、默认拒绝 Supervisor 服务骨架、Worker HTTP 生命周期 seam 和签名发布回执验证；尚无 Linux 强制后端，硬 RX/磁盘配额与九项真实 HTTP 仍未通过。
 - S6 `NOT_READY`；S7 `NOT_YET_END_TO_END`。
 
 ## 建议执行顺序

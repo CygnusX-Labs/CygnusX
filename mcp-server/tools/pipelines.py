@@ -205,7 +205,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
 
     @mcp.tool()
     async def atac_seq_status(task_id: str) -> dict[str, Any]:
-        """[DEPRECATED] 将由统一固定工具替代，新集成请勿使用。查询 ATAC-seq 任务状态和进度。"""
+        """[DEPRECATED] 按 task_id 查询 ATAC-seq 任务当前状态及平台提供的进度信息；这是旧版流程专用入口，新集成优先使用 cygnusx_get_task_progress。"""
 
         return await status("atac_seq", task_id)
 

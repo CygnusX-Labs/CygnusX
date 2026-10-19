@@ -1,0 +1,59 @@
+{
+  "status": 200,
+  "body": {
+    "schema_version": "cygnusx.research_plan.v1",
+    "plan_id": "4e55a79b-6fda-41d0-b674-ade1db48c7b3",
+    "version": 3,
+    "project_id": "5e0177a9-db19-4ed7-a83e-df3348d12155",
+    "digest": "ed2687c5fc1931efae8caf9d7b6ffb9d9b10585652f07cebb5d28d0288b0ac36",
+    "status": "READY_FOR_REVIEW",
+    "mode": "PLAN_ONLY",
+    "draft": {
+      "schema_version": "cygnusx.research_plan.v1",
+      "research_question": "验收计划版本与人工审阅，不运行计算或发布报告；修订后需重新审阅；浏览器重验代理修正",
+      "assumptions": [],
+      "steps": [
+        {
+          "step_id": "publish",
+          "kind": "REPORT_PUBLISH",
+          "goal": "保持发布阻断",
+          "depends_on": [],
+          "arguments": {},
+          "bindings": [],
+          "failure_policy": "STOP_AND_RECONCILE"
+        }
+      ],
+      "budget": {
+        "max_tool_calls": 20,
+        "max_elapsed_seconds": 300,
+        "max_model_tokens": 10000,
+        "max_retries": 0,
+        "estimated_compute_seconds": null,
+        "estimated_storage_bytes": null
+      }
+    },
+    "steps": [
+      {
+        "step_id": "publish",
+        "kind": "REPORT_PUBLISH",
+        "capability_id": "",
+        "effect": "REPORT_PUBLISH",
+        "approval_required": true,
+        "expected_output": "published_report",
+        "status": "WAITING_INPUT",
+        "invocation_id": null,
+        "task_id": null,
+        "error_code": null,
+        "result_manifest_sha256": null,
+        "reports": []
+      }
+    ],
+    "gaps": [
+      "LIVE_EXECUTION_BLOCKED",
+      "publish:INDEPENDENT_HUMAN_TOOL_APPROVAL_REQUIRED"
+    ],
+    "created_at": "2026-10-19T16:27:15.515573Z",
+    "reviewed_at": null,
+    "superseded_by": null
+  }
+}

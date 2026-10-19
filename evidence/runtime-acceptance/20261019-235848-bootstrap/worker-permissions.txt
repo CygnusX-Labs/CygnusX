@@ -1,0 +1,3 @@
+{"target": ["postgresql", "postgres", 5432, "ri095_acceptance", "project_export_test_ri095"], "queue": "ri095_acceptance", "storage": "/acceptance-storage", "bucket": "UNUSED_LOCAL", "flags": {"project_report_write_enabled": false, "project_report_pdf_enabled": false, "project_export_enabled": false, "research_delivery_read_enabled": true, "agent_analysis_write_enabled": false, "agent_download_write_enabled": false}}
+{"database_identity": ["project_export_test_ri095", "ri095_acceptance", "172.25.0.3/32", "PostgreSQL 14.23 (Debian 14.23-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit"]}
+{"uid": 10001, "gid": 10001, "tmpfs_and_private_volume_write_readback": "PASS_RUNTIME"}

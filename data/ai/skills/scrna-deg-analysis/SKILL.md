@@ -1,11 +1,13 @@
 ---
 name: 单细胞差异表达分析
-skill_id: scrna-deg-analysis
-description: 当用户需要对已注释的 scRNA-seq Seurat 对象按"细胞类型 × 分组"做批量差异表达分析（FindMarkers）、基因注释和火山图可视化时触发。输入为 Seurat RDS 对象路径与分组/细胞类型列名。边界：cluster marker 查找（聚类鉴定）由主流程 scrna-pipeline-overview 完成，细胞比例统计走 scrna-annotation-stats，本技能只做"细胞类型内 处理组 vs 对照组"的 DEG。
+description: 当用户需要对已注释的 scRNA-seq Seurat 对象按"细胞类型 × 分组"做批量差异表达分析（FindMarkers）、基因注释和火山图可视化时触发。输入为
+  Seurat RDS 对象路径与分组/细胞类型列名。边界：cluster marker 查找（聚类鉴定）由主流程 scrna-pipeline-overview
+  完成，细胞比例统计走 scrna-annotation-stats，本技能只做"细胞类型内 处理组 vs 对照组"的 DEG。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 🌋
 category: analysis
+skill_id: scrna-deg-analysis
 ---
 
 # 单细胞差异表达分析（细胞类型 × 分组批量 DEG）

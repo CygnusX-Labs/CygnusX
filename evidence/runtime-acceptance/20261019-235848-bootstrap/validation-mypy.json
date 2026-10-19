@@ -1,0 +1,1 @@
+{"command": [".venv/bin/mypy", "src/cygnusx/"], "exit": 1, "duration": 5.390476942062378}

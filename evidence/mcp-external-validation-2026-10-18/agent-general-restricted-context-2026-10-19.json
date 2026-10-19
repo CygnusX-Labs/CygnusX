@@ -1,0 +1,416 @@
+{
+  "agent_id": "agent-general",
+  "binding_override": {
+    "persisted": false,
+    "server": "cygnusx-platform",
+    "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c",
+    "temporary": true
+  },
+  "biothings_count": 0,
+  "captured_at_utc": "2026-10-18T19:39:04.280729+00:00",
+  "context_ref": "mcp-acceptance-20261019-restricted-platform-only",
+  "final_tool_manifest": {
+    "manifest_sha256": "65b68ff7a66ca4620ffa7b0a875e7709dd9de57fc03d4ef8ea39ffaebb3a4ca9",
+    "schema_bytes": 4365,
+    "tool_count": 16,
+    "tools": [
+      {
+        "contract_digest": "c46000dfe57b735b1fb102fea05bd58567ebf9943e45d7b59466052dd69a028d",
+        "description": "检索 Europe PMC 权威生物医学论文，并按用户问题对标题与摘要进行语义/词项混合重排。适合基因、疾病机制、单细胞、肿瘤免疫、组学方法和临床研究证据检索。返回题名、摘要、作者、期刊、年份、PMID/PMCID/DOI、开放获取状态和可追溯链接。只读且不下载全文；研究问答通常保留最相关的 5-8 篇。",
+        "inputSchema": {
+          "properties": {
+            "max_results": {
+              "default": 8,
+              "description": "返回数量；研究问答推荐 5-8",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "open_access_only": {
+              "default": false,
+              "description": "是否仅返回开放获取论文",
+              "type": "boolean"
+            },
+            "query": {
+              "description": "英文联合检索式；建议使用 2-4 个核心概念并以 AND/OR 连接",
+              "type": "string"
+            },
+            "year_from": {
+              "description": "可选起始发表年份",
+              "type": "integer"
+            },
+            "year_to": {
+              "description": "可选结束发表年份",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "europe_pmc_search",
+        "schema_bytes": 542,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "19c0b3d46d07e6c15b5367bf09da1a526c38716a70ea95cd1de3780263835543",
+        "description": "检索 arXiv 的开放获取预印本，适合作为材料、计算机、物理、数学等非生物医学领域的文献检索源。返回题名、作者、年份、来源、链接和摘要；不下载全文。",
+        "inputSchema": {
+          "properties": {
+            "max_results": {
+              "default": 8,
+              "description": "返回数量；研究问答推荐 5-8",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "英文或英文关键词检索式",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "arxiv_search",
+        "schema_bytes": 253,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "8098b2107045ad06e8e6c473556bff03e0ffe953fdb917f160a9153d0d72be8d",
+        "description": "列出用户的分析任务（状态、进度）",
+        "inputSchema": {
+          "properties": {
+            "status": {
+              "description": "过滤状态",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "platform_list_tasks",
+        "schema_bytes": 88,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "ac94b6b4ce91e8bd8fdf6ce0fee5b46e6fd58eeb5a314714df23c1d274cf0246",
+        "description": "获取任务详情（状态、进度、工作目录、错误）",
+        "inputSchema": {
+          "properties": {
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id"
+          ],
+          "type": "object"
+        },
+        "name": "platform_get_task",
+        "schema_bytes": 83,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "39a87e318deceb47dc758e33c4b2ab34f71e736501768d542219998b74974914",
+        "description": "列出可用的分析流程",
+        "inputSchema": {
+          "properties": {
+            "category": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "platform_list_flows",
+        "schema_bytes": 61,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "1b01404f2282c9e1baa93e1ae4f7178732b0b519972ade6e48b321e3d64dd6ba",
+        "description": "获取当前用户的账户信息与饼干（积分）余额：用户名、角色、存储配额/已用空间，以及饼干可用余额/冻结/累计收支。用户询问「我还有多少饼干/积分/额度/余额」时必须调用本工具获取实时数据，禁止凭记忆或估计作答。",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "platform_get_user_info",
+        "schema_bytes": 33,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "a82f3ffb4f7fdeea94bf9e37688e2d7782c728da3e58c026e5517af17cb88698",
+        "description": "获取平台服务器当前时间、今天日期、星期、时区偏移和 Unix 时间戳。查询当前时间或日期时优先调用，不需要启动沙箱。",
+        "inputSchema": {
+          "properties": {
+            "timezone": {
+              "description": "可选 IANA 时区，如 Asia/Shanghai、America/Los_Angeles；留空使用平台服务器本地时区",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "platform_get_current_time",
+        "schema_bytes": 180,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "c0c134b58363e222c595b5a3ac8de95005b49026e188331bfa089fb5e4aa38a2",
+        "description": "查询某个 Agent（智能体）当前绑定的技能（Skill）列表：技能 ID、名称、描述、版本、是否已安装并启用。用户问「你/某 Agent 绑定了哪些技能、会什么、能用什么技能包」时必须调用本工具获取实时绑定关系，禁止凭记忆或猜测作答；省略 agent_id 时查询当前对话的 Agent。",
+        "inputSchema": {
+          "properties": {
+            "agent_id": {
+              "description": "Agent ID（如 agent-scrna）；省略时查询当前对话的 Agent",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "platform_list_agent_skills",
+        "schema_bytes": 146,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "0fe360a57705a7949d7fe22e183affee8f8ac9cfb54802aab8f4bc7213f5d872",
+        "description": "管理员专用的只读平台巡检：检查数据库可查询性、Redis、共享存储容量与权限、用户/任务状态分布及知识库文档和分块数量。不会修改配置、重启服务或执行修复。",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "name": "platform_admin_health_check",
+        "schema_bytes": 33,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "c9f3b5181571563241570e2c7f9714a3ab907f838a8b0b6eaad89659a332a853",
+        "description": "列出当前会话用户工作区指定目录的直接子项，返回 file_id、名称、文件/文件夹类型、大小、相对路径和修改时间。用户询问工作区有什么文件时必须调用。",
+        "inputSchema": {
+          "properties": {
+            "path": {
+              "description": "工作区内相对目录，留空表示根目录；禁止绝对路径和 ..",
+              "type": "string"
+            },
+            "pattern": {
+              "description": "可选 glob 过滤，如 *.csv、sample_*.fastq.gz",
+              "type": "string"
+            },
+            "recursive": {
+              "default": false,
+              "description": "是否递归列出目录下所有文件；用户询问有哪些数据文件时设为 true",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_workspace_files",
+        "schema_bytes": 397,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "fd6d29ba1293e1deb2e03c2e611306aa383207a5ac6bcdb3f6e8578551ffe4ed",
+        "description": "从当前会话用户工作区根目录递归按文件名模糊搜索，返回 file_id、名称、相对路径和修改时间。用户要求寻找某个数据文件时必须调用。",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "文件名搜索词",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "search_workspace_files",
+        "schema_bytes": 179,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "39c866ac7212ceb85092193ccd3086607f3b93220f5c14a9ac0270afc31d08f8",
+        "description": "按 file_id 读取工作区文本文件内容预览（默认前 100KB，超出截断）；PDF 返回最多 50,000 字符的分页文本；二进制/测序文件（BAM/CRAM/FASTQ 等）只返回元数据。",
+        "inputSchema": {
+          "properties": {
+            "file_id": {
+              "description": "文件 ID，形如 file://{uuid} 或 upload://{hex}（来自列表或 @ 引用）",
+              "type": "string"
+            },
+            "max_bytes": {
+              "default": 102400,
+              "description": "最多读取字节数",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "file_id"
+          ],
+          "type": "object"
+        },
+        "name": "workspace_read_file",
+        "schema_bytes": 267,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "a2b0d8af32562db86c79a9401efbba650f42c1808ada1f13494d7e392db2f05b",
+        "description": "按会话 ID 检索该聊天窗口中用户上传过的文件（聊天上传文件名内嵌会话标记）。session_id 留空时默认使用当前会话。需要找回本会话之前上传的数据文件时调用。",
+        "inputSchema": {
+          "properties": {
+            "session_id": {
+              "description": "聊天会话 ID（UUID），留空表示当前会话",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "find_session_uploads",
+        "schema_bytes": 132,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "e5494fa73921e3d48586f755b5244eea8ca57d386a8e88405728f539534fedda",
+        "description": "按 file_id 返回工作区文件的元数据（名称、大小、类型、目录、创建时间），不读内容。",
+        "inputSchema": {
+          "properties": {
+            "file_id": {
+              "description": "文件 ID，形如 file://{uuid} 或 upload://{hex}",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file_id"
+          ],
+          "type": "object"
+        },
+        "name": "workspace_get_file_info",
+        "schema_bytes": 151,
+        "server": "cygnusx-platform",
+        "server_id": "4197a87e-1c04-5680-b89f-06d0d85cb84c"
+      },
+      {
+        "contract_digest": "f562593b53065827d82cba0c5dcb40fc12e8921a79b03eacfa612dfcaf1b27c4",
+        "description": "加载已挂载技能的完整指令（SKILL.md 正文）。任务命中某技能描述时必须先调用本工具获取执行步骤，不要猜测技能内容。",
+        "inputSchema": {
+          "properties": {
+            "skill_id": {
+              "description": "技能唯一 ID（atac-tools=ATAC 工具集；blast=BLAST Homolog Locus Extraction；data-deliver=数据交付；deg=deg；dotplot=dotplot；enrichments=enrichments；fastq-screen=FastQ Screen 污染筛查；gaf2go=GO Term Annotation；gene-matrix=RSEM Gene Matrix Preparation；genome-tools=VCFtools heterozygosity calculator；gffconvert=GFF Feature Table Conversion；go-annotation=GO Annotation Table Preparation；kegg-pull=KEGG 离线注释下载；library-type=RNA library strandedness detector；logger-plugin=Snakemake Rich Loguru 日志插件；maftools-gistic2=maftools-gistic2；md5=MD5 manifest verifier；mutational-patterns=mutational-patterns；r-plot-library=r-plot-library；rmats=rMATS event merger；scrna-seq=scrna-seq；software-manager=Conda environment software inventory；tissue-specific-genes=tissue-specific-genes；wgcna=wgcna）",
+              "enum": [
+                "atac-tools",
+                "blast",
+                "data-deliver",
+                "deg",
+                "dotplot",
+                "enrichments",
+                "fastq-screen",
+                "gaf2go",
+                "gene-matrix",
+                "genome-tools",
+                "gffconvert",
+                "go-annotation",
+                "kegg-pull",
+                "library-type",
+                "logger-plugin",
+                "maftools-gistic2",
+                "md5",
+                "mutational-patterns",
+                "r-plot-library",
+                "rmats",
+                "scrna-seq",
+                "software-manager",
+                "tissue-specific-genes",
+                "wgcna"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill_id"
+          ],
+          "type": "object"
+        },
+        "name": "use_skill",
+        "schema_bytes": 1295,
+        "server": "runtime",
+        "server_id": "unknown"
+      },
+      {
+        "contract_digest": "4ed69de89d77fd3561c3b7223f7eab1e14b699b37d425ded4c58c6da1d0a3bc0",
+        "description": "按需读取技能文件夹内 references/ 或 assets/ 下的资源文件内容。仅在技能正文要求查阅某份参考资料时调用。",
+        "inputSchema": {
+          "properties": {
+            "path": {
+              "description": "技能文件夹内相对路径，如 references/guide.md",
+              "type": "string"
+            },
+            "skill_id": {
+              "enum": [
+                "atac-tools",
+                "blast",
+                "data-deliver",
+                "deg",
+                "dotplot",
+                "enrichments",
+                "fastq-screen",
+                "gaf2go",
+                "gene-matrix",
+                "genome-tools",
+                "gffconvert",
+                "go-annotation",
+                "kegg-pull",
+                "library-type",
+                "logger-plugin",
+                "maftools-gistic2",
+                "md5",
+                "mutational-patterns",
+                "r-plot-library",
+                "rmats",
+                "scrna-seq",
+                "software-manager",
+                "tissue-specific-genes",
+                "wgcna"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "skill_id",
+            "path"
+          ],
+          "type": "object"
+        },
+        "name": "skill_resource",
+        "schema_bytes": 525,
+        "server": "runtime",
+        "server_id": "unknown"
+      }
+    ]
+  },
+  "identity_ref": "sha256:ddc827a5d771b8f84ed624eae7ef22a88a111437f3782ee38776be6a59ac8cab",
+  "model_call_made": false,
+  "original_binding_count": 5,
+  "research_data_count": 0,
+  "secret_values_included": false,
+  "source_servers": [
+    "cygnusx-platform",
+    "runtime"
+  ],
+  "transaction_rolled_back": true
+}

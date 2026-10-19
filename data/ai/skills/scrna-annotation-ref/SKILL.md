@@ -1,11 +1,14 @@
 ---
 name: 单细胞自动注释参考库策略与路径约定
-description: 当用户需要理解、准备或核查本流程三路自动细胞注释（SingleR/ScType/CellID）的参考数据、选择 SingleR 参考库（-A 参数）与 marker 数据库（-F/-O 参数），或排查注释结果缺失/失败时触发。输入为物种 taxID（9606 人 / 10090 鼠）与目标组织器官。边界：注释的实际执行由 scrna-pipeline-overview 主流程完成；T 细胞 ProjecTIL 精细注释走 scrna-tcell-projectils；本技能只管参考库知识、选择决策与就绪核查（薄脚本 check_reference.R）。
-skill_id: scrna-annotation-ref
+description: 当用户需要理解、准备或核查本流程三路自动细胞注释（SingleR/ScType/CellID）的参考数据、选择 SingleR 参考库（-A
+  参数）与 marker 数据库（-F/-O 参数），或排查注释结果缺失/失败时触发。输入为物种 taxID（9606 人 / 10090 鼠）与目标组织器官。边界：注释的实际执行由
+  scrna-pipeline-overview 主流程完成；T 细胞 ProjecTIL 精细注释走 scrna-tcell-projectils；本技能只管参考库知识、选择决策与就绪核查（薄脚本
+  check_reference.R）。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 🏷️
 category: analysis
+skill_id: scrna-annotation-ref
 ---
 
 # 单细胞自动注释参考库策略与路径约定（SingleR / ScType / CellID）

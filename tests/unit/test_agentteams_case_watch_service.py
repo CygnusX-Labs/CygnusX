@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -152,6 +153,7 @@ async def test_watch_notifies_closed_flow_case_as_analysis_completion(monkeypatc
 async def test_watch_new_only_clears_legacy_cursor_fields(monkeypatch) -> None:
     db = FakeDb()
     service = AgentTeamsCaseWatchService(db)
+    monkeypatch.setattr(watch_module, "publish_chat_case_event", AsyncMock())
     monkeypatch.setattr(
         watch_module,
         "get_settings",

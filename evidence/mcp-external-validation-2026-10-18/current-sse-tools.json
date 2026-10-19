@@ -1,0 +1,2391 @@
+[
+  {
+    "name": "atac_seq_prepare",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_data_path": {
+          "type": "string"
+        },
+        "species": {
+          "type": "string"
+        },
+        "genome_version": {
+          "type": "string"
+        },
+        "sample_sheet": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "comparisons": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "library_type": {
+          "type": "string"
+        },
+        "project_name": {
+          "type": "string"
+        },
+        "extra_parameters": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "raw_data_path",
+        "species",
+        "genome_version",
+        "sample_sheet",
+        "comparisons",
+        "library_type",
+        "project_name"
+      ],
+      "type": "object"
+    },
+    "description": "校验 ATAC-seq 参数和工作区数据，返回可提交的 prepared_params"
+  },
+  {
+    "name": "atac_seq_results",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "result_types": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "获取 ATAC-seq 结果摘要和产物清单"
+  },
+  {
+    "name": "atac_seq_status",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "[DEPRECATED] 按 task_id 查询 ATAC-seq 任务当前状态及平台提供的进度信息；这是旧版流程专用入口，新集成优先使用 cygnusx_get_task_progress。"
+  },
+  {
+    "name": "atac_seq_submit",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "prepared_params": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prepared_params"
+      ],
+      "type": "object"
+    },
+    "description": "提交经过 atac_seq_prepare 预检的 ATAC-seq 任务（需 user_confirmed=True）"
+  },
+  {
+    "name": "biothings_describe",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "database": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "database"
+      ],
+      "type": "object"
+    },
+    "description": "获取 BioThings provider metadata 与字段目录"
+  },
+  {
+    "name": "check_workspace_data",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "analysis_type": {
+          "type": "string"
+        },
+        "data_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysis_type",
+        "data_path"
+      ],
+      "type": "object"
+    },
+    "description": "检查当前 API Key 所属用户工作区内的数据完整性"
+  },
+  {
+    "name": "cygnusx_cancel_task",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "confirmation_id": {
+          "default": "",
+          "type": "string"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "申请取消当前用户的任务。首次调用返回网页确认记录；获批后须携带 confirmation_id 重试。"
+  },
+  {
+    "name": "cygnusx_chem_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "按支持的化学标识符获取 MyChem 注释"
+  },
+  {
+    "name": "cygnusx_chem_resolve",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifiers",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "description": "按显式 scopes 批量映射化合物标识符"
+  },
+  {
+    "name": "cygnusx_chem_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "在 MyChem 中按 query 搜索化合物注释候选；limit/offset 控制分页，fields 可选定返回字段。不同盐型或化学身份作为独立候选保留；这不是结构相似性或药物对接搜索。"
+  },
+  {
+    "name": "cygnusx_clinvar_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "vcv_accession": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "identifier_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "VCV",
+                "RCV",
+                "SCV",
+                "VariationID",
+                "AlleleID"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "description": "按VCV、RCV、SCV或Variation ID读取ClinVar证据；Allele ID暂不支持"
+  },
+  {
+    "name": "cygnusx_clinvar_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "检索ClinVar记录并返回Entrez UID语义"
+  },
+  {
+    "name": "cygnusx_confirm_run_plan",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "confirmation_id": {
+          "default": "",
+          "type": "string"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "description": "确认指定 run_id 的计划属于有副作用操作：首次调用创建待网页审批记录；仅在人类批准后携带服务端 confirmation_id 重试才会确认并进入任务队列。user_confirmed 布尔值不能授权。"
+  },
+  {
+    "name": "cygnusx_domain_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "查询蛋白的InterPro家族/结构域及位置"
+  },
+  {
+    "name": "cygnusx_domain_proteins",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "interpro_id": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "interpro_id"
+      ],
+      "type": "object"
+    },
+    "description": "查询InterPro条目关联蛋白"
+  },
+  {
+    "name": "cygnusx_expression_manifest",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        },
+        "single_cell": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "读取Atlas实验目录元数据，不假设下载文件存在"
+  },
+  {
+    "name": "cygnusx_expression_studies",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "default": "",
+          "type": "string"
+        },
+        "single_cell": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "description": "在缓存的 Expression Atlas bulk 或单细胞研究目录中按 query 做不区分大小写的字面子串筛选；single_cell 选择目录，limit 限制返回条数。结果是研究元数据，不含基因表达定量值。"
+  },
+  {
+    "name": "cygnusx_gene_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "按 Entrez 或 Ensembl Gene ID 获取 MyGene 注释"
+  },
+  {
+    "name": "cygnusx_gene_resolve",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "type": "string"
+        },
+        "species": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifiers",
+        "scopes",
+        "species"
+      ],
+      "type": "object"
+    },
+    "description": "按显式 scopes 和物种批量映射基因标识符"
+  },
+  {
+    "name": "cygnusx_gene_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "species": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "species"
+      ],
+      "type": "object"
+    },
+    "description": "在 MyGene 中按 query 搜索基因候选；species 必填，limit/offset 控制分页（limit 上限 50），fields 可选定返回字段。结果保留候选匹配，不自动替用户选择唯一基因。"
+  },
+  {
+    "name": "cygnusx_genome_homology",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "species": {
+          "type": "string"
+        },
+        "identifier": {
+          "type": "string"
+        },
+        "target_species": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "species",
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "查询Ensembl plants orthologues"
+  },
+  {
+    "name": "cygnusx_genome_lookup",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "species": {
+          "type": "string"
+        },
+        "identifier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "species",
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "按物种和ID查询Ensembl基因对象"
+  },
+  {
+    "name": "cygnusx_genome_region",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "species": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "feature": {
+          "default": "gene",
+          "type": "string"
+        }
+      },
+      "required": [
+        "species",
+        "region"
+      ],
+      "type": "object"
+    },
+    "description": "查询Ensembl植物基因组区间注释"
+  },
+  {
+    "name": "cygnusx_genome_sequence",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "sequence_type": {
+          "default": "cdna",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "按 Ensembl stable ID 读取 genomic、cdna、cds 或 protein 序列（默认 cdna）；返回序列长度和最多 3000 字符的预览及截断标记，不提供完整序列文件下载。"
+  },
+  {
+    "name": "cygnusx_get_download_progress",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "下载任务 ID"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "获取逐 run 分阶段下载进度"
+  },
+  {
+    "name": "cygnusx_get_file_tree",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取当前用户可见文件的目录树，按来源分组并返回文件元数据。"
+  },
+  {
+    "name": "cygnusx_get_flow_detail",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "type": "string",
+          "description": "流程 ID（如：\"scrna_v2\"）"
+        }
+      },
+      "required": [
+        "flow_id"
+      ],
+      "type": "object"
+    },
+    "description": "获取流程详情和参数"
+  },
+  {
+    "name": "cygnusx_get_flow_parameters",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "type": "string",
+          "description": "流程 ID（如：\"scrna_v2\"）"
+        }
+      },
+      "required": [
+        "flow_id"
+      ],
+      "type": "object"
+    },
+    "description": "获取参数 JSON Schema"
+  },
+  {
+    "name": "cygnusx_get_platform_status",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取平台状态概览"
+  },
+  {
+    "name": "cygnusx_get_report",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "description": "报告 ID"
+        }
+      },
+      "required": [
+        "report_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 report_id 获取分析报告元数据，包括标题、关联流程、创建时间及文件清单；摘要最多展示 10 个文件名。"
+  },
+  {
+    "name": "cygnusx_get_report_content",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "description": "报告 ID"
+        }
+      },
+      "required": [
+        "report_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 report_id 获取报告 HTML 主文件；字符串内容仅在摘要和 preview 中截取前 3000 个字符。"
+  },
+  {
+    "name": "cygnusx_get_run_logs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 200,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 run_id 读取平台持久化事件日志；limit 默认 200 并限制在 1–500，data 返回事件列表及平台提供的事件元数据。"
+  },
+  {
+    "name": "cygnusx_get_run_status",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 run_id 查询平台 Run 记录；返回记录中的当前状态及关联 task_id（若有），不提交或修改任务。"
+  },
+  {
+    "name": "cygnusx_get_task",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 task_id 查询当前用户任务的完整详情，包括状态、参数和结果元数据。"
+  },
+  {
+    "name": "cygnusx_get_task_dag",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 task_id 获取任务依赖 DAG，用于查看分析步骤及其依赖关系。"
+  },
+  {
+    "name": "cygnusx_get_task_logs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "lines": {
+          "default": 50,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 task_id 读取最近的任务执行日志；lines 控制返回条数并受服务端上限约束。"
+  },
+  {
+    "name": "cygnusx_get_task_outputs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 task_id 获取任务工作目录、结果路径及任务记录；不会读取或下载输出文件内容。"
+  },
+  {
+    "name": "cygnusx_get_task_progress",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 task_id 查询任务状态与进度，并标记任务是否已结束；适合轮询监控。"
+  },
+  {
+    "name": "cygnusx_get_user_info",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取用户信息和配额"
+  },
+  {
+    "name": "cygnusx_list_directories",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "列出当前用户有权访问的工作区目录。"
+  },
+  {
+    "name": "cygnusx_list_downloads",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "列出当前用户的数据下载任务，返回任务名称、状态、进度和产物目录；不启动或修改下载任务。"
+  },
+  {
+    "name": "cygnusx_list_files",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "directory": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出当前用户指定目录下可见的文件；directory 省略时列出根目录。"
+  },
+  {
+    "name": "cygnusx_list_flows",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "default": "",
+          "type": "string",
+          "description": "流程类别过滤（可选）：\"rna_seq\"/\"atac_seq\"/\"scrna\"等，留空返回全部"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer",
+          "description": "每页条数（默认 20，最大 50）"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "description": "分页偏移（默认 0）"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出可用分析流程"
+  },
+  {
+    "name": "cygnusx_list_reports",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "default": "",
+          "type": "string",
+          "description": "流程 ID 过滤（可选）"
+        },
+        "keyword": {
+          "default": "",
+          "type": "string",
+          "description": "关键词过滤（可选）"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出当前用户的分析报告；可用 flow_id 或 keyword 过滤，返回报告元数据，摘要最多展示 20 条。"
+  },
+  {
+    "name": "cygnusx_list_runs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "project_slug": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出当前 API 身份可访问的 Run；可按 project_slug 和 status 过滤，返回平台 Run 记录及匹配总数摘要。"
+  },
+  {
+    "name": "cygnusx_list_tasks",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出当前用户的分析任务；可按任务状态筛选，省略 status 时返回全部任务。"
+  },
+  {
+    "name": "cygnusx_literature_annotations",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "article_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "article_ids"
+      ],
+      "type": "object"
+    },
+    "description": "按source-qualified文章ID读取Europe PMC注释"
+  },
+  {
+    "name": "cygnusx_literature_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "article_id": {
+          "type": "string"
+        },
+        "source": {
+          "default": "MED",
+          "type": "string"
+        }
+      },
+      "required": [
+        "article_id"
+      ],
+      "type": "object"
+    },
+    "description": "按MED/PMC/PPR来源查询Europe PMC文章与引用"
+  },
+  {
+    "name": "cygnusx_pathway_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "pathway_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pathway_id"
+      ],
+      "type": "object"
+    },
+    "description": "按stable ID查询Reactome通路/反应知识"
+  },
+  {
+    "name": "cygnusx_plant_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier"
+      ],
+      "type": "object"
+    },
+    "description": "按 Gramene gene identifier 查询 Gramene v69 基因详情并保留原始 provider 记录；结果中的 taxon_id 是 Gramene 专用标识，不能直接当作 NCBI taxid。"
+  },
+  {
+    "name": "cygnusx_plant_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "搜索Gramene v69植物基因与知识条目"
+  },
+  {
+    "name": "cygnusx_prepare",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "type": "string",
+          "description": "流程 ID（先调 cygnusx_list_flows / cygnusx_get_flow_detail 确认已开放）"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "type": "object",
+          "description": "该流程的完整参数对象"
+        }
+      },
+      "required": [
+        "flow_id",
+        "arguments"
+      ],
+      "type": "object"
+    },
+    "description": "预检任意已开放流程参数并创建确认记录（固定工具；提交请走 cygnusx_submit）"
+  },
+  {
+    "name": "cygnusx_preview_analysis",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "type": "string"
+        },
+        "parameters": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_sheet": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "flow_id"
+      ],
+      "type": "object"
+    },
+    "description": "对 flow_id 执行只读浅预检：检查必填 parameters 是否提供及所需 sample_sheet 是否非空，返回缺项或可继续提交的提示；不验证完整类型/枚举约束、不创建任务也不提交分析。"
+  },
+  {
+    "name": "cygnusx_protein_features",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        },
+        "section": {
+          "default": "all",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "读取UniProt功能、定位或features摘要"
+  },
+  {
+    "name": "cygnusx_protein_resolve",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "organism_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "按物种和reviewed策略解析UniProt蛋白"
+  },
+  {
+    "name": "cygnusx_protein_sequence",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取不超过3000残基的UniProt FASTA"
+  },
+  {
+    "name": "cygnusx_read_file_content",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file_path": {
+          "type": "string"
+        },
+        "max_lines": {
+          "default": 50,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "description": "读取当前用户工作区内文本文件的前 max_lines 行预览；路径须相对工作区，行数受服务端上限约束。"
+  },
+  {
+    "name": "cygnusx_sandbox_create",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "default": "python",
+          "type": "string",
+          "description": "编程语言：\"python\"（默认）/\"R\""
+        }
+      },
+      "type": "object"
+    },
+    "description": "创建或复用指定 language 的 Python/R 沙箱会话；返回 session_id、语言和状态，成功后可用该 ID 调用代码执行工具。"
+  },
+  {
+    "name": "cygnusx_sandbox_destroy",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "要销毁的会话 ID"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 session_id 结束并删除指定沙箱会话以释放容器资源；此操作不可继续使用该会话。"
+  },
+  {
+    "name": "cygnusx_sandbox_execute",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "要执行的代码字符串"
+        },
+        "session_id": {
+          "default": "",
+          "type": "string",
+          "description": "会话 ID（留空使用默认会话）"
+        },
+        "timeout": {
+          "default": 300,
+          "type": "integer",
+          "description": "执行超时时间（秒），clamp 到 300"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "description": "在沙箱中运行 code，可指定 session_id 和 timeout；timeout 会限制在服务端允许范围内，返回 stdout、stderr、退出状态及图表计数。"
+  },
+  {
+    "name": "cygnusx_sandbox_list",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "列出当前用户活跃的沙箱会话，返回 session_id、语言、状态和创建时间；不会创建会话。"
+  },
+  {
+    "name": "cygnusx_string_network",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "string_id": {
+          "type": "string"
+        },
+        "taxon_id": {
+          "type": "integer"
+        },
+        "network_type": {
+          "enum": [
+            "functional",
+            "physical",
+            "regulatory"
+          ],
+          "type": "string"
+        },
+        "required_score": {
+          "default": 400,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "string_id",
+        "taxon_id",
+        "network_type"
+      ],
+      "type": "object"
+    },
+    "description": "按显式STRING ID、匹配的taxon_id和functional/physical/regulatory类型读取有界互作；含方向的调控记录按source到target表示，分数是关联证据强度，不是因果概率。"
+  },
+  {
+    "name": "cygnusx_string_resolve",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "taxon_id": {
+          "type": "integer"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "identifier",
+        "taxon_id"
+      ],
+      "type": "object"
+    },
+    "description": "按必填NCBI taxon_id解析蛋白标识，保留有界候选而不自动选择；返回STRING ID、首选名和注释。"
+  },
+  {
+    "name": "cygnusx_structure_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "type": "object"
+    },
+    "description": "按PDB entry ID读取实验结构元数据"
+  },
+  {
+    "name": "cygnusx_structure_prediction",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "查询AlphaFold预测模型和置信度元数据"
+  },
+  {
+    "name": "cygnusx_structure_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "按UniProt accession搜索实验PDB实体"
+  },
+  {
+    "name": "cygnusx_submit",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmation_id": {
+          "type": "string",
+          "description": "cygnusx_prepare 返回、且已由用户在平台网页批准的确认记录 ID"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "confirmation_id"
+      ],
+      "type": "object"
+    },
+    "description": "凭服务端确认记录 ID 提交已预检且经用户网页确认的分析任务（固定工具；幂等）"
+  },
+  {
+    "name": "cygnusx_submit_analysis",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_id": {
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "parameters": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_sheet": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "comparisons": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "confirmation_id": {
+          "default": "",
+          "type": "string"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "flow_id"
+      ],
+      "type": "object"
+    },
+    "description": "提交指定 flow_id 的分析任务，可传 parameters、sample_sheet 和 comparisons。首次调用返回待网页审批的 confirmation_id；获批后携带该 ID 重试才会提交，并返回任务记录。"
+  },
+  {
+    "name": "cygnusx_submit_download",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "default": "sra",
+          "type": "string",
+          "description": "下载来源：\"sra\"（公共数据库）/\"cloud_storage\"（云存储）/\"direct_link\"（直链）"
+        },
+        "accession": {
+          "default": "",
+          "type": "string",
+          "description": "公共数据库登录号（PRJNA…/PRJEB…/SRR…/ERR…/DRR…），source=\"sra\" 时必填"
+        },
+        "download_method": {
+          "default": "aws",
+          "enum": [
+            "aws",
+            "ftp"
+          ],
+          "type": "string",
+          "description": "SRA 下载方式 \"aws\"（默认，最快）/\"ftp\"，仅 source=\"sra\" 有效"
+        },
+        "multithreads": {
+          "default": 4,
+          "type": "integer",
+          "description": "并发下载 run 数，默认 4"
+        },
+        "aws_threads": {
+          "default": 8,
+          "type": "integer",
+          "description": "单文件 AWS 并发线程数，默认 8"
+        },
+        "cloud_provider": {
+          "default": "",
+          "type": "string",
+          "description": "云商 \"aliyun\"/\"volc\"/\"huawei\"，source=\"cloud_storage\" 时必填"
+        },
+        "object_uri": {
+          "default": "",
+          "type": "string",
+          "description": "对象路径（oss:// / tos:// / obs:// 前缀），source=\"cloud_storage\" 时必填"
+        },
+        "recursive": {
+          "default": true,
+          "type": "boolean",
+          "description": "云存储目录是否递归下载，默认 True"
+        },
+        "links": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "HTTP/HTTPS/FTP 下载链接列表，source=\"direct_link\" 时必填"
+        },
+        "target_directory": {
+          "default": "",
+          "type": "string",
+          "description": "下载到用户根目录下的子目录（如 \"project_x\"），留空=downloads 目录"
+        },
+        "dry_run": {
+          "default": false,
+          "type": "boolean",
+          "description": "True 时仅模拟下载（仅 SRA），用于校验登录号"
+        },
+        "confirmation_id": {
+          "default": "",
+          "type": "string"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean",
+          "description": "设为 True 确认提交（提交任务前必须经用户确认）"
+        }
+      },
+      "type": "object"
+    },
+    "description": "提交下载任务(SRA/GEO 公共数据库、云存储、直链三类来源)"
+  },
+  {
+    "name": "cygnusx_target_associations",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "type": "object"
+    },
+    "description": "读取Open Targets靶点-疾病关联"
+  },
+  {
+    "name": "cygnusx_target_evidence",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "type": "string"
+        },
+        "disease_id": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_id",
+        "disease_id"
+      ],
+      "type": "object"
+    },
+    "description": "读取Open Targets靶点/疾病证据摘要"
+  },
+  {
+    "name": "cygnusx_target_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "entity": {
+          "default": "target",
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "使用固定GraphQL模板检索Open Targets实体"
+  },
+  {
+    "name": "cygnusx_te_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "按Dfam accession查询TE家族摘要"
+  },
+  {
+    "name": "cygnusx_te_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "default": "",
+          "type": "string"
+        },
+        "classification": {
+          "default": "",
+          "type": "string"
+        },
+        "clade": {
+          "default": "",
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "description": "按名称、分类路径和clade检索Dfam家族"
+  },
+  {
+    "name": "cygnusx_variant_get",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "assembly": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "assembly"
+      ],
+      "type": "object"
+    },
+    "description": "按明确 assembly 获取 MyVariant 注释"
+  },
+  {
+    "name": "cygnusx_variant_resolve",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "type": "string"
+        },
+        "assembly": {
+          "type": "string"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifiers",
+        "scopes",
+        "assembly"
+      ],
+      "type": "object"
+    },
+    "description": "按显式 scopes 和 assembly 批量映射变异标识符"
+  },
+  {
+    "name": "cygnusx_variant_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "assembly": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer"
+        },
+        "fields": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "assembly"
+      ],
+      "type": "object"
+    },
+    "description": "按明确 hg19/hg38 assembly 检索 MyVariant"
+  },
+  {
+    "name": "cygnusx_verify_artifact",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "description": "按 run_id 查询已登记的产物及平台返回的校验摘要（包括可用的 checksum）；此工具读取平台记录，不自行重算文件完整性。"
+  },
+  {
+    "name": "list_available_pipelines",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "列出当前平台可通过 MCP 调用的完整分析流程"
+  },
+  {
+    "name": "list_workspace_files",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": "",
+          "type": "string"
+        },
+        "pattern": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "description": "列出当前用户工作区中的文件和文件夹；可用相对 path 限定目录、用 pattern 匹配名称。"
+  },
+  {
+    "name": "rna_seq_prepare",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_data_path": {
+          "type": "string"
+        },
+        "species": {
+          "type": "string"
+        },
+        "genome_version": {
+          "type": "string"
+        },
+        "sample_sheet": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "comparisons": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "library_type": {
+          "type": "string"
+        },
+        "project_name": {
+          "type": "string"
+        },
+        "extra_parameters": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "raw_data_path",
+        "species",
+        "genome_version",
+        "sample_sheet",
+        "comparisons",
+        "library_type",
+        "project_name"
+      ],
+      "type": "object"
+    },
+    "description": "校验 RNA-seq 参数和工作区数据，返回可提交的 prepared_params"
+  },
+  {
+    "name": "rna_seq_results",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "result_types": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "获取 RNA-seq 结果摘要、差异基因统计和产物清单"
+  },
+  {
+    "name": "rna_seq_status",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "description": "查询 RNA-seq 任务状态和进度"
+  },
+  {
+    "name": "rna_seq_submit",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "prepared_params": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "user_confirmed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prepared_params"
+      ],
+      "type": "object"
+    },
+    "description": "提交经过 rna_seq_prepare 预检的 RNA-seq 任务（需 user_confirmed=True）"
+  },
+  {
+    "name": "search_workspace_files",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "default": 50,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "在当前用户已索引的工作区路径中搜索文件和目录名称；limit 限制返回条数，最大 50。"
+  },
+  {
+    "name": "seqout_beacon_info",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取 Beacon 元数据"
+  },
+  {
+    "name": "seqout_beacon_runs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_accession": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "单个运行编号（可选，如:'SRR1234567'）"
+        },
+        "skip": {
+          "default": 0,
+          "type": "integer",
+          "description": "分页索引，默认 0"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "description": "页面大小，最大 100，默认 10"
+        }
+      },
+      "type": "object"
+    },
+    "description": "浏览测序运行记录"
+  },
+  {
+    "name": "seqout_get_common_name",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "organism": {
+          "type": "string",
+          "description": "物种标识符（如:'Homo sapiens','Mus musculus',9606）"
+        }
+      },
+      "required": [
+        "organism"
+      ],
+      "type": "object"
+    },
+    "description": "获取物种的常用名称"
+  },
+  {
+    "name": "seqout_get_download_links",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "study_accession": {
+          "type": "string",
+          "description": "研究项目编号（如:'GSE123456','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "study_accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取 TSV 格式的下载链接"
+  },
+  {
+    "name": "seqout_get_experiments",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "study_accession": {
+          "type": "string",
+          "description": "研究项目编号（如:'GSE123456','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "study_accession"
+      ],
+      "type": "object"
+    },
+    "description": "列出研究中的所有实验"
+  },
+  {
+    "name": "seqout_get_metadata_csv",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "study_accession": {
+          "type": "string",
+          "description": "研究项目编号（如:'GSE123456','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "study_accession"
+      ],
+      "type": "object"
+    },
+    "description": "下载合并的元数据 CSV"
+  },
+  {
+    "name": "seqout_get_ontology_term",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "term": {
+          "type": "string",
+          "description": "本体论术语（如:'T cell','liver','RNA-seq'）"
+        }
+      },
+      "required": [
+        "term"
+      ],
+      "type": "object"
+    },
+    "description": "查询本体论术语信息"
+  },
+  {
+    "name": "seqout_get_organism_totals",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取每个物种的实验总数"
+  },
+  {
+    "name": "seqout_get_organisms",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "列出所有支持的物种"
+  },
+  {
+    "name": "seqout_get_platform_totals",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "平台代码（如:'ILLUMINA','ION'，可选）"
+        }
+      },
+      "type": "object"
+    },
+    "description": "获取平台实验总数或过滤选项"
+  },
+  {
+    "name": "seqout_get_project_citation",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "项目唯一编号（如:'GSE151530','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取项目引用文献 (BibTeX)"
+  },
+  {
+    "name": "seqout_get_project_detail",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "项目唯一编号（如:'GSE151530','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取项目详情（实验设计、平台、文献）"
+  },
+  {
+    "name": "seqout_get_project_enriched",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "项目唯一编号（如:'GSE151530','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取 AI 增强的样本元数据"
+  },
+  {
+    "name": "seqout_get_project_metadata",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "项目唯一编号（如:'GSE151530','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取项目标题和描述"
+  },
+  {
+    "name": "seqout_get_run_download",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_accession": {
+          "type": "string",
+          "description": "运行编号（如:'SRR1234567','ERR1234567'）"
+        }
+      },
+      "required": [
+        "run_accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取单个运行的下载链接"
+  },
+  {
+    "name": "seqout_get_runs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "study_accession": {
+          "type": "string",
+          "description": "研究项目编号（如:'GSE123456','PRJNA678901'）"
+        }
+      },
+      "required": [
+        "study_accession"
+      ],
+      "type": "object"
+    },
+    "description": "列出 FASTQ 下载链接"
+  },
+  {
+    "name": "seqout_get_sample_detail",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "样本编号（如:'GSM1234567','SRR1234567'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取完整的样本详细信息"
+  },
+  {
+    "name": "seqout_get_sample_manifest",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "GEO Series 编号（如:'GSE123456'）"
+        },
+        "max_samples": {
+          "default": 30,
+          "type": "integer",
+          "description": "返回的最大样本数量预览，默认 30"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "获取数据集的样本清单"
+  },
+  {
+    "name": "seqout_get_sample_metadata",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "样本编号（如:'GSM1234567','SRR1234567'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "按 GSM、SRR 等 accession 查询公共组学样本元数据，返回原始样本记录；不推断处理组或对照组。"
+  },
+  {
+    "name": "seqout_get_stats_growth",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "description": "获取数据库增长统计"
+  },
+  {
+    "name": "seqout_resolve_accession",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accession": {
+          "type": "string",
+          "description": "样本或 Run 编号（如:'GSM456789','SRR1234567'）"
+        }
+      },
+      "required": [
+        "accession"
+      ],
+      "type": "object"
+    },
+    "description": "反查样本归属的项目编号"
+  },
+  {
+    "name": "seqout_resolve_prj",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "prj_accession": {
+          "type": "string",
+          "description": "BioProject 编号（如:'PRJNA123456','PRJEB123456'）"
+        }
+      },
+      "required": [
+        "prj_accession"
+      ],
+      "type": "object"
+    },
+    "description": "将 BioProject 解析到研究级别"
+  },
+  {
+    "name": "seqout_search",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "检索关键词（如:'CD8 T cell exhaust','HCC single cell','GSE151530'）"
+        },
+        "limit": {
+          "default": 5,
+          "type": "integer",
+          "description": "最多返回的项目数量，推荐 3-5 条，避免上下文膨胀"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "在 GEO/SRA/ENA/GSA 中搜索组学项目"
+  },
+  {
+    "name": "seqout_search_geo",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "检索关键词（如:'melanoma','single cell'）"
+        },
+        "limit": {
+          "default": 5,
+          "type": "integer",
+          "description": "最多返回的项目数量，推荐 3-5 条"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "仅搜索 GEO 数据库"
+  },
+  {
+    "name": "seqout_search_sra",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "检索关键词（如:'human peripheral blood','mouse brain'）"
+        },
+        "limit": {
+          "default": 5,
+          "type": "integer",
+          "description": "最多返回的项目数量，推荐 3-5 条"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "仅搜索 SRA 数据库"
+  },
+  {
+    "name": "seqout_search_structured",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "organism": {
+          "type": "string",
+          "description": "物种名称或_taxon_id（如:'Homo sapiens','Mus musculus',9606）"
+        },
+        "assay": {
+          "type": "string",
+          "description": "实验类型（如:'RNA-seq','ChIP-seq','ATAC-seq'）"
+        },
+        "limit": {
+          "default": 5,
+          "type": "integer",
+          "description": "最多返回的项目数量，推荐 3-5 条"
+        }
+      },
+      "required": [
+        "organism",
+        "assay"
+      ],
+      "type": "object"
+    },
+    "description": "使用元数据过滤器结构化搜索"
+  }
+]

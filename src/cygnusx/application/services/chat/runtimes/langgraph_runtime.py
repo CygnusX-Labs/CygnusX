@@ -51,6 +51,7 @@ from cygnusx.application.services.studio_tools import (
     SUBMIT_OUTPUT_TOOL_NAME,
     SUBMIT_OUTPUT_TOOL_SCHEMA,
 )
+from cygnusx.application.services.tool_manifest import build_tool_manifest
 from cygnusx.core.config import get_settings
 from cygnusx.domain.skill.services import SKILL_TOOL_NAMES
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
@@ -848,6 +849,13 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             logger.warning("cell_index 基线查询失败，从 0 起编号: {}", exc)
             code_cell_next = 0
 
+        if tools and not any(
+            (item.get("function") or {}).get("name") == SUBMIT_OUTPUT_TOOL_NAME
+            for item in tools
+            if isinstance(item, dict)
+        ):
+            runtime_state["tools"] = [*runtime_state["tools"], SUBMIT_OUTPUT_TOOL_SCHEMA]
+
         yield execution_chunk(
             "agent_turn_started",
             session_id=session_id,
@@ -856,7 +864,8 @@ class LangGraphChatRuntime(DelegatingAgentRuntime):
             round_number=0,
             execution_path=execution_path,
             message_id=ai_message_id,
-            tool_count=len(tools),
+            tool_count=len(runtime_state["tools"]),
+            tool_manifest=build_tool_manifest(runtime_state["tools"], active_mcp_servers),
         )
 
         def _flush_timeline_text() -> None:

@@ -76,8 +76,11 @@ main <- function(opt) {
     stop("RNA assay has no counts layer; reclustering requires raw counts", call. = FALSE)
   }
 
-  ## The function library now manages its own local_logger (no global binding).
-  # Reclustering starts below; logging is handled internally by SingleSampleSubClusterRereduction.
+  ## The function library references a GLOBAL `logger` (inside AutoSettingPcCutoff),
+  ## so it must be created in the global environment before the call.
+  logger <<- log4r_init()
+  info(logger, sprintf("Reclustering %d cells (resolution = %s, nfeatures = %s)",
+                       ncol(obj), opt$resolution, opt$nfeatures))
 
   new_obj <- withCallingHandlers(
     SingleSampleSubClusterRereduction(

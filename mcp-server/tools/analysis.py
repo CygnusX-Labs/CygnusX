@@ -171,7 +171,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
         parameters: dict | None = None,
         sample_sheet: list[dict] | None = None,
     ) -> dict:
-        """预览/验证分析参数（dry-run）：检查参数是否合法，不实际提交。"""
+        """对 flow_id 执行只读浅预检：检查必填 parameters 是否提供及所需 sample_sheet 是否非空，返回缺项或可继续提交的提示；不验证完整类型/枚举约束、不创建任务也不提交分析。"""
 
         try:
             flow = await api.get_flow(flow_id)

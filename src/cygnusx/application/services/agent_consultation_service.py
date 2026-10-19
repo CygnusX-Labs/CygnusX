@@ -25,7 +25,6 @@ from cygnusx.application.schemas.qc_verification import (
     merge_gate_decision,
     parse_qc_verification,
 )
-from cygnusx.core.config import get_settings
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.agent_service import AgentService
 from cygnusx.application.services.agentteams_artifact_lineage_service import (
@@ -38,25 +37,25 @@ from cygnusx.application.services.agentteams_capability_registry import (
 from cygnusx.application.services.agentteams_consultation_telemetry_service import (
     AgentTeamsConsultationTelemetryService,
 )
-from cygnusx.application.services.agentteams_quality_gate_service import (
-    AgentTeamsQualityGateService,
-)
 from cygnusx.application.services.agentteams_qc_verification_service import (
     AgentTeamsQcVerificationService,
+)
+from cygnusx.application.services.agentteams_quality_gate_service import (
+    AgentTeamsQualityGateService,
 )
 from cygnusx.application.services.agentteams_service import AgentTeamsService
 from cygnusx.application.services.agentteams_usage_service import record_consultation_usage
 from cygnusx.application.services.parallel_subagent_service import ParallelSubAgentService
 from cygnusx.application.services.pipeline_result_service import PipelineResultService
+from cygnusx.core.agentteams_context import agentteams_ctx_var
 from cygnusx.core.config import get_settings
 from cygnusx.core.exceptions import BusinessError, NotFoundError
-from cygnusx.core.agentteams_context import agentteams_ctx_var
-from cygnusx.middleware.trace_context import request_id_var, session_id_var
 from cygnusx.domain.file.entities import DataFile
 from cygnusx.domain.file.value_objects import FileType, OwnerScope
 from cygnusx.infrastructure.database.repositories.file_repository import FileRepositoryImpl
 from cygnusx.infrastructure.storage.minio_store import MinioStore
 from cygnusx.infrastructure.storage.path_factory import get_path_factory
+from cygnusx.middleware.trace_context import request_id_var, session_id_var
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
@@ -828,25 +827,24 @@ class AgentConsultationService:
             user_id = UUID(str(requester_ref))
         except ValueError:
             return [], ["产物登记失败：requester_ref 不是有效用户 UUID。"]
-        if not workdir.exists():
+        if not workdir.exists():  # noqa: ASYNC240 - bounded local workspace probe
             return [], []
 
         # 解析 Case 所属团队；失败则回退为个人空间（不影响登记流程）
         owner_scope = OwnerScope.PERSONAL.value
         team_id: UUID | None = None
         case_service = self._agentteams_service
-        if case_service is None:
-            case_service = AgentTeamsService(get_settings())
-        try:
-            case = await case_service.get_case(case_id, requester_ref)
-            raw_team = case.get("team_id")
-            if raw_team and str(raw_team) not in ("", "unassigned"):
-                team_id = UUID(str(raw_team))
-                owner_scope = OwnerScope.TEAM.value
-        except Exception as exc:  # noqa: BLE001
-            logger.bind(case_id=case_id, requester_ref=requester_ref).warning(
-                "获取 Case 团队信息失败，产物按个人空间登记: {}", exc
-            )
+        if case_service is not None:
+            try:
+                case = await case_service.get_case(case_id, requester_ref)
+                raw_team = case.get("team_id")
+                if raw_team and str(raw_team) not in ("", "unassigned"):
+                    team_id = UUID(str(raw_team))
+                    owner_scope = OwnerScope.TEAM.value
+            except Exception as exc:  # noqa: BLE001
+                logger.bind(case_id=case_id, requester_ref=requester_ref).warning(
+                    "获取 Case 团队信息失败，产物按个人空间登记: {}", exc
+                )
 
         factory = get_path_factory()
         destination = (
@@ -858,8 +856,9 @@ class AgentConsultationService:
         settings = get_settings()
         artifacts: list[dict[str, Any]] = []
         errors: list[str] = []
-        sources = sorted(
-            path for path in workdir.rglob("*") if path.is_file() and not path.is_symlink()
+        sources = sorted(  # noqa: ASYNC240 - bounded local workspace scan
+            path for path in workdir.rglob("*")  # noqa: ASYNC240 - bounded local workspace scan
+            if path.is_file() and not path.is_symlink()
         )[:100]
         for source in sources:
             # artifact_id 是 Case 内逻辑名（work_item 相对路径）；同名再登记 version_no 递增。

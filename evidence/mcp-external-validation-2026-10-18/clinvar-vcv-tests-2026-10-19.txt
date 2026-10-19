@@ -1,0 +1,20 @@
+ClinVar VCV adapter follow-up
+Date: 2026-10-19 Asia/Shanghai
+
+Platform tests:
+uv run pytest tests/unit/test_research_preset.py tests/unit/test_research_data_api.py tests/unit/test_mcp_dual_surface_parity.py -q -m 'not quarantine'
+63 passed, 1 pre-existing Pydantic deprecation warning.
+
+External MCP suite:
+PYTHONPATH=. uv run --project . --with pytest,pytest-asyncio pytest tests -q
+64 passed.
+
+Static checks:
+uv run ruff check src/cygnusx/application/services/research_data_service.py tests/unit/test_research_preset.py mcp-server/tools/research_resources.py mcp-server/tests/test_research_resources_tools.py
+All checks passed.
+uv run mypy src/cygnusx/application/services/research_data_service.py
+Success: no issues found in 1 source file.
+
+Live contract sample:
+The actual execute_research(cygnusx_clinvar_get) service returned HTTP 200 data for VCV000014206 in a 1,516-byte envelope. Record identity and bounded classification/review/submission evidence remained present; projection truncation was explicitly marked.
+The direct public request did not exercise FastMCP, platform REST authentication, Agent context, or cache behavior.

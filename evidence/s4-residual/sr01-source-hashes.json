@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-10-18",
+  "head": "54718c476816c0045e433d45148c0140784ebbce",
+  "result": "PASS_ISOLATED",
+  "runtime_authorization": "NOT_GRANTED",
+  "files": {
+    "src/cygnusx/application/services/download_service.py": "99b4e5438f977dcb2581753c51297cea3fb6ca9cfeed03ffd0edaee6de4f9a63",
+    "src/cygnusx/infrastructure/database/repositories/task_repository.py": "9e071db988b21c588809431fe01da740eccca9c8904ab763ddbbb42692756d80",
+    "tests/unit/test_download_s4a_reliability.py": "2cd9df23f8f561ac2dc80f21e8c0aa5847c2530722faac85e0f3574f5e38489c"
+  }
+}

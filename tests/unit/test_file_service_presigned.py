@@ -1,5 +1,6 @@
 """FileService 预签名 URL 单元测试（cloud/S3 模式大文件直传）"""
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -7,12 +8,25 @@ from uuid import UUID, uuid4
 import pytest
 
 from cygnusx.application.services.file_service import FileService
-from cygnusx.core.exceptions import AuthorizationError, BusinessError, NotFoundError, ValidationError
+from cygnusx.core.exceptions import (
+    AuthorizationError,
+    BusinessError,
+    NotFoundError,
+    ValidationError,
+)
 from cygnusx.domain.file.entities import DataFile
 from cygnusx.domain.file.value_objects import FileType, OwnerScope
 from cygnusx.infrastructure.config.storage_config import StorageConfig
 from cygnusx.infrastructure.storage.backend import LocalStorageBackend
 from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
+
+
+@pytest.fixture(autouse=True)
+def _inline_local_storage_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
 
 
 class _FakeS3Backend:

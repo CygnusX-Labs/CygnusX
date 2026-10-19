@@ -1,0 +1,61 @@
+{
+  "captured_at_utc": "2026-10-18T19:31:05.338953+00:00",
+  "platform_base_url": "http://127.0.0.1:8017",
+  "platform_identity": {
+    "user_id": "ad50e966-736f-4b0b-9e4b-d9e23a84782a",
+    "role": "user",
+    "scopes": [
+      "flows:read",
+      "research:read"
+    ]
+  },
+  "cache_note": "The fixed Research Data route has no application result cache; every invocation reached NCBI.",
+  "results": [
+    {
+      "transport": "stdio",
+      "initialize_and_tools_list": true,
+      "tool_count": 109,
+      "tool": "cygnusx_clinvar_search",
+      "provider": "NCBI ClinVar E-utilities",
+      "input": {
+        "query": "TP53[gene] AND pathogenic[clinsig]"
+      },
+      "mcp_is_error": false,
+      "business_success": true,
+      "matched_record_count": 1767,
+      "platform_status": 200,
+      "platform_request_id": "bcf54732658740669aae86efce87eef0"
+    },
+    {
+      "transport": "streamable-http",
+      "initialize_and_tools_list": true,
+      "tool_count": 109,
+      "tool": "cygnusx_clinvar_search",
+      "provider": "NCBI ClinVar E-utilities",
+      "input": {
+        "query": "TP53[gene] AND pathogenic[clinsig]"
+      },
+      "mcp_is_error": false,
+      "business_success": true,
+      "matched_record_count": 1767,
+      "platform_status": 200,
+      "platform_request_id": "a9658ad2aeeb4108ad61840a65f83c31"
+    },
+    {
+      "transport": "sse",
+      "initialize_and_tools_list": true,
+      "tool_count": 109,
+      "tool": "cygnusx_clinvar_search",
+      "provider": "NCBI ClinVar E-utilities",
+      "input": {
+        "query": "TP53[gene] AND pathogenic[clinsig]"
+      },
+      "mcp_is_error": false,
+      "business_success": true,
+      "matched_record_count": 1767,
+      "platform_status": 200,
+      "platform_request_id": "01543cc41fdb4011bfa4fd68f099d690"
+    }
+  ],
+  "secret_values_included": false
+}

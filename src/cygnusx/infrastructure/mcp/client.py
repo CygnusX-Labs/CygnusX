@@ -257,6 +257,12 @@ class MCPClient:
         # 由上层把失败标成 error 并回传真实原因，而不是误报 online + 0 工具。
         return await asyncio.wait_for(self._list_tools_external(server), timeout=server.timeout)
 
+    async def list_resources(self, server: MCPServer) -> list[dict[str, str]]:
+        """Discover resource and resource-template metadata without reading contents."""
+        if server.transport == Transport.BUILTIN:
+            return []
+        return await asyncio.wait_for(self._list_resources_external(server), timeout=server.timeout)
+
     def __init__(self, health_registry: MCPHealthRegistry | None = None) -> None:
         self.health_registry = health_registry or get_default_health_registry()
         self.health_registry.circuit_cooldown_seconds = (
@@ -661,6 +667,54 @@ class MCPClient:
             }
             for t in result.tools
         ]
+
+    async def _list_resources_external(self, server: MCPServer) -> list[dict[str, str]]:
+        """Discover external resource metadata and URI templates."""
+        try:
+            from mcp import ClientSession  # noqa: F401
+        except ImportError:
+            return []
+
+        async def discover(session: Any) -> tuple[Any, Any]:
+            capabilities = getattr(session, "server_capabilities", None)
+            if not getattr(capabilities, "resources", None):
+                return None, None
+            resources, templates = await asyncio.gather(
+                session.list_resources(), session.list_resource_templates()
+            )
+            return resources, templates
+
+        resources, templates = await self._with_external_session(server, discover)
+        entries: list[dict[str, str]] = []
+        for item in getattr(resources, "resources", []):
+            entries.append(
+                {
+                    "name": str(getattr(item, "name", "")),
+                    "uri": str(getattr(item, "uri", "")),
+                    "description": str(getattr(item, "description", "") or ""),
+                    "mime_type": str(
+                        getattr(item, "mimeType", None) or getattr(item, "mime_type", "") or ""
+                    ),
+                    "kind": "resource",
+                }
+            )
+        for item in getattr(templates, "resource_templates", []):
+            entries.append(
+                {
+                    "name": str(getattr(item, "name", "")),
+                    "uri": str(
+                        getattr(item, "uriTemplate", None)
+                        or getattr(item, "uri_template", "")
+                        or ""
+                    ),
+                    "description": str(getattr(item, "description", "") or ""),
+                    "mime_type": str(
+                        getattr(item, "mimeType", None) or getattr(item, "mime_type", "") or ""
+                    ),
+                    "kind": "template",
+                }
+            )
+        return entries
 
     async def _call_tool_external(
         self, server: MCPServer, tool_name: str, arguments: dict[str, Any]

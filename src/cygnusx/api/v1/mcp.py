@@ -11,6 +11,7 @@ from cygnusx.application.schemas.mcp import (
     CreateMCPServerDTO,
     InvokeToolDTO,
     MCPLogEntryDTO,
+    MCPResourceDTO,
     MCPServerDTO,
     MCPServerVersionDTO,
     MCPToolDTO,
@@ -153,6 +154,19 @@ async def list_tools(
     server_id: UUID,
 ) -> list[MCPToolDTO]:
     return await service.list_tools(server_id)
+
+
+@router.get(
+    "/servers/{server_id}/resources",
+    response_model=list[MCPResourceDTO],
+    summary="发现 Server Resources 与 Templates 元数据",
+)
+async def list_resources(
+    _admin: AdminRequired,
+    service: MCPServiceDep,
+    server_id: UUID,
+) -> list[MCPResourceDTO]:
+    return await service.list_resources(server_id)
 
 
 @router.post(

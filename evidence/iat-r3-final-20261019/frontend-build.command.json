@@ -1,0 +1,12 @@
+{
+  "name": "frontend-build",
+  "command": [
+    "npm",
+    "run",
+    "build"
+  ],
+  "cwd": "frontend",
+  "exit_code": 0,
+  "duration_seconds": 71.38,
+  "log": "frontend-build.log"
+}

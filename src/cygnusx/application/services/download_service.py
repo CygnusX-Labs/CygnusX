@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from cygnusx.infrastructure.database.models.project import ProjectModel
 from cygnusx.infrastructure.database.models.task import TaskModel
 from cygnusx.infrastructure.database.models.user import UserModel
 from cygnusx.infrastructure.database.repositories.task_repository import (
+    TaskIdempotencyKeyConflictError,
     TaskRepositoryImpl,
 )
 from cygnusx.infrastructure.download.reliability import intent_digest, notify_after_commit
@@ -210,20 +212,28 @@ class DownloadService:
         relative_work_dir = (
             Path(work_dir).relative_to(get_path_factory().user_root(user_id)).as_posix()
         )
-        await ensure_directory_chain(self._db, UUID(user_id), relative_work_dir)
+        try:
+            async with self._db.begin_nested():
+                await ensure_directory_chain(self._db, UUID(user_id), relative_work_dir)
 
-        # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
-        task = await self._domain.submit(
-            flow_id=DOWNLOAD_FLOW_ID,
-            user_id=UUID(user_id),
-            name=task_name,
-            parameters=parameters,
-            sample_count=0,
-            idempotency_key=key,
-            task_id=task_id,
-        )
-        task.work_dir = work_dir
-        task = await self._repo.save(task)
+                # 创建任务聚合根（复用通用 Task，flow_id 标记为数据下载）
+                task = await self._domain.submit(
+                    flow_id=DOWNLOAD_FLOW_ID,
+                    user_id=UUID(user_id),
+                    name=task_name,
+                    parameters=parameters,
+                    sample_count=0,
+                    idempotency_key=key,
+                    task_id=task_id,
+                )
+                task.work_dir = work_dir
+                task = await self._repo.save(task)
+        except TaskIdempotencyKeyConflictError:
+            self._remove_unsubmitted_work_dir(work_dir, task_id, user_id, digest)
+            raise ConflictError(
+                "同一下载请求正在并发提交，请重试查询原任务",
+                code="DOWNLOAD_REQUEST_CONFLICT",
+            ) from None
 
         # The API transaction owns the commit. Publish only after that commit;
         # a queued row remains recoverable when the broker is unavailable.
@@ -232,6 +242,55 @@ class DownloadService:
         # 状态推进为已入队
         task = await self._domain.transition_status(task, TaskStatus.QUEUED)
         return task_to_response(task)
+
+    @staticmethod
+    def _remove_unsubmitted_work_dir(
+        work_dir: str, task_id: UUID, owner_id: str, digest: str
+    ) -> None:
+        """Remove only this request's empty marker directory after a lost insert race."""
+        path = Path(work_dir)
+        parent_fd: int | None = None
+        directory_fd: int | None = None
+        marker_fd: int | None = None
+        try:
+            parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            directory_fd = os.open(
+                path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
+            )
+            marker_fd = os.open(
+                ".download-task.json", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd
+            )
+            marker_info = os.fstat(marker_fd)
+            if not stat.S_ISREG(marker_info.st_mode):
+                return
+            with os.fdopen(os.dup(marker_fd), "r", encoding="utf-8") as stream:
+                marker = json.load(stream)
+            if marker != {
+                "version": 1,
+                "task_id": str(task_id),
+                "owner_id": owner_id,
+                "intent_digest": digest,
+            }:
+                return
+            if os.listdir(directory_fd) != [".download-task.json"]:
+                return
+            current_info = os.stat(
+                ".download-task.json", dir_fd=directory_fd, follow_symlinks=False
+            )
+            if (current_info.st_dev, current_info.st_ino) != (
+                marker_info.st_dev,
+                marker_info.st_ino,
+            ):
+                return
+            os.unlink(".download-task.json", dir_fd=directory_fd)
+            os.rmdir(path.name, dir_fd=parent_fd)
+        except (OSError, ValueError, TypeError):
+            return
+        finally:
+            for fd in (marker_fd, directory_fd, parent_fd):
+                if fd is not None:
+                    with suppress(OSError):
+                        os.close(fd)
 
     async def list_downloads(self, user_id: str) -> TaskListResponse:
         """列出当前用户的数据下载任务。"""

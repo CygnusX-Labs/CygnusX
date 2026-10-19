@@ -1,0 +1,37 @@
+{
+  "captured_at_utc_date": "2026-10-19",
+  "head_sha": "7c028af698762710f5d0b0dc632a060226ac298a",
+  "mcp_server_tracked_worktree_diff_sha256": "87b37212cfe23ef855ab7e4c7304953949f943564adf4c352b6453df8ae0c72b",
+  "diff_scope_note": "Aggregate tracked mcp-server diff includes pre-existing user worktree edits and is not attributed solely to this follow-up. Relevant current source and test files are hashed in checksums.txt and the full-suite output is preserved separately.",
+  "full_mcp_server_tests": {
+    "command": "cd mcp-server && PYTHONPATH=. uv run pytest -q tests",
+    "collected": 65,
+    "passed": 65,
+    "failed": 0,
+    "skipped": 0,
+    "output": "clinvar-typed-id-mcp-suite-2026-10-19.txt",
+    "seqout_provider_live_validation": false,
+    "seqout_test_mode": "deterministic local adapter fixture"
+  },
+  "schema_diff": "schema-diff.json",
+  "schema_diff_result": "Latest recapture: runtime, STDIO, Streamable HTTP, and SSE each expose 109 tools with no name, inputSchema, or description differences. Historical 2026-10-18 STDIO comparison reports cumulative changes separately in before-after-contract-diff.json.",
+  "dedicated_platform_test_identity_configured": false,
+  "platform_rest_positive_call_performed": false,
+  "provider_live_calls_performed": false,
+  "provider_direct_adapter_calls_performed": true,
+  "provider_platform_chain_calls_performed": false,
+  "agent_final_provider_tool_exports_performed": false,
+  "latest_followup": {
+    "captured_at_utc": "2026-10-18T19:17:42Z",
+    "head_sha": "7c028af698762710f5d0b0dc632a060226ac298a",
+    "mcp_server_tracked_worktree_diff_sha256": "639a0021b4d3ba1c3c827441d760af51bb3c556ed453ffbe22743b48b4e12870",
+    "four_surface_capture": "capture_four_surfaces.py",
+    "tool_count_per_surface": 109,
+    "typed_clinvar_inputs": ["VCV", "RCV", "SCV", "VariationID"],
+    "allele_id": "explicitly unsupported",
+    "platform_adapter_tests": {"collected": 62, "selected": 54, "passed": 54, "deselected": 8},
+    "external_clinvar_tests": {"collected": 12, "passed": 12},
+    "provider_direct_clinvar_samples": 4,
+    "provider_direct_evidence": "clinvar-typed-identifiers-2026-10-19.json"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "observed_at_utc": "2026-10-18T18:38Z",
+  "provider": "MyVariant.info",
+  "endpoint": "https://myvariant.info/v1/query",
+  "probe": "GET free-text search versus POST scoped identifier resolution",
+  "input": {
+    "identifier": "rs699",
+    "scopes": "dbsnp.rsid",
+    "assembly": "hg38"
+  },
+  "search": {
+    "method": "GET",
+    "success": true,
+    "returned_ids": [
+      "chr1:g.230710048A>G"
+    ],
+    "selected_assembly_coordinate_present": true
+  },
+  "resolve": {
+    "method": "POST",
+    "success": true,
+    "returned_ids": [
+      "chr1:g.230710048A>G"
+    ],
+    "selected_assembly_coordinate_present": true
+  },
+  "assembly_note": "The request used assembly=hg38 and the response selected the hg38 genomic ID/coordinate. The official FAQ's hg38=true example is specifically for interval queries; sending hg38=true with this rsID query did not select hg38. No liftover was performed.",
+  "method_test": "tests/unit/test_biothings_preset.py::test_shared_service_uses_fixed_provider_and_explicit_assembly and ::test_myvariant_resolve_uses_post_form_and_preserves_assembly",
+  "limitations": "These calls ran through the local adapter directly, without FastMCP, authenticated platform REST, cache-miss instrumentation, or Agent context."
+}

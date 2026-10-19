@@ -1,0 +1,20 @@
+{
+  "operation": "tools/call cygnusx_list_flows",
+  "elapsed_ms": 16.4,
+  "result": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"success\":false,\"summary\":\"获取流程列表失败: 未提供认证令牌\"}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "success": false,
+      "summary": "获取流程列表失败: 未提供认证令牌"
+    },
+    "isError": false
+  }
+}

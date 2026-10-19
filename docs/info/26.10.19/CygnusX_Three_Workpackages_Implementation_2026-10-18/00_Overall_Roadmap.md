@@ -21,10 +21,10 @@ S4 的故障窗口作为并行小包，S6/S7 是未来的 Go/No-Go，而非本�
 | 能力 | 当前审计事实 | 本轮要产生的新增证据 |
 |---|---|---|
 | Gateway/Catalog | 目录12类、共享 Gateway、scope 缩减已有代码；局部 PG/Redis 历史证据 | 真实 Node 和两 Runtime 的完整服务/项目证据 |
-| P0-A | 新 Admission Model/Repository/迁移为 dirty；Service 实际查询审批/执行消费尚未闭合 | PG 真并发、同 Task 绑定、单次消费、撤销/结算、宽整数迁移 |
-| IAT-R3 | 两 Runtime 确定性 Provider 32 隔离通过；React/SSE 部分隔离通过 | API监听 + PG 模板/模型配置 + Node 聊天 + Chromium 业务 E2E |
-| S4 | PG/Redis/Celery 子链历史可验证，但 PG-07/REC-02/AG-15 等弱断言及 ACK/API 死亡缺口 | 同次场景的故障注入 + 原始消息/Task/文件证据 |
-| G3-E2 | mTLS 客户端、publication receipt/nonce 验证；Supervisor 服务端未实现，9 项全 skip | 真 Supervisor 强制点、OS事实、九项 non-Mock true-runtime |
+| P0-A | Admission/审批快照、同 Task binding、epoch claim 与回执结算已有源码 seam 和 SQLite 隔离证据；真实 PG 仍未验 | PG 真并发、同 Task 绑定、单次消费、撤销/结算、宽整数迁移 |
+| IAT-R3 | 两 Runtime/Node/React/Vue 有源码与隔离回归增量；真实服务与 Chromium 业务链仍未验 | API监听 + PG 模板/模型配置 + Node 聊天 + Chromium 业务 E2E |
+| S4 | 幂等冲突、批次集合与恢复探针有隔离证据；PG/Broker/Worker/Beat 故障窗口仍未验 | 同次场景的故障注入 + 原始消息/Task/文件证据 |
+| G3-E2 | mTLS 客户端、publication receipt/nonce 验证；现有 Supervisor 为默认拒绝服务骨架，Worker HTTP 接线已有离线 seam；无 Linux 强制后端，9 项全 skip | 真 Supervisor 强制点、OS事实、九项 non-Mock true-runtime |
 | FlowFrame/BioReport | Handoff/科学类型/报告渲染存在；科学报告 end-to-end 不成立 | 待 S6 后同一科研案例验证 |
 
 ### 不得混用的四种状态
@@ -118,3 +118,5 @@ git diff --cached --name-status
 - [ ] 环境+协议+tool digest+caller+actor+有效期的运行许可审查和逐通道开关另行批准。
 
 满足之前：**S6 NO-GO；S7 NOT_YET_END_TO_END**。
+
+当前工作树身份与迁移补充验收见 `docs/implementation/cygnusx-p0a-g3-runtime-identity-acceptance.md`。该报告的 `PASS_ISOLATED` 仅覆盖控制面契约和离线回归；真实 PG、OS Supervisor、G3 九项 HTTP 仍按本路线保持 `BLOCKED/NOT_TESTED`。

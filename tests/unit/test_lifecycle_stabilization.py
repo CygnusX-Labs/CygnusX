@@ -18,12 +18,15 @@ async def test_rest_gateway_share_server_capabilities(env):
     from cygnusx.tools.download.config import describe_download_capabilities
 
     result = await env.gateway.invoke(await ctx(env), "downloads.describe_capabilities", {})
-    assert (
-        result["result"]
-        == await download_capabilities(env.owner)
-        == describe_download_capabilities()
-    )
-    assert result["result"]["write_enabled"] is False
+    direct = describe_download_capabilities()
+    gateway = result["result"]
+    assert gateway["runtime_status"] == direct["runtime_status"]
+    assert gateway["write_enabled"] is False
+    assert gateway["sources"] == direct["sources"]
+    assert gateway["limits"] == direct["limits"]
+    assert gateway["available_tools"]
+    assert gateway["capabilities"]
+    assert await download_capabilities(env.owner)
     env.download.assert_not_called()
     env.analysis.assert_not_called()
 

@@ -1,9 +1,11 @@
 """任务仓储实现 — SQLAlchemy"""
 
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Row, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cygnusx.core.config import get_settings
@@ -11,6 +13,20 @@ from cygnusx.domain.task.entities import Task, TaskLog
 from cygnusx.domain.task.repositories import ITaskRepository
 from cygnusx.domain.task.value_objects import ExecutionMode, LogLevel, TaskStatus
 from cygnusx.infrastructure.database.models.task import TaskModel
+
+
+class TaskIdempotencyKeyConflictError(RuntimeError):
+    """A download Task lost the race to persist the same unique idempotency key."""
+
+
+def _is_idempotency_key_conflict(error: IntegrityError) -> bool:
+    original = error.orig
+    diagnostic = getattr(original, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if isinstance(constraint_name, str):
+        return constraint_name == "uq_tasks_idempotency_key"
+    # SQLite is used by isolated repository tests and reports the indexed column.
+    return bool("UNIQUE constraint failed: tasks.idempotency_key" in str(original))
 
 
 class TaskRepositoryImpl(ITaskRepository):
@@ -69,12 +85,22 @@ class TaskRepositoryImpl(ITaskRepository):
                 facts = {key: value for key, value in (existing.parameters or {}).items()
                          if key in {"_download_request_keys", "_download_reliability",
                                     "_download_registration", "_download_recovery",
-                                    "_download_cancellation"}}
+                                    "_download_cancellation", "_download_execution_binding"}}
                 task.parameters = {**task.parameters, **facts}
             model = self._update_model(existing, task)
         else:
             model = self._to_model(task)
-            self._session.add(model)
+            if task.flow_id == "ebi_download":
+                try:
+                    async with self._session.begin_nested():
+                        self._session.add(model)
+                        await self._session.flush()
+                except IntegrityError as exc:
+                    if _is_idempotency_key_conflict(exc):
+                        raise TaskIdempotencyKeyConflictError from exc
+                    raise
+            else:
+                self._session.add(model)
         await self._session.flush()
         await self._session.refresh(model)
         return self._to_entity(model)
@@ -88,7 +114,7 @@ class TaskRepositoryImpl(ITaskRepository):
             return True
         return False
 
-    async def append_log(self, task_id: UUID, log_entry: dict) -> None:
+    async def append_log(self, task_id: UUID, log_entry: dict[str, Any]) -> None:
         """追加单条日志，并限制 DB 中的日志体积。"""
         model = await self._session.get(TaskModel, task_id)
         if model is None:
@@ -107,7 +133,7 @@ class TaskRepositoryImpl(ITaskRepository):
         await self._session.flush()
 
     @staticmethod
-    def _bound_log_entry(log_entry: dict, max_chars: int) -> dict:
+    def _bound_log_entry(log_entry: dict[str, Any], max_chars: int) -> dict[str, Any]:
         """截断超长 message，避免 tasks.logs JSON 字段无限膨胀。"""
         entry = dict(log_entry)
         message = entry.get("message")
@@ -122,7 +148,9 @@ class TaskRepositoryImpl(ITaskRepository):
     # 仪表板统计聚合（返回原始行/标量，不走 _to_entity）
     # ------------------------------------------------------------------
 
-    async def count_trend_by_day(self, days: int, user_id: UUID | None = None) -> list[Row]:
+    async def count_trend_by_day(
+        self, days: int, user_id: UUID | None = None
+    ) -> list[Row[Any]]:
         """按天聚合过去 N 天的任务数与样本数。
 
         user_id 为 None 时统计全平台（管理员视角）。
@@ -145,7 +173,7 @@ class TaskRepositoryImpl(ITaskRepository):
         result = await self._session.execute(stmt)
         return list(result.all())
 
-    async def count_by_status(self, user_id: UUID | None = None) -> list[Row]:
+    async def count_by_status(self, user_id: UUID | None = None) -> list[Row[Any]]:
         """按状态聚合任务数。user_id 为 None 时为全平台。"""
         stmt = select(TaskModel.status, func.count(TaskModel.id))
         if user_id is not None:
@@ -154,7 +182,7 @@ class TaskRepositoryImpl(ITaskRepository):
         result = await self._session.execute(stmt)
         return list(result.all())
 
-    async def count_by_flow(self, user_id: UUID | None = None) -> list[Row]:
+    async def count_by_flow(self, user_id: UUID | None = None) -> list[Row[Any]]:
         """按流程聚合任务数。user_id 为 None 时为全平台。"""
         stmt = select(TaskModel.flow_id, func.count(TaskModel.id))
         if user_id is not None:

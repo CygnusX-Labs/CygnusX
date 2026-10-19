@@ -1,0 +1,1 @@
+{"command": ".venv/bin/pytest tests/unit/test_research_plan_storage_phase5.py tests/unit/test_research_plan_phase5.py tests/unit/test_research_plan_gateway_phase5.py -q -m 'not quarantine'", "exit": 0, "passed": 52, "warning": "Pydantic class Config deprecated"}

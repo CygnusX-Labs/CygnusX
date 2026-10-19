@@ -1,0 +1,13 @@
+22:52:53 | INFO    | [Seqout] 工具组注册完成 (26 个工具)
+22:52:53 | INFO    | [自校验] tools.yaml 与已注册工具一致 (109 个工具)
+22:52:53 | WARNING | 未设置 CYGNUSX_API_KEY，API 调用将会失败
+Traceback (most recent call last):
+  File "$REPO/mcp-server/main.py", line 60, in <module>
+    main()
+    ~~~~^^
+  File "$REPO/mcp-server/main.py", line 52, in main
+    validate_transport_security(transport, settings.host)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$REPO/mcp-server/core/config.py", line 86, in validate_transport_security
+    raise RuntimeError("MCP HTTP requires a separate CYGNUSX_HTTP_TOKEN of at least 32 characters")
+RuntimeError: MCP HTTP requires a separate CYGNUSX_HTTP_TOKEN of at least 32 characters

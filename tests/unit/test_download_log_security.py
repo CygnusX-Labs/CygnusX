@@ -58,6 +58,20 @@ def test_response_copy_preserves_original_parameters() -> None:
     assert "S3_CANARY" in original["links"][0]
 
 
+def test_execution_binding_is_hidden_from_task_response_copy() -> None:
+    from cygnusx.domain.download_security import redact_download_parameters
+
+    original = {
+        "_download_execution_binding": {
+            "version": 1,
+            "admission_ref": "admission-id",
+            "budget_ref": "budget-id",
+        }
+    }
+    assert redact_download_parameters(original) == {"_download_execution_binding": "[redacted]"}
+    assert original["_download_execution_binding"]["admission_ref"] == "admission-id"
+
+
 def test_validation_errors_drop_untrusted_values() -> None:
     from cygnusx.domain.download_security import download_validation_errors
 

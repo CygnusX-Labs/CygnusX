@@ -1,0 +1,6 @@
+       relname       |              tgname              |                                                                 pg_get_triggerdef                                                                  
+---------------------+----------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------
+ research_plans      | research_plan_document_immutable | CREATE TRIGGER research_plan_document_immutable BEFORE UPDATE ON public.research_plans FOR EACH ROW EXECUTE FUNCTION cygnusx_research_plan_guard()
+ project_export_jobs | project_export_scope_guard       | CREATE TRIGGER project_export_scope_guard BEFORE UPDATE ON public.project_export_jobs FOR EACH ROW EXECUTE FUNCTION cygnusx_project_export_guard()
+(2 rows)
+

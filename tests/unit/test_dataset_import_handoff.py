@@ -284,7 +284,7 @@ async def test_ambiguous_submit_not_replayed_and_source_change_invalidates(
         await service.execute(owner, project, iid)
     with pytest.raises(ConflictError) as replay:
         await service.execute(owner, project, iid)
-    assert replay.value.code == "APPROVAL_SNAPSHOT_MISMATCH"
+    assert replay.value.code == "RECONCILIATION_REQUIRED"
     assert calls == [1]
 
 

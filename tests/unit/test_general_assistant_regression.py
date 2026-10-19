@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from xml.etree import ElementTree
 
+import anyio
 import pytest
 
 from cygnusx.application.services.arxiv_literature_service import ArxivLiteratureService
@@ -13,6 +15,15 @@ from cygnusx.infrastructure.mcp.presets import (
     PLATFORM_PRESET_TOOLS,
     _extract_workspace_pdf_text,
 )
+
+
+@pytest.fixture(autouse=True)
+def _inline_pdf_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
+    monkeypatch.setattr(anyio.to_thread, "run_sync", run_sync_inline)
 
 
 def test_general_prompt_keeps_existing_workbench_rules_and_adds_research_modes() -> None:

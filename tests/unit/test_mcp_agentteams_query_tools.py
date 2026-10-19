@@ -106,6 +106,8 @@ async def test_ability_catalog_query_reports_manager_mcp_whitelist() -> None:
     assert result["bindings"]["mcp_ids"] == [
         "4197a87e-1c04-5680-b89f-06d0d85cb84c",
         "dda1f524-339b-5131-8ca3-46caedeeeb29",
+        "7711b9e0-845c-5ff0-85a1-4578d15b009e",
+        "9110de7a-d7bf-557c-94f1-50aa0a4af67b",
     ]
     assert result["bindings"]["mcp_tools"]["4197a87e-1c04-5680-b89f-06d0d85cb84c"][-2:] == [
         "ability_catalog_query",

@@ -1,0 +1,15 @@
+{
+  "attempted": true,
+  "business_success": false,
+  "identity_scope": "flows:read only",
+  "input": {
+    "query": "TP53[gene] AND pathogenic[clinsig]"
+  },
+  "limitation": "MCP tool reached platform route; REST API scope denied before provider dispatch. This does not model Agent user-capability enforcement.",
+  "mcp_tool_error": true,
+  "platform_http_status": 403,
+  "provider_invoked": false,
+  "summary": "Error calling tool 'cygnusx_clinvar_search': [403] API Key 缺少该操作所需权限范围",
+  "tool": "cygnusx_clinvar_search",
+  "transport": "external_mcp_stdio_to_isolated_platform_rest"
+}

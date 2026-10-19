@@ -1,0 +1,355 @@
+{
+  "run_id": "20261019-235848-bootstrap",
+  "recorded_at": "2026-10-19T16:31:43.340751+00:00",
+  "overall": "PARTIAL",
+  "production": "NOT_ACCEPTED",
+  "historical_pass_inherited": false,
+  "source": {
+    "head": "ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79",
+    "dirty_source_sha256": "04dc7a9698abb5341b59b9d0f67e5c0af6de678f3bac3b9c7a8c49e889b66e75",
+    "scope": "git ls-files ordinary files; excludes evidence/logs and submodule contents"
+  },
+  "app_image": "127.0.0.1:32769/app@sha256:e2e5854c23a69323ffc7f831153cfc4b42d6822a4169f8b6181d8566f83ed5db",
+  "frontend_image": "127.0.0.1:32769/frontend@sha256:2a64cbf419efd3727a18a3e65450d7a00532c4c52b07394c3db4ae67ba243c81",
+  "docker": "PASS_RUNTIME",
+  "fresh_postgresql_upgrade": {
+    "status": "PASS_RUNTIME",
+    "upgrade_steps": 119,
+    "head": "dwnscope06",
+    "stamp_used": false,
+    "constraints": 3,
+    "mcp_versions_count": 8
+  },
+  "research_plan": "PARTIAL_RUNTIME: owner manual review and lifecycle pass; expert quality and full suite not tested",
+  "research_delivery": "PARTIAL_RUNTIME: empty read and permissions pass; real scientific records BLOCKED",
+  "project_export": "BLOCKED: preview and closed gate pass; real ZIP/job/download not run",
+  "browser": {
+    "status": "PARTIAL_RUNTIME",
+    "executed_assertions": 13,
+    "failed": 0,
+    "console_errors": 0,
+    "widths": [
+      1920,
+      768,
+      390
+    ],
+    "sandbox": true,
+    "scope": "plan review/lifecycle, empty delivery, read-only export preview; no creation UI, true scientific records or downloadable ZIP"
+  },
+  "test_matrix_definition": "Attachment supplies ranges only; each ID here indexes explicitly stated run assertions. This does not certify an undisclosed complete RP/RE/PE specification.",
+  "scenarios": {
+    "RP": [
+      {
+        "id": "RP-01",
+        "assertion": "创建计划/PLAN_ONLY",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.create"
+      },
+      {
+        "id": "RP-02",
+        "assertion": "查询及刷新",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.refresh_v2"
+      },
+      {
+        "id": "RP-03",
+        "assertion": "请求幂等及冲突409",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.idempotent"
+      },
+      {
+        "id": "RP-04",
+        "assertion": "JWT审阅及重复审阅",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.review"
+      },
+      {
+        "id": "RP-05",
+        "assertion": "API-key不能审阅",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.api_key_review_denied"
+      },
+      {
+        "id": "RP-06",
+        "assertion": "过期指纹及旧版本审阅409",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.superseded_review"
+      },
+      {
+        "id": "RP-07",
+        "assertion": "修订历史及审阅失效",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.revise"
+      },
+      {
+        "id": "RP-08",
+        "assertion": "跨owner404/匿名401",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RP.cross_owner"
+      },
+      {
+        "id": "RP-09",
+        "assertion": "模块撤权403与恢复",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RP.revoked_read"
+      },
+      {
+        "id": "RP-10",
+        "assertion": "暂停/恢复/刷新持久化",
+        "status": "PASS_RUNTIME",
+        "evidence": "browser/results.json"
+      },
+      {
+        "id": "RP-11",
+        "assertion": "取消及重新查询",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RP.cancel_refresh"
+      },
+      {
+        "id": "RP-12",
+        "assertion": "对账不重跑及审计事件",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RP.reconcile_no_rerun"
+      },
+      {
+        "id": "RP-13",
+        "assertion": "禁shell参数422/发布停在WAITING_APPROVAL",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RP.advance_no_publish"
+      },
+      {
+        "id": "RP-14",
+        "assertion": "独立领域专家评审质量、TTL过期、并发/预算压力及真实read/prepare工具链",
+        "status": "NOT_TESTED",
+        "evidence": "仅验证普通owner人工JWT审阅；未邀请专家、未触发LLM或真实科研工具"
+      }
+    ],
+    "RE": [
+      {
+        "id": "RE-01",
+        "assertion": "真实API空项目读取200",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RE.project_empty"
+      },
+      {
+        "id": "RE-02",
+        "assertion": "跨owner404",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#RE.cross_owner"
+      },
+      {
+        "id": "RE-03",
+        "assertion": "匿名401",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RE.unauthenticated"
+      },
+      {
+        "id": "RE-04",
+        "assertion": "模块撤权403",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RE.revoked_read"
+      },
+      {
+        "id": "RE-05",
+        "assertion": "不存在的项目/Task/Report404",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#RE.cross_project"
+      },
+      {
+        "id": "RE-06",
+        "assertion": "运行写门禁保持关闭",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#effective_flags"
+      },
+      {
+        "id": "RE-07",
+        "assertion": "真实Dataset/Task非空投影",
+        "status": "BLOCKED",
+        "evidence": "没有获准脱敏完成任务corpus"
+      },
+      {
+        "id": "RE-08",
+        "assertion": "真实报告与产物关联",
+        "status": "BLOCKED",
+        "evidence": "没有获准corpus；tasks/reports均0"
+      },
+      {
+        "id": "RE-09",
+        "assertion": "真实Worker分析/下载与handoff路径验证",
+        "status": "BLOCKED",
+        "evidence": "WRITE_RUNTIME_ACCEPTED=false；worker_paths_verified未伪造"
+      },
+      {
+        "id": "RE-10",
+        "assertion": "非空记录浏览器详情/跨资源溯源",
+        "status": "BLOCKED",
+        "evidence": "没有获准corpus"
+      }
+    ],
+    "PE": [
+      {
+        "id": "PE-01",
+        "assertion": "空inventory200及export_enabled=false",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/plan-fixed.json#PE.inventory_empty"
+      },
+      {
+        "id": "PE-02",
+        "assertion": "prepare只读预览200",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#PE.prepare_is_readonly"
+      },
+      {
+        "id": "PE-03",
+        "assertion": "创建Job在关闭门下403",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#PE.create_gate_closed"
+      },
+      {
+        "id": "PE-04",
+        "assertion": "跨owner inventory404",
+        "status": "PASS_RUNTIME",
+        "evidence": "api/boundaries-final.json#PE.inventory_cross_owner"
+      },
+      {
+        "id": "PE-05",
+        "assertion": "浏览器预览及禁用生成按钮",
+        "status": "PASS_RUNTIME",
+        "evidence": "browser/results.json"
+      },
+      {
+        "id": "PE-06",
+        "assertion": "非空manifest范围及过期指纹",
+        "status": "BLOCKED",
+        "evidence": "缺少获准corpus；未开启导出写门"
+      },
+      {
+        "id": "PE-07",
+        "assertion": "真实Worker生成Job/ZIP",
+        "status": "BLOCKED",
+        "evidence": "corpus前置未满足；Job数量0"
+      },
+      {
+        "id": "PE-08",
+        "assertion": "ZIP成员/大小/SHA验证",
+        "status": "BLOCKED",
+        "evidence": "未生成ZIP"
+      },
+      {
+        "id": "PE-09",
+        "assertion": "JWT下载及下载时撤权",
+        "status": "BLOCKED",
+        "evidence": "未生成ZIP"
+      },
+      {
+        "id": "PE-10",
+        "assertion": "并发/重复点击/幂等/快切/慢响应/重试恢复",
+        "status": "BLOCKED",
+        "evidence": "未创建Job"
+      },
+      {
+        "id": "PE-11",
+        "assertion": "对象存储及PDF字体/渲染",
+        "status": "NOT_TESTED",
+        "evidence": "本轮只用private local storage；未授权对象存储/PDF"
+      },
+      {
+        "id": "PE-12",
+        "assertion": "真实导出完成Browser闭环",
+        "status": "BLOCKED",
+        "evidence": "只有preview；没有下载或完成状态"
+      }
+    ]
+  },
+  "harness_corrections": [
+    {
+      "test": "PE.prepare_writes_closed",
+      "initial_expected": 403,
+      "actual": 200,
+      "reason": "prepare is read-only and permitted with export write gate closed; corrected independently rerun"
+    },
+    {
+      "test": "PE.unknown_job",
+      "initial_expected": 404,
+      "actual": 403,
+      "reason": "export feature gate precedes lookup; final rerun expects403; unknown-job lookup not covered"
+    }
+  ],
+  "fix": {
+    "path": "src/cygnusx/application/services/research_plan_service.py",
+    "cause": "immediate PostgreSQL self-FK referenced an unflushed new version",
+    "behavior": "flush new version before linking old version; both remain transactional",
+    "regression_tests": 52
+  },
+  "validation": {
+    "changed_files_ruff": "PASS",
+    "frontend_build": "PASS",
+    "migration_static": "PASS",
+    "full_ruff": "FAIL:277 errors",
+    "full_mypy": "FAIL:997 errors in221 files",
+    "full_unit": {
+      "passed": 3755,
+      "failed": 9,
+      "skipped": 16,
+      "deselected": 63
+    },
+    "no_commit": true
+  },
+  "closure": {
+    "private_env_flags": {
+      "ACCEPTANCE_READS": false,
+      "ACCEPTANCE_WRITES": false,
+      "ACCEPTANCE_PDF": false
+    },
+    "closed_preflight_exit": 0,
+    "containers": {
+      "api-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:30:00.467947516Z"
+      },
+      "worker-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:30:00.970851106Z"
+      },
+      "beat-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:29:59.390336684Z"
+      },
+      "frontend-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:29:58.417451761Z"
+      },
+      "postgres-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:29:58.533110016Z"
+      },
+      "redis-1": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:29:58.479775905Z"
+      },
+      "browser": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:30:11.184531854Z"
+      },
+      "registry": {
+        "status": "exited",
+        "running": false,
+        "finished_at": "2026-10-19T16:30:11.341620602Z"
+      }
+    },
+    "volumes_retained": [
+      "cygnusx-20261019-235848-bootstrap_postgres-data",
+      "cygnusx-20261019-235848-bootstrap_private-storage",
+      "cygnusx-20261019-235848-bootstrap_redis-data"
+    ],
+    "production_config_modified": false,
+    "note": "Last running read/plan flags were true. Services stopped before private env flags set false; not restarted."
+  }
+}

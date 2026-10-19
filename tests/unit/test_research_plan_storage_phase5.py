@@ -45,6 +45,10 @@ async def test_prepare_dedup_restore_and_cross_owner_project(plans):
 
 async def test_revision_retains_history_and_invalidates_review(plans):
     db, service, owner, _, project, *_ = plans
+    # Exercise the immediate self-reference constraint used by PostgreSQL too.
+    connection = db.sync.connection()
+    connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+    assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
     one = await service.prepare(owner, project, PlanPrepare(request_key=uuid4(), draft=discovery()))
     one = await service.review(owner, project, one.plan_id, one.digest)
     assert one.status == PlanStatus.APPROVED

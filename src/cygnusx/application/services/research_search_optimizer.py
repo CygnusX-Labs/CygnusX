@@ -9,13 +9,14 @@ import math
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
 
 from cygnusx.core.config import get_settings
-from cygnusx.infrastructure.cache.redis_client import get_redis
+from cygnusx.infrastructure.cache.redis_client import close_redis, get_redis
 
 QueryRefiner = Callable[[str], Awaitable[Any]]
 
@@ -33,11 +34,13 @@ class ResearchSearchOptimizer:
         *,
         cache_ttl_seconds: int | None = None,
         embedding_client: Any | None = None,
+        embedding_timeout_seconds: float = 2.0,
     ) -> None:
         settings = get_settings()
         configured_ttl = getattr(settings, "web_search_refinement_cache_ttl_seconds", 86400)
         self._cache_ttl = max(60, int(cache_ttl_seconds or configured_ttl))
         self._embedding_client = embedding_client
+        self._embedding_timeout_seconds = max(0.05, float(embedding_timeout_seconds))
 
     async def refine_queries(
         self,
@@ -133,9 +136,12 @@ class ResearchSearchOptimizer:
 
                 self._embedding_client = LiteLLMProvider()
             documents = [self._document_text(item)[:2400] for item in items]
-            vectors = await asyncio.gather(
+            embedding_requests = asyncio.gather(
                 self._embedding_client.embeddings(query[:1200], model=model),
                 *(self._embedding_client.embeddings(text, model=model) for text in documents),
+            )
+            vectors = await asyncio.wait_for(
+                embedding_requests, timeout=self._embedding_timeout_seconds
             )
             query_vector = [float(value) for value in vectors[0]]
             if not query_vector:
@@ -166,6 +172,8 @@ class ResearchSearchOptimizer:
                 return queries
         except Exception as exc:  # noqa: BLE001 - Redis is optional for this optimization
             _REDIS_DISABLED_UNTIL = time.monotonic() + 30
+            with suppress(Exception):
+                await asyncio.wait_for(close_redis(), timeout=0.1)
             logger.debug("检索词缓存读取失败，使用进程内缓存: {}", exc)
         return []
 
@@ -187,6 +195,8 @@ class ResearchSearchOptimizer:
             )
         except Exception as exc:  # noqa: BLE001 - local cache still prevents repeated calls
             _REDIS_DISABLED_UNTIL = time.monotonic() + 30
+            with suppress(Exception):
+                await asyncio.wait_for(close_redis(), timeout=0.1)
             logger.debug("检索词缓存写入失败，保留进程内缓存: {}", exc)
 
     @staticmethod

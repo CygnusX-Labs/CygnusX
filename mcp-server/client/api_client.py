@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from core.config import settings
+from core.logger import logger
 
 
 class CygnusXAPIError(Exception):
@@ -27,12 +29,21 @@ class CygnusXAPIClient:
         )
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        headers = dict(kwargs.pop("headers", {}))
+        headers["X-Request-ID"] = uuid4().hex
         try:
-            resp = await self._client.request(method, path, **kwargs)
+            resp = await self._client.request(method, path, headers=headers, **kwargs)
         except httpx.ConnectError as e:
             raise CygnusXAPIError(0, f"无法连接到平台: {settings.base_url} ({e})") from e
         except httpx.TimeoutException as e:
             raise CygnusXAPIError(0, f"请求超时 ({settings.request_timeout}s)") from e
+
+        request_id = resp.headers.get("x-request-id", headers["X-Request-ID"])
+        logger.info(
+            "platform_api_request_completed request_id={} status_code={}",
+            request_id,
+            resp.status_code,
+        )
 
         if resp.status_code >= 400:
             try:

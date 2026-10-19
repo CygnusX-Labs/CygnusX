@@ -115,36 +115,60 @@ const nebulaLayers = Array.from({ length: 4 }, (_, i) => {
 })
 
 const valueStreams = [
-  { number: '01', title: 'Discovery · 科研发现', input: '公共数据库、文献资源或已有数据', output: '科研问题与研究素材', icon: TelescopeOutline },
-  { number: '02', title: 'Execution · 受控计算', input: '科研任务与分析意图', output: '可管理、可复现的分析执行过程', icon: ShieldCheckmarkOutline },
-  { number: '03', title: 'Evidence · 证据交付', input: '数据、流程、运行记录与结果', output: '支持核验的科研报告交付', icon: SparklesOutline },
+  { number: '01', title: 'Discovery · 科研发现', input: '科研问题、公共数据或已有实验数据', output: '关联样本信息、数据来源与文献的研究素材', icon: TelescopeOutline },
+  { number: '02', title: 'Execution · 受控计算', input: '项目上下文、样本设计与分析计划', output: '经参数校验、版本化流程与质量检查的计算结果', icon: ShieldCheckmarkOutline },
+  { number: '03', title: 'Evidence · 证据交付', input: '分析产物、运行记录与外部证据', output: '可核验的结果、方法记录与后续探索依据', icon: SparklesOutline },
 ]
-const heroChips = ['公共数据发现', '受控分析计算', '可复现流程', '可信证据交付']
+const heroChips = ['科研数据与文献发现', '版本化分析流程', '权限与质量约束', '可追溯研究资产']
 
-// 数值为暂填，随实际更新
+// 能力概览，不使用缺乏统计来源的报告数、Stars 或数据库总量。
 const stats = [
-  { value: '3', label: '公共数据源' },
-  { value: '4', label: '可复现流程模板' },
-  { value: '8', label: '已交付报告' },
-  { value: '1', label: 'GitHub Stars' },
+  { value: 'Agent', label: '组织科研任务' },
+  { value: 'Skill', label: '约束专业操作' },
+  { value: 'Flow', label: '承载标准计算' },
+  { value: 'Evidence', label: '关联来源与结果' },
 ]
 
-// 里程碑按最新在上排列；首节点以品牌强调色点亮
+// 展示范围依据当前 MCP preset / adapter；不代表各部署的实时可用性。
+// 来源：infrastructure/mcp/{presets,biothings_preset,research_preset}.py
+// 与 ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md §1.3。
+const researchResources = [
+  { title: '公共组学数据', sources: ['GEO', 'SRA', 'ENA', 'GSA'], text: '检索组学项目、样本元数据，解析公共数据登录号。' },
+  { title: '基因、变异与化合物', sources: ['MyGene', 'MyVariant', 'MyChem', 'ClinVar'], text: '查询基因注释、变异记录、化合物信息与变异证据。' },
+  { title: '植物基因组与重复序列', sources: ['Ensembl Plants', 'Gramene', 'Dfam'], text: '查询植物基因、同源关系、基因组区间与转座元件家族。' },
+  { title: '表达研究目录', sources: ['Expression Atlas', 'Single Cell Expression Atlas'], text: '发现表达研究与单细胞研究的目录及元数据。', note: '部分 Expression Atlas 目录请求仍可能超时。' },
+  { title: '蛋白、结构与通路', sources: ['UniProt', 'InterPro', 'RCSB PDB', 'AlphaFold DB', 'Reactome', 'STRING'], text: '查询蛋白功能与结构域、实验结构、预测结构和通路知识。', note: 'STRING 标识映射与关联网络查询已实现，完整调用链仍待验收。' },
+  { title: '文献与靶点证据', sources: ['Europe PMC', 'Open Targets'], text: '检索论文及其元数据，查询靶点、疾病关联与证据记录。' },
+]
+
+const workingModel = [
+  { name: 'Agent', title: '把问题组织成任务', text: '理解需求、补齐信息、匹配工具与流程，依据真实工具结果解释分析过程。' },
+  { name: 'Skill', title: '把经验沉淀为契约', text: '明确专业操作的输入、输出、前提、方法与质量要求，让研究经验可以复用。' },
+  { name: 'Flow', title: '把方法固化为流程', text: '以声明式、版本化的流程承载标准计算，记录参数、环境与运行产物。' },
+]
+const researchEntries = [
+  { level: 'L1', name: '生信工具箱', text: '重复操作与轻量可视化' },
+  { level: 'L2', name: '星尘 AI 助手', text: '需求澄清、检索与工具调用' },
+  { level: 'L3', name: 'OmicStudio', text: '隔离环境中的交互式深入分析' },
+  { level: 'L4', name: '多 Agent 协作室', text: '规划、委派与质量复核（受控预览）' },
+]
+
+// 项目起源与演进依据根 README；未来阶段为长期愿景，不代表现有能力。
 const milestones = [
-  { time: '2026.10.10', title: '正式开源', text: 'CygnusX v0.0.1 于 GitHub 公开发布' },
-  { time: '2026.09', title: '赛事初验', text: '演示视频投递 8 项赛事，余姚 OPC 组、杭州 GTIC 晋级' },
-  // 时间为暂填，待确认后修改
-  { time: '2025.12', title: '平台立项', text: '确立"受控科研 Agent 与可信计算交付"方向' },
+  { time: '未来 · 长期愿景', title: '从工具使用到科学创造', text: '构建跨学科的 AI 智能体协作网络，从使用工具、发现事实，走向创造科学工具、设计新型仪器与实验方法、提出概念与数学框架，探索跨领域的统一规律与新的科学范式。' },
+  { time: '持续演进', title: '从组学分析到智能科研基础设施', text: '围绕真实科研需求，逐步连接数据发现、Agent 编排、标准计算与可验证成果交付。' },
+  { time: '2026.06.25', title: 'OmicHub 诞生', text: '一名生命科学在读博士提交首行代码，从私有化多组学分析出发，解决流程繁琐、环境复杂与结果难以复现的问题。' },
 ]
 
-// TODO: 用户填写真实数据：联系邮箱 / ICP 备案号（有站点配置时邮箱自动用真实值）。
-const footerPlaceholders = { email: '待填写', version: 'v0.0.1', icp: '待备案' }
-
+// 生态职责与仓库链接依据根 README；各组件的开放范围以部署与验收状态为准。
 const ecosystemModules = [
-  { name: '科研寻宝鼠', text: '公共组学数据发现、文献检索与证据探索。', status: '生态组件', logo: logoTreasureMouse },
-  { name: 'Polariseq', text: '面向公共测序数据的数据传输与下载工具。', status: '生态组件', logo: logoPolariseq },
-  { name: 'FlowFrame', text: '标准化、可复用的分析流程框架。', status: '流程协议', logo: logoFlowFrame },
-  { name: 'BioReport', text: '组织分析结果并生成标准化科研报告。', status: '流程产物', logo: logoBioReport },
+  { name: '科研寻宝鼠', text: '对话式公共组学数据发现、文献检索与来源核验。', status: '数据发现', logo: logoTreasureMouse, href: 'https://github.com/xsx123123/Treasure-Seeking_Mouse' },
+  { name: 'Polariseq', text: '支持断点续传与完整性校验的测序数据传输。', status: '数据获取', logo: logoPolariseq, href: 'https://github.com/xsx123123/polariseq' },
+  { name: 'FlowFrame', text: '通用组学流程架构与标准化接入约定。', status: '流程框架', logo: logoFlowFrame, href: 'https://github.com/xsx123123/FlowFrame' },
+  { name: 'RNAFlow', text: 'Bulk RNA-seq 质控、比对、定量与差异分析。', status: '转录组分析', logo: null, href: 'https://github.com/xsx123123/RNAFlow' },
+  { name: 'ATACFlow', text: 'ATAC-seq 质控、比对、峰识别、差异可及性与 motif 分析。', status: '染色质分析', logo: null, href: 'https://github.com/xsx123123/ATACFlow' },
+  { name: 'AnnoFlow', text: '结合 eggnog-mapper 与 KofamScan 的功能注释及 KO 交叉验证。', status: '功能注释', logo: null, href: 'https://github.com/xsx123123/kegg_annotation' },
+  { name: 'BioReport', text: '基于 Python / Quarto 组织分析结果，生成交互式 HTML 与 PDF 报告。', status: '报告组件', logo: logoBioReport, href: 'https://github.com/xsx123123/bioreport' },
 ]
 function scrollToSection(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
@@ -249,10 +273,10 @@ function observeReveals() {
           <div class="planet-orbit" aria-hidden="true"><span class="planet-moon" /></div>
         </div>
 
-        <h1 class="about-title">CygnusX</h1>
+        <h1 class="about-title">CygnusX BioOps</h1>
         <p class="about-slogan">FROM STARDUST, TO DISCOVERY</p>
-        <p class="about-subtitle">面向生命科学的受控科研 Agent 与可信计算交付平台</p>
-        <p class="about-lead">连接科研数据发现、受控计算与可追溯证据交付，让科研探索从问题出发，以可信结果落地。</p>
+        <p class="about-subtitle">面向生命科学的受控科研 Agent 与可信计算交付基础设施</p>
+        <p class="about-lead">从科学问题出发，找到或导入数据，组织受控分析，核验结果与文献证据，将每一次研究沉淀为可复用、可追溯的科研资产。</p>
 
         <ul class="hero-chips" aria-label="平台能力">
           <li v-for="chip in heroChips" :key="chip">{{ chip }}</li>
@@ -272,6 +296,7 @@ function observeReveals() {
             tag="a"
             :href="siteConfig.platformGithub"
             target="_blank"
+            rel="noopener noreferrer"
           >
             <template #icon>
               <NIcon><LogoGithub /></NIcon>
@@ -285,8 +310,7 @@ function observeReveals() {
         </button>
       </header>
 
-      <!-- 指标条：真实数字一排（数值为暂填，随实际更新） -->
-      <section class="stats-section" aria-label="平台指标">
+      <section class="stats-section" aria-label="平台核心机制">
         <ul class="stats-band">
           <li
             v-for="(stat, i) in stats"
@@ -302,8 +326,8 @@ function observeReveals() {
 
       <section id="values" class="about-section" aria-labelledby="values-title">
         <p class="section-kicker">FROM QUESTION TO EVIDENCE</p>
-        <h2 id="values-title">从科研问题到可信发现</h2>
-        <p class="section-intro">通过科研发现、受控计算与证据交付，构建可追溯、可复现的科研工作流。</p>
+        <h2 id="values-title">从科研问题到可复现的科学证据</h2>
+        <p class="section-intro">让科研人员把时间花在科学问题上。公共数据发现与已有数据导入，共同进入项目上下文，连接标准分析、增量探索与结果核验。</p>
         <div class="value-grid">
           <template v-for="(stream, i) in valueStreams" :key="stream.number">
             <article class="value-card">
@@ -332,39 +356,79 @@ function observeReveals() {
         </div>
       </section>
 
+      <section id="resources" class="about-section" aria-labelledby="resources-title">
+        <p class="section-kicker">CONNECTED RESEARCH RESOURCES</p>
+        <h2 id="resources-title">连接数据、知识与文献证据</h2>
+        <p class="section-intro">通过 MCP 将公共组学库、基因与蛋白知识库、结构与通路资源、文献和靶点证据带入科研上下文，为数据选择和结果解读提供依据。</p>
+        <div class="resource-grid">
+          <article v-for="resource in researchResources" :key="resource.title" class="resource-card">
+            <h3>{{ resource.title }}</h3>
+            <ul class="resource-sources" :aria-label="`${resource.title}资源`">
+              <li v-for="source in resource.sources" :key="source">{{ source }}</li>
+            </ul>
+            <p>{{ resource.text }}</p>
+            <p v-if="resource.note" class="resource-note">{{ resource.note }}</p>
+          </article>
+        </div>
+        <p class="section-note">以上为当前工具覆盖的查询范围，以只读检索、元数据与证据查询为主。具体开放范围取决于部署版本、Agent 授权和外部服务状态；研究目录查询不等同于表达矩阵下载或定量分析。</p>
+      </section>
+
+      <section id="working-model" class="about-section" aria-labelledby="working-model-title">
+        <p class="section-kicker">AGENT × SKILL × FLOW</p>
+        <h2 id="working-model-title">让科研方法可执行、可核验、可复用</h2>
+        <p class="section-intro">Agent 组织任务，Skill 约束专业动作，Flow 承载标准计算。人提出问题、判断证据，系统承担重复的工程工作并记录研究过程。</p>
+        <div class="model-grid">
+          <article v-for="item in workingModel" :key="item.name" class="resource-card">
+            <span class="status-label">{{ item.name }}</span>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.text }}</p>
+          </article>
+        </div>
+        <p class="section-note">正式分析由 AI 调度经过审核的工具与流程；OmicStudio 支持在能力受限的隔离沙箱内进行代码探索，探索结果须经过相应检查后进入正式交付。</p>
+        <ul class="research-entries" aria-label="四级科研入口">
+          <li v-for="entry in researchEntries" :key="entry.level">
+            <span class="status-label">{{ entry.level }}</span>
+            <h3>{{ entry.name }}</h3>
+            <p>{{ entry.text }}</p>
+          </li>
+        </ul>
+      </section>
+
       <section id="ecosystem" class="about-section" aria-labelledby="ecosystem-title">
         <p class="section-kicker">AI4S ECOSYSTEM</p>
         <h2 id="ecosystem-title">CygnusX AI4S Ecosystem</h2>
-        <p class="section-intro">从数据发现、数据获取，到标准分析与科研证据交付。</p>
+        <p class="section-intro">平台以共享项目上下文组织数据发现、获取、标准分析与报告，各生态组件提供专业能力，FlowFrame 提供共同的流程与接入约定。</p>
         <div class="ecosystem-band">
           <div class="ecosystem-grid">
             <article class="ecosystem-card ecosystem-card--platform">
               <span class="status-label">平台底座</span>
               <h3>CygnusX BioOps</h3>
-              <p>平台集成与科研任务编排层，统一编排下列组件、协议与产物。</p>
+              <p>连接项目、Agent、权限、任务、数据与运行记录，组织产物归档和证据关联，让分析过程可以追溯、研究经验能够传承。</p>
             </article>
             <article v-for="item in ecosystemModules" :key="item.name" class="ecosystem-card">
               <div class="ecosystem-card__toprow">
-                <img class="ecosystem-card__logo" :src="item.logo" :alt="`${item.name} 图标`" width="48" height="48" />
+                <img v-if="item.logo" class="ecosystem-card__logo" :src="item.logo" :alt="`${item.name} 图标`" width="48" height="48" />
+                <span v-else class="value-card__icon" aria-hidden="true"><NIcon :size="24"><RocketOutline /></NIcon></span>
                 <span class="status-label">{{ item.status }}</span>
               </div>
-              <h3>{{ item.name }}</h3>
+              <h3><a :href="item.href" target="_blank" rel="noopener noreferrer">{{ item.name }} ↗</a></h3>
               <p>{{ item.text }}</p>
             </article>
           </div>
         </div>
+        <p class="section-note">RNA-seq 与 ATAC-seq 流程已在实验室部署与验证。生态组件按各自版本演进，平台集成与开放状态以当前部署为准；多 Agent 协作和完整证据交付链仍按功能门禁逐项验收。</p>
       </section>
 
-      <!-- 版本历程：里程碑数据见组件顶部常量（最新在上） -->
+      <!-- 演进历程：未来愿景在上，当前阶段以品牌色标记 -->
       <section class="about-section milestones-section" aria-labelledby="milestones-title">
         <p class="section-kicker">MILESTONES</p>
-        <h2 id="milestones-title">版本历程</h2>
+        <h2 id="milestones-title">从 OmicHub 到 CygnusX</h2>
         <ol class="milestone-list">
           <li
             v-for="(milestone, i) in milestones"
             :key="i"
             class="milestone-item"
-            :class="{ 'milestone-item--latest': i === 0 }"
+            :class="{ 'milestone-item--latest': milestone.time === '持续演进' }"
           >
             <span class="milestone-dot" aria-hidden="true" />
             <div class="milestone-body">
@@ -385,12 +449,11 @@ function observeReveals() {
         </div>
       </section>
 
-      <!-- 底部：三列页脚 + 底行（占位文案见 footerPlaceholders，TODO: 用户填写真实数据） -->
       <footer class="about-footer-v2">
         <div class="footer-cols">
           <div class="footer-brand">
             <span class="footer-logo">CygnusX</span>
-            <p>面向生命科学的受控科研 Agent 与可信计算交付平台</p>
+            <p>面向生命科学的智能科研基础设施，让科学问题连接可复现的计算与可核验的证据。</p>
           </div>
           <nav class="footer-links" aria-label="页脚导航">
             <RouterLink to="/dashboard">控制台</RouterLink>
@@ -398,22 +461,18 @@ function observeReveals() {
             <RouterLink to="/knowledge">实验室知识库</RouterLink>
             <a v-if="siteConfig.platformGithub" :href="siteConfig.platformGithub" target="_blank" rel="noopener">GitHub</a>
           </nav>
-          <div class="footer-contact">
+          <div v-if="siteConfig.platformEmail" class="footer-contact">
             <p>
               Contact:
               <a
-                v-if="siteConfig.platformEmail"
                 :href="`mailto:${siteConfig.platformEmail}`"
                 class="footer-contact-link"
               >{{ siteConfig.platformEmail }}</a>
-              <span v-else>{{ footerPlaceholders.email }}</span>
             </p>
-            <p>Version {{ footerPlaceholders.version }}</p>
           </div>
         </div>
         <div class="footer-bottom">
-          <span>© 2026 CygnusX · 华中农业大学园艺林学学院 · 多组学分析平台</span>
-          <span class="footer-icp">{{ footerPlaceholders.icp }}</span>
+          <span>© 2026 CygnusX BioOps · 华中农业大学园艺林学学院</span>
           <span v-if="siteConfig.platformAuthor" class="footer-credit">Designed by {{ siteConfig.platformAuthor }}</span>
         </div>
       </footer>
@@ -1257,6 +1316,27 @@ function observeReveals() {
 .about-section h2 { margin: 0 0 12px; color: #f2f5ff; font-size: 36px; font-weight: 700; text-align: center; }
 .section-kicker { margin: 0 0 12px; color: rgba(255, 255, 255, 0.55); font-size: 13px; letter-spacing: .2em; text-align: center; }
 .section-intro { max-width: 680px; margin: 0 auto 36px; color: #c4cee8; font-size: 16px; line-height: 1.7; text-align: center; }
+.section-note { max-width: 900px; margin: 24px auto 0; color: #c4cee8; font-size: 14px; line-height: 1.8; text-align: center; }
+.resource-grid, .model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.model-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.resource-card {
+  min-width: 0;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(30, 37, 80, 0.9);
+}
+.resource-card h3, .research-entries h3 { margin: 0 0 14px; color: #f2f5ff; font-size: 18px; }
+.resource-card > .status-label, .research-entries .status-label { margin-bottom: 16px; }
+.resource-card p, .research-entries p { margin: 0; color: #e6e9f2; font-size: 14px; line-height: 1.8; }
+.resource-sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+.resource-sources li { padding: 4px 10px; border-radius: 6px; color: #dbe4ff; background: rgba(255, 255, 255, 0.08); font-size: 13px; }
+.resource-card .resource-note { margin-top: 12px; color: #c4cee8; font-size: 13px; }
+.research-entries { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 36px 0 0; padding: 0; list-style: none; }
+.research-entries li { min-width: 0; padding: 20px 0; border-top: 1px solid rgba(255, 255, 255, 0.18); }
+.ecosystem-card h3 a { color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.ecosystem-card h3 a:hover { color: #b9c9ff; text-decoration: underline; }
+.ecosystem-card h3 a:focus-visible { outline: 2px solid var(--arco-primary); outline-offset: 3px; }
 /* 生态区标题三件套常压在漂移亮星云上：叠文字阴影保证可读（与 .about-quote 同款） */
 #ecosystem .section-kicker,
 #ecosystem h2,
@@ -1479,7 +1559,12 @@ function observeReveals() {
 }
 
 /* ===== 响应式（P0 / P1 / P2 五档走查底线：≤760px） ===== */
+@media (max-width: 1100px) {
+  .ecosystem-grid, .research-entries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
+  .resource-grid, .model-grid, .research-entries { grid-template-columns: 1fr; }
+  .resource-card { padding: 24px 20px; }
   .about-content { --section-gap: 64px; padding: 32px 16px 56px; }
   .about-hero { min-height: auto; padding: 32px 0 64px; }
   .about-section h2 { font-size: 26px; }

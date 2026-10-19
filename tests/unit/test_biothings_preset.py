@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -15,6 +17,21 @@ from cygnusx.infrastructure.mcp.biothings_preset import (
     CYGNUSX_BIOTHINGS_SERVER_NAME,
 )
 from cygnusx.infrastructure.mcp.presets import get_preset_by_name
+
+
+class _CountingByteStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+        self.yielded = 0
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self.chunks:
+            self.yielded += 1
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 @pytest.mark.unit
@@ -104,10 +121,76 @@ async def test_shared_service_uses_fixed_provider_and_explicit_assembly(monkeypa
         "cygnusx.application.services.biothings_service._provider_client", lambda: client
     )
     result = await execute_biothings(
-        "variant", "search", {"query": "rs123", "assembly": "hg38"}
+        "variant", "search", {"query": "rs123", "assembly": "hg38", "fields": "clinvar"}
     )
 
     assert result["success"] is True
     assert requests[0].url.host == "myvariant.info"
+    assert requests[0].method == "GET"
     assert requests[0].url.params.get("assembly") == "hg38"
+    assert requests[0].url.params.get("fields") == "clinvar,dbsnp.hg38"
+    assert result["data"]["input_context"]["assembly"] == "hg38"
+    await client.aclose()
+
+
+@pytest.mark.unit
+async def test_myvariant_resolve_uses_post_form_and_preserves_assembly(monkeypatch):
+    requests: list[httpx.Request] = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json=[{"query": "rs699", "_id": "chr1:g.230710048A>G", "dbsnp": {"hg38": {}}}],
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(
+        "cygnusx.application.services.biothings_service._provider_client", lambda: client
+    )
+    result = await execute_biothings(
+        "variant",
+        "resolve",
+        {
+            "identifiers": ["rs699"],
+            "scopes": "dbsnp.rsid",
+            "assembly": "hg38",
+            "fields": "clinvar",
+        },
+    )
+
+    assert result["success"] is True
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/v1/query"
+    assert requests[0].headers["content-type"].startswith("application/x-www-form-urlencoded")
+    form = parse_qs(requests[0].content.decode())
+    assert form["q"] == ["rs699"]
+    assert form["scopes"] == ["dbsnp.rsid"]
+    assert form["assembly"] == ["hg38"]
+    assert "dbsnp.hg38" in form["fields"][0].split(",")
+    assert "assembly" not in requests[0].url.params
+    assert result["data"]["assembly"] == "hg38"
+    await client.aclose()
+
+
+@pytest.mark.unit
+async def test_biothings_stops_reading_when_provider_byte_budget_is_exceeded(monkeypatch):
+    stream = _CountingByteStream([b"1234", b"5678", b"unused"])
+
+    async def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/json"}, stream=stream)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(
+        "cygnusx.application.services.biothings_service._provider_client", lambda: client
+    )
+    monkeypatch.setattr("cygnusx.application.services.biothings_service._MAX_RESPONSE_BYTES", 6)
+
+    result = await execute_biothings("gene", "get", {"identifier": "TP53"})
+
+    assert result["success"] is False
+    assert "exceeds the 2 MiB response budget" in result["summary"]
+    assert stream.yielded == 2
+    assert stream.closed is True
     await client.aclose()

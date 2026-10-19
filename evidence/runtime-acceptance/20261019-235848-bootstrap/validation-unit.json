@@ -1,0 +1,1 @@
+{"command": [".venv/bin/pytest", "tests/unit", "-q", "-m", "not quarantine"], "exit": 1, "duration": 131.17999267578125}

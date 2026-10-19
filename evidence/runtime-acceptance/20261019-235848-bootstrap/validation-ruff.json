@@ -1,0 +1,1 @@
+{"command": [".venv/bin/ruff", "check", "src/", "tests/"], "exit": 1, "duration": 0.028783082962036133}

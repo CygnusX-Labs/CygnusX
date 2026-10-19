@@ -1,24 +1,65 @@
 """Seqout MCP Tools 完整测试套件 — 覆盖所有 26 个工具的功能和错误处理"""
 
 import json
+
 import pytest
+import tools.seqout as seqout_module
 from tools.seqout import (
-    # Search Tools
-    seqout_search, seqout_search_geo, seqout_search_sra, seqout_search_structured,
-    # Project Tools
-    seqout_get_project_detail, seqout_get_project_metadata, seqout_get_project_citation, seqout_get_project_enriched,
-    # Experiment & Sample Tools
-    seqout_get_experiments, seqout_get_runs, seqout_get_run_download,
-    seqout_get_sample_metadata, seqout_get_sample_detail, seqout_get_sample_manifest,
-    # Resolution Tools
-    seqout_resolve_accession, seqout_resolve_prj,
-    # Ontology & Statistics Tools
-    seqout_get_ontology_term, seqout_get_organisms, seqout_get_common_name,
-    seqout_beacon_info, seqout_beacon_runs,
-    seqout_get_stats_growth, seqout_get_organism_totals, seqout_get_platform_totals,
+    seqout_beacon_info,
+    seqout_beacon_runs,
+    seqout_get_common_name,
     # Download Tools
-    seqout_get_download_links, seqout_get_metadata_csv,
+    seqout_get_download_links,
+    # Experiment & Sample Tools
+    seqout_get_experiments,
+    seqout_get_metadata_csv,
+    # Ontology & Statistics Tools
+    seqout_get_ontology_term,
+    seqout_get_organism_totals,
+    seqout_get_organisms,
+    seqout_get_platform_totals,
+    seqout_get_project_citation,
+    # Project Tools
+    seqout_get_project_detail,
+    seqout_get_project_enriched,
+    seqout_get_project_metadata,
+    seqout_get_run_download,
+    seqout_get_runs,
+    seqout_get_sample_detail,
+    seqout_get_sample_manifest,
+    seqout_get_sample_metadata,
+    seqout_get_stats_growth,
+    # Resolution Tools
+    seqout_resolve_accession,
+    seqout_resolve_prj,
+    # Search Tools
+    seqout_search,
+    seqout_search_geo,
+    seqout_search_sra,
+    seqout_search_structured,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_seqout_api(monkeypatch):
+    """Keep this tool contract suite deterministic and independent of seqout.org."""
+    async def request(endpoint: str, params: dict | None = None) -> dict | list:
+        if "999999999" in endpoint:
+            raise seqout_module.SeqoutAPIError("not found")
+        if endpoint in {"/search", "/search/geo", "/search/sra", "/search/structured"}:
+            query = (params or {}).get("q", "")
+            if "nonexistent_dataset_xyz123" in query:
+                return {"results": []}
+            return {"results": [{"accession": "GSE_TEST1", "title": "Test study"}]}
+        if endpoint.startswith("/geo/series/"):
+            return {"samples": [{"accession": "GSM_TEST1", "title": "Test sample",
+                                 "characteristics_ch1": ["tissue: leaf"],
+                                 "source_name_ch1": "leaf"}]}
+        if endpoint == "/organisms":
+            return [{"scientific_name": "Homo sapiens", "taxon_id": 9606}]
+        return {"accession": "TEST1", "items": []}
+
+    monkeypatch.setattr(seqout_module, "_seqout_request", request)
 
 
 # ==================== Helper Functions ====================
@@ -29,14 +70,14 @@ def validate_response(result: str, expect_success: bool = True):
         data = json.loads(result)
         assert "success" in data, "缺少 success 字段"
         assert "summary" in data, "缺少 summary 字段"
-        
+
         if expect_success:
             assert data["success"] is True, f"预期成功但失败：{data.get('summary')}"
             assert "data" in data, "成功响应应包含 data 字段"
         else:
             # 失败时可能没有 data 字段
             pass
-        
+
         return data
     except json.JSONDecodeError as e:
         pytest.fail(f"响应不是有效的 JSON: {result[:200]}... 错误：{e}")
@@ -49,7 +90,7 @@ async def test_seqout_search_basic():
     """测试基本关键词检索与输出字段结构"""
     result = await seqout_search(query="melanoma single cell", limit=2)
     data = validate_response(result)
-    
+
     assert data["data"], "搜索结果应为非空列表或包含数据"
     if len(data["data"]) > 0:
         item = data["data"][0]
@@ -62,7 +103,7 @@ async def test_seqout_search_limit():
     """测试 limit 参数控制返回数量"""
     result = await seqout_search(query="cancer", limit=3)
     data = validate_response(result)
-    
+
     # 注意：实际返回数量取决于 API，这里只验证不超过 limit
     assert len(data["data"]) <= 3, f"返回结果不应超过 limit={3}"
 
@@ -72,7 +113,7 @@ async def test_seqout_search_empty_result():
     """测试无匹配结果的优雅降级"""
     result = await seqout_search(query="nonexistent_dataset_xyz123", limit=1)
     data = validate_response(result, expect_success=False)
-    
+
     assert "未找到" in data["summary"] or "异常" in data["summary"], \
         f"应返回友好的错误消息：{data['summary']}"
 
@@ -82,7 +123,7 @@ async def test_seqout_search_geo():
     """测试 GEO 专用搜索"""
     result = await seqout_search_geo(query="GSE12345", limit=2)
     data = validate_response(result)
-    
+
     # 验证是 GEO 相关的结果
     if len(data["data"]) > 0:
         item = data["data"][0]
@@ -94,7 +135,7 @@ async def test_seqout_search_sra():
     """测试 SRA 专用搜索"""
     result = await seqout_search_sra(query="SRR123", limit=2)
     data = validate_response(result)
-    
+
     if len(data["data"]) > 0:
         item = data["data"][0]
         assert "accession" in item
@@ -105,7 +146,7 @@ async def test_seqout_search_structured():
     """测试结构化搜索（带物种过滤器）"""
     result = await seqout_search_structured(organism="Homo sapiens", assay="RNA-seq", limit=2)
     data = validate_response(result)
-    
+
     # 可能返回空结果，但不应该报错
     if not data["success"]:
         assert "异常" in data["summary"] or "错误" in data["summary"]
@@ -118,7 +159,7 @@ async def test_seqout_get_project_detail():
     """测试项目详情获取"""
     result = await seqout_get_project_detail(accession="GSE12345")
     data = validate_response(result)
-    
+
     if data["success"]:
         assert "data" in data
         project_data = data["data"]
@@ -188,12 +229,12 @@ async def test_seqout_get_sample_manifest():
     """测试样本清单获取（核心功能）"""
     result = await seqout_get_sample_manifest(accession="GSE120575", max_samples=5)
     data = validate_response(result)
-    
+
     if data["success"]:
         samples = data["data"]
         assert isinstance(samples, list), "样本清单应为列表"
         assert len(samples) <= 5, f"样本数不应超过 max_samples={5}"
-        
+
         if len(samples) > 0:
             sample = samples[0]
             required_fields = ["sample_accession", "title", "characteristics", "source_name"]
@@ -209,7 +250,7 @@ async def test_seqout_resolve_accession():
     # 使用一个已知的 GSM 编号测试
     result = await seqout_resolve_accession(accession="GSM123456")
     data = validate_response(result)
-    
+
     if data["success"]:
         assert "data" in data
         resolved = data["data"]
@@ -238,7 +279,7 @@ async def test_seqout_get_organisms():
     """测试物种列表获取"""
     result = await seqout_get_organisms()
     data = validate_response(result)
-    
+
     if data["success"]:
         assert isinstance(data["data"], list), "物种列表应为列表"
         assert len(data["data"]) > 0, "应至少有一个物种"
@@ -342,25 +383,25 @@ async def test_all_tools_output_format_consistency():
         (seqout_get_download_links("GSE12345"), "seqout_get_download_links"),
         (seqout_get_metadata_csv("GSE12345"), "seqout_get_metadata_csv"),
     ]
-    
+
     success_count = 0
     failure_count = 0
-    
+
     for coro, name in tools_test_cases:
         try:
             result = await coro
             data = validate_response(result)
-            
+
             if data["success"]:
                 success_count += 1
             else:
                 # 失败也是正常的（如无效 accession），只要格式正确即可
                 success_count += 1
-                
+
         except Exception as e:
             failure_count += 1
             pytest.fail(f"{name} 调用失败：{str(e)}")
-    
+
     print(f"\n✅ 所有工具格式验证完成：成功={success_count}, 失败={failure_count}")
     assert failure_count == 0, f"有 {failure_count} 个工具调用失败"
 
@@ -375,11 +416,11 @@ async def test_invalid_accession_handling():
         ("seqout_resolve_accession", seqout_resolve_accession("GSM999999999")),
         ("seqout_get_sample_manifest", seqout_get_sample_manifest("GSE999999999", 1)),
     ]
-    
+
     for name, coro in invalid_accessions:
         result = await coro
         data = validate_response(result, expect_success=False)
-        
+
         # 应返回友好的错误消息，而不是崩溃
         assert "success" in data and data["success"] is False, \
             f"{name} 对无效 accession 应返回失败状态"
@@ -391,15 +432,15 @@ async def test_context_window_protection():
     """测试上下文窗口保护（限制返回数量）"""
     # 测试 search 工具的 limit 参数
     result_large = await seqout_search(query="cancer", limit=10)
-    data_large = validate_response(result_large)
-    
+    validate_response(result_large)
+
     result_small = await seqout_search(query="cancer", limit=2)
     data_small = validate_response(result_small)
-    
+
     # 小 limit 的结果不应超过 2 条
     assert len(data_small["data"]) <= 2, \
         f"limit=2 时应最多返回 2 条，实际返回{len(data_small['data'])}"
-    
+
     print(f"\n✅ 上下文窗口保护验证：limit=2 时返回{len(data_small['data'])}条结果")
 
 

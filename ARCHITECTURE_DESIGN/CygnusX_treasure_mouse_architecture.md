@@ -400,8 +400,8 @@ BFF 流式端点 `POST /research-agent/sessions/{sid}/messages:stream`（`api/v1
 - Vue 客户端在连接中断后以相同请求 ID 和最后接收序号有限重试；SSE parser 忽略游标覆盖的重复 frame。
 - 终态 assistant snapshot 与事件日志共同落库；取消时将部分回复和终态提交，避免请求依赖回滚丢失结果。
 - Agent 生成由 Web 进程内独立 asyncio producer 和独立数据库会话驱动，SSE 响应只订阅已提交事件；客户端断流不会取消 producer，同一进程重连从持久事件游标继续回放。
-- producer 注册表仍是进程内存状态：进程退出会中断生成；另一进程看到 `streaming` 消息时只能回放，不能接管或恢复计算。跨进程任务租约、崩溃恢复与超时收敛尚未实现。
-- `/cancel` 通过 Web 进程内的会话活动事件通知生成任务；该内存协调不跨进程/worker，跨进程取消仍需运行时机制验证。
+- producer 注册表仍是进程内存状态：进程退出会中断生成；另一进程看到 `streaming` 消息时可以发出持久取消信号，但不能接管或恢复计算。跨进程任务租约、崩溃恢复与超时收敛尚未实现。
+- `/cancel` 优先通过 Web 进程内的会话活动事件通知生成任务；无本地 producer 时，会把取消请求写入现有 `streaming` assistant message 的 metadata，远端 producer 在事件周期重读并发布终止事件。响应 `accepted` 仅表示信号已发出或持久化，不证明 producer 已停止；无对应 `streaming` generation 时返回 `unknown`。producer 注册表和计算租约仍是进程内状态，跨进程接管、进程重启恢复与 OS 级停止尚未实现。
 
 以上断流行为目前有 SQLite/ASGI 隔离测试，尚无真实 PostgreSQL、部署 API、网络断流或 Chromium 证据；不能据此宣称 Runtime/E2E 验收通过。
 
@@ -469,10 +469,10 @@ BFF 流式端点 `POST /research-agent/sessions/{sid}/messages:stream`（`api/v1
 
 | # | 项 | 文档/前端期望 | 代码现状 | 影响 |
 |---|---|---|---|---|
-| D1 | `/research-agent/capabilities` 字段 | 任务书与前端 `ResearchCapabilities` 期望 `enabled / read_sessions / read_discovery / prepare_import / prepare_analysis / reason_code` | 服务端 `ResearchAgentCapabilities`（`application/schemas/research_agent.py:49`）**只声明** `native_ui_enabled / read_only / write_tools_enabled / supported_events`；服务传入的其余 9 个 kwarg 被 pydantic v2 默认 `extra='ignore'` 丢弃 | 前端 `capabilities.value?.read_sessions === true` 恒为 `undefined === true` → `canReadSessions/canDiscover` 恒 false，工作台只读侧被**保守锁死**；属文档/实现漂移，需人工确认以服务端 DTO 扩展还是前端降级为准 |
-| D2 | Widget/Node 委托 transport | 任务书 §6 描述 Node 用固定 callback 回落 Gateway | 子仓 `functions/seqout-chat/platform-tools.ts` 已实现 adapter（剔除 `.submit`/`tasks.cancel`、URL 来自 operator，不来自模型）；但 `functions/seqout-chat/index.ts` 的接线在**子仓未提交**，父仓指针未更新 | 运行镜像是否包含该增量 `UNKNOWN`（与 W0 基线一致） |
+| D1 | `/research-agent/capabilities` 字段 | 前端 `ResearchCapabilities` 与服务端需共享 `enabled / read_sessions / read_discovery / prepare_import / prepare_analysis / reason_code` 等字段 | 已闭合：服务端 `ResearchAgentCapabilities` 声明能力投影及 `write_execution: Literal[False]`；`ResearchTreasureService.capabilities()` 计算模块、Node 与 Prepare 状态；HTTP 路由返回该 DTO。后端隔离测试检查能力裁剪，前端访问层类型声明对应 | 当前源码不再存在 Pydantic 丢字段问题；仍以运行配置和真实 API 环境验证为准，不能将隔离 DTO 测试升级为 Runtime |
+| D2 | Widget/Node 委托 transport | 任务书 §6 描述 Node 用固定 callback 回落 Gateway | 已闭合：父仓记录的子仓提交 `b780b7c2f01fb3ea9aaaef82c6eb91e41cde57db` 包含 `index.ts` 接线与 `platform-tools.ts` adapter；adapter 只暴露 `bioops_*` 的 `none`/`confirmation` 能力并剔除 `.submit`/`tasks.cancel`，callback URL 仅来自服务端 operator 配置。`server/local.mjs` 只在 `/cygnusx/discovery` 校验内部 token 后注入信任标记，其他路径会剥除该标记。子仓定向离线 Node 测试通过 | 实际运行镜像/tag/digest 是否包含该提交仍 `UNKNOWN`；源代码与离线测试不构成部署或真实 callback 验收 |
 | D3 | Network 化后的 count summ | 任务书列 `downloads.prepare` 与 `dataset.prepare_import` | 二者均存在于能力目录（`agent_tools.py:154,168`），职责按 W2 文档划分：前者绑下载资源/运输参数，后者绑科研来源/DatasetVersion；**`downloads.prepare` 不走 `dataset_import_write` 门禁**（仅校核目录 containment） | 需评审确认二者不重复审批（当前不重复） |
-| D4 | Island 构建产物 | 前端动态 import `public/treasure-island/treasure-island.js` | 该产物由子仓构建，父仓指针未更新时可能与子仓源码不同步 | 视觉/行为以实际产物为准，`VISUAL_RELEASE_READY` 保持否 |
+| D4 | Island 构建产物 | 前端动态 import `public/treasure-island/treasure-island.js` | 子仓已将平台展示适配器移至 `archive/island/`。父仓 `frontend/scripts/build-treasure-island.mjs` 优先使用根 Island 配置；配置缺失时，在临时目录组合归档适配器与当前 `src/` 共享组件，复用子仓依赖执行 Island TypeScript 检查和 Vite 构建，完成后清理临时目录。不改归档或子仓源码，不复制服务配置。公开产物移除模块路径清单 | 当前归档布局的构建通过；视觉/行为仍须实际浏览器验收，`VISUAL_RELEASE_READY` 保持否 |
 
 > 其余文档声明（WRITE_RUNTIME_ACCEPTED=False、worker_paths_verified=false、迁移链 bioopsphase2→5、Flow 版本号、幂等/对账语义）均与源码一致，不再逐条列出。
 

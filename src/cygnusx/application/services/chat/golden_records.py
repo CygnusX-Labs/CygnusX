@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ _VOLATILE_METADATA_KEYS = frozenset(
         "run_id",
         "session_id",
         "timestamp",
+        "tool_manifest",
         "tool_call_id",
     }
 )
@@ -62,9 +63,7 @@ def _validate_golden_event_sequence(events: Iterable[dict[str, Any]], path: Path
     if any(not isinstance(event.get("type"), str) or not event["type"] for event in event_list):
         raise ValueError(f"golden record events require a non-empty type: {path}")
     try:
-        validate_event_sequence(
-            [ChatChunk(type=event["type"]) for event in event_list]
-        )
+        validate_event_sequence([ChatChunk(type=event["type"]) for event in event_list])
     except EventSequenceError as exc:
         raise ValueError(f"invalid golden event sequence: {path}: {exc}") from exc
 

@@ -33,5 +33,26 @@
     "cwd": "frontend",
     "exit_code": 0,
     "log": "evidence/iat-r3-runtime/vue-typecheck.log"
+  },
+  {
+    "name": "frontend-typecheck-current",
+    "command": ["npm", "run", "type-check"],
+    "cwd": "frontend",
+    "exit_code": 0,
+    "log": "evidence/iat-r3-runtime/frontend-typecheck.log"
+  },
+  {
+    "name": "frontend-vitest-current",
+    "command": ["npm", "test", "--", "--run"],
+    "cwd": "frontend",
+    "exit_code": 0,
+    "log": "evidence/iat-r3-runtime/frontend-vitest.log"
+  },
+  {
+    "name": "frontend-build-current",
+    "command": ["npm", "run", "build"],
+    "cwd": "frontend",
+    "exit_code": 0,
+    "log": "evidence/iat-r3-runtime/frontend-build.log"
   }
 ]

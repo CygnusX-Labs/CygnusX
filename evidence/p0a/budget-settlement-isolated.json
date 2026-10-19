@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-10-18",
+  "head": "54718c476816c0045e433d45148c0140784ebbce",
+  "result": "PASS_ISOLATED",
+  "runtime_authorization": "NOT_GRANTED",
+  "commands": [
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_execution_admission.py tests/unit/test_download_execution_receipt_nonce.py tests/unit/test_p0a_migration_contract.py -q -m unit",
+      "exit_code": 0,
+      "result": "44 passed",
+      "scope": "SQLite fixture; signed receipt verification, nonce, terminal budget settlement, revoke reconciliation, and migration contract"
+    },
+    {
+      "command": ".venv/bin/ruff check src/cygnusx/infrastructure/database/repositories/download_execution_admission.py src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py tests/unit/test_download_execution_admission.py",
+      "exit_code": 0,
+      "result": "All checks passed"
+    },
+    {
+      "command": "UV_CACHE_DIR=/tmp/omichub-uv-cache .venv/bin/mypy src/cygnusx/infrastructure/database/repositories/download_execution_admission.py src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py",
+      "exit_code": 0,
+      "result": "Success: no issues found in 2 source files"
+    },
+    {
+      "command": ".venv/bin/python scripts/check_migrations.py",
+      "exit_code": 0,
+      "result": "Connected migration topology; single Alembic head"
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "result": "clean"
+    }
+  ],
+  "sha256": {
+    "src/cygnusx/infrastructure/database/repositories/download_execution_admission.py": "674694e6be30e04af53ef6e05aa216e250102a7cd5ee710e74b6f10b02abcef9",
+    "src/cygnusx/infrastructure/database/repositories/download_execution_receipt.py": "99b3312eceb9f502f952e4afbbc215d660969438b058b08568f37bd7c1e2e5ed",
+    "tests/unit/test_download_execution_admission.py": "79fdc59447da289ccf5744e764e1d4d60aeffba203ee2c5628380aeba2dd38d3"
+  },
+  "limitations": [
+    "No PostgreSQL concurrency or migration execution was performed.",
+    "No trusted Supervisor runtime exists in this environment; settlement helper is not wired into Worker lifecycle.",
+    "No download, Broker, Redis, or OS enforcement was started."
+  ]
+}

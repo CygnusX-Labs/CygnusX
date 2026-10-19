@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
@@ -72,3 +73,25 @@ async def test_rerank_prefers_title_and_abstract_matching_the_question() -> None
         "embedding_hybrid",
         "lexical_hybrid",
     }
+
+
+@pytest.mark.asyncio
+async def test_rerank_falls_back_when_embedding_provider_times_out() -> None:
+    class SlowEmbeddingClient:
+        async def embeddings(self, _text: str, *, model: str) -> list[float]:
+            await asyncio.sleep(1)
+            return [1.0]
+
+    optimizer = ResearchSearchOptimizer(
+        embedding_client=SlowEmbeddingClient(), embedding_timeout_seconds=0.05
+    )
+    results = await optimizer.rerank(
+        "TP53 lung cancer",
+        [
+            {"title": "TP53 lung cancer study", "url": "https://pubmed.ncbi.nlm.nih.gov/1/"},
+            {"title": "Unrelated ecology study", "url": "https://example.org/2"},
+        ],
+    )
+
+    assert results[0]["title"] == "TP53 lung cancer study"
+    assert results[0]["quality"]["rerank_method"] == "lexical_hybrid"

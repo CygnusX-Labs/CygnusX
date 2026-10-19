@@ -1,11 +1,13 @@
 ---
 name: 单细胞转录组端到端主流程编排
-description: 当用户提供 CellRanger 或 DNBC4 的输出矩阵、要求做端到端的 scRNA-seq 标准分析（多样本整合/单样本 QC → 聚类 → 自动注释 → 比例统计）时触发。输入为样本配置 CSV 与矩阵目录，产出固定的 *-scRNA-seq-result 结果目录。本技能是主流程 scRNAseqMulticommand 的调用编排（重量级管线不 skill 化，只指导如何准备 conf、如何调用、如何解读输出）；只做单个分析任务（格式转换、DEG、重聚类、比例统计、T 细胞注释、渲染报告）时不适用，请路由到对应专项技能。
-skill_id: scrna-pipeline-overview
+description: 当用户提供 CellRanger 或 DNBC4 的输出矩阵、要求做端到端的 scRNA-seq 标准分析（多样本整合/单样本 QC →
+  聚类 → 自动注释 → 比例统计）时触发。输入为样本配置 CSV 与矩阵目录，产出固定的 *-scRNA-seq-result 结果目录。本技能是主流程 scRNAseqMulticommand
+  的调用编排（重量级管线不 skill 化，只指导如何准备 conf、如何调用、如何解读输出）；只做单个分析任务（格式转换、DEG、重聚类、比例统计、T 细胞注释、渲染报告）时不适用，请路由到对应专项技能。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 🧬
 category: analysis
+skill_id: scrna-pipeline-overview
 ---
 
 # 单细胞转录组端到端主流程编排（scRNAseqMulticommand）

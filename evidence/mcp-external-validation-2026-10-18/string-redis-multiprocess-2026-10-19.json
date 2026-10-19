@@ -1,0 +1,60 @@
+{
+  "captured_at_utc": "2026-10-19T05:44:12.774974+00:00",
+  "scope": "real isolated Redis, four independent OS processes calling production _string_rate_limit; no provider HTTP request",
+  "workers": 4,
+  "grants_per_worker": 2,
+  "grants": [
+    {
+      "redis_grant_ms": 1792388645238,
+      "pid": 1714905
+    },
+    {
+      "redis_grant_ms": 1792388646239,
+      "pid": 1714905
+    },
+    {
+      "redis_grant_ms": 1792388647240,
+      "pid": 1714899
+    },
+    {
+      "redis_grant_ms": 1792388648241,
+      "pid": 1714903
+    },
+    {
+      "redis_grant_ms": 1792388649242,
+      "pid": 1714901
+    },
+    {
+      "redis_grant_ms": 1792388650243,
+      "pid": 1714901
+    },
+    {
+      "redis_grant_ms": 1792388651244,
+      "pid": 1714903
+    },
+    {
+      "redis_grant_ms": 1792388652245,
+      "pid": 1714899
+    }
+  ],
+  "intervals_ms": [
+    1001,
+    1001,
+    1001,
+    1001,
+    1001,
+    1001,
+    1001
+  ],
+  "minimum_interval_ms": 1001,
+  "shared_rate_limit_passed": true,
+  "redis_unavailable_service_success": false,
+  "redis_unavailable_error_class": "ConnectionError",
+  "provider_calls": 0,
+  "production_services_touched": false,
+  "temporary_container_removed": true,
+  "limitations": [
+    "Limiter admission timestamps only; not an authenticated platform REST or MCP wire test.",
+    "Does not prove scheduling delay between limiter admission and HTTP request start."
+  ]
+}

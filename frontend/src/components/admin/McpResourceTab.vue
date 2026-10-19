@@ -12,7 +12,7 @@ import {
   RocketOutline, SyncOutline,
 } from '@vicons/ionicons5'
 import { useAgentHubStore } from '@/stores/agentHub'
-import type { McpService, McpTool, McpLogEntry, McpVersion } from '@/types/agent'
+import type { McpService, McpTool, McpResource, McpLogEntry, McpVersion } from '@/types/agent'
 import VersionHistoryDrawer, { type VersionHistoryItem } from './VersionHistoryDrawer.vue'
 
 const message = useMessage()
@@ -20,6 +20,29 @@ const store = useAgentHubStore()
 
 const expandedRowKeys = ref<string[]>([])
 const toolsCache = ref<Record<string, McpTool[]>>({})
+const resourcesCache = ref<Record<string, McpResource[]>>({})
+const resourcesLoading = ref(false)
+const resourcesError = ref('')
+const resourcesLoaded = ref<Record<string, boolean>>({})
+const configResources = computed<McpResource[]>(() => {
+  if (!editingMcp.value) return []
+  return resourcesCache.value[editingMcp.value.id] ?? []
+})
+
+async function handleResourceDiscover() {
+  if (!editingMcp.value) return
+  const id = editingMcp.value.id
+  resourcesLoading.value = true
+  resourcesError.value = ''
+  try {
+    resourcesCache.value[id] = await store.fetchMcpResources(id)
+    resourcesLoaded.value[id] = true
+  } catch (e: any) {
+    resourcesError.value = e?.response?.data?.detail || '资源发现失败，请检查服务连接'
+  } finally {
+    resourcesLoading.value = false
+  }
+}
 
 // ===== 添加 MCP 抽屉 =====
 const showAddDrawer = ref(false)
@@ -810,10 +833,40 @@ const columns = [
           </NTabPane>
 
           <NTabPane tab="资源" name="resources">
-            <div class="tab-empty">
-              <NIcon :component="FolderOpenOutline" :size="36" class="tab-empty-icon" />
-              <div class="tab-empty-title">暂无资源</div>
-              <div class="tab-empty-desc">平台暂未支持 MCP 资源发现（resources/list），将在后续版本提供。</div>
+            <div class="tools-panel">
+              <div class="tools-toolbar">
+                <span class="tools-count">{{ configResources.length }} 个资源入口</span>
+                <NButton size="tiny" :loading="resourcesLoading" @click="handleResourceDiscover">
+                  <template #icon><NIcon :component="RefreshOutline" /></template>
+                  {{ resourcesLoaded[editingMcp?.id || ''] ? '重新发现' : '发现资源' }}
+                </NButton>
+              </div>
+              <div v-if="resourcesError" class="tab-empty" role="alert">
+                <NIcon :component="AlertCircleOutline" :size="24" class="tab-empty-icon" />
+                <div class="tab-empty-title">资源发现失败</div>
+                <div class="tab-empty-desc">{{ resourcesError }}</div>
+              </div>
+              <div v-else-if="resourcesLoading" class="tab-empty" role="status">正在发现资源...</div>
+              <div v-else-if="!resourcesLoaded[editingMcp?.id || '']" class="tab-empty">
+                <NIcon :component="FolderOpenOutline" :size="30" class="tab-empty-icon" />
+                <div class="tab-empty-title">尚未发现资源</div>
+              </div>
+              <div v-else-if="!configResources.length" class="tab-empty">
+                <NIcon :component="FolderOpenOutline" :size="30" class="tab-empty-icon" />
+                <div class="tab-empty-title">该服务未声明 MCP Resources</div>
+              </div>
+              <div v-else class="tools-grid">
+                <div v-for="resource in configResources" :key="`${resource.kind}:${resource.uri}`" class="tool-cell">
+                  <div class="tool-head">
+                    <NIcon :component="FolderOpenOutline" :size="14" />
+                    <span class="tool-name">{{ resource.name || resource.uri }}</span>
+                    <NTag size="tiny" :bordered="false">{{ resource.kind === 'template' ? 'Template' : 'Resource' }}</NTag>
+                  </div>
+                  <div class="tool-desc">{{ resource.uri }}</div>
+                  <div v-if="resource.mime_type" class="tool-desc">{{ resource.mime_type }}</div>
+                  <div v-if="resource.description" class="tool-desc">{{ resource.description }}</div>
+                </div>
+              </div>
             </div>
           </NTabPane>
         </NTabs>

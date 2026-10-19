@@ -1,0 +1,4 @@
+FROM nginx@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
+COPY --chown=10001:10001 dist/ /usr/share/nginx/html/
+USER 10001:10001
+LABEL org.opencontainers.image.revision="ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79" cygnusx.dirty-source-sha256="ebef48335434468665135aa37424fccdc3f7c5b0f83882879a8eb6aad0e27bc6"

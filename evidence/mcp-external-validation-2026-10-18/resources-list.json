@@ -1,0 +1,1 @@
+{"result":{"resources":[{"name":"flow_catalog","uri":"cygnusx://flows/catalog","description":"所有可用分析流程的 JSON 目录","mimeType":"text/plain","_meta":{"fastmcp":{"tags":[]}}},{"name":"user_storage","uri":"cygnusx://user/storage","description":"用户存储配额和目录结构","mimeType":"text/plain","_meta":{"fastmcp":{"tags":[]}}}]}}

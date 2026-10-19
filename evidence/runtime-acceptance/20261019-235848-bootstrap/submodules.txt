@@ -1,0 +1,7 @@
+ 977ad657bbe7d49f2200a5f3f550b70f25234f3d Protocol/FlowFrame (heads/main)
+ 4a68b347ba3b9497a86eed2603b6577afc3c2f27 pipelines/ATACFlow (heads/main)
+ b351e03dfc845d229102d90f9bd88d6ca731f0de pipelines/EBIDownload (v1.4.0-2-gb351e03)
+ 19f5068c4f9370ea27cb6fe554a3f061a1b62a51 pipelines/RNAFlow (heads/feat/result-manifest)
++51a401d4e1db249ee467fcaa529847be8fba6a71 pipelines/Treasure-Seeking_Mouse (heads/main)
+ b5066338fba47b1ed3fbee042f1cb43859cff882 pipelines/scrna (heads/main)
+ 24ecb6ce75657c5ce188603b54ac7bf10ffb6d46 pipelines/tools (heads/main)

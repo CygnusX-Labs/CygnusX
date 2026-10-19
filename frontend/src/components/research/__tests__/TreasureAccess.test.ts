@@ -3,15 +3,15 @@ import { createApp, nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Workbench from '@/views/TreasureResearchWorkbench.vue'
 import { researchFailure } from '@/api/researchAgent'
-const calls = vi.hoisted(() => ({ capabilities: vi.fn(), projects: vi.fn(), sessions: vi.fn(), messages: vi.fn() }))
+const calls = vi.hoisted(() => ({ capabilities: vi.fn(), projects: vi.fn(), sessions: vi.fn(), messages: vi.fn(), cancel: vi.fn() }))
 vi.mock('@/api/projects', () => ({ projectsApi: { listProjects: calls.projects } }))
 vi.mock('@/api/researchAgent', async (original) => ({
   ...await original<typeof import('@/api/researchAgent')>(),
-  researchAgentApi: { capabilities: calls.capabilities, listSessions: calls.sessions, getMessages: calls.messages },
+  researchAgentApi: { capabilities: calls.capabilities, listSessions: calls.sessions, getMessages: calls.messages, cancel: calls.cancel },
 }))
 vi.mock('@/components/research/TreasureOriginalDisplay.vue', () => ({ default: {
   props: ['presentation'],
-  template: `<div><p>{{ presentation.accessError || presentation.historyError }}</p><p v-if="!presentation.loading && !presentation.accessError && !presentation.historyError && !presentation.sessions.length">暂无平台会话</p><button v-for="session in presentation.sessions" class="session-item" @click="presentation.onSelectSession(session.id)">{{ session.title }}</button><article v-for="message in presentation.messages">{{ message.content }}</article></div>`,
+  template: `<div><p>{{ presentation.accessError || presentation.historyError || presentation.streamError }}</p><p v-if="!presentation.loading && !presentation.accessError && !presentation.historyError && !presentation.sessions.length">暂无平台会话</p><button v-for="session in presentation.sessions" class="session-item" @click="presentation.onSelectSession(session.id)">{{ session.title }}</button><button class="cancel-session" @click="$emit('cancel')">停止</button><article v-for="message in presentation.messages">{{ message.content }}</article></div>`,
 } }))
 vi.mock('@/components/research/AgentToolPanel.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/research/DatasetWorkspace.vue', () => ({ default: { template: '<div />' } }))
@@ -31,6 +31,7 @@ beforeEach(() => {
   calls.projects.mockResolvedValue([])
   calls.sessions.mockResolvedValue([])
   calls.messages.mockResolvedValue([])
+  calls.cancel.mockResolvedValue({ status: 'unknown' })
 })
 afterEach(() => cleanup?.())
 describe('treasure access preflight', () => {
@@ -69,6 +70,20 @@ describe('treasure access preflight', () => {
     expect(host.textContent).toContain('登录状态已失效')
     expect(host.textContent).not.toContain('暂无平台会话')
     expect(calls.sessions).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['accepted', '停止信号；任务是否已停止尚未确认'],
+    ['unknown', '未确认任务状态'],
+  ])('reports cancellation status %s without claiming the producer stopped', async (status, expected) => {
+    calls.capabilities.mockResolvedValue({ read_sessions: true, read_discovery: true })
+    calls.sessions.mockResolvedValue([{ session_id: 'session/one', title: '会话一', project_id: null }])
+    calls.cancel.mockResolvedValue({ status })
+    const host = await mount()
+    host.querySelector<HTMLButtonElement>('.cancel-session')?.click()
+    await settle()
+    expect(calls.cancel).toHaveBeenCalledWith('session/one')
+    expect(host.textContent).toContain(expected)
+    expect(host.textContent).not.toContain('已停止接收回复。')
   })
 })
 describe('safe research errors', () => {

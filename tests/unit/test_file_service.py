@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,14 @@ from cygnusx.infrastructure.mcp.presets import (
 )
 from cygnusx.infrastructure.storage.backend import LocalStorageBackend
 from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
+
+
+@pytest.fixture(autouse=True)
+def _inline_local_storage_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
 
 
 def _attach_test_factory(service: FileService, tmp_path: Path) -> None:
@@ -580,13 +589,9 @@ def test_sync_skip_patterns_block_sandbox_shell_residue() -> None:
 @pytest.mark.asyncio
 async def test_list_directories_applies_visibility_metadata() -> None:
     """后端驱动目录树可见性：inbox/tasks 标记 hidden；chat-output 升格聚合节点。"""
-    from datetime import UTC, datetime as _dt
-    from types import SimpleNamespace as NS
     from unittest.mock import AsyncMock
 
     from cygnusx.application.services.directory_service import DirectoryService
-
-    now = _dt.now(UTC)
 
     def d(path: str, is_system: bool = False) -> Directory:
         parent = path.rsplit("/", 1)[0] if "/" in path else None
@@ -606,9 +611,9 @@ async def test_list_directories_applies_visibility_metadata() -> None:
     ]
 
     svc = object.__new__(DirectoryService)
-    svc._dirs = NS(list_by_user=AsyncMock(return_value=dirs))
+    svc._dirs = SimpleNamespace(list_by_user=AsyncMock(return_value=dirs))
     svc._ensure_user_system_subdir = AsyncMock()
-    svc._session = NS(commit=AsyncMock())
+    svc._session = SimpleNamespace(commit=AsyncMock())
 
     # 绕过 ensure_default_directories（不依赖 DB）
     async def _noop(uid):

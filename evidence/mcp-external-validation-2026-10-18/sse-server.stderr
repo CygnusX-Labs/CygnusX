@@ -1,0 +1,85 @@
+22:49:45 | INFO    | [Seqout] 工具组注册完成 (26 个工具)
+22:49:45 | INFO    | [自校验] tools.yaml 与已注册工具一致 (109 个工具)
+22:49:45 | INFO    | CygnusX MCP Server 启动 (transport=sse, base_url=http://127.0.0.1:65530)
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.4.4                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      CygnusX, 3.4.4                              │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 4.1.1                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[10/18/26 22:49:45] INFO     Starting MCP server 'CygnusX' with transport.py:361
+                             transport 'sse' on                                 
+                             http://127.0.0.1:8901/sse                          
+INFO:     Started server process [3981830]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8901 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3981830]
+Traceback (most recent call last):
+  File "$HOME/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "$HOME/miniconda3/lib/python3.13/asyncio/base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "$REPO/mcp-server/main.py", line 60, in <module>
+    main()
+    ~~~~^^
+  File "$REPO/mcp-server/main.py", line 56, in main
+    run_server(mcp, transport, port)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "$REPO/mcp-server/core/runtime.py", line 38, in run_server
+    server.run(
+    ~~~~~~~~~~^
+        transport="http" if transport == "streamable-http" else transport,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        host=settings.host,
+        ^^^^^^^^^^^^^^^^^^^
+        port=port,
+        ^^^^^^^^^^
+    )
+    ^
+  File "$REPO/mcp-server/.venv/lib/python3.13/site-packages/fastmcp/server/mixins/transport.py", line 123, in run
+    anyio.run(
+    ~~~~~~~~~^
+        partial(
+        ^^^^^^^^
+    ...<4 lines>...
+        )
+        ^
+    )
+    ^
+  File "$REPO/mcp-server/.venv/lib/python3.13/site-packages/anyio/_core/_eventloop.py", line 83, in run
+    return async_backend.run(func, args, {}, backend_options)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$REPO/mcp-server/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2481, in run
+    return runner.run(wrapper())
+           ~~~~~~~~~~^^^^^^^^^^^
+  File "$HOME/miniconda3/lib/python3.13/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt

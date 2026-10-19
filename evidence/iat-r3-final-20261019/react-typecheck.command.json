@@ -1,0 +1,12 @@
+{
+  "name": "react-typecheck",
+  "command": [
+    "npm",
+    "run",
+    "typecheck"
+  ],
+  "cwd": "pipelines/Treasure-Seeking_Mouse",
+  "exit_code": 0,
+  "duration_seconds": 1.54,
+  "log": "react-typecheck.log"
+}

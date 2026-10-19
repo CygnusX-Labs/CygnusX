@@ -7,7 +7,7 @@
 ## 当前审计起点，必须逐文件核查而不是盲信
 
 - 已存在 `TrustedExecutionAdapter` Protocol、mTLS Supervisor **客户端**（start/observe/renew/stop/evidence）、签名 HTTP publication receipt + nonce 验证。
-- 还**没有**可确认的独立 Supervisor 服务端、启动前 scope/网络及磁盘强制、不可绕过 RX、Worker 生命周期回收、可实际运行的 trusted_http_driver。真实 HTTP 九项为 0/9，默认 skip。
+- 初始审计时**没有**可确认的独立 Supervisor 服务端；当前源码已具备默认拒绝 Supervisor 骨架、启动前 seam 与 Worker 生命周期 seam，但仍没有 Linux scope/网络/磁盘强制、不可绕过 RX、可实际运行的 trusted_http_driver。真实 HTTP 九项为 0/9，默认 skip。
 - P0-A 的 Admission Model/Repository/迁移处于 dirty 开发，未完成真实人工审批/同 Task/budget 运行验证；切勿绕过它。
 
 ## 绝对禁止

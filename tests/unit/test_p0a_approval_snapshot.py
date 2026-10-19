@@ -106,6 +106,7 @@ async def test_redis_consume_then_commit_failure_does_not_permit_replay(
 ):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+    from uuid import uuid4
 
     from cygnusx.infrastructure.database.models.task import TaskModel
     from cygnusx.infrastructure.database.repositories import download_execution_admission
@@ -135,9 +136,22 @@ async def test_redis_consume_then_commit_failure_does_not_permit_replay(
 
     monkeypatch.setattr(module.DownloadService, "submit", submit)
     # Only outer SQL failure/Redis consumption is under test, not admission issue.
-    monkeypatch.setattr(download_execution_admission, "issue_processed_http_admission", AsyncMock())
+    admission = SimpleNamespace(id=uuid4(), budget_id=uuid4())
+    monkeypatch.setattr(
+        download_execution_admission,
+        "issue_processed_http_admission",
+        AsyncMock(return_value=admission),
+    )
     await service.execute(owner, project, iid)
     assert row.approval_snapshot["nonce_status"] == "CONSUMED"
+    task_row = await db.get(TaskModel, UUID(row.task_ids[0]))
+    assert task_row is not None
+    binding = task_row.parameters["_download_execution_binding"]
+    assert binding == {
+        "version": 1,
+        "admission_ref": str(admission.id),
+        "budget_ref": str(admission.budget_id),
+    }
 
     async def failed_commit():
         raise RuntimeError("isolated commit failure")
@@ -152,5 +166,6 @@ async def test_redis_consume_then_commit_failure_does_not_permit_replay(
     assert restored.state == "PREPARED"
     assert restored.approval_snapshot["nonce_status"] == "APPROVED"
     assert not restored.task_ids
-    with pytest.raises(ConflictError):
+    with pytest.raises(ConflictError) as exc_info:
         await service.execute(owner, project, iid)
+    assert exc_info.value.code == "RECONCILIATION_REQUIRED"

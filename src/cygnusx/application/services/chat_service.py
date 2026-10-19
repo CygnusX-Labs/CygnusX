@@ -215,6 +215,7 @@ from cygnusx.application.services.studio_tools import (
     stream_studio_tool,
     studio_runtime_tool_schemas,
 )
+from cygnusx.application.services.tool_manifest import build_tool_manifest
 from cygnusx.application.services.unified_intent_router import (
     capability_notice,
     normalize_decision,
@@ -4261,6 +4262,7 @@ class ChatService(
             execution_path=execution_path,
             message_id=ai_message.message_id,
             tool_count=len(tools),
+            tool_manifest=build_tool_manifest(tools, active_mcp_servers),
         )
 
         async def trigger_studio_loop_guard(trigger: Any) -> ChatChunk:

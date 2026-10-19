@@ -1,0 +1,105 @@
+{
+  "run_id": "20261019-211549-acceptance",
+  "timestamp": "2026-10-19T13:15:49Z",
+  "status": "PARTIAL",
+  "runtime_status": "BLOCKED",
+  "e2e_status": "NOT_TESTED",
+  "source": {
+    "git_commit": "ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79",
+    "dirty_status_items": 208,
+    "regular_file_inventory_sha256": "e9a4a790c0dc4c0dc6f3e13842f8cf7f73934dee582641498276b2be88c24e0e",
+    "submodule_worktrees_in_digest": false
+  },
+  "environment": {
+    "environment_id": null,
+    "compose_project": "cygnusx-ri095-acceptance",
+    "docker_engine": "28.3.3",
+    "docker_compose": "2.39.1",
+    "docker_daemon_access": "BLOCKED: permission denied / operation not permitted",
+    "private_acceptance_env": false,
+    "reviewed_image_digests": false,
+    "database_identity": null,
+    "alembic_runtime_revision": null,
+    "current_api_listener": false
+  },
+  "settings_snapshot": {
+    "scope": "local Settings() loaded by this CLI process; not a running API process",
+    "research_plan_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "project_export_enabled": false,
+    "project_report_write_enabled": false,
+    "project_report_pdf_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "agent_download_write_enabled": false,
+    "tool_gateway_read_enabled": false
+  },
+  "static_checks": {
+    "acceptance_ruff_check": "PASS_STATIC",
+    "acceptance_ruff_format": "PASS_STATIC",
+    "isolated_compose_and_negative_checks": "PASS_STATIC: 8 rejection cases",
+    "synthetic_celery_registry": "PASS_STATIC",
+    "browser_preflight_syntax": "PASS_STATIC",
+    "alembic_planning": {
+      "status": "PASS_STATIC",
+      "revision_count": 119,
+      "heads": ["dwnscope06"],
+      "duplicate_base_steps": [],
+      "sql_executed": false
+    }
+  },
+  "isolated_tests": {
+    "backend_command": ".venv/bin/pytest tests/unit/test_research_plan_phase5.py tests/unit/test_research_plan_storage_phase5.py tests/unit/test_research_plan_gateway_phase5.py tests/unit/test_research_delivery_phase4.py tests/unit/test_project_delivery.py tests/unit/test_project_delivery_stabilization.py -q -m 'not quarantine'",
+    "backend_status": "PASS_ISOLATED",
+    "backend_passed": 115,
+    "backend_warnings": 3,
+    "frontend_command": "npx vitest run src/components/research/__tests__/ResearchPlanWorkbench.test.ts src/components/research/__tests__/ResearchDeliveryChain.test.ts src/components/__tests__/ProjectResearchDelivery.test.ts",
+    "frontend_status": "PASS_ISOLATED",
+    "frontend_passed": 17,
+    "limitations": [
+      "Backend tests use SQLite, temporary files and isolated dependencies; no PostgreSQL or real Celery broker/worker",
+      "Frontend tests use jsdom; no real browser business E2E"
+    ]
+  },
+  "runtime_tests": {
+    "research_plan_RP01_RP14": "BLOCKED",
+    "research_delivery_RE01_RE10": "BLOCKED",
+    "project_export_PE01_PE12": "BLOCKED",
+    "browser_business_e2e": "NOT_TESTED",
+    "production_readiness": "NOT_TESTED"
+  },
+  "historical_runs_not_current_source_acceptance": [
+    {
+      "run_id": "ri095-20261017-attempt1",
+      "source_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+      "status": "PARTIAL",
+      "runtime_gates": "PASS_RUNTIME for PostgreSQL/migrations/constraints/partial concurrency/JWT/local storage/HTML/M0-M1 ZIP; other gates blocked or partial",
+      "browser_e2e": "BLOCKED",
+      "evidence": "evidence/runtime-acceptance/ri095-20261017-attempt1/results.md"
+    },
+    {
+      "run_id": "ri095-authorized-20261017-attempt1",
+      "source_commit": "d9c92cf6ee1c1e8de902c2b897b93f60b4f00f33",
+      "status": "PARTIAL",
+      "runtime_export_chain": "PASS_RUNTIME for isolated report/M1/ZIP/JWT mechanics; approved corpus remains blocked",
+      "browser_e2e": "PARTIAL: 31/34 after D4 fix; 3 export_ready assertions did not pass",
+      "evidence": "evidence/runtime-acceptance/ri095-authorized-20261017-attempt1/delivery-chain/results.json"
+    }
+  ],
+  "safety": {
+    "production_config_changed": false,
+    "production_database_used": false,
+    "production_credentials_or_user_data_used": false,
+    "feature_flags_enabled": false,
+    "acceptance_or_postgres_migrations_executed": false,
+    "temporary_sqlite_test_migrations_executed": true,
+    "approval_admission_budget_bypassed": false,
+    "worker_paths_verified_forged": false,
+    "git_commit_or_push_performed": false
+  },
+  "blockers": [
+    "Docker daemon socket is inaccessible from this session",
+    "No private acceptance environment file or reviewed image digests are available",
+    "No approved isolated corpus or browser runtime evidence bound to current source is available"
+  ]
+}

@@ -1,6 +1,7 @@
 """Agent Handoff 无数据库协议测试。"""
 
 import json
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,8 +13,11 @@ from cygnusx.application.services.agent_handoff_service import (
 )
 from cygnusx.application.services.agent_service import AgentService, render_persona_system_prompt
 from cygnusx.core.exceptions import BusinessError
+from cygnusx.domain.mcp.entities import MCPServer, MCPToolRegistry
+from cygnusx.domain.mcp.value_objects import ServerStatus, Transport
 from cygnusx.infrastructure.database.models.agent import AgentTemplateModel
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
+from cygnusx.infrastructure.mcp.presets import CYGNUSX_PLATFORM_SERVER_ID
 
 
 def test_runtime_communication_contract_applies_to_every_standard_agent() -> None:
@@ -128,6 +132,45 @@ async def test_assemble_context_injects_persona_when_model_is_unavailable() -> N
     assert "原始职责提示" in context.system_prompt
     assert "严谨审计员" in context.system_prompt
     assert "不得据此新增、移除或扩大工具" in context.system_prompt
+
+
+@pytest.mark.asyncio
+async def test_assemble_context_supports_platform_binding_without_builtin_tool_preset() -> None:
+    agent = AgentTemplateModel(
+        agent_id="agent-qc",
+        name="质量审计员",
+        model_id=uuid.uuid4(),
+        mcp_ids=[str(CYGNUSX_PLATFORM_SERVER_ID)],
+        is_active=True,
+    )
+    platform = MCPServer(
+        id=CYGNUSX_PLATFORM_SERVER_ID,
+        name="cygnusx-platform",
+        transport=Transport.BUILTIN,
+        status=ServerStatus.ONLINE,
+        is_preset=True,
+        tools=[
+            MCPToolRegistry(
+                tool_name="platform_get_current_time",
+                description="Read current time",
+                input_schema={"type": "object", "properties": {}},
+                server_id=CYGNUSX_PLATFORM_SERVER_ID,
+            )
+        ],
+    )
+    service = AgentService(AsyncMock(), reconcile_model_bindings_on_read=False)
+    service.get_agent = AsyncMock(return_value=agent)  # type: ignore[method-assign]
+    service._resolve_model = AsyncMock(return_value=object())  # type: ignore[method-assign]
+    service._mcp_repo.get_by_ids = AsyncMock(return_value=[platform])  # type: ignore[method-assign]
+    service._agentteams_chat_entry_enabled = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    service._load_skills = AsyncMock(return_value=[])  # type: ignore[method-assign]
+
+    context = await service.assemble_context("agent-qc")
+
+    assert context is not None
+    assert [tool["function"]["name"] for tool in context.tools] == [
+        "platform_get_current_time"
+    ]
 
 
 def test_handoff_packet_stays_within_budget() -> None:
@@ -337,9 +380,10 @@ async def test_dynamic_handoff_catalog_enriches_builtin_agent_from_ability_yaml(
         {
             "agent_id": "agent-viz",
             "name": "可视化助手",
-            "description": "科研图形：图形选型、绘图脚本、版式美化与出版级导出。原始数据质控裁决、复杂统计推断或大规模工作流执行不属于它——转交对应专家，它只在结果数据就绪后接图。",
+            "description": "科研图形：火山图、热图、UMAP、系统发育树等图形选型、绘图脚本、版式美化与出版级导出。原始数据质控裁决、复杂统计推断或大规模工作流执行不属于它——转交对应专家，它只在结果数据就绪后接图。",
             "category": "analysis",
             "chat_entry": True,
+            "persona": {},
         }
     ]
 

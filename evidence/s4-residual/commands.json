@@ -54,5 +54,46 @@
     ],
     "exit_code": 0,
     "log": "evidence/s4-residual/s4-exact-id-probes-venv.log"
+  },
+  {
+    "name": "s4-isolated-final-regression",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/unit/test_download_s4a_reliability.py",
+      "tests/unit/test_download_s4b0_reliability.py",
+      "evidence/s4-residual/test_residual_isolated.py",
+      "-q",
+      "-m",
+      "not quarantine"
+    ],
+    "exit_code": 0,
+    "result": "39 passed",
+    "log": "evidence/s4-residual/sr01-isolated.log"
+  },
+  {
+    "name": "sr01-ruff",
+    "command": [
+      ".venv/bin/ruff",
+      "check",
+      "src/cygnusx/application/services/download_service.py",
+      "src/cygnusx/infrastructure/database/repositories/task_repository.py",
+      "tests/unit/test_download_s4a_reliability.py"
+    ],
+    "exit_code": 0,
+    "result": "All checks passed",
+    "log": "evidence/s4-residual/sr01-static-checks.log"
+  },
+  {
+    "name": "sr01-mypy",
+    "command": [
+      ".venv/bin/mypy",
+      "src/cygnusx/application/services/download_service.py",
+      "src/cygnusx/infrastructure/database/repositories/task_repository.py"
+    ],
+    "exit_code": 0,
+    "result": "Success: no issues found in 2 source files",
+    "log": "evidence/s4-residual/sr01-static-checks.log"
   }
 ]

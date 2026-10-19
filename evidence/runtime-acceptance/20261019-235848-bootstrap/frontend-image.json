@@ -1,0 +1,38 @@
+{
+  "Id": "sha256:d109ac0f1a99181e0f121a5dcfcdcea10bcd0e0d274ce430f6aba10754f4d390",
+  "RepoDigests": [
+    "127.0.0.1:32769/frontend@sha256:2a64cbf419efd3727a18a3e65450d7a00532c4c52b07394c3db4ae67ba243c81"
+  ],
+  "Config": {
+    "Cmd": [
+      "nginx",
+      "-g",
+      "daemon off;"
+    ],
+    "Entrypoint": [
+      "/docker-entrypoint.sh"
+    ],
+    "Env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NGINX_VERSION=1.31.2",
+      "PKG_RELEASE=1",
+      "DYNPKG_RELEASE=1",
+      "NJS_VERSION=0.9.9",
+      "NJS_RELEASE=1",
+      "ACME_VERSION=0.4.1"
+    ],
+    "ExposedPorts": {
+      "80/tcp": {}
+    },
+    "Labels": {
+      "cygnusx.dirty-source-sha256": "ebef48335434468665135aa37424fccdc3f7c5b0f83882879a8eb6aad0e27bc6",
+      "maintainer": "NGINX Docker Maintainers <docker-maint@nginx.com>",
+      "org.opencontainers.image.revision": "ac2cdca399d0fdb4b5e777a234b55e24ffbbeb79"
+    },
+    "OnBuild": null,
+    "StopSignal": "SIGQUIT",
+    "User": "10001:10001",
+    "Volumes": null,
+    "WorkingDir": "/"
+  }
+}

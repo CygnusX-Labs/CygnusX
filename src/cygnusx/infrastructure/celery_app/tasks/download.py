@@ -16,6 +16,7 @@ import os
 import re
 import time
 from collections.abc import Awaitable
+from contextlib import suppress
 from datetime import datetime
 from ftplib import FTP
 from pathlib import Path
@@ -796,6 +797,81 @@ def _expand_ftp_directories(links: list[str], recursive: bool) -> list[str]:
     return expanded
 
 
+async def _execute_supervised_http_download(
+    *,
+    session: AsyncSession,
+    task: Task,
+    task_uuid: UUID,
+    add_and_publish_log: DownloadLog,
+) -> None:
+    """Run an HTTP download only inside the independently trusted Supervisor.
+
+    The Supervisor owns argv, the network boundary and the child process. This
+    Worker only observes the scope and stores the signed context for the existing
+    FileRegistry receipt check. Any missing binding, mTLS configuration, unknown
+    observation or failed scope is a reconciliation error; there is no aria2c
+    fallback.
+    """
+    from cygnusx.infrastructure.download.execution_request import (
+        build_execution_boundary_request,
+    )
+    from cygnusx.infrastructure.download.supervisor_client import (
+        MutualTLSExecutionAdapter,
+    )
+
+    try:
+        request = await build_execution_boundary_request(session, task_uuid, task.user_id)
+        adapter = MutualTLSExecutionAdapter(settings=get_settings())
+    except Exception as exc:  # noqa: BLE001 — fail closed at the trust boundary
+        raise ValidationError(
+            "受信 HTTP Supervisor 尚未接入 Worker",
+            code="DOWNLOAD_TRUSTED_EXECUTOR_UNAVAILABLE",
+        ) from exc
+
+    scope_ref: UUID | None = None
+    finished = False
+    try:
+        scope_ref = await adapter.start(request)
+        await add_and_publish_log(
+            LogLevel.INFO,
+            f"受信 HTTP 已进入 Supervisor scope={scope_ref}",
+            source="supervisor",
+        )
+        while True:
+            observation = await adapter.observe(task_uuid, scope_ref)
+            if observation.state == "unknown":
+                raise ValidationError(
+                    "Supervisor 观测未知，需人工对账",
+                    code="DOWNLOAD_SCOPE_RECONCILIATION_REQUIRED",
+                )
+            if observation.state == "stopped":
+                if observation.reason != "completed" or observation.returncode != 0:
+                    raise ValidationError(
+                        "Supervisor 执行未成功，需人工对账",
+                        code="DOWNLOAD_SCOPE_RECONCILIATION_REQUIRED",
+                    )
+                context = await adapter.evidence(request, scope_ref)
+                task.parameters = {
+                    **(task.parameters or {}),
+                    "_download_execution": context.model_dump(mode="json"),
+                }
+                await session.flush()
+                finished = True
+                return
+            if observation.state != "running":
+                raise ValidationError(
+                    "Supervisor 状态无法确认，需人工对账",
+                    code="DOWNLOAD_SCOPE_RECONCILIATION_REQUIRED",
+                )
+            await adapter.renew(task_uuid, scope_ref)
+            await asyncio.sleep(1)
+    finally:
+        if scope_ref is not None and not finished:
+            with suppress(Exception):
+                await asyncio.shield(adapter.stop(task_uuid, scope_ref))
+        await adapter.aclose()
+
+
 async def _execute_direct_link_download(
     *,
     task_id: str,
@@ -905,11 +981,44 @@ async def _execute_direct_link_download(
         from cygnusx.infrastructure.download.policy import require_download_runtime
 
         require_download_runtime(str(params.get("source", "sra")))
-        if any(urlsplit(link).scheme.lower() in {"http", "https"} for link in links):
+        http_links = [
+            link for link in links if urlsplit(link).scheme.lower() == "http"
+        ]
+        if any(urlsplit(link).scheme.lower() == "https" for link in links):
+            settings_for_protocol = get_settings()
+            if not all(
+                getattr(settings_for_protocol, field, None)
+                for field in (
+                    "download_execution_supervisor_id",
+                    "download_execution_supervisor_url",
+                    "download_execution_supervisor_ca_file",
+                    "download_execution_client_cert_file",
+                    "download_execution_client_key_file",
+                )
+            ):
+                raise ValidationError(
+                    "受信 HTTP Supervisor 尚未接入 Worker",
+                    code="DOWNLOAD_TRUSTED_EXECUTOR_UNAVAILABLE",
+                )
             raise ValidationError(
-                "受信 HTTP Supervisor 尚未接入 Worker", code="DOWNLOAD_TRUSTED_EXECUTOR_UNAVAILABLE"
+                "当前受信执行范围只认证明文 HTTP",
+                code="DOWNLOAD_PROTOCOL_NOT_CERTIFIED",
             )
-        result = await get_executor("binary").execute(ctx)
+        if http_links:
+            await _execute_supervised_http_download(
+                session=session,
+                task=task,
+                task_uuid=task_uuid,
+                add_and_publish_log=add_and_publish_log,
+            )
+            result_status = "success"
+            result_returncode = 0
+            result_output = ""
+        else:
+            result = await get_executor("binary").execute(ctx)
+            result_status = result.status
+            result_returncode = result.returncode
+            result_output = result.stderr or result.stdout
         files_ok = await _finalize_download_files(
             session,
             task_uuid,
@@ -917,12 +1026,12 @@ async def _execute_direct_link_download(
             work_dir,
             directory,
             settings.storage_path,
-            result.status == "success",
+            result_status == "success",
         )
         registered_task = await repo.get_by_id(task_uuid)
         if registered_task is not None:
             task.parameters = registered_task.parameters
-        if result.status == "success" and files_ok:
+        if result_status == "success" and files_ok:
             task.progress = 1.0
             task.result_path = work_dir
             await repo.save(task)
@@ -931,14 +1040,14 @@ async def _execute_direct_link_download(
         else:
             task = await domain.transition_status(task, TaskStatus.FAILED)
             task.error_message = (
-                redact_download_text(result.stderr or result.stdout)[:2000]
-                if result.status != "success"
+                redact_download_text(result_output)[:2000]
+                if result_status != "success"
                 else "DOWNLOAD_REGISTRATION_RECONCILIATION_REQUIRED"
             )
             await repo.save(task)
             await add_and_publish_log(LogLevel.ERROR, "直链下载失败", source="aria2c")
         await session.commit()
-        return {"status": task.status.value, "task_id": task_id, "returncode": result.returncode}
+        return {"status": task.status.value, "task_id": task_id, "returncode": result_returncode}
     except Exception as exc:  # noqa: BLE001
         task = await domain.transition_status(task, TaskStatus.FAILED)
         task.error_message = redact_download_text(str(exc))[:2000]
@@ -1073,6 +1182,7 @@ async def _verify_http_download_publication_receipt(
         )
 
     from cygnusx.infrastructure.database.repositories.download_execution_receipt import (
+        settle_execution_budget_from_receipt_in_transaction,
         verify_publishable_execution_receipt_in_transaction,
     )
     from cygnusx.infrastructure.download.trusted_execution import (
@@ -1098,21 +1208,39 @@ async def _verify_http_download_publication_receipt(
                 for output in outputs
             ]
         )
-        await verify_publishable_execution_receipt_in_transaction(
-            session,
-            context.receipt,
-            supervisor_public_key=public_key,
-            expected_supervisor_id=supervisor_id,
-            expected_task_id=task.id,
-            expected_attempt_id=context.attempt_id,
-            expected_execution_id=context.execution_id,
-            expected_scope_ref=context.scope_ref,
-            expected_execution_epoch=context.execution_epoch,
-            expected_policy_revision=context.policy_revision,
-            expected_environment_id=context.environment_id,
-            expected_binary_sha256=context.binary_sha256,
-            expected_artifact_manifest_sha256=manifest_hash,
-        )
+        binding = params.get("_download_execution_binding")
+        if isinstance(binding, dict) and "admission_ref" in binding and "budget_ref" in binding:
+            await settle_execution_budget_from_receipt_in_transaction(
+                session,
+                UUID(str(binding["admission_ref"])),
+                UUID(str(binding["budget_ref"])),
+                context.receipt,
+                supervisor_public_key=public_key,
+                expected_supervisor_id=supervisor_id,
+                expected_execution_id=context.execution_id,
+                expected_scope_ref=context.scope_ref,
+                expected_binary_sha256=context.binary_sha256,
+                expected_artifact_manifest_sha256=manifest_hash,
+            )
+        else:
+            # Legacy isolated receipt tests may not have a P0-A admission row.
+            # They still verify the signed identity and consume the receipt nonce;
+            # no budget settlement is possible without the durable binding.
+            await verify_publishable_execution_receipt_in_transaction(
+                session,
+                context.receipt,
+                supervisor_public_key=public_key,
+                expected_supervisor_id=supervisor_id,
+                expected_task_id=task.id,
+                expected_attempt_id=context.attempt_id,
+                expected_execution_id=context.execution_id,
+                expected_scope_ref=context.scope_ref,
+                expected_execution_epoch=context.execution_epoch,
+                expected_policy_revision=context.policy_revision,
+                expected_environment_id=context.environment_id,
+                expected_binary_sha256=context.binary_sha256,
+                expected_artifact_manifest_sha256=manifest_hash,
+            )
     except (SchemaValidationError, ValueError) as exc:
         raise ValidationError(
             "受信执行回执无效，产物需对账", code="DOWNLOAD_PUBLICATION_RECEIPT_REJECTED"

@@ -41,7 +41,7 @@ capabilities 在关闭 native 时仍需有效平台 JWT。读取 active 用户�
 
 该快照不是健康检查，不承诺模型、Redis 或 Node 可达。prepare 仍需服务端 owner 项目和现有 Gateway 再验；不支持写执行。实际会话路由在请求时重新取用户状态，owner 在服务层检查，不依赖按钮隐藏。全局 project=null 按独立查询返回，无默认项目副作用。
 
-平台历史 DTO 直接校验现有 ORM；修复原实现调用不存在的 `ChatService._to_msg_dto`。流式消息通过现有 SessionService 写入，补齐必填 `content_type=text`。跨进程取消尚未实现，capability 明示 `browser_abort_only`，UI 明示停止接收，不能承诺服务端任务已停止。
+平台历史 DTO 直接校验现有 ORM；修复原实现调用不存在的 `ChatService._to_msg_dto`。流式消息通过现有 SessionService 写入，补齐必填 `content_type=text`。跨进程取消尚未实现，capability 明示 `browser_abort_with_best_effort_signal`；UI 区分浏览器停止接收与服务端信号状态，不能承诺 producer 已停止。
 
 `WRITE_RUNTIME_ACCEPTED=False`、`worker_paths_verified=false` 未修改。没有 Task/下载执行、生产凭据、数据库迁移或真实分析副作用。
 

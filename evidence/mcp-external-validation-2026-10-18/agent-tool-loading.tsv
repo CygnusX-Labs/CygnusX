@@ -1,0 +1,20 @@
+agent	research_bound	biothings_bound	research_whitelist_count	biothings_whitelist_count	server_enabled	excluded_by_capability	final_model_tool_count	final_research_count	final_biothings_count	dynamic_skill_count	evidence_notes
+router	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+general	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+agentteams_manager	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+rnaseq	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+atacseq	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+scrna	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+scrna_upstream	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+scrna_integration	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+scrna_advanced	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+code	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+explorer	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+viz	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+data	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+qc	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+delivery	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+cloud_ops	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+shania	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+mcp_builder	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed
+skill_builder	true	true	26	10	unknown	unknown	unknown	unknown	unknown	unknown	static YAML only; runtime context not observed

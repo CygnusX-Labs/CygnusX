@@ -122,7 +122,7 @@ class TreasureAgentAdapter:
         if not self._settings.treasure_agent_url or not self._settings.treasure_agent_internal_token:
             raise DependencyUnavailableError("科研寻宝鼠受信 Agent 未配置")
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
                 response = await client.post(
                     self._settings.treasure_agent_url.rstrip("/") + "/cygnusx/discovery",
                     headers={
@@ -171,7 +171,8 @@ class TreasureAgentAdapter:
         try:
             async with (
                 httpx.AsyncClient(
-                    timeout=httpx.Timeout(self._settings.treasure_agent_timeout_seconds)
+                    timeout=httpx.Timeout(self._settings.treasure_agent_timeout_seconds),
+                    trust_env=False,
                 ) as client,
                 client.stream("POST", url, headers=headers, json=payload) as response,
             ):
@@ -492,14 +493,36 @@ class ResearchTreasureService:
                 "科研发现任务未建立持久会话", code="RESEARCH_STREAM_START_FAILED"
             )
 
-    async def cancel(self, user_id: str, session_id: str) -> bool:
+    async def cancel(self, user_id: str, session_id: str) -> str:
         await self._owned_session(user_id, session_id)
         events = self._active_cancels.get(session_id)
-        if not events:
-            return False
-        for event in events:
-            event.set()
-        return True
+        if events:
+            for event in events:
+                event.set()
+            return "accepted"
+
+        # Persist the request so a producer owned by another web process can see
+        # it on its next event.  A missing row remains unknown; no status is
+        # changed here because the producer must publish the terminal event.
+        result = await self._db.execute(
+            select(ChatMessageModel)
+            .where(
+                ChatMessageModel.session_id == session_id,
+                ChatMessageModel.role == "assistant",
+                ChatMessageModel.status == "streaming",
+            )
+            .order_by(desc(ChatMessageModel.created_at))
+            .limit(1)
+        )
+        assistant = result.scalar_one_or_none()
+        if assistant is None:
+            return "unknown"
+        metadata = dict(assistant.metadata_json or {})
+        metadata["cancel_requested"] = True
+        metadata["cancel_requested_at"] = datetime.now(UTC).isoformat()
+        assistant.metadata_json = metadata
+        await self._db.commit()
+        return "accepted"
 
     async def stream_message(
         self,
@@ -569,6 +592,7 @@ class ResearchTreasureService:
         terminal = "interrupted"
         sequence = 0
         terminal_event_saved = False
+        next_cancel_check = 0.0
 
         def snapshot_metadata() -> dict[str, Any]:
             return {
@@ -605,6 +629,22 @@ class ResearchTreasureService:
                 assistant_message.metadata_json = snapshot_metadata()
             await self._db.commit()
             return {**normalized, "_sse_id": sequence}
+
+        async def cancellation_requested() -> bool:
+            nonlocal next_cancel_check
+            if cancel_event.is_set():
+                return True
+            now = asyncio.get_running_loop().time()
+            if now < next_cancel_check:
+                return False
+            next_cancel_check = now + 0.15
+            result = await self._db.execute(
+                select(ChatMessageModel.metadata_json).where(
+                    ChatMessageModel.message_id == assistant_message.message_id
+                )
+            )
+            metadata = result.scalar_one_or_none()
+            return bool(isinstance(metadata, dict) and metadata.get("cancel_requested"))
 
         try:
             platform_tools = None
@@ -648,7 +688,7 @@ class ResearchTreasureService:
                     grounding = dict(event)
                 if event_name == "cancel":
                     terminal = "cancel"
-                if cancel_event.is_set():
+                if await cancellation_requested():
                     terminal = "cancel"
                     outgoing = await persist_event(
                         {"event": "cancel"}, terminal_snapshot=True,

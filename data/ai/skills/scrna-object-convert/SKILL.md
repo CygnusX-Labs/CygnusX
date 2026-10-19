@@ -1,8 +1,9 @@
 ---
 name: 单细胞对象格式转换与RDS工具
-description: 当用户需要对 scRNA-seq 的 Seurat RDS 对象做格式转换（RDS↔H5AD/Loom/SCE/MTX），或对 RDS 做查看信息/按条件子集/多样本合并/压缩优化/提取表达矩阵与降维组件时触发。输入为 RDS/H5AD 等对象文件路径与目标格式或操作参数。端到端全流程分析（QC、整合、注释）不在本技能范围，走 scrna-pipeline-overview。
+description: 当用户需要对 scRNA-seq 的 Seurat RDS 对象做格式转换（RDS↔H5AD/Loom/SCE/MTX），或对 RDS 做查看信息/按条件子集/多样本合并/压缩优化/提取表达矩阵与降维组件时触发。输入为
+  RDS/H5AD 等对象文件路径与目标格式或操作参数。端到端全流程分析（QC、整合、注释）不在本技能范围，走 scrna-pipeline-overview。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 🔄
 category: analysis
 skill_id: scrna-object-convert

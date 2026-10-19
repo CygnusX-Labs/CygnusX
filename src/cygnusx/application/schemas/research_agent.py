@@ -57,7 +57,9 @@ class ResearchAgentCapabilities(BaseModel):
     project_required_for_prepare: Literal[True] = True
     write_execution: Literal[False] = False
     reason_code: str | None = None
-    cancellation_mode: Literal["browser_abort_only"] = "browser_abort_only"
+    cancellation_mode: Literal["browser_abort_with_best_effort_signal"] = (
+        "browser_abort_with_best_effort_signal"
+    )
     read_only: bool = True
     write_tools_enabled: Literal[False] = False
     supported_events: list[str] = Field(

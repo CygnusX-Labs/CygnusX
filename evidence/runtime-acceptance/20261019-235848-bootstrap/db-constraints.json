@@ -1,0 +1,58 @@
+{
+  "checks": [
+    {
+      "name": "immutable_digest",
+      "ok": true,
+      "sql": "UPDATE research_plans SET digest=repeat('0',64) WHERE id=:id",
+      "sqlstate": "P0001",
+      "error": "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.RaiseError'>: Research intent is immutable; create a new version\n"
+    },
+    {
+      "name": "immediate_superseded_fk",
+      "ok": true,
+      "sql": "UPDATE research_plans SET superseded_by='00000000-0000-0000-0000-000000000001' WHERE id=:id",
+      "sqlstate": "23503",
+      "error": "(sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class 'asyncpg.exceptions.ForeignKeyViolationError'>: insert or update on table \"research_plans\" violates foreign key constraint \"research_plans_superseded_by_fkey\"\nDETAIL:  Key (superseded_by)=(00000000-0000-0000-0000-000000000001) is not present in table \"research_plans\".\n"
+    },
+    {
+      "name": "duplicate_primary_key",
+      "ok": true,
+      "sql": "INSERT INTO research_plans SELECT * FROM research_plans WHERE id=:id",
+      "sqlstate": "23505",
+      "error": "(sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class 'asyncpg.exceptions.UniqueViolationError'>: duplicate key value violates unique constraint \"research_plans_pkey\"\nDETAIL:  Key (id)=(5b859270-1470-4b10-ac88-8847d1137616) already exists.\n"
+    }
+  ],
+  "table_counts": {
+    "research_plans": 3,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "mcp_versions": 8
+  },
+  "plans": [
+    {
+      "id": "e4b21bc8-213d-49a8-80ef-aafa664abd78",
+      "version": 1,
+      "status": "APPROVED",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "reviewed_at": "2026-10-19 16:09:50.608212+00",
+      "superseded_by": null
+    },
+    {
+      "id": "5b859270-1470-4b10-ac88-8847d1137616",
+      "version": 1,
+      "status": "APPROVED",
+      "digest": "ea5f0e7fe941b7dd614b7945eaff202fa06332c61faa6b1f2bc8fdd012ebd8c9",
+      "reviewed_at": "2026-10-19 16:12:27.055137+00",
+      "superseded_by": "11333a05-a5dc-46d0-9c57-3017cb71d39f"
+    },
+    {
+      "id": "11333a05-a5dc-46d0-9c57-3017cb71d39f",
+      "version": 2,
+      "status": "READY_FOR_REVIEW",
+      "digest": "4a3c39969fede903d971739ec09adcb934e2ecaaa9bae76644e355880b9bb445",
+      "reviewed_at": null,
+      "superseded_by": null
+    }
+  ]
+}

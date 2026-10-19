@@ -17,6 +17,16 @@ class MCPToolDTO(CygnusXBaseSchema):
     input_schema: dict[str, Any] = {}
 
 
+class MCPResourceDTO(CygnusXBaseSchema):
+    """MCP Resource/Template metadata; contents are never included."""
+
+    name: str
+    uri: str
+    description: str = ""
+    mime_type: str = ""
+    kind: str = "resource"
+
+
 class MCPServerDTO(CygnusXBaseSchema):
     """MCP Server"""
 

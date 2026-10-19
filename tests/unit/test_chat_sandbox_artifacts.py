@@ -34,13 +34,20 @@ _USER_ID = "11111111-1111-1111-1111-111111111111"
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_state() -> None:
+def _reset_module_state(monkeypatch: pytest.MonkeyPatch) -> None:
     # 模块级状态（交付目录重置归属 / 已收集产物签名 / 已注入输入签名 /
     # 产物 sha256 实测缓存）在用例间隔离
     chat_sandbox_tools._artifact_dir_owner.clear()
     chat_sandbox_tools._collected_artifacts.clear()
     chat_sandbox_tools._injected_inputs.clear()
     chat_sandbox_tools._artifact_digests.clear()
+
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    # The restricted test sandbox has no usable executor threads; these tests
+    # replace Docker/storage I/O already, so run the remaining local probes inline.
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
 
 
 def test_reset_cmd_creates_common_subdirs() -> None:
@@ -664,7 +671,12 @@ async def test_inject_session_files_copies_uploads_into_container(
     )
 
     assert metas == [
-        {"name": "MDH2序列.docx", "path": "/workspace/input/MDH2序列.docx", "size": 10}
+        {
+            "name": "MDH2序列.docx",
+            "path": "/workspace/input/MDH2序列.docx",
+            "size": 10,
+            "source": str(host_file),
+        }
     ]
     args = pool.copy_files_in.await_args
     assert args.args[0] == "container-1"

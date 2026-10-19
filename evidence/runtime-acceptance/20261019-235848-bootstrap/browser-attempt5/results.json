@@ -1,0 +1,58 @@
+[
+  {
+    "step": "sandboxed_chromium",
+    "ok": true,
+    "version": "131.0.6778.33"
+  },
+  {
+    "step": "real_ui_login",
+    "ok": true
+  },
+  {
+    "step": "plan_review_ui",
+    "ok": true
+  },
+  {
+    "step": "plan_pause_ui",
+    "ok": true
+  },
+  {
+    "step": "plan_refresh_persisted",
+    "ok": true
+  },
+  {
+    "step": "plan_resume_ui",
+    "ok": true
+  },
+  {
+    "step": "export_preview_with_write_gate_closed",
+    "ok": true
+  },
+  {
+    "step": "empty_delivery_api",
+    "ok": true
+  },
+  {
+    "step": "width_1920_overflow",
+    "ok": true,
+    "overflow": 0
+  },
+  {
+    "step": "width_768_overflow",
+    "ok": true,
+    "overflow": 0
+  },
+  {
+    "step": "width_390_overflow",
+    "ok": true,
+    "overflow": 0
+  },
+  {
+    "step": "audit_trace_ui",
+    "ok": true
+  },
+  {
+    "step": "no_pageerror",
+    "ok": true
+  }
+]

@@ -47,6 +47,11 @@ SELF_AUTHENTICATED_PATHS = frozenset(
 
 def required_api_key_scope(method: str, path: str) -> str | None:
     """Return the least privilege required for Bridge-accessed CygnusX endpoints."""
+    if method == "POST" and (
+        path.startswith("/api/v1/biothings/")
+        or path.startswith("/api/v1/research-data/")
+    ):
+        return "research:read"
     if path.startswith("/api/v1/flows") and method == "GET":
         return "flows:read"
     if path == "/api/v1/tasks" and method == "POST":

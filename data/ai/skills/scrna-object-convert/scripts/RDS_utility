@@ -41,15 +41,15 @@ logger <- logger(threshold = "INFO", appenders = list(console_appender(my_layout
 scRNAseq_multiSampleCommand <- function() {
   spec <- matrix(
     c(
-      "input",           "i", 2, "character", "Input RDS file path",
-      "output",          "o", 2, "character", "Output RDS file path",
-      "operation",       "p", 2, "character", "Operation to perform (info, subset, merge, optimize, extract)",
-      "cell-type",       "c", 2, "character", "Cell type for subsetting (for subset operation)",
-      "cluster",         "l", 2, "character", "Cluster ID for subsetting (for subset operation)",
-      "metadata",        "m", 2, "character", "Metadata column name for filtering",
-      "metadata-value",  "V", 2, "character", "Metadata value for filtering",
-      "help",            "h", 0, "logical", "Show help message",
-      "version",         "e", 0, "logical", "Show script version"
+      "input",      "i", 2, "character", "Input RDS file path",
+      "output",     "o", 2, "character", "Output RDS file path",
+      "operation",  "p", 2, "character", "Operation to perform (info, subset, merge, optimize, extract)",
+      "cell-type",  "c", 2, "character", "Cell type for subsetting (for subset operation)",
+      "cluster",    "l", 2, "character", "Cluster ID for subsetting (for subset operation)",
+      "metadata",   "m", 2, "character", "Metadata column name for filtering",
+      "metadata-value", "v", 2, "character", "Metadata value for filtering",
+      "help",       "h", 0, "logical", "Show help message",
+      "version",    "v", 0, "logical", "Show script version"
     ),
     byrow = TRUE, ncol = 5
   )
@@ -67,9 +67,9 @@ scRNAseq_multiSampleCommand <- function() {
     cat("   -c, --cell-type       | \033[1;33m[Option]\033[0m Cell type for subsetting (for subset operation)\n")
     cat("   -l, --cluster         | \033[1;33m[Option]\033[0m Cluster ID for subsetting (for subset operation)\n")
     cat("   -m, --metadata        | \033[1;33m[Option]\033[0m Metadata column name for filtering\n")
-    cat("   -V, --metadata-value  | \033[1;33m[Option]\033[0m Metadata value for filtering\n")
+    cat("   -v, --metadata-value  | \033[1;33m[Option]\033[0m Metadata value for filtering\n")
     cat("   -h, --help            | Show help message\n")
-    cat("   -e, --version         | Show script version\n")
+    cat("   -v, --version         | Show script version\n")
     cat("\n\033[1;33mSupported operations:\033[0m\n")
     cat("   • info     : Display information about RDS file contents\n")
     cat("   • subset   : Extract subset of cells based on cell type or cluster\n")
@@ -89,9 +89,9 @@ scRNAseq_multiSampleCommand <- function() {
     cat("   -c, --cell-type       | \033[1;33m[Option]\033[0m Cell type for subsetting (for subset operation)\n")
     cat("   -l, --cluster         | \033[1;33m[Option]\033[0m Cluster ID for subsetting (for subset operation)\n")
     cat("   -m, --metadata        | \033[1;33m[Option]\033[0m Metadata column name for filtering\n")
-    cat("   -V, --metadata-value  | \033[1;33m[Option]\033[0m Metadata value for filtering\n")
+    cat("   -v, --metadata-value  | \033[1;33m[Option]\033[0m Metadata value for filtering\n")
     cat("   -h, --help            | Show help message\n")
-    cat("   -e, --version         | Show script version\n")
+    cat("   -v, --version         | Show script version\n")
     cat("\n\033[1;33mSupported operations:\033[0m\n")
     cat("   • info     : Display information about RDS file contents\n")
     cat("   • subset   : Extract subset of cells based on cell type or cluster\n")
@@ -143,10 +143,10 @@ get_rds_info <- function(filepath) {
     cat("Dimensions:", nrow(obj), "genes ×", ncol(obj), "cells\n")
     cat("Assays present:", paste(names(obj@assays), collapse = ", "), "\n")
     cat("Active assay:", obj@active.assay, "\n")
-    # calculation.active only exists in Seurat v4; skip for v5
-    if (!is.null(obj@misc$reductions)) {
-      cat("Dimensional reductions:", paste(names(obj@reductions), collapse = ", "), "\n")
-    } else {
+    cat("Dimensions calculated:", obj@calculation.active, "\n")
+    
+    # Show available reductions
+    if (length(obj@reductions) > 0) {
       cat("Dimensional reductions:", paste(names(obj@reductions), collapse = ", "), "\n")
     }
     

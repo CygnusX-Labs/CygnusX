@@ -1,0 +1,22 @@
+{
+  "name": "backend-isolated",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "tests/unit/test_deterministic_test_provider.py",
+    "tests/unit/test_download_s5b_consumption.py",
+    "tests/unit/test_agent_tools_phase2.py",
+    "tests/unit/test_dataset_gateway_phase3.py",
+    "tests/unit/test_dataset_import_handoff.py",
+    "tests/unit/test_research_treasure_phase1.py",
+    "tests/unit/test_treasure_native_access.py",
+    "-q",
+    "-m",
+    "not quarantine"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "duration_seconds": 17.4,
+  "log": "backend-isolated.log"
+}

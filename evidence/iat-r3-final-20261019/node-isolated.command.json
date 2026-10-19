@@ -1,0 +1,11 @@
+{
+  "name": "node-isolated",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "cwd": "pipelines/Treasure-Seeking_Mouse",
+  "exit_code": 0,
+  "duration_seconds": 12.34,
+  "log": "node-isolated.log"
+}

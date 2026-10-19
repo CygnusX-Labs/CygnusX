@@ -60,6 +60,8 @@ sequenceDiagram
 
 **强约束**：`approval_id`、`ingestion_id`、`task_id`、`admission_id`、`budget_id`、`attempt_id`、`epoch` 的关联必须单向可查、在可信事务中验证；签名回执只证明已认证签发主体的声明，真正 OS 事实仍由 G3 Supervisor 提供。
 
+当前源码增量还将首次 Supervisor `execution_id` 持久绑定到 Admission：同一 Task/attempt/epoch/execution 的重试可复用已消费 claim，改变执行身份则拒绝；`dwnexec04` 遇到已有 consumed/settled 历史记录会显式停止迁移，不猜测旧执行身份。该幂等边界由迁移与隔离 authority 回归覆盖，尚不等同于真实 PostgreSQL 并发验收。
+
 ## 3. 设计建议：数据契约与类型（以当前模型审查结果为准）
 
 ### 3.1 Durable Approval Snapshot

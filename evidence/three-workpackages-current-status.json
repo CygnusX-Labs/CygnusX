@@ -1,0 +1,208 @@
+{
+  "as_of": "2026-10-19",
+  "source_scope": "docs/info/26.10.19/CygnusX_Three_Workpackages_Implementation_2026-10-18",
+  "classification": "current-worktree-audit",
+  "evidence_index": {
+    "checked_at": "2026-10-19",
+    "package_references_exist": true,
+    "iat_r3_command_logs_exist": true,
+    "runtime_provenance_audit": "evidence/runtime-acceptance/20261019-local/runtime-provenance-audit.json",
+    "runtime_provenance_sha256": "evidence/runtime-acceptance/20261019-local/SHA256SUMS",
+    "runtime_provenance_strict_exit": 2
+  },
+  "gates": {
+    "DOWNLOAD_TRANSPORT_RUNTIME_ACCEPTED": false,
+    "WRITE_RUNTIME_ACCEPTED": false,
+    "worker_paths_verified": false
+  },
+  "work_packages": {
+    "P0-A": {
+      "isolated": "PASS_ISOLATED",
+      "runtime": "BLOCKED",
+      "evidence": [
+        "evidence/p0a-g3-runtime-identity/isolated-verification.json",
+        "docs/implementation/cygnusx-p0a-g3-runtime-identity-acceptance.md"
+      ],
+      "missing": "Authorized independent PostgreSQL concurrency and migration rehearsal"
+    },
+    "IAT-R3": {
+      "isolated": "PASS_ISOLATED",
+      "runtime": "BLOCKED",
+      "e2e": "BLOCKED",
+      "evidence": [
+        "evidence/iat-r3-runtime/acceptance.csv",
+        "evidence/iat-r3-runtime/commands.json",
+        "docs/implementation/cygnusx-iat-r3-research-workflow-closure.md"
+      ],
+      "missing": "Current-source listening API/Node/PG/Redis and Chromium business workflow"
+    },
+    "G3-E2": {
+      "isolated": "PASS_ISOLATED",
+      "runtime": "BLOCKED",
+      "evidence": [
+        "docs/implementation/cygnusx-g3-e2-trusted-http-acceptance.md",
+        "docs/implementation/cygnusx-g3-enforced-scope-runtime.md",
+        "tests/integration/test_download_trusted_http_boundary.py",
+        "evidence/runtime-acceptance/20261019-local/runtime-provenance-audit.json"
+      ],
+      "missing": "Linux Supervisor enforcement and nine real HTTP scenarios"
+    },
+    "S4": {
+      "isolated": "PASS_ISOLATED",
+      "runtime": "BLOCKED",
+      "evidence": [
+        "evidence/s4-residual/acceptance.csv",
+        "docs/implementation/cygnusx-s4-reliability-last-gaps.md"
+      ],
+      "missing": "Authorized PostgreSQL/Broker/Worker/Beat fault windows"
+    }
+  },
+  "current_isolated_checks": [
+    {
+      "command": "cd frontend && npx vitest run src/components/research && npx vue-tsc --noEmit",
+      "result": "53 tests passed; vue-tsc passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_execution_admission.py tests/unit/test_p0a_migration_contract.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_worker_supervisor.py -q -m unit",
+      "result": "77 passed; one Pydantic deprecation warning"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_execution_admission.py tests/unit/test_p0a_migration_contract.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_worker_supervisor.py tests/unit/test_download_trusted_execution_contract.py -q -m unit",
+      "result": "104 passed; one Pydantic deprecation warning; expanded P0-A/G3 execution contract coverage"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_download_s4a_reliability.py tests/unit/test_download_s4b0_reliability.py evidence/s4-residual/test_residual_isolated.py -q -m 'not quarantine'",
+      "result": "40 passed; one Pydantic deprecation warning"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_mcp_hot_reload.py tests/unit/test_research_data_api.py tests/unit/test_research_preset.py -q -m unit",
+      "result": "70 passed, 8 deselected; one Pydantic deprecation warning"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_mcp_dual_surface_parity.py -q -m 'not quarantine'",
+      "result": "8 passed; one Pydantic deprecation warning"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agent_tool_snapshot.py tests/unit/test_tool_manifest.py tests/unit/test_export_agent_tool_snapshots.py tests/unit/test_agent_tools_phase2.py -q -m 'not quarantine'",
+      "result": "48 passed; Pydantic deprecation and intentionally weak test JWT warnings"
+    },
+    {
+      "command": ".venv/bin/python -m ruff check src/cygnusx/application/services/agent_tool_snapshot.py src/cygnusx/application/services/tool_manifest.py scripts/export_agent_tool_snapshots.py tests/unit/test_agent_tool_snapshot.py tests/unit/test_tool_manifest.py tests/unit/test_export_agent_tool_snapshots.py",
+      "result": "Passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agent_consultation_service.py tests/unit/test_agentteams_consultation_endpoint.py tests/unit/test_agentteams_execution_intent.py -q -m 'not quarantine'",
+      "result": "57 passed; covers artifact registration fallback and real-file scrna Flow binding"
+    },
+    {
+      "command": ".venv/bin/python -m ruff check src/cygnusx/application/services/agentteams_service.py src/cygnusx/application/services/agent_consultation_service.py",
+      "result": "Passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agentteams_capability_registry.py tests/unit/test_agentteams_case_watch_service.py tests/unit/test_agent_consultation_service.py tests/unit/test_agentteams_consultation_endpoint.py tests/unit/test_agentteams_execution_intent.py -q -m 'not quarantine'",
+      "result": "76 passed; capability registry, watcher migration, artifact registration, consultation and intent routing"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agent_handoff_service.py tests/unit/test_research_data_api.py tests/unit/test_research_preset.py tests/unit/test_treasure_native_access.py tests/unit/test_research_treasure_phase1.py tests/unit/test_research_delivery_phase4.py tests/unit/test_research_plan_gateway_phase5.py tests/unit/test_research_claim_artifact_phase5.py tests/unit/test_research_science_phase5.py -q -m 'not quarantine'",
+      "result": "193 passed; current research data, handoff, Treasure, delivery, plan, artifact and science contracts"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agentteams_service.py -q -m 'not quarantine'",
+      "result": "48 passed; Bridge health/cache and AgentTeams user proxy contracts"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_chat_sandbox_artifacts.py -q -m 'not quarantine'",
+      "result": "18 passed; artifact collection, attachment injection, source metadata and download safety"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_agentteams_data_tools.py -q -m 'not quarantine'",
+      "result": "10 passed; local storage backend unit coverage uses an inline test-only thread shim"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_dataset_import_handoff.py -q -m 'not quarantine'",
+      "result": "8 passed; ambiguous dataset submit remains reconciliation-required"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_file_service.py tests/unit/test_file_service_presigned.py -q -m 'not quarantine'",
+      "result": "34 passed; file and presigned-storage unit contracts"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_fastq_qc_foundation.py tests/unit/test_flow_contract_drift.py tests/unit/test_flow_validation_parity.py -q -m 'not quarantine'",
+      "result": "21 passed; FastQ QC and Flow validation/contract parity"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_general_assistant_regression.py tests/unit/test_goal_runtime.py -q -m 'not quarantine'",
+      "result": "27 passed; bounded PDF extraction and current token usage fields"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit/test_lifecycle_download_security.py tests/unit/test_lifecycle_stabilization.py tests/unit/test_mcp_agentteams_query_tools.py -q -m 'not quarantine'",
+      "result": "3 targeted contract tests passed after current API/whitelist alignment"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/unit -q -m 'not quarantine'",
+      "result": "NOT COMPLETE in this restricted environment: progressed beyond 63%; checkpoint recovery, Overdrive execution (30 tests), and MCP version control (11 tests, 2 deselected) passed after fixes. Overdrive planning assertions pass, but pytest process does not terminate cleanly because optional cache/AI background resources remain active. No final full-suite PASS claim."
+    },
+    {
+      "command": ".venv/bin/python -m ruff check src/cygnusx/application/services/research_search_optimizer.py",
+      "result": "PASS; semantic rerank has a bounded embedding timeout, and Redis DNS failure is circuit-broken before async connection so planning falls back to local cache without leaving a pending loop task."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_research_search_optimizer.py -q -m 'not quarantine'",
+      "result": "3 passed; local-cache fallback, lexical rerank, and embedding-timeout fallback are covered; Redis DNS-failure fallback exits cleanly in the isolated planner probe."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_redis_client.py -q -m 'not quarantine'",
+      "result": "1 passed; unresolved Redis host fails before creating an async client and resets the circuit state safely."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_treasure_native_access.py -q -m 'not quarantine'",
+      "result": "43 passed; includes durable cross-process cancellation persistence and remote stream termination."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_redis_client.py tests/unit/test_research_search_optimizer.py tests/unit/test_treasure_native_access.py -q -m 'not quarantine'",
+      "result": "47 passed; Redis DNS circuit breaker and research planner fallback remain clean."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_download_execution_admission.py tests/unit/test_p0a_approval_snapshot.py tests/unit/test_download_supervisor_authority.py tests/unit/test_download_supervisor_server.py tests/unit/test_download_supervisor_client.py tests/unit/test_download_worker_supervisor.py tests/unit/test_download_trusted_execution_contract.py -q -m 'not quarantine'",
+      "result": "127 passed; P0-A admission, supervisor authority/server/client and trusted Worker seam."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_download_s4a_reliability.py tests/unit/test_lifecycle_download_security.py -q -m 'not quarantine'",
+      "result": "76 passed; existing S4 reliability and lifecycle security regressions."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/unit/test_linux_scope_backend.py -q -m 'not quarantine'",
+      "result": "4 passed; Linux backend refuses unavailable cgroup, missing trusted command, missing signing key, and performs no recovery write before capability checks."
+    },
+    {
+      "command": "cd frontend && npm run type-check && npm test -- --run && npm run build",
+      "result": "Passed; vue-tsc, 90 Vitest files/611 tests, and production build. Raw logs and command entries are in evidence/iat-r3-runtime/."
+    },
+    {
+      "command": ".venv/bin/python -m pytest -p no:langsmith tests/integration/test_download_trusted_http_boundary.py -q",
+      "result": "9 skipped; explicit NOT_TESTED fixture because authorized Linux Supervisor and real HTTP driver are unavailable."
+    },
+    {
+      "command": ".venv/bin/python scripts/check_migrations.py",
+      "result": "Passed: migration dependencies, topology, and unique Alembic head"
+    },
+    {
+      "command": ".venv/bin/python -m ruff check [workpackage-touched Python source and tests]",
+      "result": "Passed"
+    },
+    {
+      "command": ".venv/bin/python -m mypy src/cygnusx/infrastructure/download/supervisor_authority.py src/cygnusx/infrastructure/download/supervisor_server.py src/cygnusx/application/services/research_data_service.py",
+      "result": "Passed: no issues in 3 source files"
+    },
+    {
+      "command": "cd frontend && npm run build",
+      "result": "Passed, including treasure-island asset build and vue-tsc -b; Vite reported a chunk-size advisory"
+    },
+    {
+      "command": ".venv/bin/python -m ruff check [broader download and research paths]",
+      "result": "Failed on two existing findings in src/cygnusx/infrastructure/download/progress_crypto.py: N818 ProgressKeyTimeout naming and ASYNC109 timeout parameter; unrelated to the workpackage changes"
+    }
+  ],
+  "historical_evidence_warning": "evidence/runtime-acceptance/results.json contains PASS_RUNTIME fields for an older RI09.5 run; it is not current-source evidence for these three work packages and must not be promoted to current acceptance.",
+  "overall": "NO-GO"
+}

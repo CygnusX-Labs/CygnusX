@@ -26,6 +26,14 @@ from cygnusx.core.exceptions import ValidationError
 from cygnusx.infrastructure.celery_app.tasks.overdrive import _overdrive_workspace_context
 
 
+@pytest.fixture(autouse=True)
+def _inline_local_storage_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_sync_inline)
+
+
 def make_run(tasks):
     return SimpleNamespace(
         run_id="overdrive:test",

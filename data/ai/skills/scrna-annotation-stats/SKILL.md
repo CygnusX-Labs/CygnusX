@@ -1,11 +1,13 @@
 ---
 name: 单细胞注释比例统计
-description: 当用户需要对已注释 scRNA-seq Seurat 对象做细胞比例统计与可视化（堆叠柱状图）、组间比例显著性检验（Fisher 精确检验 / 样本级 GLM）、多组配对的"DEG 数 × 细胞比例变化"气泡图、或按分组计算基因表达百分比与平均表达时触发。输入为 RDS 对象路径与 meta.data 列名。差异表达基因本身的批量鉴定、基因注释与火山图走 scrna-deg-analysis，本技能只做比例统计与汇总。
-skill_id: scrna-annotation-stats
+description: 当用户需要对已注释 scRNA-seq Seurat 对象做细胞比例统计与可视化（堆叠柱状图）、组间比例显著性检验（Fisher 精确检验
+  / 样本级 GLM）、多组配对的"DEG 数 × 细胞比例变化"气泡图、或按分组计算基因表达百分比与平均表达时触发。输入为 RDS 对象路径与 meta.data
+  列名。差异表达基因本身的批量鉴定、基因注释与火山图走 scrna-deg-analysis，本技能只做比例统计与汇总。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 📈
 category: analysis
+skill_id: scrna-annotation-stats
 ---
 
 # 单细胞注释比例统计

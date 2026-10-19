@@ -6,6 +6,10 @@
 
 当前审计保留的事实：Legacy/LangGraph 两 Runtime 使用确定性 Provider 通过 32 项隔离回归，但没有真实 PG agent_templates 配置和服务级轮次证明；Node `platform-tools.ts` 某次目录调用在 PG Audit/Redis 有历史证据，但不是完整聊天全轮次；React `FullPresentation`/Vue typed adapter 和 SSE cursor/replay 具备实现与隔离测试，真实科研业务 Chromium 未运行；`TreasureResearchWorkbench.vue` 在审计时发生 dirty 更新，旧哈希已经过期；合法 Prepare 只有 SQLite/替身证据。
 
+源码增量记录（2026-10-18）：委托控制面现对已验签 JWT 的 `sub`、`session_id`、`jti`、`project_id`、`scopes`、`token_version` 做 claim 类型与 UUID/取值校验；签名有效但 claim 形状异常的令牌在进入权限交集、项目边界或 Redis 防重放逻辑前统一拒绝。该增量由 4 个 malformed-claim 回归和完整 `test_agent_tools_phase2.py` 隔离套件覆盖，仍属于离线证据，不能提升本节列出的真实服务/浏览器验收等级。
+
+后续离线修复（当前工作树）：AgentTeams artifact 登记在未注入 Case service 时不再隐式触发外部 Case 查询，避免离线路径阻塞；带真实文件引用的明确单细胞分析请求可绑定 `scrna` Flow，而无输入的咨询请求仍保持不绑定。能力注册表与描述性团队清单同步为 16 个可招募专家（含 `agent-explorer`），Case watcher 的 `new_only` 回归补齐 Redis 发布替身。相关 AgentTeams 核心回归 76 项通过、定向 Ruff 通过。当前沙盒线程池不可用，依赖 `LocalStorageBackend` 的 data-tools 回归无法运行；这些结果仍是隔离证据，不提升真实 API/PG/Redis/Node/Chromium 验收等级。
+
 ## 1. 关键原则：一个权威平台，多种表现形式
 
 **必须复用**：

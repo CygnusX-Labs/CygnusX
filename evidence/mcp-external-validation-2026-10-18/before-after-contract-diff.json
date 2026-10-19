@@ -1,0 +1,37 @@
+{
+  "before": "saved STDIO tools/list snapshot captured 2026-10-18 before this description patch",
+  "after": "current in-process runtime snapshot captured by this script",
+  "before_count": 109,
+  "after_count": 111,
+  "name_set_changed": [
+    "cygnusx_string_network",
+    "cygnusx_string_resolve"
+  ],
+  "input_schema_changed": [
+    "cygnusx_clinvar_get",
+    "cygnusx_clinvar_search",
+    "cygnusx_genome_region",
+    "cygnusx_literature_get",
+    "cygnusx_pathway_get",
+    "cygnusx_plant_search",
+    "cygnusx_protein_resolve",
+    "cygnusx_structure_prediction",
+    "cygnusx_structure_search"
+  ],
+  "description_changed": [
+    "atac_seq_status",
+    "cygnusx_chem_search",
+    "cygnusx_clinvar_get",
+    "cygnusx_confirm_run_plan",
+    "cygnusx_expression_studies",
+    "cygnusx_gene_search",
+    "cygnusx_genome_sequence",
+    "cygnusx_get_run_logs",
+    "cygnusx_get_run_status",
+    "cygnusx_list_runs",
+    "cygnusx_plant_get",
+    "cygnusx_preview_analysis",
+    "cygnusx_verify_artifact"
+  ],
+  "handler_binding": "not independently compared; pre-patch handler map was not captured"
+}

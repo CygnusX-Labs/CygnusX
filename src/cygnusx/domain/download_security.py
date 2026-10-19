@@ -84,7 +84,7 @@ _DOWNLOAD_URL = re.compile(r"\b(?:https?|ftps?|oss|tos|obs|s3|cos)://[^\s<>\"']+
 _SECRET_KEY = re.compile(
     r"^(?:token|access[-_]?token|refresh[-_]?token|api[-_]?key|access[-_]?key(?:[-_]?(?:id|secret))?|"
     r"secret|password|passwd|signature|sig|credential|authorization|cookie|"
-    r"awsaccesskeyid|x[-_]amz[-_].+|x[-_]goog[-_].+)$",
+    r"awsaccesskeyid|x[-_]amz[-_].+|x[-_]goog[-_].+|_*download[-_]execution[-_]binding)$",
     re.IGNORECASE,
 )
 _SECRET_ASSIGNMENT = re.compile(

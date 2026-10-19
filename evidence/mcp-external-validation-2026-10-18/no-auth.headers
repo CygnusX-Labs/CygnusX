@@ -1,0 +1,6 @@
+HTTP/1.1 401 Unauthorized
+date: Sun, 18 Oct 2026 14:53:46 GMT
+server: uvicorn
+content-length: 0
+www-authenticate: Bearer
+

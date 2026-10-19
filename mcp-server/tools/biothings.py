@@ -27,7 +27,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def cygnusx_gene_search(
         query: str, species: str, limit: int = 10, offset: int = 0, fields: str = ""
     ) -> dict[str, Any]:
-        """Search MyGene by query. Species/taxonomy is required; limit is capped at 50."""
+        """在 MyGene 中按 query 搜索基因候选；species 必填，limit/offset 控制分页（limit 上限 50），fields 可选定返回字段。结果保留候选匹配，不自动替用户选择唯一基因。"""
         return await _call(
             api,
             "gene",
@@ -92,7 +92,7 @@ def register(mcp: FastMCP, api: CygnusXAPIClient) -> None:
     async def cygnusx_chem_search(
         query: str, limit: int = 10, offset: int = 0, fields: str = ""
     ) -> dict[str, Any]:
-        """Search MyChem for compound candidates; distinct salts/identities are preserved."""
+        """在 MyChem 中按 query 搜索化合物注释候选；limit/offset 控制分页，fields 可选定返回字段。不同盐型或化学身份作为独立候选保留；这不是结构相似性或药物对接搜索。"""
         return await _call(
             api,
             "chem",

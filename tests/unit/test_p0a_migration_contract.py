@@ -117,6 +117,61 @@ def test_empty_database_downgrade_narrows_only_after_guard(migration):
     assert migration.op.drop_column.call_count > 0
 
 
+@pytest.fixture
+def execution_identity_migration(monkeypatch):
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic/versions/dwnexec04_bind_download_execution_identity.py"
+    )
+    spec = spec_from_file_location("p0a_execution_identity_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    operations = MagicMock()
+    monkeypatch.setattr(module, "op", operations)
+    return SimpleNamespace(module=module, op=operations)
+
+
+def test_execution_identity_migration_blocks_consumed_history(execution_identity_migration):
+    connection = execution_identity_migration.op.get_bind.return_value
+    connection.execute.return_value.scalar_one.return_value = 1
+    with pytest.raises(RuntimeError, match="Consumed admissions lack execution identity"):
+        execution_identity_migration.module.upgrade()
+    execution_identity_migration.op.add_column.assert_not_called()
+    execution_identity_migration.op.create_unique_constraint.assert_not_called()
+
+
+def test_execution_identity_migration_blocks_preexisting_identity_data(
+    execution_identity_migration,
+):
+    connection = execution_identity_migration.op.get_bind.return_value
+    connection.execute.side_effect = [
+        SimpleNamespace(scalar_one=lambda: 0),
+        SimpleNamespace(scalar_one=lambda: 1),
+    ]
+    with pytest.raises(RuntimeError, match="(?i)execution identity column already contains data"):
+        execution_identity_migration.module.upgrade()
+    # The column is added before the post-DDL audit query; PostgreSQL rolls the
+    # migration back atomically when a forward reconciliation is required.
+    execution_identity_migration.op.add_column.assert_called_once()
+
+
+def test_execution_identity_migration_reconciles_ready_rows(execution_identity_migration):
+    connection = execution_identity_migration.op.get_bind.return_value
+    connection.execute.return_value.scalar_one.return_value = 0
+    execution_identity_migration.module.upgrade()
+    execution_identity_migration.op.add_column.assert_called_once()
+    execution_identity_migration.op.create_unique_constraint.assert_called_once_with(
+        "uq_download_admission_execution_identity",
+        "download_execution_admissions",
+        ["task_id", "execution_id"],
+    )
+    sql = str(execution_identity_migration.op.execute.call_args.args[0])
+    assert "status = 'RECONCILIATION_REQUIRED'" in sql
+    assert "revoked = true" in sql
+    assert "status = 'READY'" in sql
+
+
 def test_budget_checks_admit_large_unknown_but_reject_invalid_values():
     checks = [
         str(constraint.sqltext)

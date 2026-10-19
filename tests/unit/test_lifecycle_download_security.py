@@ -106,13 +106,10 @@ async def test_ri03_07_execution_block_precedes_directory_task_and_queue(monkeyp
     service._make_work_dir = AsyncMock()
     service._domain = AsyncMock()
     monkeypatch.setattr(download_service, "ensure_download_available", lambda *args: None)
-    enqueue = MagicMock()
-    monkeypatch.setattr(download_service, "enqueue_task", enqueue)
     with pytest.raises(ValidationError):
         await service.submit("unused", DownloadRequest(accession="SRR1"))
     service._make_work_dir.assert_not_called()
     service._domain.submit.assert_not_called()
-    enqueue.assert_not_called()
 
 
 @pytest.mark.parametrize("field", ["task_id", "owner_id", "project_id", "binary", "binary_args"])

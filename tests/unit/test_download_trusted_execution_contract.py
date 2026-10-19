@@ -6,14 +6,31 @@ import pytest
 from pydantic import ValidationError
 
 from cygnusx.infrastructure.download.trusted_execution import (
+    EXECUTION_ID_ALGORITHM_VERSION,
     ExecutionBoundaryObservation,
     ExecutionBoundaryRequest,
+    deterministic_execution_id,
     require_quiescent,
 )
 
 pytestmark = pytest.mark.unit
 TASK = UUID(int=1)
 SCOPE = UUID(int=2)
+
+
+def test_execution_identity_is_versioned_and_stable_for_exact_binding() -> None:
+    attempt = UUID(int=6)
+    first = deterministic_execution_id(TASK, attempt, 1)
+    assert EXECUTION_ID_ALGORITHM_VERSION == 1
+    assert first == deterministic_execution_id(TASK, attempt, 1)
+    assert first != deterministic_execution_id(TASK, attempt, 2)
+    assert first != deterministic_execution_id(UUID(int=9), attempt, 1)
+    assert first != deterministic_execution_id(TASK, UUID(int=10), 1)
+
+
+def test_execution_identity_rejects_non_positive_epoch() -> None:
+    with pytest.raises(ValueError, match="EXECUTION_EPOCH_INVALID"):
+        deterministic_execution_id(TASK, UUID(int=6), 0)
 
 
 @pytest.mark.parametrize("field", ["caller_kind", "certified", "argv", "env", "mounts"])

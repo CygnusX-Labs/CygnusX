@@ -8,7 +8,7 @@
 ######################
 log4r_init <- function(){
   require(log4r)
-  local_logger <- log4r::logger()
+  logger <- log4r::logger()
   my_layout <- function(level, ...) {
     require(crayon)
     if (level == 'INFO'){
@@ -31,13 +31,11 @@ log4r_init <- function(){
       }
     }
   }
-  local_logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
-  return(local_logger)
+  logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
+  return(logger)
 }
 ######################
-AutoSettingPcCutoff <- function(data,plot_name,save_dir,logger){
-  require(ggplot2)
-  require(patchwork)
+AutoSettingPcCutoff <- function(data,plot_name,save_dir){
   # data <- sce
   # auto set pc cutoff
   # Determine percent of variation associated with each PC
@@ -96,34 +94,34 @@ SingleSampleSubClusterRereduction <- function(Seurat = scData,
                                               save_dir = './'
 ){
   require(Seurat)
-  local_logger <- log4r_init()
-  info(local_logger,'Create New SeuratObject')
+  logger <- log4r_init()
+  info(logger,'Create New SeuratObject')
   sce=CreateSeuratObject(counts = Seurat@assays$RNA$counts,
                          meta.data = Seurat@meta.data)
   # normalization
-  info(local_logger,'NormalizeData SeuratObject')
+  info(logger,'NormalizeData SeuratObject')
   sce <- NormalizeData(sce, normalization.method =  normalization.method,  
                        scale.factor = scale.factor)
   # select HVG gene
-  info(local_logger,'FindVariableFeatures')
+  info(logger,'FindVariableFeatures')
   sce <- FindVariableFeatures(sce,selection.method = selection.method, nfeatures = nfeatures) 
   # scale
-  info(local_logger,'ScaleData')
+  info(logger,'ScaleData')
   sce <- ScaleData(sce) 
   # PCA
-  info(local_logger,'RunPCA')
+  info(logger,'RunPCA')
   sce <- RunPCA(object = sce, pc.genes = VariableFeatures(sce))
   # AutoSettingPcCutoff
-  info(local_logger,'AutoSettingPcCutoff')
+  info(logger,'AutoSettingPcCutoff')
   pct <- AutoSettingPcCutoff(sce,
                              AutoSettingPcCutoff_plot_name,
-                             save_dir, local_logger)
+                             save_dir)
   # find Neighbors & Clusters
-  info(local_logger,'find Neighbors & Clusters')
+  info(logger,'find Neighbors & Clusters')
   sce <- FindNeighbors(sce, dims = 1:pct)
   sce <- FindClusters(sce, resolution = resolution)
   # UMAP
-  info(local_logger,'RunUMAP')
+  info(logger,'RunUMAP')
   sce <- RunUMAP(object = sce, dims = 1:pct, do.fast = TRUE)
   return(sce)
 }

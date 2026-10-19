@@ -1,11 +1,13 @@
 ---
 name: 单细胞分析结果 Quarto HTML 报告
-description: 当用户已有 scRNAseqMulticommand 主流程跑完的 *-scRNA-seq-result 结果目录、要求生成或更新可交付的 HTML 分析报告时触发。输入为结果目录路径，输出为 report/_site/ 静态网站（QC/整合/聚类/注释/差异表达/方法学 7 页）。结果目录尚不存在时不适用——需先经 scrna-pipeline-overview 跑主流程。
-skill_id: scrna-quarto-report
+description: 当用户已有 scRNAseqMulticommand 主流程跑完的 *-scRNA-seq-result 结果目录、要求生成或更新可交付的
+  HTML 分析报告时触发。输入为结果目录路径，输出为 report/_site/ 静态网站（QC/整合/聚类/注释/差异表达/方法学 7 页）。结果目录尚不存在时不适用——需先经
+  scrna-pipeline-overview 跑主流程。
 version: 0.9.1
-author: "zj"
+author: zj
 icon: 📊
 category: analysis
+skill_id: scrna-quarto-report
 ---
 
 # 单细胞分析结果 Quarto HTML 报告

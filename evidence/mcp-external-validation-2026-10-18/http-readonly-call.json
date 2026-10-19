@@ -1,0 +1,1 @@
+{"result":{"content":[{"type":"text","text":"{\"success\":false,\"summary\":\"获取流程列表失败: 无法连接到平台: http://127.0.0.1:65530 (All connection attempts failed)\"}"}],"structuredContent":{"success":false,"summary":"获取流程列表失败: 无法连接到平台: http://127.0.0.1:65530 (All connection attempts failed)"},"isError":false}}

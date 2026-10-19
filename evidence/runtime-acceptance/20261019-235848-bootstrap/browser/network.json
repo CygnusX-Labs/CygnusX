@@ -1,0 +1,137 @@
+[
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/overview?session_limit=100&session_status=active",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-delivery",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/delivery-inventory",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3/review",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3/control",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/setup-required",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/modules/registry",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/cookies/account",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/overview?session_limit=100&session_status=active",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/notifications",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-delivery",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/delivery-inventory",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3/control",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-delivery",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/delivery-inventory",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/exports/prepare",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "url": "http://frontend:8080/api/v1/projects/5e0177a9-db19-4ed7-a83e-df3348d12155/research-plans/4e55a79b-6fda-41d0-b674-ade1db48c7b3/events",
+    "status": 200
+  }
+]

@@ -1,0 +1,13 @@
+tested_at_utc=2026-10-18T15:11:18Z
+agent=Codex CLI
+git_sha=7c028af698762710f5d0b0dc632a060226ac298a
+python=3.13.12
+fastmcp=3.4.4 $REPO/mcp-server/.venv/lib/python3.13/site-packages/fastmcp/__init__.py
+inspector=$HOME/.nvm/versions/node/v24.11.0/bin/mcp-inspector
+stdio=enabled; child process and pipes available
+http_bind=127.0.0.1 only
+platform_api_key=configured=false; length=0
+http_token=configured=true for isolated local server; value withheld; separate from API key
+redis=not used
+provider_egress=not exercised
+test_platform_base_url=http://127.0.0.1:65530 (isolated, unreachable)

@@ -278,6 +278,24 @@ async def test_delegation_token_never_user_override_scope_or_replay(env, monkeyp
         await delegation.verify_delegation(env.db, token, "analysis.list_workflows", str(uuid4()))
 
 
+@pytest.mark.parametrize(
+    ("claim", "value"),
+    [("scopes", "read:workflows"), ("scopes", []), ("token_version", True), ("sub", "not-a-uuid")],
+)
+async def test_delegation_rejects_malformed_authorization_claim_types(env, claim, value):
+    token = await delegation.issue_delegation(await ctx(env))
+    claims = jwt.decode(
+        token, delegation._key(), algorithms=["HS256"], audience=delegation.AUDIENCE
+    )
+    claims[claim] = value
+    malformed = jwt.encode(claims, delegation._key(), algorithm="HS256")
+
+    with pytest.raises(AuthenticationError, match="委托无效或过期"):
+        await delegation.verify_delegation(
+            env.db, malformed, "analysis.list_workflows", str(uuid4())
+        )
+
+
 async def test_delegation_redis_failure_closed(env, monkeypatch):
     from redis.exceptions import ConnectionError
     redis = SimpleNamespace(set=AsyncMock(side_effect=ConnectionError("offline")))

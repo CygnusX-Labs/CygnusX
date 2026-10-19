@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "results_json_valid": true,
+    "browser_all_pass": true,
+    "api_boundaries_all_pass": true,
+    "db_constraints_all_pass": true,
+    "all_acceptance_stopped": true,
+    "no_business_jobs": true,
+    "console_empty": true,
+    "no_unredacted_jwt_in_evidence": true,
+    "current_report_links_exist": true
+  },
+  "jwt_leak_paths": [],
+  "missing_links": []
+}

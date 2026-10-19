@@ -98,6 +98,11 @@ async def test_read_attachment_text_extracts_local_docx(
         staticmethod(lambda _url: str(docx_path)),
     )
 
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("anyio.to_thread.run_sync", run_sync_inline)
+
     text = await ChatService._read_attachment_text(
         {
             "name": "MDH2序列.docx",

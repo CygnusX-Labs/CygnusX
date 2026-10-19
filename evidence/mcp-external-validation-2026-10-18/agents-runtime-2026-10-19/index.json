@@ -1,0 +1,141 @@
+{
+  "agent_count": 19,
+  "agents": [
+    {
+      "agent_id": "agent-router",
+      "evidence": "agent-router.json",
+      "final_tool_count": 82,
+      "schema_bytes": 17389,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-general",
+      "evidence": "agent-general.json",
+      "final_tool_count": 97,
+      "schema_bytes": 22390,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agentteams-manager",
+      "evidence": "agentteams-manager.json",
+      "final_tool_count": 89,
+      "schema_bytes": 19004,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-rnaseq",
+      "evidence": "agent-rnaseq.json",
+      "final_tool_count": 98,
+      "schema_bytes": 23752,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-atacseq",
+      "evidence": "agent-atacseq.json",
+      "final_tool_count": 98,
+      "schema_bytes": 23505,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-scrna",
+      "evidence": "agent-scrna.json",
+      "final_tool_count": 90,
+      "schema_bytes": 23335,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-scrna-upstream",
+      "evidence": "agent-scrna-upstream.json",
+      "final_tool_count": 90,
+      "schema_bytes": 20050,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-scrna-integration",
+      "evidence": "agent-scrna-integration.json",
+      "final_tool_count": 90,
+      "schema_bytes": 20049,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-scrna-advanced",
+      "evidence": "agent-scrna-advanced.json",
+      "final_tool_count": 90,
+      "schema_bytes": 20794,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-code",
+      "evidence": "agent-code.json",
+      "final_tool_count": 86,
+      "schema_bytes": 19245,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-explorer",
+      "evidence": "agent-explorer.json",
+      "final_tool_count": 72,
+      "schema_bytes": 13110,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-viz",
+      "evidence": "agent-viz.json",
+      "final_tool_count": 87,
+      "schema_bytes": 19340,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-data",
+      "evidence": "agent-data.json",
+      "final_tool_count": 90,
+      "schema_bytes": 19898,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-qc",
+      "evidence": "agent-qc.json",
+      "final_tool_count": 90,
+      "schema_bytes": 20049,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-delivery",
+      "evidence": "agent-delivery.json",
+      "final_tool_count": 90,
+      "schema_bytes": 19968,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-cloud-ops",
+      "evidence": "agent-cloud-ops.json",
+      "final_tool_count": 95,
+      "schema_bytes": 20570,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "shania",
+      "evidence": "shania.json",
+      "final_tool_count": 78,
+      "schema_bytes": 15251,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-mcp-builder",
+      "evidence": "agent-mcp-builder.json",
+      "final_tool_count": 80,
+      "schema_bytes": 15669,
+      "status": "assembled"
+    },
+    {
+      "agent_id": "agent-skill-builder",
+      "evidence": "agent-skill-builder.json",
+      "final_tool_count": 88,
+      "schema_bytes": 19530,
+      "status": "assembled"
+    }
+  ],
+  "captured_at_utc": "2026-10-18T19:33:00.474493+00:00",
+  "context_ref": "mcp-acceptance-20261019-isolated",
+  "identity_ref": "ddc827a5d771b8f84ed624eae7ef22a88a111437f3782ee38776be6a59ac8cab"
+}

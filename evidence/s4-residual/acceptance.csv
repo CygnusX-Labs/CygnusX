@@ -1,5 +1,5 @@
 test_id,status,reason
-SR01,BLOCKED,PG uniqueness retry or stable 409 not observed
+SR01,PASS_ISOLATED_RUNTIME_BLOCKED,Exact idempotency unique-key violation is contained by a savepoint and returned as stable 409; PG concurrency remains unverified
 SR02,PASS_ISOLATED_RUNTIME_BLOCKED,Exact Task three sequential aliases verified; PG concurrency absent
 SR03,PASS_ISOLATED_RUNTIME_BLOCKED,105 queued plus 101 legacy; exact union and disjoint verified
 SR04,BLOCKED,Independent nonproduction fault runtime authorization absent

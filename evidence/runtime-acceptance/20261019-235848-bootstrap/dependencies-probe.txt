@@ -1,0 +1,2 @@
+/app/.venv/bin/python: No module named pip
+ls: cannot access '/app/.venv/bin/uv': No such file or directory

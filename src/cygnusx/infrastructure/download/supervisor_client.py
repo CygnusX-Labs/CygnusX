@@ -11,7 +11,7 @@ import json
 import ssl
 from typing import Any
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -81,6 +81,7 @@ class MutualTLSExecutionAdapter:
             trust_env=False,
             transport=transport,
         )
+        self._execution_epochs: dict[tuple[UUID, UUID], int] = {}
 
     @staticmethod
     def _validated_base_url(value: str | None) -> str:
@@ -111,6 +112,7 @@ class MutualTLSExecutionAdapter:
             or response.execution_epoch != request.execution_epoch
         ):
             raise TrustedExecutionUnavailableError("DOWNLOAD_SUPERVISOR_IDENTITY_MISMATCH")
+        self._execution_epochs[(request.task_id, response.scope_ref)] = request.execution_epoch
         return response.scope_ref
 
     async def observe(self, task_id: UUID, scope_ref: UUID) -> ExecutionBoundaryObservation:
@@ -118,7 +120,14 @@ class MutualTLSExecutionAdapter:
 
     async def renew(self, task_id: UUID, scope_ref: UUID) -> None:
         path = self._execution_path(task_id, scope_ref) + "/lease"
-        response = await self._request("POST", path)
+        # A fresh nonce makes each renewal one-use; the server binds it to the
+        # persisted execution epoch before accepting the lease extension.
+        epoch = self._execution_epochs.get((task_id, scope_ref))
+        if epoch is None:
+            raise TrustedExecutionUnavailableError("DOWNLOAD_SUPERVISOR_EPOCH_UNKNOWN")
+        response = await self._request(
+            "POST", path, {"execution_epoch": epoch, "lease_nonce": str(uuid4())}
+        )
         if response.status_code != 204:
             raise TrustedExecutionUnavailableError("DOWNLOAD_SUPERVISOR_LEASE_RESPONSE_INVALID")
 

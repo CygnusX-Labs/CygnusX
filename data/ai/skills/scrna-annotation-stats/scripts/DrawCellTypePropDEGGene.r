@@ -5,7 +5,7 @@
 # logging help function
 log4r_init <- function(){
   require(log4r)
-  local_logger <- log4r::logger()
+  logger <- log4r::logger()
   my_layout <- function(level, ...) {
     require(crayon)
     if (level == 'INFO'){
@@ -28,8 +28,8 @@ log4r_init <- function(){
       }
     }
   }
-  local_logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
-  return(local_logger)
+  logger <- log4r::logger(threshold = "INFO",appenders = list(console_appender(my_layout)))
+  return(logger)
 }
 # Findmarker & stats deg gene functions
 stats_deg_gene <- function(main_annotation = main_annotation,
@@ -78,7 +78,7 @@ DrawCellTypePropDEGGene <- function(Seurat,
   require(tidyverse)
   require(Seurat)
   # loading log modules
-  local_logger <- log4r_init()
+  logger <- log4r_init()
   # convert Celltype
   Seurat$Celltype <- Seurat[[`celltype`]]
   # batch analysis group
@@ -88,7 +88,7 @@ DrawCellTypePropDEGGene <- function(Seurat,
     group_id_2 <-  group_list[[i]]$control
     # get group id
     group_name <- paste0(group_id_1,' vs ',group_id_2)
-    info(local_logger,paste0('DEG & Stats cell prop for : ', group_name,' do'))
+    info(logger,paste0('DEG & Stats cell prop for : ', group_name,' do'))
     # calculation deg gene
     deg_temp<- stats_deg_gene(main_annotation = Seurat,
                               tread = group_id_1,
@@ -97,16 +97,16 @@ DrawCellTypePropDEGGene <- function(Seurat,
     lfc_temp <- stats_cell_prop(main_annotation = Seurat,
                                 tread = group_id_1,
                                 control =group_id_2)
-    info(local_logger,paste0('DEG & Stats cell prop for : ', group_name,' done'))
+    info(logger,paste0('DEG & Stats cell prop for : ', group_name,' done'))
     # data pre-process
     data <- deg_temp |> left_join(lfc_temp, by = 'group') |> mutate(cell_type = gsub('-.*', '', group), comparison = group_name )
     merge_data <- bind_rows(merge_data,data)
   }
   # save result
-  info(local_logger,paste0('Save Analyis at :',file.path(save_dir,paste0(project_id,'-DrawCellTypePropDEGGene.csv'))))
+  info(logger,paste0('Save Analyis at :',file.path(save_dir,paste0(project_id,'-DrawCellTypePropDEGGene.csv'))))
   write.csv(merge_data,file.path(save_dir,paste0(project_id,'-DrawCellTypePropDEGGene.csv')))
   # draw plot
-  info(local_logger,'Draw plot')
+  info(logger,'Draw plot')
   p <- ggplot(merge_data, aes(x = lfc, y = cell_type)) +
     geom_point(aes(size = prop, color = NUMBER)) +
     scale_color_gradient(low = color_low, high = color_heigh) +
