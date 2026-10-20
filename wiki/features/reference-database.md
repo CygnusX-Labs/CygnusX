@@ -46,3 +46,8 @@ cygnusxtools refdb build \
 - `/database/{speciesId}/{versionId}`：基因浏览器
 - `/database/{speciesId}/{versionId}/gene/{geneId}`：基因详情
 - `/database/{speciesId}/mapping`：跨版本映射
+
+## 与数据库架构的关系
+
+参考基因组模块使用独立 SQLite/FTS5 存储，不纳入 Alembic 迁移链。平台数据库负责物种、版本与
+文件登记，实际序列与注释资产由离线构建产物提供。详见[数据库架构](../architecture/database)。

@@ -63,8 +63,8 @@ Markdown 都能由 `make sync-knowledge` 载入运行中知识库。
 - **私有镜像仓库**：云部署建议在 CI 构建并按 git SHA 推送 `cygnusx-backend` / `cygnusx-worker` /
   `cygnusx-frontend` 及分析运行时镜像，节点只拉取不可变 digest；不要把 `.env`、密钥或数据目录打进镜像。
 - **HPC / Kubernetes**：Slurm 接入（Worker 转为 `sbatch` 提交器 + Snakemake profile）与 K8s 高可用
-  （无状态控制面 + 按队列拆分 Worker + RWX PVC）为规划路径，详见根目录
-  `report/07_K8s大规模部署方案.md`、`report/09_管理节点与任务节点分离方案.md`。
+  （无状态控制面 + 按队列拆分 Worker + RWX PVC）为规划路径，尚未纳入当前运行验收；不要按
+  已支持能力对外承诺。
 - AgentTeams、RocketMQ、pgvector/PgBouncer 等可选组件按对应开关和部署文档启用，不应默认暴露到
   公网；AgentTeams 开启步骤见 [开启 Multi-Agent 与 AgentTeams](agentteams-enablement)。
 

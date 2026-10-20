@@ -124,11 +124,11 @@ CygnusX 当前是一个**多入口、共享工具契约、部分统一事件、�
 | `chat_legacy` | 手写 ReAct 工具循环（已退化为逃生舱，仅 `engine:"legacy"` 或全局开关 `chat_force_legacy_runtime`） | `ChatService.stream_agent_chat` | 普通聊天默认不再进入；Studio 分支仍由该循环承载（待收敛） |
 | `chat_langgraph` | 普通 Agent 的图化 ReAct（统一 Runtime） | `ChatService._stream_agent_chat_langgraph` | 普通聊天默认全量（2026-09-19 起不再以 `features.engine=langgraph` 为门） |
 | `studio_chat_loop` | 工作台工具、代码、文件和沙盒闭环 | `ChatService` Studio 分支 | 进入 Studio 会话时启用 |
-| `agentteams_manager_consultation` | Manager 对 Case/房间上下文进行只读会诊 | `AgentConsultationService` | AgentTeams 场景启用 |
+| `agentteams_manager_consultation`（**规划值，未发射**） | 早期设计的 Manager 只读会诊路径；当前代码中无该赋值，Manager 会诊的事件投影统一记录为 `agentteams_worker_react` | — | 否 |
 | `agentteams_worker_react` | Worker 执行受限任务和工具调用 | `ParallelSubAgentService._child_loop` | 被 Manager/工具显式派生时启用 |
 | `agentteams_tool_execution` | 协助室明确的单步只读请求 | `AgentTeamsRoomResponseService._run_room_tool_execution` | 按意图受控启用，非默认会诊链 |
 
-`execution_path` 是观测和排障字段，不负责替代权限判断。权限、工具白名单、执行模式和 Case 状态仍由各自服务强制校验。
+`execution_path` 是观测和排障字段，不负责替代权限判断。权限、工具白名单、执行模式和 Case 状态仍由各自服务强制校验。上表前五条为当前代码实际发射值；`agentteams_manager_consultation` 仅为历史规划值，不得用于排障查询或告警规则。
 
 ## 3. 请求装配层
 

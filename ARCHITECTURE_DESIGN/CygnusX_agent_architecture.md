@@ -594,7 +594,7 @@ agent_turn_started → agent_tool_call → agent_tool_started → agent_tool_res
 异常：agent_turn_failed / agent_loop_guard_triggered
 ```
 
-`execution_path` 是观测与排障字段（`chat_legacy` / `chat_langgraph` / `studio_chat_loop` / `agentteams_worker_react` / `agentteams_manager_consultation` / `agentteams_tool_execution`），**不替代权限判断**。
+`execution_path` 是观测与排障字段（实际发射五值：`chat_legacy` / `chat_langgraph` / `studio_chat_loop` / `agentteams_worker_react` / `agentteams_tool_execution`；`agentteams_manager_consultation` 为早期规划值，当前代码未发射），**不替代权限判断**。
 
 ---
 

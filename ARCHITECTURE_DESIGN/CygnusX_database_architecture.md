@@ -13,7 +13,7 @@
 
 数据库模块是所有需要持久化状态的应用服务与进程共享的边界。FastAPI 路由通过依赖注入取得 `AsyncSession`，应用服务再按领域选择仓储接口或直接构造 SQLAlchemy 查询；Celery、Beat 和后台线程使用同一套连接配置，但按事件循环生命周期切换到 `NullPool` 或一次性引擎。这样，事务提交、回滚、连接回收和只读分流都集中在 `infrastructure/database/session.py`，业务代码不需要自己管理连接。
 
-ORM 模型是 schema 的代码侧描述，`models/__init__.py` 的全量导入把 87 张业务表注册到同一个 `Base.metadata`。核心域（用户、文件、任务、Cookie、MCP、沙箱、技能、终端等）经 domain Protocol/ABC 隔离后由 SQLAlchemy 仓储实现；chat、goal、knowledge 等查询形态简单的域保留服务层直连模型。向量列由本地 `Vector` 类型映射到 PostgreSQL pgvector，知识和记忆服务在事务数据之外复用同一数据库完成相似度召回。
+ORM 模型是 schema 的代码侧描述，`models/__init__.py` 的全量导入把 116 张 ORM 表注册到同一个 `Base.metadata`。核心域（用户、文件、任务、Cookie、MCP、沙箱、技能、终端等）经 domain Protocol/ABC 隔离后由 SQLAlchemy 仓储实现；chat、goal、knowledge 等查询形态简单的域保留服务层直连模型。向量列由本地 `Vector` 类型映射到 PostgreSQL pgvector，知识和记忆服务在事务数据之外复用同一数据库完成相似度召回。
 
 schema 变更由 Alembic 迁移推进，应用启动不会调用 `create_all`。CI 检查迁移链是否单 root、单 head，容器升级后再执行 metadata 与真实数据库的漂移检查；因此“模型、迁移、线上 schema”形成闭环。池事件还会导出连接签出、连接建立和失效指标，管理端健康页与告警可以据此定位数据库容量或生命周期问题。
 
@@ -65,7 +65,7 @@ sequenceDiagram
 
 ## 1. 概述
 
-database 模块是平台唯一的持久化基础设施层，承载 87 张 ORM 管理表（另有外部组件表 `mem0_memories` 由 mem0 自建自管），服务 Web（FastAPI）、Worker（Celery）、Beat 三类进程。
+database 模块是平台唯一的持久化基础设施层，承载 116 张 ORM 管理表（另有受保护的遗留表 `mem0_memories`：mem0 引擎已于 2026-08-19 删除，该表仅作为迁移残留，列入 `_NON_ORM_TABLES` 豁免对账），服务 Web（FastAPI）、Worker（Celery）、Beat 三类进程。
 
 核心设计原则：
 
@@ -92,10 +92,10 @@ infrastructure/database/
   ├─ base.py            Base(DeclarativeBase) + TimestampMixin
   ├─ session.py         引擎/会话工厂单例 + 连接池仪表 + 只读副本
   ├─ vector.py          pgvector 自定义类型（不依赖 pgvector 包）
-  ├─ models/            39 个模型模块，__init__.py 全量导入注册（87 表）
+  ├─ models/            51 个模型模块，__init__.py 全量导入注册（116 表）
   └─ repositories/      17 个仓储实现模块，__init__.py 统一导出（24 类）
       ▼
-alembic/                        88+ 迁移，单 root 单 head；容器 entrypoint upgrade head
+alembic/                        119 个迁移，单 root 单 head；容器 entrypoint upgrade head
       ▼
 scripts/check_migrations.py     迁移链健康检查（CI/本地）
 scripts/check_schema_drift.py   metadata ↔ 真实库对账（entrypoint fail-fast）

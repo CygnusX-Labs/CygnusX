@@ -65,3 +65,9 @@
 | GET | `/api/v1/phylogenetic-tree/download/{id}/{format}` | 下载结果 |
 | GET | `/api/v1/phylogenetic-tree/methods` | 获取支持的方法和预设 |
 | POST | `/api/v1/phylogenetic-tree/validate` | 预校验参数组合 |
+
+## 执行模式
+
+系统发育树属于独立工具作业，走 `backend_async` 异步模式，不创建标准分析 Task。若需要与
+分析中心共用任务记录、监控和交付链，应改为标准 Flow，而不是复用本工具的异步通道。
+详见[生信工具箱](toolbox)。

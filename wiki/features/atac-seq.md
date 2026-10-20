@@ -42,3 +42,16 @@
 | `bigwig/` | 可视化文件 |
 | `differential/` | 差异可及性区域 |
 | `report/` | HTML 分析报告 |
+
+## 提交与证据边界
+
+- 表单和 AI 助手共用 `TaskService.submit()`；AI 提交需人类确认，确认一次性并绑定参数哈希。
+- `diff_peaks` 依赖有效比较组；缺少比较组时不会自动推断分组。
+- 任务完成与报告生成属于运行证据，不等于科学结论已验证；整体验收状态见
+  [科研证据边界](../research/evidence-boundaries)。
+
+## 相关页面
+
+- [分析流程与工作流](workflows)
+- [流程运行时](../architecture/flow-runtime)
+- [分析流程扩展](../development/flow-extension)

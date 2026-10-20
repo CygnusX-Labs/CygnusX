@@ -42,6 +42,9 @@ format: ## 代码格式化
 type-check: ## 类型检查
 	uv run mypy src/cygnusx/
 
+check-doc-counts: ## 校验文档当前计数与结构化事实源一致
+	uv run python scripts/check_doc_counts.py
+
 migrate: ## 执行数据库迁移
 	uv run alembic upgrade head
 

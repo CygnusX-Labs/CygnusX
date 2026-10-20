@@ -3,7 +3,8 @@
 > 更新时间：2026-08-22  
 > 文档定位：记录仓库当前已经落地的 AI 记忆系统架构、数据流、开关和回滚边界。  
 > 相关实施计划：`docs/info/26.8.18/CygnusX记忆系统优化实施计划.md`  
-> 最新变更（2026-08-22）：`docs/info/26.8.22/CygnusX记忆模块优化实施手册.md`（M0 settle 泄漏面封堵 / M1 v2 共享分区召回修复 / M2 L4 读取面接入 / M3 L4 写入纪律）；终验收口：`docs/info/26.8.22/记忆系统终验与收口待办-2026-08-22.md`（`memory.settle_skipped` 升级 OTel 计数器、新增 `memory.l4_inject_degraded` 降级计数、M0–M3 单测证据清单补齐，见 §11）
+> 最新变更（2026-08-22）：`docs/info/26.8.22/CygnusX记忆模块优化实施手册.md`（M0 settle 泄漏面封堵 / M1 v2 共享分区召回修复 / M2 L4 读取面接入 / M3 L4 写入纪律）；终验收口：`docs/info/26.8.22/记忆系统终验与收口待办-2026-08-22.md`（`memory.settle_skipped` 升级 OTel 计数器、新增 `memory.l4_inject_degraded` 降级计数、M0–M3 单测证据清单补齐，见 §11）  
+> **2026-10-20 现状审计与优化路线**：`CygnusX_memory_optimization_audit.md`（代码基线 `ae355dc9`；P0–P2 问题清单、Phase 0–4 修复顺序与验收清单；本文仍是 as-built 基线，审计文档不作为现状依据）
 
 ## 这个记忆模块如何发挥作用
 

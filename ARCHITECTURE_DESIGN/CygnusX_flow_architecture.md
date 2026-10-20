@@ -213,10 +213,12 @@ pipeline_mapping: # PipelineMappingConfig — 见 §5.2
 ## 8. 新流程接入清单（L1 + AI 聊天通道 · 工具固定化后）
 
 > 2026-10-16 起，MCP 工具已固定化（见 `CygnusX_mcp_architecture.md` §11）：
-> **新增 Flow 只注册流程契约，全程零新增 MCP 工具**。AI 通道统一走固定工具
+> **新增 Flow 只注册流程契约，全程零新增 MCP 工具**。外部 MCP 通道走固定工具
 > `cygnusx_list_flows` → `cygnusx_get_flow_detail` → `cygnusx_prepare` →
-> `cygnusx_submit`（Chat 内置与外部 MCP 同名单），旧 per-flow 自动生成工具
-> 已 `[DEPRECATED]` 并纳入 `LEGACY_PIPELINE_TOOLS` 下线路径。
+> `cygnusx_submit`；内置 Chat 的目录工具是 `platform_list_flows`（仅
+> id/name/category/version），没有 detail 工具，固定链为 `cygnusx_prepare` +
+> `cygnusx_submit`。旧 per-flow 自动生成工具已 `[DEPRECATED]`
+> 并纳入 `LEGACY_PIPELINE_TOOLS` 下线路径。
 
 1. 按 `Protocol/FlowFrame/flow-framework` v2.0 编写流程仓库，放入 `pipelines/`（子模块）；
 2. Worker 侧确认挂载：`data/worker_config.yaml` 的 `WORKER_PIPELINE_DIR` 覆盖新流程目录，容器内路径 `/opt/cygnusx/pipelines/<X>Flow/snakefile` 可达（`test -f` 验证，见 `CygnusX_worker_images_plan.md`）；

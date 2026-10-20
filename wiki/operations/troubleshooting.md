@@ -10,7 +10,7 @@
 
 - 检查 Nginx/后端上传大小限制
 - 大文件建议通过服务器本地拷贝
-- 检查 `/data/cygnusx/uploads` 权限
+- 检查 `${CYGNUSX_DATA_ROOT:-/data/cygnusx}/uploads` 权限
 
 ## 任务一直等待中
 
@@ -103,3 +103,10 @@ docker restart cygnusx-web cygnusx-worker cygnusx-beat
   需要时再执行 `make knowledge-reindex`
 - 检查当前 Agent、Skill、MCP 和协作能力是否已被部署配置及用户权限启用；不要把未启用功能当成
   Provider 故障
+
+## 进一步定位
+
+- 结构化日志字段、会话时间线与审计查询见[可观测性](../architecture/observability)。
+- 任务状态、Flow 冻结与提交链见[流程运行时](../architecture/flow-runtime)。
+- 下载、Dataset 提交或报告重跑不可用时，先核对源码门禁与验收状态，见
+  [科研证据边界](../research/evidence-boundaries)。

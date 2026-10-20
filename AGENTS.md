@@ -16,7 +16,7 @@ CygnusX（仓库名 OmicHub，华中农业大学园艺林学学院）是 AI 驱�
 
 - 后端：Python 3.11（`.python-version` 为 `omichub_3.11`）+ FastAPI + SQLAlchemy(asyncpg) + Alembic + Celery/Redis + LangGraph + litellm + pydantic v2；包管理 **uv**（`uv.lock` 冻结，CI 用 `uv sync --frozen`）。
 - 前端：`frontend/`，Vue 3 + TS(strict) + Vite 5 + Pinia + naive-ui；REST 边界 `src/api/*` → axios 统一实例 `baseURL '/api/v1'`（手写，无 OpenAPI 生成）。
-- 存储/中间件：PostgreSQL+pgvector（87 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0 引擎**（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表为受保护的迁移残留、`check_schema_drift.py` 豁免对账，`.env.example` 的 `MEM0_*` 段是零消费配置残留——禁止顺手清理，详见 `ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md` §1）。
+- 存储/中间件：PostgreSQL+pgvector（116 表）、Redis、MinIO/S3、RocketMQ、flower；向量检索自研（fastembed + pgvector），**记忆系统无 mem0 引擎**（引擎代码 2026-08-19 已删除；遗留 `mem0_memories` 表为受保护的迁移残留、`check_schema_drift.py` 豁免对账，`.env.example` 的 `MEM0_*` 段是零消费配置残留——禁止顺手清理，详见 `ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md` §1）。
 - 周边子工程：`mcp-server/`（独立 FastMCP 外部通道）、`integrations/agentteams/{bridge,gateway}/`（各自 pyproject + 独立 CI job）、`scripts/`（cygnusxtools CLI）、`docs/app/`（独立 React 档案站，非主前端）。
 
 ## 2. 常用命令与门禁流水线
@@ -84,7 +84,7 @@ uv run ruff check src/ tests/ && uv run mypy src/cygnusx/ \
 
 **保护/冻结模块（只许小步渐进修改，禁止盲目重构）：**
 - `data/MODULE_LOCKED.yaml` — 模块注册唯一数据源，后端启动硬校验（语法错/key 重复直接拒启），前端路由守卫 + 后端 API 拦截共同消费。
-- `deploy/image-mapping.yaml` — 14 镜像清单唯一权威源；tag 变更 6 处同步（清单→config_files→build.sh/Makefile/.env.example/config.py→子镜像重建→`make validate-image-mapping`）；**禁用 `latest`，tag 必带 git SHA 短号**。
+- `deploy/image-mapping.yaml` — 镜像清单唯一权威源（当前 17 个，以清单文件与 `make validate-image-mapping` 校验为准）；tag 变更 6 处同步（清单→config_files→build.sh/Makefile/.env.example/config.py→子镜像重建→`make validate-image-mapping`）；**禁用 `latest`，tag 必带 git SHA 短号**。
 - `Protocol/file_protocol.md` v1.3（用户目录协议：`StoragePathFactory.create_project_run_dir()`、禁 UUID 出现在用户可见目录、`ensure_directory_chain()` 登记）；`Protocol/镜像构建国内加速规范_v1.md`（所有 Dockerfile 变更必须遵守）；`Protocol/FlowFrame/`（子模块 = Flow 架构强制规范 v2.0）。
 - `mcp-server/` 确认契约：模型永不能自证确认（`_confirmed` 已废弃），确认凭证只能由人类 JWT 端点写入、一次性 + 绑 SHA-256 参数哈希；内外双表面等价由 `tests/unit/test_mcp_dual_surface_parity.py` 守护。
 - `data/ai/*.yaml` + `prompts/registry.yaml` — Agent 装配数据源；沙箱 capability 授权源为 Agent YAML `features.studio.sandbox_capabilities`。

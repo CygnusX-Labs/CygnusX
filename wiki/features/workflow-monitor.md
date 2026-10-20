@@ -51,3 +51,9 @@ tool_configs/workflow_monitor/
 | 最近事件 | `workflow_monitor:task:{task_id}:events` |
 | 全局运行中任务 | `workflow_monitor:running_tasks` |
 | Pub/Sub | `workflow_monitor:global` / `workflow_monitor:user:{user_id}` / `workflow_monitor:task:{task_id}` |
+
+## 与其他监控面的关系
+
+- 本面板面向单个分析任务的 Rule 时间线与事件；系统级日志和 Trace 见[可观测性](../architecture/observability)。
+- 任务状态机、Flow 冻结与提交链见[流程运行时](../architecture/flow-runtime)。
+- 面板展示的是执行过程证据，不代表科学结论已验证。

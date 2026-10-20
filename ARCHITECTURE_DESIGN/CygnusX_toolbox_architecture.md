@@ -76,7 +76,7 @@ sequenceDiagram
 工具箱 = **一个自动发现的代码框架 + 两份解耦的注册表 + 一张共享任务表 + 一条 Agent 调用通道**：
 
 1. **代码框架**：`src/cygnusx/tools/` 下每个工具自成子包（api/service/schema/config/tasks/runner），`register_tool_routers`（`tools/__init__.py:55`）用 `pkgutil` 扫描子包的 `api` 模块自动挂载路由——新增工具零侵入 `api/v1/router.py`。
-2. **双注册表解耦**：`tools_setting.yaml`（前端卡片，19 个启用工具）与 `tools_schema.yaml`（LLM function，43+ 条目含动态 Flow 工具）各自独立登记，**不会自动对齐**，漏任何一边该工具就不可见（前端不可见 / Agent 不可调）。
+2. **双注册表解耦**：`tools_setting.yaml`（前端卡片，19 个工具、18 个启用）与 `tools_schema.yaml`（静态 45 个 LLM function；动态 Flow 工具由 `FlowToolSchemaCompiler` 运行时生成、不计入该文件）各自独立登记，**不会自动对齐**，漏任何一边该工具就不可见（前端不可见 / Agent 不可调）。
 3. **任务模型**：DEG/enrichments/GSEA/synteny 四个异步工具复用共享 `tasks` 表（`TaskModel`，按 `flow_id` 域隔离）；BLAST 因缓存/命中统计等专属字段使用独立 `blast_tasks` 表。
 4. **Agent 通道**：`ToolBridgeService` 按 5 种 `invocation_mode` 分发（backend_sync / backend_shim / backend_async / open_page / analysis_flow），结果走 `llm_payload`/`ui_payload` 双通道。
 

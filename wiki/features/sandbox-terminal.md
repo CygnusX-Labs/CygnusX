@@ -1,6 +1,10 @@
 # 云端沙盒终端
 
-CygnusX 提供按会话创建、会话结束后回收的隔离终端。用户在浏览器中使用 xterm.js，平台通过
+CygnusX 有两类相互独立的隔离运行环境：本页描述的是面向代码执行/终端的沙盒；OmicStudio
+工作台使用“一会话一容器”的 Studio 运行时，目录、能力和回收策略不同。两者差异与安全基线见
+[沙箱与工作台](../architecture/sandbox)。
+
+沙盒终端按会话创建、会话结束后回收。用户在浏览器中使用 xterm.js，平台通过
 WebSocket 代理连接到容器内 ttyd；终端容器不直接暴露宿主机端口。
 
 ## 当前架构
@@ -39,3 +43,9 @@ Web 容器和终端容器通过专用沙盒网络通信。平台会为每个会�
 
 创建失败时，先检查沙盒镜像、Docker Socket 权限、专用网络和用户目录权限；运行中断时，再检查空闲
 超时、资源限制和会话生命周期。部署侧排查见 [问题排查](../operations/troubleshooting)。
+
+## 相关页面
+
+- [沙箱与工作台](../architecture/sandbox)
+- [安全模型](../architecture/security-model)
+- [可观测性](../architecture/observability)

@@ -44,3 +44,19 @@
 | `padj` | 校正后的 p 值 |
 
 常见筛选示例为 `padj < 0.05` 且 `|log2FoldChange| > 1`，实际阈值应由研究设计、重复数和领域标准确定。
+
+## 提交与证据边界
+
+- 网页表单和 AI 助手走同一条 `TaskService.submit()` 任务链；AI 提交前必须由人类确认参数，
+  确认记录一次性并绑定参数哈希。
+- Flow 定义和参数会随 Task 冻结，之后修改 YAML 不影响已提交任务。
+- 任务成功只代表流程执行完成；报告是证据快照，不等于科学结论已验证，也不自动触发重跑。
+- 运行状态、日志和产物路径以任务中心和 Worker 记录为准；当前科研链路的整体验收状态见
+  [科研证据边界](../research/evidence-boundaries)。
+
+## 相关页面
+
+- [分析流程与工作流](workflows)
+- [流程运行时](../architecture/flow-runtime)
+- [分析流程扩展](../development/flow-extension)
+- [RNA 报告与交付](../research/reports)

@@ -304,6 +304,8 @@ Studio 容器现在显式设置：
 
 **验证**（本地构建后 `docker run` 实测）：scrna 镜像 scanpy/anndata/leidenalg/igraph、Seurat 5.5.1/SCE 1.28.0 全部可导入；copilot 镜像 scvi 1.4.2 / squidpy 1.6.6 / celltypist / decoupler + Seurat/scater/ggtree 正常；uid=10001、WORKDIR /workspace 符合契约。104 个相关单测通过；`deploy/validate_image_mapping.py` 通过（14 images）；`scripts/test_studio_agent_runtime.py` PASS。
 
+> 历史快照（2026-10-01 施工记录）：以上“14 images”是当时验证值，不随清单更新而回写。当前镜像数量以 `deploy/image-mapping.yaml` 与 `make validate-image-mapping` 为准。
+
 **遗留**（不在本轮范围）：
 
 - `workspace_env_restore_service.py` 的科研模式还原脚本 `micromamba install --name base` 在 Studio 只读 rootfs 下必然失败且被静默降级，需单独立项处理。

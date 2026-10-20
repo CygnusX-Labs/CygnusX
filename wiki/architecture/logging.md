@@ -1,11 +1,13 @@
 # 日志架构
 
-平台日志统一归集到 `/data/cygnusx/logs/`，兼顾可读文本、结构化 JSON 与容量保护。
+平台日志统一归集到 `${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/`，兼顾可读文本、结构化 JSON 与容量保护。容器内日志根由 `CYGNUSX_LOG_DIR` 指定；换存储根时以 Compose 与 `.env` 为准。
+
+> 日志只是可观测性的一部分。事件流、审计事实、运行证据与日志的层级关系见[可观测性](observability)。
 
 ## 目录结构
 
 ```text
-/data/cygnusx/logs/
+${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/
 ├── app/
 │   ├── cygnusx.log        # 可读文本主日志
 │   ├── cygnusx.json.log   # JSON 结构化日志
@@ -15,10 +17,11 @@
 ├── nginx/
 │   ├── access.log
 │   └── error.log
-└── snakemake/
-    └── {project}/{timestamp}/
-        ├── stdout.log
-        └── stderr.log
+├── snakemake/
+│   └── {project}/{timestamp}/
+│       ├── stdout.log
+│       └── stderr.log
+└── audit/                 # 预留独立审计文本目录
 ```
 
 ## 应用日志环境变量
@@ -54,6 +57,8 @@ jq 'select(.status >= 500)' /data/cygnusx/logs/nginx/access.log
 ```
 
 ## 可观测性（OpenTelemetry + 业务级事件）
+
+日志与 trace 是可观测性的一环；事件流、审计和运行证据的分层见[可观测性](observability)。
 
 统一埋点产出 Trace / Log / Metrics 三信号：日志自动注入 `trace_id`/`span_id`/`request_id`/`session_id`；
 `/metrics` 暴露 Prometheus 指标；AI 调用指标持久化到 `ai_call_metrics` 驱动管理端「AI 指标仪表盘」与

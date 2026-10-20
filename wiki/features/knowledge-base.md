@@ -51,3 +51,9 @@ docker exec cygnusx-web python scripts/sync_knowledge_from_files.py \
 4. 运行 `make sync-knowledge`，然后用平台聊天的 `knowledge_search` 验证目标术语能被召回。
 
 完整实现细节见 `docs/knowledge/knowledge-base-implementation.md`。
+
+## 相关页面
+
+- [记忆与知识库](../architecture/memory-knowledge)
+- [AI 助手与工作台](ai-chat)
+- [Wiki 维护与知识库同步](../documentation-maintenance)

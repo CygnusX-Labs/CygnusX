@@ -296,7 +296,7 @@ MAS_ENABLED=true   → 加载 orchestrator；仍需部署 Celery/outbox 与目�
 ### 8.1 修改现有提示词
 
 1. 编辑 `data/ai/prompts/<agent>.md`；
-2. 同步更新 `docs/26.7.26/ai_agent/CygnusX-Agent系统提示词优化版.md` 中对应代码块；
+2. 同步更新 `docs/update_info/26.7.26/ai_agent/OmicHub-Agent系统提示词优化版.md` 中对应代码块；
 3. 对照该 Agent 的 `tool_packs`、`skill_ids`、Studio 能力和 `handoff.allowed_targets` 检查每个工具声明；
 4. 运行提示词和 Agent Loader 测试；
 5. 在管理端保存 Agent 或调用更新 API 发布到数据库；
@@ -417,7 +417,7 @@ LangGraph 运行时测试在当前本地环境中曾出现首项通过后无法�
 
 P2 的审计数据写入 `chat_handoff_events`；前端通过 SSE `handoff` 事件在消息流显示转交卡片。P3 为 DAG 节点增加了产物 Schema 边校验、失败节点手动重试和产物下载接口；除 RNA-seq 外还提供受限 `scanpy-qc` 节点。单细胞模板仅能在 `analysis-scrna` 镜像已部署到 MAS Worker 后灰度开放。
 
-后续能力演进（长期记忆、Agent Handoff、MAS 产品化）的实施路线见 [`docs/26.7.26/ai_agent/CygnusX平台Agent能力优化方案-记忆与多Agent协作.md`](../docs/26.7.26/ai_agent/CygnusX平台Agent能力优化方案-记忆与多Agent协作.md)。该方案是未来目标，不应反向作为本节“当前已实现”的证据。
+后续能力演进（长期记忆、Agent Handoff、MAS 产品化）的实施路线见 [`docs/update_info/26.7.26/ai_agent/OmicHub平台Agent能力优化方案-记忆与多Agent协作.md`](../docs/update_info/26.7.26/ai_agent/OmicHub平台Agent能力优化方案-记忆与多Agent协作.md)。该方案是未来目标，不应反向作为本节“当前已实现”的证据。
 
 ---
 
