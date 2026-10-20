@@ -103,6 +103,26 @@ celery_app.conf.task_routes = {
 
 # 定时任务
 celery_app.conf.beat_schedule = {
+    "memory-embedding-coverage": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.memory.collect_embedding_coverage",
+        "schedule": settings.memory_embedding_coverage_interval_seconds,
+        "options": {"queue": "analysis"},
+    },
+    "memory-weekly-consolidation": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.memory.consolidate_memory",
+        "schedule": crontab(minute=0, hour=3, day_of_week="sun"),
+        "options": {"queue": "analysis"},
+    },
+    "memory-settle-idle-sessions": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.memory.settle_idle_sessions",
+        "schedule": 300.0,
+        "options": {"queue": "analysis"},
+    },
+    "memory-purge-recall-batches": {
+        "task": "cygnusx.infrastructure.celery_app.tasks.memory.purge_recall_batches",
+        "schedule": crontab(minute=15, hour=4),
+        "options": {"queue": "analysis"},
+    },
     "project-report-reconcile": {
         "task": "cygnusx.infrastructure.celery_app.tasks.project_reports.reconcile_project_reports",
         "schedule": 60.0,

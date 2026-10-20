@@ -255,6 +255,14 @@ def _route_clarify_card_event(origin_content: str, round_no: int) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def allow_memory_runtime_in_room_fixtures(monkeypatch):
+    monkeypatch.setattr(
+        "cygnusx.application.services.memory_runtime_policy.is_memory_runtime_enabled",
+        AsyncMock(return_value=True),
+    )
+
+
 @pytest.mark.asyncio
 async def test_respond_records_manager_reply_evidence(monkeypatch) -> None:
     events = [
@@ -2093,13 +2101,18 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
 
     monkeypatch.setattr(
         "cygnusx.application.services.agentteams_room_response_service.get_settings",
-        lambda: SimpleNamespace(memory_v2_enabled=True),
+        lambda: SimpleNamespace(memory_v2_enabled=True, memory_embedding_model_filter_enabled=False, memory_hybrid_retrieval_enabled=False, memory_focus_per_project_enabled=False),
     )
     monkeypatch.setattr(
         "cygnusx.application.services.agent_memory_service.get_settings",
         lambda: SimpleNamespace(
-            memory_v2_enabled=True,
+            memory_v2_enabled=True, memory_embedding_model_filter_enabled=False, memory_hybrid_retrieval_enabled=False, memory_focus_per_project_enabled=False,
             memory_fact_time_decay_lambda=0.02,
+            memory_importance_weight=0.5, memory_recall_weight=0.25,
+            memory_recall_boost_scale=20, memory_recall_tracking_enabled=False,
+            memory_prompt_max_bytes=6000,
+            memory_prompt_blocks_max_bytes=2800,
+            memory_prompt_episode_max_bytes=3200,
             agent_memory_embedding_model="text-embedding-3-small",
         ),
     )
@@ -2110,7 +2123,7 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
     def _fact(fact_id: int, agent_id: str, scope: str, content: str) -> SimpleNamespace:
         return SimpleNamespace(
             id=fact_id, agent_id=agent_id, scope=scope, content=content,
-            similarity=0.9, created_at=datetime.now(UTC),
+            similarity=0.9, created_at=datetime.now(UTC), importance=5, recall_count=0,
         )
 
     partitions = {
@@ -2128,13 +2141,16 @@ async def test_memory_context_excludes_other_agent_partitions(monkeypatch) -> No
             store_calls.append(agent_id)
             return list(partitions.get(agent_id, []))[:limit]
 
+        async def recent_episodes(self, *args, **kwargs):
+            return []
+
     monkeypatch.setattr(
         "cygnusx.application.services.agent_memory_service.PostgresFactStore", _FakeStore
     )
 
     blocks = [
-        SimpleNamespace(id=1, agent_id="", block_name="preferences", content="偏好块：英文标注"),
-        SimpleNamespace(id=2, agent_id="agent-scrna", block_name="current_focus", content="不应出现"),
+        SimpleNamespace(id=1, agent_id="", block_name="preferences", project_id=None, version=1, char_limit=2000, content="偏好块：英文标注"),
+        SimpleNamespace(id=2, agent_id="agent-scrna", block_name="current_focus", project_id=None, version=1, char_limit=2000, content="不应出现"),
     ]
 
     class _FakeScalars:
@@ -2510,3 +2526,21 @@ async def test_triage_candidates_include_internal_staff_without_chat_entry(monke
 
     assert decision is not None
     assert decision["agent_id"] == "agent-data"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_site_disabled_memory_does_not_build_room_context(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "cygnusx.application.services.agentteams_room_response_service.get_settings",
+        lambda: SimpleNamespace(memory_v2_enabled=True),
+    )
+    monkeypatch.setattr(
+        "cygnusx.application.services.memory_runtime_policy.is_memory_runtime_enabled",
+        AsyncMock(return_value=False),
+    )
+    service = _service(agentteams=SimpleNamespace(),
+                       registry=_registry("agent-general", with_manager=True), redis=FakeRedis())
+    assert await service._build_memory_context(
+        requester_ref="owner", agent_id="agentteams-manager", current_message="question"
+    ) == ""

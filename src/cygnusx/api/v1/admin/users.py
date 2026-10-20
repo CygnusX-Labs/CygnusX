@@ -7,7 +7,11 @@ from fastapi import APIRouter, Query
 from sqlalchemy import desc, func, select
 
 from cygnusx.api.deps import AdminTotpRequired, CurrentUserId, DbSession
-from cygnusx.application.schemas.agent_memory import AgentMemoryDTO, MemoryOverviewDTO
+from cygnusx.application.schemas.agent_memory import (
+    AgentMemoryDTO,
+    MemoryConsolidationRollbackRequest,
+    MemoryOverviewDTO,
+)
 from cygnusx.application.schemas.auth import UserRegisterRequest
 from cygnusx.application.schemas.user import UserModulesUpdateRequest
 from cygnusx.application.services.agent_memory_service import AgentMemoryService
@@ -20,6 +24,23 @@ from cygnusx.middleware.rbac import (
 )
 
 router = APIRouter()
+
+
+@router.post("/consolidation-runs/{run_key}/rollback", summary="回滚一次记忆整理")
+async def rollback_memory_consolidation(
+    run_key: str,
+    req: MemoryConsolidationRollbackRequest,
+    current_user_id: CurrentUserId,
+    _admin: AdminRequired,
+    db: DbSession,
+) -> dict[str, object]:
+    """管理员执行记忆整理回滚；dry-run 只检查冲突，不改数据。"""
+    from cygnusx.infrastructure.memory.consolidation import MemoryConsolidator
+
+    result = await MemoryConsolidator(db, None).rollback_run(
+        run_key, current_user_id, dry_run=req.dry_run
+    )
+    return result
 
 
 @router.get("", summary="所有用户列表")
@@ -83,7 +104,7 @@ async def list_user_memories(
     _admin: AdminRequired,
     db: DbSession,
     agent_id: str | None = Query(None, max_length=50),
-    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary|episode)$"),
 ) -> list[AgentMemoryDTO]:
     """管理员只读查看用户长期记忆，含归档记录以支持审计。"""
     memories = await AgentMemoryService(db).list_memories(
@@ -101,7 +122,8 @@ async def get_user_memory_overview(
     _admin: AdminRequired,
     db: DbSession,
     agent_id: str | None = Query(None, max_length=50),
-    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+    project_id: str | None = Query(None, max_length=50),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary|episode)$"),
     include_archived: bool = Query(True),
 ) -> MemoryOverviewDTO:
     from cygnusx.infrastructure.database.models.user import UserModel
@@ -111,6 +133,7 @@ async def get_user_memory_overview(
     overview = await AgentMemoryService(db).get_memory_overview(
         str(user_id),
         agent_id=agent_id,
+        project_id=project_id,
         scope=scope,
         include_archived=include_archived,
     )

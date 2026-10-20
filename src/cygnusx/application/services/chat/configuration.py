@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from cygnusx.application.services.network_request_tool import NETWORK_REQUEST_TOOL_SCHEMA
+from cygnusx.application.services.network_request_tool import (
+    NETWORK_REQUEST_TOOL_SCHEMA as NETWORK_REQUEST_TOOL_SCHEMA,
+)
 from cygnusx.infrastructure.config.prompt_loader import get_prompt
 
 BUILTIN_ASSISTANTS: list[dict[str, Any]] = [
@@ -193,6 +195,11 @@ MEMORY_V2_WRITE_DISCIPLINE = """## 记忆写入纪律
 只在用户明确陈述持久偏好、纠正错误做法，或告知影响后续工作的项目事实时调用记忆工具。
 不要记录一次性任务、当前对话已有的临时上下文、未确认的推测、密钥凭据或隐私信息。
 更新记忆块前先读取内容并携带 version，做增量修改，不要整块重写无关部分。
+记忆工具成功保存后，简短复述实际保存的内容；调用失败时明确说明，不能声称已记住。
+遗忘只归档指定事实；若工具返回 residual_hints，如实说明摘要/画像中可能仍有相关表述，
+先请用户确认清理，不自行改写或批量删除；检查关闭/失败/无命中均不能声称已彻底清除所有复述。
+使用召回记忆作答时自然说明“根据你之前提到的……”；没有召回证据时不要虚构历史。
+若已注入上次会话进展，且与用户本轮请求相关，可用一句话自然接续；不要机械复述无关历史。
 """
 
 HANDOFF_SYSTEM_PROMPT_SUFFIX = """## Agent 转交协议

@@ -21,3 +21,17 @@ def test_vector_rejects_wrong_dimension_and_non_finite_values() -> None:
         bind([1, 2])
     with pytest.raises(ValueError, match="finite"):
         bind([1, float("nan"), 3])
+
+
+@pytest.mark.unit
+def test_cosine_result_is_float_while_query_parameter_remains_vector() -> None:
+    from sqlalchemy import Float, column
+    from sqlalchemy.dialects import postgresql
+
+    distance = column("embedding", Vector(3)).cosine_distance([1.0, 2.0, 3.0])
+    assert isinstance(distance.type, Float)
+    processor = distance.type.result_processor(postgresql.dialect(), None)
+    assert (processor(0.25) if processor else 0.25) == 0.25
+    assert isinstance(distance.right.type, Vector)
+    assert distance.right.type.bind_processor(None)([1.0, 2.0, 3.0]) == "[1,2,3]"
+    assert "<=>" in str(distance.compile(dialect=postgresql.dialect()))

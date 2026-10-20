@@ -2,19 +2,19 @@
 
 > **用途**：记录现阶段知识库模块的完整实现方式——数据模型、内容导入、页面展示、编辑审核流、AI 助手检索集成与 AI 配置中心管理入口。
 >
-> **最后更新**：2026-07-31
+> **最后核对**：2026-10-20
 >
-> **时点说明**：本文件为 2026-07-31 时点的实现快照，所述实现已演进，部分引用（路径、行号）已失效；当前实现以代码为准。特别注意：本文 §6 关于「子串匹配」检索的结论已被 pgvector 向量检索取代，不再反映现状。
+> **状态说明**：本文以当前工作区代码为准，知识检索已接入 pgvector 分块索引。代码状态不证明真实 PostgreSQL/Provider 的运行性能或生产准入；检索边界见 §6.4。
 
 > **适用范围**：实验室知识库页面、单细胞知识库、AI 助手 `knowledge_search` 工具、AI 配置中心「知识库」管理卡片。
 
 ## 这个知识库模块如何发挥作用
 
-知识库模块把 Markdown、SOP、实验经验和专题教程变成可审核、可版本化、可检索的知识资产，并让页面用户和 AI 助手共享同一份事实来源。导入脚本或页面编辑先写入 `kb_documents` 与 `doc_revisions`，当前版本和待审核版本由双指针区分；管理员审核通过后，`KnowledgeIndexService` 对已发布正文切块、生成 embedding 并写入 pgvector 索引。
+知识库模块把 Markdown、SOP、实验经验和专题教程变成可审核、可版本化、可检索的共享证据。导入脚本或页面编辑写入 `kb_documents` 与 `doc_revisions`，以 `current_rev`/`pending_rev` 区分当前版本和待审版本；只有当前已发布版本进入 `KnowledgeIndexService`，按 Markdown 标题切块写入 `kb_chunks`。配置可用时生成 1024 维 embedding；缺配置或生成失败仍保留 chunk 正文供关键词检索。
 
-两个消费方按不同开关读取同一数据：实验室页面只展示 `show_in_lab=true` 且启用的知识库，AI `knowledge_search` 只检索 `ai_searchable=true` 且启用的库，并附带项目范围过滤。检索由 `VectorRetrievalService` 做权限感知的向量/关键词混合召回，返回带 `citation_id`、文档链接和摘录的结果；模型只得到检索证据，用户仍可打开完整文档页面。
+两个消费方按不同开关读取同一数据：实验室页面只展示 `show_in_lab=true` 且启用的知识库；AI `knowledge_search` 只检索已发布、可检索且启用的内容，并施加文档/知识库项目范围过滤。`VectorRetrievalService` 优先做有界 pgvector 召回；embedding 不可用或没有向量命中时回退关键词候选。关键词特征用于候选加权排序，不代表始终合并两套候选。工具返回 `citation_id`、文档链接、章节和摘录；Chat 提示词要求模型标注引用，前端把有效引用渲染为可打开的来源。
 
-编辑、审核、问题反馈、导入和索引更新都留下版本与审计记录。静态图片、PDF 和数据附件保留在 `/docs-static`，正文只保存可版本化的 Markdown 和引用。这样知识库既能作为人类维护的文档系统，也能作为 Agent 的证据检索层，并通过 `knowledge_bases` 的三个开关控制展示、AI 检索和整体启停。
+编辑、审核、问题反馈、导入和索引更新都留下版本与审计记录。静态图片、PDF 和数据附件按资产策略保留；可索引附件文本可成为文档衍生 chunk，原始附件不会因此成为个人记忆。知识库是经维护的证据层；用户偏好、项目经历和会话进展由独立的长期记忆系统承载，二者不会自动互相写入，详见[记忆架构](CygnusX_memory_architecture.md#知识库与长期记忆的边界)。
 
 ### 运行架构图：知识资产到页面与 AI 的双消费链路
 
@@ -24,10 +24,10 @@ flowchart TB
     Doc --> Rev[doc_revisions\ncurrent_rev / pending_rev]
     Rev --> Review{审核状态}
     Review -->|发布| Index[KnowledgeIndexService\n切块 · embedding · 索引]
-    Index --> Vector[(pgvector knowledge chunks)]
+    Index --> Chunks[(kb_chunks: section + content + model-tagged vector)]
     Review --> Audit[doc_audit_logs · editors · issues]
     Doc --> Lab[实验室知识库页面\nshow_in_lab + is_enabled]
-    Vector --> Search[VectorRetrievalService\nai_searchable + project scope]
+    Chunks --> Search[VectorRetrievalService\npublished + KB/document project scope]
     Search --> Tool[knowledge_search function tool]
     Tool --> Agent[Chat / Studio / Worker Agent]
     Lab --> Reader[DocTree · Reader · Editor]
@@ -56,8 +56,8 @@ sequenceDiagram
     Docs->>Index: index published revision
     Index->>DB: chunks + embeddings + citation metadata
     Agent->>Tool: knowledge_search(query, limit)
-    Tool->>Search: permission-aware hybrid retrieval
-    Search->>DB: vector/keyword query + KB switches
+    Tool->>Search: permission-filtered vector-first retrieval
+    Search->>DB: permission-filtered vector recall; keyword fallback/rerank
     DB-->>Search: ranked citations and excerpts
     Search-->>Tool: citation_id + URL + excerpt
     Tool-->>Agent: evidence payload for answer
@@ -70,7 +70,7 @@ sequenceDiagram
 知识库模块承载两类内容：
 
 - **实验室知识库**：面向用户的公共文档 / SOP / 实验经验，在「实验室知识库」页面展示，支持协同编辑与审核流；
-- **单细胞知识库**等专题库：由批量脚本导入的教程笔记（209 篇 scRNA-seq 笔记），**不在实验室知识库页面展示**，仅作为 AI 助手的检索语料。
+- **单细胞知识库**等专题库：由批量导入脚本维护的教程语料；是否在实验室知识库页面展示由 `show_in_lab` 控制，AI 检索由单独开关控制。文档数量以当前数据库为准。
 
 核心设计：**一份数据，两个消费方**——页面展示与 AI 检索共用同一套表，通过 `knowledge_bases` 上的开关控制各自的可见范围。
 
@@ -80,15 +80,16 @@ sequenceDiagram
 
 ```text
 内容来源
-  ├─ docs/knowledge/meta.yaml          未入库文档的导航兜底（文件系统）
+  ├─ docs/knowledge/meta.yaml          知识库页面标题等展示配置
   ├─ scripts/import_scseq_knowledge.py 单细胞笔记批量导入（docs/knowledge/sc-seq/**.md）
   └─ 用户在「实验室知识库」页在线编辑（走审核流）
         │
         ▼
 PostgreSQL
   ├─ knowledge_bases    知识库资源（lab / scseq / ...，含三个开关）
-  ├─ kb_documents       文档主表（kb_id 归属知识库）
+  ├─ kb_documents       文档主表（KB/项目归属、发布状态）
   ├─ doc_revisions      修订版本（正文存这里，current_rev / pending_rev 双指针）
+  ├─ kb_chunks          发布正文衍生的章节块与 1024 维向量
   ├─ doc_editors        编辑者统计
   ├─ doc_audit_logs     审核日志
   └─ kb_issues          文档问题反馈
@@ -96,37 +97,37 @@ PostgreSQL
         ├── 消费方 A：实验室知识库页面（只读 show_in_lab=true 的库）
         │     GET /docs/knowledge → KnowledgeView.vue（DocTree / DocReader / DocEditor）
         │
-        ├── 消费方 B：AI 助手检索（只读 ai_searchable=true 且 is_enabled=true 的库）
-        │     knowledge_search function tool → _knowledge_search()（子串匹配）
+        ├── 消费方 B：AI 助手检索（已发布 + ai_searchable=true + is_enabled=true）
+        │     knowledge_search function tool → VectorRetrievalService → 引用证据
         │
         └── 管理方：AI 配置中心 · 资源中心 · 知识库 Tab
               /admin/knowledge-bases → KnowledgeResourceTab.vue（开关 / 新建 / 删除 / 文档清单）
 
-静态附件：docs/ 目录整体挂载为 /docs-static（main.py:368-371），
-图片、PDF、数据文件不入库，正文中的相对链接导入时重写为 /docs-static/ 绝对 URL。
+静态附件通过 /docs-static 提供；索引时 KnowledgeAssetService 可将可读附件内容补入派生 chunk，原始附件与版本化 Markdown 正文仍按各自存储路径管理。
 ```
 
 ---
 
 ## 3. 数据模型
 
-### 3.1 knowledge_bases（知识库资源表，2026-07-31 新增）
+### 3.1 knowledge_bases（知识库资源表）
 
 `src/cygnusx/infrastructure/database/models/knowledge_base.py`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `id` | String(64) PK | 机器标识（code），如 `lab`、`scseq` |
+| `project_id` | String(64) nullable | 可选项目归属；NULL 表示平台级知识库 |
 | `name` | String(128) | 显示名 |
 | `description` | Text | 描述 |
 | `show_in_lab` | Boolean | 是否在「实验室知识库」页面展示该库文档 |
 | `ai_searchable` | Boolean | 是否允许 AI（`knowledge_search`）检索该库 |
 | `is_enabled` | Boolean | 整体停用（页面与检索同时失效） |
 
-迁移 `alembic/versions/o3p4q5r6s7t8_add_knowledge_bases.py` 预置两行并回填存量文档：
+迁移 `alembic/versions/o3p4q5r6s7t8_add_knowledge_bases.py` 建立知识库资源表并回填存量文档；具体条数以运行时数据库为准，不在架构基线固定快照计数。
 
-- `lab`：实验室知识库，show_in_lab=✓，ai_searchable=✓（存量非 scseq 文档，5 篇）
-- `scseq`：单细胞知识库，show_in_lab=✗，ai_searchable=✓（`doc_id LIKE 'scseq-%'` 的 209 篇）
+- `lab`：实验室知识库，页面可展示且可供 AI 检索。
+- `scseq`：单细胞专题知识库，可供 AI 检索；页面可见性由 `show_in_lab` 控制。
 
 ### 3.2 kb_documents（文档主表）
 
@@ -139,6 +140,7 @@ PostgreSQL
 | `status` | 1=已发布 2=待审核 3=已拒绝 |
 | `current_rev` / `pending_rev` | 当前生效版本 / 待审核版本（FK → doc_revisions） |
 | `kb_id` | **归属知识库**（FK → knowledge_bases.id，NULL 按 lab 语义向后兼容） |
+| `project_id` | 可选项目边界；NULL 表示平台级文档 |
 
 ### 3.3 doc_revisions（修订表）
 
@@ -149,6 +151,10 @@ PostgreSQL
 - `doc_editors`（`knowledge_editor.py`）：每文档编辑者及编辑次数；
 - `doc_audit_logs`（`knowledge_audit_log.py`）：审核操作留痕；
 - `kb_issues`（`knowledge_issue.py`）：读者对文档提交的问题反馈。
+
+### 3.5 kb_chunks（检索索引表）
+
+`src/cygnusx/infrastructure/database/models/knowledge_chunk.py` 定义文档分块索引：`document_id` + `chunk_index` 保证每篇文档内 chunk 顺序唯一；`section_path` 保留 Markdown 标题，`content` 存检索文本，`content_hash` 用于增量索引比较。迁移 `p4q5r6s7t8u9` 建表，`j4k5l6m7n8o9` 为知识库/文档增加 `project_id`，并为 `kb_chunks` 增加 `embedding vector(1024)`、`embedding_model` 与 HNSW cosine 索引。chunk 是当前发布版本的派生检索数据，不取代 `doc_revisions` 正文。
 
 ---
 
@@ -167,9 +173,15 @@ PostgreSQL
 
 **原始 md 文件不动**，重写后的内容只写 DB；附件（PDF/R/数据文件）不入库，经 `/docs-static` 直接下载。
 
-### 4.2 meta.yaml 兜底
+### 4.2 页面展示配置
 
-`docs_service.list_knowledge` 合并两个数据源：DB 优先；`docs/knowledge/meta.yaml` 里有但 DB 没有的文档也会列出（fallback 读文件系统渲染），保证未入库文档不丢。
+`docs_service.list_knowledge` 从数据库读取属于 `show_in_lab=true` 且 `is_enabled=true` 知识库的文档；`docs/knowledge/meta.yaml` 用于页面标题等展示配置，不会把未入库文档追加到导航，也不构成 AI 检索索引。AI 检索数据源是已发布文档的 `kb_chunks`。
+
+### 4.3 发布索引与增量对齐
+
+`DocsService` 在文档初次发布和审核通过时，将新 `current_rev` 正文交给 `KnowledgeIndexService.index_document()`，同一数据库事务中删除该文档旧 chunks、按 Markdown 标题切分并写新 chunks；写入失败随发布事务回滚。每个 section 按最多 1800 字符切片，无 chunk overlap；chunk 内容哈希与 embedding 模型标签用于对账。
+
+Web 启动后，`KNOWLEDGE_AUTO_REINDEX_ENABLED=true`（Settings 默认 true）异步扫描当前已发布版本。多实例用 PostgreSQL advisory lock 避免重复重建；`ensure_document_indexed()` 比较 chunk 顺序、内容哈希和模型标签，只重建变化文档。此任务失败会记录告警日志但不阻塞 Web 启动。缺 embedding 模型或 Provider 生成失败时仍保存无向量 chunk，后续检索可走关键词路径。
 
 ---
 
@@ -177,42 +189,45 @@ PostgreSQL
 
 - 前端：`frontend/src/views/KnowledgeView.vue` + `components/knowledge/`（DocTree 分类树 / DocReader / DocEditor / DocCreateModal / AuditPendingPanel / DocIssues / DocEditors），路由 `knowledge` / `knowledge-doc`；
 - 后端：`src/cygnusx/api/v1/docs.py`（`/docs/knowledge*` 路由组）+ `application/services/docs_service.py`；
-- **范围过滤**（`docs_service.py:46-91`）：查询时 `OUTER JOIN knowledge_bases`，只返回 `kb_id IS NULL` 或 `show_in_lab=true AND is_enabled=true` 的文档——scseq 库因此不出现在页面中；
+- **范围过滤**：导航列表按所属知识库的 `show_in_lab=true AND is_enabled=true` 过滤；文档详情也校验知识库可见状态。项目级隔离是 AI 检索链路的过滤条件，不应与页面列表权限混为一谈；
 - 编辑走审核流：`PUT /docs/knowledge/{doc_id}` 写入 `pending_rev`，管理员在 `audit/pending` 审核通过后才切到 `current_rev`；`GET .../history|editors|issues` 提供历史、编辑者与问题反馈。
 
 ---
 
 ## 6. AI 助手集成（knowledge_search 工具）
 
-**关键结论：不是向量嵌入 / RAG，不走 MCP——是平台内置 function tool，直接查库做子串匹配。**
+**关键结论：知识库通过平台内置 function tool 提供检索增强，不走 MCP。文档按版本进入 `kb_chunks`，运行时优先 pgvector 召回，并保留关键词回退。**
 
 ### 6.1 工具挂载
 
-`chat_service.py:1513-1518`：普通聊天中，模型支持 function calling 时把 `KNOWLEDGE_SEARCH_TOOL`（schema 定义在 `chat_service.py:249-274`）挂进本次请求的 tools；Studio 模式由 `STUDIO_TOOL_SCHEMAS` 自带同一工具。参数仅 `query`（关键词）+ `limit`（1-8，缺省 5）。
+普通聊天在模型支持 function calling 时将 `KNOWLEDGE_SEARCH_TOOL` 纳入本次请求工具表；Studio 工具 schema 也暴露同一功能。工具参数为 `query` 与 `limit`（1–8，默认 5）。工具是否实际调用由执行路径和模型工具选择决定。
 
 ### 6.2 系统提示引导
 
-工具挂上后自动追加 `KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX`（`chat_service.py:337-341`）：指示 LLM 遇到单细胞/生信流程、参数阈值、实验经验、平台使用问题时**先检索再作答**，查不到要如实说明。**是否调用、用什么关键词，由 LLM 自主判断**——用户看到的"思考：调用知识库"即此。
+工具挂载后可追加 `KNOWLEDGE_SEARCH_SYSTEM_PROMPT_SUFFIX`：提示模型遇到平台知识、实验方法或生信流程问题先检索并基于结果回答，查不到时如实说明。是否调用及 query 仍取决于当前 Agent/运行时配置和模型工具选择。
 
 ### 6.3 分发与执行
 
-- 分发：`chat_service.py:2305`（流式循环）与 `:2642`（统一分发函数）→ `_knowledge_search_chat`（`chat_service.py:3137`）→ 委托 `studio_tools._knowledge_search`；
-- 检索（`studio_tools.py:795-852`）：
-  1. SQL：`kb_documents JOIN doc_revisions ON current_rev`，条件 `status=1` + 所属知识库 `ai_searchable=true AND is_enabled=true`（`kb_id IS NULL` 向后兼容），按更新时间取**前 500 篇**；
-  2. Python 内存中对 `标题 + 分类 + 正文` 做**大小写不敏感子串包含匹配**；
-  3. 命中后截取关键词前后约 **600 字符**摘录，返回 `{doc_id, title, category, excerpt, url: /knowledge/{doc_id}}`，最多 `limit` 条。
+- 分发：Chat Runtime、Studio 与部分子 Agent 的执行器将调用委托到 `studio_tools._knowledge_search`；普通 Chat 使用独立数据库 session 执行已提交知识索引的只读查询；
+- 检索（`studio_tools._knowledge_search` → `VectorRetrievalService.search_knowledge`）：
+  1. 数据库查询只取已发布文档及其 `kb_chunks`，并过滤 `knowledge_bases.ai_searchable/is_enabled`、兼容 `kb_id IS NULL` 的旧文档，以及文档和知识库的项目范围。项目会话可读平台级与当前项目内容，不读其他项目文档。
+  2. 查询归一化后最多 1000 字符；使用 `AGENT_MEMORY_EMBEDDING_MODEL` 生成 1024 维查询向量，对 chunk 做 cosine/HNSW 候选检索，候选上限 `max(limit * 8, 40)`。缺模型、生成失败、维度不符、SQL 向量查询失败或没有向量命中时，改用关键词候选。
+  3. 关键词候选最多 12 个词，匹配 chunk 正文和文档标题。向量候选存在时，关键词覆盖只用于对向量候选加权排序，并不额外并入关键词候选集。
+  4. 结果摘录最多 600 字符，工具 limit 限制为 1–8、默认 5；结果含稳定 `citation_id`、`doc_id`、标题、类别、章节路径、摘录、URL 和排序分数。
 - 结果作为 tool message 回填，LLM 基于摘录组织回答；`/knowledge/{doc_id}` 链接可跳转全文页。
+
+Chat 可从多个运行时入口调用该工具，最终复用 `_knowledge_search`；普通 Chat 为知识读取使用独立数据库 session，避免与请求 session 并发使用。提示词要求模型在相应陈述后输出 `[[citation:<citation_id>]]`。前端只把当前消息来源集合中存在的引用标记渲染为来源按钮；无对应检索来源的标记不生成可点击引用。
 
 ### 6.4 已知局限
 
 | 局限 | 影响 |
 |---|---|
-| 子串匹配无语义理解 | 同义词/中英文不互通（"线粒体比例" ≠ "mitochondrial percentage"） |
-| 500 篇扫描上限 | 文档量再大时新文档可能进不了扫描窗口 |
-| 600 字符摘录 | LLM 只能看到片段，上下文不全 |
-| 关键词由 LLM 生成 | query 取得差时召回为零，依赖系统提示引导改写 |
+| 不是双路并集/RRF | 向量候选存在时，关键词只重排向量候选；关键实体对应的其他 chunk 可能未进入候选 |
+| 600 字符摘录 | 模型只看到局部片段，复杂章节上下文可能不足 |
+| 单 query | 不自动拆分/扩展多条查询，召回受模型给出的 query 质量影响 |
+| 共享 embedding 配置 | 知识 chunk 与个人记忆使用独立表和索引，但共用 `AGENT_MEMORY_EMBEDDING_MODEL`；换模型须重建知识索引并分别评估两类召回 |
 
-**演进方向**：向量检索（embedding + pgvector）。改造点集中——只需替换 `_knowledge_search` 的取数与匹配逻辑，工具 schema、分发链路、页面过滤均不动。
+**当前能力边界**：pgvector 分块索引、关键词回退、关键词候选重排和可追溯引用已接入；双路 RRF、检索质量基线、真实 pgvector 查询计划与生产延迟验收尚未完成。
 
 ---
 

@@ -2687,13 +2687,16 @@ class AgentTeamsRoomResponseService:
         """L4 房间读取面记忆装配（M2）：共享层（profile/preference）+ Manager 分区。
 
         仅 memory_v2 开启时注入；v2 off 或装配失败返回空串，行为与接入前一致。
-        3200 字节预算与 <user_memory> 不可信包装由 build_prompt_context_v2 保证。
+        配置字节预算与 <user_memory> 不可信包装由 build_prompt_context_v2 保证。
         """
         if not get_settings().memory_v2_enabled:
             return ""
         try:
             from cygnusx.application.services.agent_memory_service import AgentMemoryService
+            from cygnusx.application.services.memory_runtime_policy import is_memory_runtime_enabled
 
+            if not await is_memory_runtime_enabled(self._db):
+                return ""
             return await AgentMemoryService(self._db).build_prompt_context_v2(
                 requester_ref, agent_id, current_message
             )

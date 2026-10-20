@@ -42,26 +42,48 @@
         </div>
       </div>
 
+      <section v-if="residualReport" class="memory-section memory-residuals" aria-label="遗忘残留提示">
+        <header class="memory-section__header">
+          <div><h4>已归档指定事实</h4><p>{{ residualStatusText }}</p></div>
+          <NButton v-if="residualReport.scan_status !== 'disabled'" text :loading="scanning" @click="refreshResidualReport">重新检查</NButton>
+        </header>
+        <p class="memory-management__hint">仅检查当前范围内的词面匹配，可能漏掉换种说法的复述；不会自动改写画像或摘要。</p>
+        <ul v-if="residualReport.residual_hints.length" class="memory-residual-list">
+          <li v-for="hint in residualReport.residual_hints" :key="`${hint.kind}:${hint.id}`">
+            <div><strong>{{ hint.kind === 'block' ? (blockLabels[hint.block_name || ''] || '记忆块') : hint.kind === 'episode' ? '会话进展' : '其他事实' }}</strong><p>{{ hint.excerpt }}</p></div>
+            <NButton size="small" :disabled="hint.kind === 'block' && !editableResidualBlock(hint)" @click="handleResidual(hint)">
+              {{ hint.kind === 'block' ? '编辑相关块' : '一并归档' }}
+            </NButton>
+          </li>
+        </ul>
+      </section>
+
       <section class="memory-section" aria-labelledby="memory-blocks-title">
         <header class="memory-section__header">
           <div><h4 id="memory-blocks-title">命名记忆块</h4><p>Agent 每轮优先参考的稳定上下文。</p></div>
           <NTag size="small" round>{{ blocks.length }} 个</NTag>
         </header>
-        <div v-if="blocks.length" class="memory-block-grid">
-          <article v-for="block in blocks" :key="block.id" class="memory-block-card">
+        <div v-if="blocks.length">
+          <div v-for="group in blockGroups" :key="group.key" class="memory-block-group">
+            <h5>{{ group.label }}</h5>
+            <p v-if="group.key !== 'personal' && group.key !== 'general' && !overview?.focus_per_project_enabled">项目焦点暂未启用，已保存内容保留为只读。</p>
+            <div class="memory-block-grid">
+          <article v-for="block in group.blocks" :key="block.id" class="memory-block-card">
             <div class="memory-block-card__header">
               <span class="memory-block-card__icon"><NIcon :component="blockIcons[block.block_name] || LayersOutline" /></span>
-              <div><strong>{{ blockLabels[block.block_name] || block.block_name }}</strong><small>版本 v{{ block.version }}</small></div>
-              <NButton text size="small" @click="openBlockEditor(block)">编辑</NButton>
+              <div><strong>{{ blockLabels[block.block_name] || block.block_name }}</strong><small>{{ block.status === 'archived' ? '历史归档 · ' : '' }}版本 v{{ block.version }}</small></div>
+              <NButton text size="small" :disabled="!canEditBlock(block)" @click="openBlockEditor(block)">编辑</NButton>
             </div>
             <p v-if="block.content" class="memory-block-card__content">{{ block.content }}</p>
             <div v-else class="memory-block-card__empty"><NIcon :component="DocumentTextOutline" /><span>还没有内容</span></div>
             <div class="memory-block-card__meter"><span :style="{ width: `${Math.min(100, (block.content.length / block.char_limit) * 100)}%` }" /><small>{{ block.content.length }} / {{ block.char_limit }} 字符</small></div>
           </article>
+            </div>
+          </div>
         </div>
         <div v-else class="memory-empty-state memory-empty-state--compact">
           <span class="memory-empty-state__icon"><NIcon :component="LayersOutline" /></span>
-          <div><strong>命名记忆块尚未初始化</strong><p>完成记忆迁移后，Agent 的长期偏好会在这里集中管理。</p></div>
+          <div><strong>命名记忆块尚未初始化</strong><p>首次保存记忆或更新命名块后会自动初始化。</p></div>
         </div>
       </section>
 
@@ -100,7 +122,7 @@
       <template #footer>
         <NSpace justify="end">
           <NButton @click="editorVisible = false">取消</NButton>
-          <NButton type="primary" :loading="saving" :disabled="!editingContent.trim()" @click="saveBlock">保存记忆块</NButton>
+          <NButton type="primary" :loading="saving" @click="saveBlock">保存记忆块</NButton>
         </NSpace>
       </template>
     </NModal>
@@ -128,23 +150,19 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import { DocumentTextOutline, LayersOutline, RefreshOutline, SparklesOutline, TimeOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
+import { forgetMemory, recordMemoryResidualAction, updateMemoryBlock } from '@/api/memory'
+import type { MemoryBlock, MemoryForgetContext, MemoryForgetResponse, MemoryResidualHint } from '@/types/memory'
+import { groupMemoryBlocks } from '@/utils/memoryBlocks'
 
 const props = defineProps<{ agentId?: string }>()
 const message = useMessage()
 const dialog = useDialog()
 
-interface MemoryBlock {
-  id: number
-  agent_id: string
-  block_name: string
-  content: string
-  char_limit: number
-  version: number
-}
 interface MemoryFact {
+  project_id?: string | null
   id: number
   agent_id: string
-  scope: 'profile' | 'project' | 'preference' | 'summary'
+  scope: 'profile' | 'project' | 'preference' | 'summary' | 'episode'
   content: string
   keywords: string[]
   confidence: number
@@ -158,6 +176,7 @@ interface LegacyMemory {
   content: string
 }
 interface MemoryOverview {
+  focus_per_project_enabled: boolean
   mode: 'legacy' | 'v2'
   agent_ids: string[]
   blocks: MemoryBlock[]
@@ -172,12 +191,25 @@ const saving = ref(false)
 const editorVisible = ref(false)
 const editingBlock = ref<MemoryBlock | null>(null)
 const editingContent = ref('')
+const residualReport = ref<MemoryForgetResponse | null>(null)
+const residualContext = ref<MemoryForgetContext>({})
+const scanning = ref(false)
+const residualStatusText = computed(() => {
+  const report = residualReport.value
+  if (!report) return ''
+  if (report.scan_status === 'disabled') return '残留检查尚未启用，其他载体可能仍有相关表述。'
+  if (report.scan_status === 'failed') return '归档已完成，残留检查失败，请重试。'
+  if (report.scan_status === 'partial') return '当前仅显示部分可能残留的位置，仍可能有更多相关表述。'
+  return report.residual_hints.length ? '以下位置可能仍有相关表述，请逐项确认是否清理。' : '当前范围内未发现词面命中；这不代表所有复述已清除。'
+})
 const blocks = computed(() => overview.value?.blocks || [])
+const blockGroups = computed(() => groupMemoryBlocks(blocks.value))
 const facts = computed(() => overview.value?.facts || [])
 const legacyMemories = computed(() => overview.value?.legacy_memories || [])
 const blockLabels: Record<string, string> = { profile: '用户画像', preferences: '长期偏好', current_focus: '当前焦点' }
 const blockIcons: Record<string, any> = { profile: DocumentTextOutline, preferences: SparklesOutline, current_focus: TimeOutline }
-const scopeLabels: Record<string, string> = { profile: '用户画像', preference: '偏好', project: '项目', summary: '摘要' }
+const memoryStatusLabels: Record<string, string> = { active: '有效', superseded: '已替换', archived: '已归档' }
+const scopeLabels: Record<string, string> = { profile: '用户画像', preference: '偏好', project: '项目', summary: '摘要', episode: '会话进展' }
 
 function formatDate(value: string | null) {
   if (!value) return '—'
@@ -188,6 +220,7 @@ function formatDate(value: string | null) {
 const factColumns: DataTableColumns<MemoryFact> = [
   { title: '范围', key: 'scope', width: 100, align: 'center', render: (row) => h(NTag, { size: 'small', round: true }, { default: () => scopeLabels[row.scope] || row.scope }) },
   { title: '事实内容', key: 'content', width: 330, ellipsis: { tooltip: true } },
+  { title: '状态', key: 'status', width: 90, align: 'center', render: (row) => (memoryStatusLabels[row.status] || row.status) },
   { title: '置信度', key: 'confidence', width: 90, align: 'center', render: (row) => `${Math.round(row.confidence * 100)}%` },
   { title: '记录时间', key: 'created_at', width: 120, align: 'center', render: (row) => formatDate(row.created_at) },
   {
@@ -198,12 +231,13 @@ const factColumns: DataTableColumns<MemoryFact> = [
 ]
 
 async function loadOverview(refresh = false) {
+  const agentAtStart = props.agentId
   if (refresh) refreshing.value = true
   else loading.value = true
   try {
     const params = props.agentId ? { agent_id: props.agentId } : undefined
     const { data } = await apiClient.get<MemoryOverview>('/users/me/memory-overview', { params })
-    overview.value = data
+    if (agentAtStart === props.agentId) overview.value = data
   } catch (error: any) {
     message.error(error?.response?.data?.detail || '记忆加载失败')
   } finally {
@@ -212,7 +246,12 @@ async function loadOverview(refresh = false) {
   }
 }
 
+function canEditBlock(block: MemoryBlock) {
+  return block.status !== 'archived' && (!block.project_id || overview.value?.focus_per_project_enabled === true)
+}
+
 function openBlockEditor(block: MemoryBlock) {
+  if (!canEditBlock(block)) return
   editingBlock.value = block
   editingContent.value = block.content
   editorVisible.value = true
@@ -223,13 +262,11 @@ async function saveBlock() {
   if (!block) return
   saving.value = true
   try {
-    const { data } = await apiClient.patch<MemoryBlock>(`/users/me/memory-blocks/${block.block_name}`, {
-      content: editingContent.value,
-      expected_version: block.version,
-    }, { params: { agent_id: block.agent_id } })
+    const data = await updateMemoryBlock(block, editingContent.value)
     if (overview.value) overview.value.blocks = overview.value.blocks.map((item) => item.id === data.id ? data : item)
     editorVisible.value = false
     message.success('记忆块已更新')
+    await refreshResidualReport()
   } catch (error: any) {
     message.error(error?.response?.data?.detail || '记忆块更新失败，请刷新后重试')
   } finally {
@@ -237,16 +274,59 @@ async function saveBlock() {
   }
 }
 
-function archiveFact(id: number) {
+async function refreshResidualReport() {
+  const source = residualReport.value
+  if (!source || source.scan_status === 'disabled') return
+  const agentAtStart = props.agentId
+  scanning.value = true
+  try {
+    const result = await forgetMemory(Number(source.memory_id), residualContext.value)
+    if (agentAtStart === props.agentId && residualReport.value?.memory_id === source.memory_id) residualReport.value = result
+  } catch {
+    message.error('残留检查未完成，请重试')
+  } finally {
+    scanning.value = false
+  }
+}
+
+function editableResidualBlock(hint: MemoryResidualHint) {
+  const block = blocks.value.find((item) => item.id === hint.id)
+  return block && canEditBlock(block) ? block : undefined
+}
+
+function handleResidual(hint: MemoryResidualHint) {
+  const source = residualReport.value
+  if (!source) return
+  if (hint.kind === 'block') {
+    const block = editableResidualBlock(hint)
+    if (!block) return
+    void recordMemoryResidualAction(source.memory_id, hint).catch(() => undefined)
+    openBlockEditor(block)
+  } else {
+    void recordMemoryResidualAction(source.memory_id, hint).catch(() => undefined)
+    archiveFact(hint.id, { agent_id: hint.agent_id || props.agentId, project_id: hint.project_id || undefined }, true)
+  }
+}
+
+function archiveFact(id: number, context?: MemoryForgetContext, residualCleanup = false) {
+  const fact = facts.value.find((item) => item.id === id)
+  const partition = context || { agent_id: props.agentId || fact?.agent_id || undefined, project_id: fact?.project_id || undefined }
+  const agentAtStart = props.agentId
   dialog.warning({
     title: '归档这条事实？',
-    content: '归档后它不会再参与后续召回，但来源记录仍保留。',
+    content: '归档后该条不会再参与召回；画像、摘要或其他事实中可能仍有相关表述。',
     positiveText: '归档',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await apiClient.delete(`/users/me/memories/${id}`)
+      const result = await forgetMemory(id, partition)
+      if (agentAtStart !== props.agentId) return
+      if (!residualCleanup) {
+        residualReport.value = result
+        residualContext.value = partition
+      }
       await loadOverview(true)
-      message.success('事实已归档')
+      if (residualCleanup) await refreshResidualReport()
+      message.success('指定事实已归档，请查看残留检查结果')
     },
   })
 }
@@ -279,7 +359,11 @@ function clearFacts() {
   })
 }
 
-watch(() => props.agentId, () => loadOverview())
+watch(() => props.agentId, () => {
+  residualReport.value = null
+  editorVisible.value = false
+  void loadOverview()
+})
 onMounted(() => loadOverview())
 </script>
 
@@ -301,10 +385,16 @@ onMounted(() => loadOverview())
 .memory-metric__icon--primary { color: var(--arco-primary); background: var(--arco-primary-light); }
 .memory-metric__icon--violet { color: #7c5cff; background: color-mix(in srgb, #7c5cff 10%, var(--neutral-card)); }
 .memory-metric__icon--orange { color: #d88922; background: color-mix(in srgb, #d88922 12%, var(--neutral-card)); }
+.memory-residuals > .memory-management__hint { padding: 0 var(--space-lg); }
+.memory-residual-list { list-style: none; margin: 0; padding: var(--space-lg); }
+.memory-residual-list li { display: flex; justify-content: space-between; gap: var(--space-md); padding: var(--space-md) 0; border-bottom: 1px solid var(--neutral-border); }
+.memory-residual-list p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--neutral-text-2); }
 .memory-section { overflow: hidden; border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-card); }
 .memory-section__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); padding: var(--space-lg) var(--space-xl); border-bottom: 1px solid var(--neutral-border); }
 .memory-section__header h4 { margin: 0; color: var(--neutral-text-1); font-size: 15px; font-weight: 650; }
 .memory-section__header p { margin: 4px 0 0; color: var(--neutral-text-3); font-size: 12px; line-height: 1.5; }
+.memory-block-group > h5 { margin: var(--space-lg) var(--space-lg) 0; font-size: 13px; overflow-wrap: anywhere; }
+.memory-block-group > p { margin: var(--space-sm) var(--space-lg); color: var(--neutral-text-3); font-size: 12px; }
 .memory-block-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); padding: var(--space-lg); }
 .memory-block-card { min-width: 0; padding: var(--space-lg); border: 1px solid var(--neutral-border); border-radius: var(--radius-card); background: var(--neutral-fill-2); transition: border-color var(--motion-quick) ease-out, box-shadow var(--motion-quick) ease-out; }
 .memory-block-card:hover { border-color: color-mix(in srgb, var(--arco-primary) 30%, var(--neutral-border)); box-shadow: var(--shadow-card); }

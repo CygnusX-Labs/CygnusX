@@ -11,7 +11,10 @@ from cygnusx.infrastructure.database.models.agent import (
 from cygnusx.infrastructure.database.models.agent_memory import (
     AgentMemoryModel,
     MemoryBlockModel,
+    MemoryConsolidationBudgetModel,
+    MemoryConsolidationRunModel,
     MemoryFactModel,
+    MemoryRecallBatchModel,
     MemorySettlementModel,
 )
 from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
@@ -175,7 +178,10 @@ __all__ = [
     "AgentTeamsBridgeSettingsModel",
     "AgentMemoryModel",
     "MemoryBlockModel",
+    "MemoryConsolidationBudgetModel",
+    "MemoryConsolidationRunModel",
     "MemoryFactModel",
+    "MemoryRecallBatchModel",
     "MemorySettlementModel",
     "APIKeyModel",
     "UserModel",

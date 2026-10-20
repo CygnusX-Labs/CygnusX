@@ -25,13 +25,13 @@ async def test_memory_gate_short_circuits_when_feature_disabled(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_memory_gate_allows_database_free_runtime(monkeypatch) -> None:
+async def test_memory_gate_rejects_unverifiable_database_free_runtime(monkeypatch) -> None:
     monkeypatch.setattr(
         "cygnusx.core.config.get_settings",
         lambda: SimpleNamespace(memory_v2_enabled=True),
     )
 
-    assert await _Gates(None)._memory_runtime_enabled() is True
+    assert await _Gates(None)._memory_runtime_enabled() is False
 
 
 @pytest.mark.asyncio

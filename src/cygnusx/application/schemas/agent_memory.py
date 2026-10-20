@@ -9,7 +9,7 @@ from pydantic import Field
 
 from cygnusx.application.schemas.base import CygnusXBaseSchema
 
-MemoryScope = Literal["profile", "project", "preference", "summary"]
+MemoryScope = Literal["profile", "project", "preference", "summary", "episode"]
 
 
 class AgentMemoryDTO(CygnusXBaseSchema):
@@ -33,6 +33,9 @@ class AgentMemoryClearResponse(CygnusXBaseSchema):
 
 
 class MemoryBlockDTO(CygnusXBaseSchema):
+    project_id: str | None = None
+    status: str = "active"
+    superseded_by: int | None = None
     id: int
     agent_id: str
     block_name: str
@@ -44,6 +47,9 @@ class MemoryBlockDTO(CygnusXBaseSchema):
 
 
 class MemoryFactDTO(CygnusXBaseSchema):
+    importance: int = Field(default=5, ge=1, le=10)
+    recall_count: int = Field(default=0, ge=0)
+    project_id: str | None = None
     id: int
     agent_id: str
     scope: MemoryScope
@@ -59,13 +65,41 @@ class MemoryFactDTO(CygnusXBaseSchema):
 
 
 class MemoryBlockUpdateRequest(CygnusXBaseSchema):
-    content: str = Field(min_length=1)
+    content: str
     expected_version: int = Field(ge=1)
 
 
 class MemoryOverviewDTO(CygnusXBaseSchema):
+    focus_per_project_enabled: bool = False
     mode: Literal["legacy", "v2"]
     agent_ids: list[str] = Field(default_factory=list)
     blocks: list[MemoryBlockDTO] = Field(default_factory=list)
     facts: list[MemoryFactDTO] = Field(default_factory=list)
     legacy_memories: list[AgentMemoryDTO] = Field(default_factory=list)
+
+
+class MemoryResidualHintDTO(CygnusXBaseSchema):
+    kind: Literal["block", "fact", "episode"]
+    id: int
+    excerpt: str = Field(max_length=60)
+    agent_id: str
+    project_id: str | None = None
+    block_name: str | None = None
+
+
+class MemoryForgetResponse(CygnusXBaseSchema):
+    memory_id: str
+    forgotten: bool
+    scan_status: Literal["disabled", "complete", "partial", "failed"] = "disabled"
+    residual_hints: list[MemoryResidualHintDTO] = Field(default_factory=list)
+
+
+class MemoryResidualActionRequest(CygnusXBaseSchema):
+    source_id: int = Field(ge=1)
+    target_id: int = Field(ge=1)
+    kind: Literal["block", "fact", "episode"]
+    action: Literal["open_editor", "archive"]
+
+
+class MemoryConsolidationRollbackRequest(CygnusXBaseSchema):
+    dry_run: bool = False

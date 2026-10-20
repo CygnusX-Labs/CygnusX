@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -266,8 +266,49 @@ class Settings(BaseSettings):
     agent_memory_conflict_adjudication_enabled: bool = False
     agent_memory_conflict_adjudication_model: str = ""
     memory_v2_enabled: bool = False
+    memory_focus_per_project_enabled: bool = False
+    memory_embedding_model_filter_enabled: bool = False
+    memory_hybrid_retrieval_enabled: bool = False
+    memory_hybrid_vector_limit: int = Field(default=20, ge=1, le=100)
+    memory_hybrid_keyword_limit: int = Field(default=20, ge=1, le=100)
+    memory_hybrid_rrf_k: int = Field(default=60, ge=1, le=10000)
+    memory_hybrid_min_similarity: float | None = Field(
+        default=None, ge=-1, le=1, allow_inf_nan=False, validate_default=True,
+    )
+    memory_embedding_coverage_enabled: bool = False
+    memory_embedding_coverage_interval_seconds: int = Field(default=300, ge=60)
+    memory_forget_residual_scan_enabled: bool = False
+    memory_forget_residual_limit: int = Field(default=20, ge=1, le=100)
     memory_fact_time_decay_lambda: float = 0.02
+    memory_importance_weight: float = Field(default=0.5, ge=0)
+    memory_recall_weight: float = Field(default=0.25, ge=0)
+    memory_recall_boost_scale: int = Field(default=20, ge=1)
+    memory_recall_tracking_enabled: bool = True
+    memory_recall_batch_ttl_days: int = Field(default=14, ge=1)
+    memory_recall_batch_purge_limit: int = Field(default=5000, ge=100, le=20000)
+    memory_write_arbitration_enabled: bool = True
+    memory_consolidation_enabled: bool = True
+    memory_consolidation_max_calls: int = Field(default=20, ge=0, le=100)
+    memory_consolidation_max_groups: int = Field(default=20, ge=1, le=100)
+    memory_consolidation_lookback_days: int = Field(default=30, ge=1)
+    memory_consolidation_candidate_limit: int = Field(default=30, ge=1, le=100)
+    memory_consolidation_max_chars: int = Field(default=18000, ge=2000)
+    memory_consolidation_min_episodes: int = Field(default=2, ge=1)
+    memory_consolidation_timeout_seconds: float = Field(default=60, gt=0)
+    memory_cold_after_days: int = Field(default=90, ge=30)
+    memory_cold_max_importance: int = Field(default=3, ge=1, le=10)
+    memory_cold_batch_limit: int = Field(default=500, ge=1, le=5000)
     memory_settle_min_new_messages: int = 4
+    memory_settle_tail_enabled: bool = False
+    memory_settle_idle_seconds: int = Field(default=1800, ge=60)
+    memory_settle_tail_min_messages: int = Field(default=2, ge=1)
+    memory_settle_tail_scan_limit: int = Field(default=200, ge=1, le=1000)
+    memory_settle_candidate_limit: int = Field(default=30, ge=1, le=100)
+    memory_settle_max_messages: int = Field(default=30, ge=1)
+    memory_settle_max_chars: int = Field(default=8000, ge=1)
+    memory_prompt_max_bytes: int = Field(default=6000, ge=512)
+    memory_prompt_blocks_max_bytes: int = Field(default=2800, ge=0)
+    memory_prompt_episode_max_bytes: int = Field(default=3200, ge=0)
     memory_extraction_model: str = "deepseek-v4-flash"
     multi_expert_consultation_enabled: bool = False
     multi_expert_consultation_max_experts: int = 3
@@ -656,6 +697,27 @@ class Settings(BaseSettings):
     # ===== 敏感信息脱敏 =====
     # 逗号分隔的敏感词列表，AI 对话送 LLM 前 / 落库前替换为 [REDACTED]（不可逆）
     sensitive_keywords: list[str] = []
+
+    @field_validator("memory_hybrid_min_similarity", mode="before")
+    @classmethod
+    def parse_memory_similarity_floor(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            raise ValueError("Similarity floor must be a calibrated numeric value")
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("memory_hybrid_min_similarity")
+    @classmethod
+    def validate_memory_hybrid_prerequisites(
+        cls, value: float | None, info: ValidationInfo,
+    ) -> float | None:
+        # A field-level error avoids echoing the entire Settings input (including keys).
+        if (
+            info.data.get("memory_hybrid_retrieval_enabled")
+            and str(info.data.get("agent_memory_embedding_model") or "").strip()
+            and (not info.data.get("memory_embedding_model_filter_enabled") or value is None)
+        ):
+            raise ValueError("Hybrid vector retrieval requires model filtering and a baseline-calibrated similarity floor")
+        return value
 
     @field_validator("mas_workspace_root", mode="before")
     @classmethod

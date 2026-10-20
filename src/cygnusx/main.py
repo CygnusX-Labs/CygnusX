@@ -94,6 +94,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     settings = get_settings()
     logger.info(f"启动 {settings.app_name} (env={settings.app_env})")
+    logger.info(
+        "memory.configuration v2_enabled={} embedding_configured={} "
+        "extraction_model={} consolidation_enabled={}",
+        settings.memory_v2_enabled,
+        bool(settings.agent_memory_embedding_model.strip()),
+        settings.memory_extraction_model,
+        settings.memory_consolidation_enabled,
+    )
+    if (
+        settings.memory_v2_enabled or settings.agent_memory_semantic_retrieval_enabled
+    ) and not settings.agent_memory_embedding_model.strip():
+        logger.warning(
+            "memory.embedding_not_configured: set AGENT_MEMORY_EMBEDDING_MODEL to a verified "
+            "1024-dimensional model; memory retrieval currently uses keyword fallback"
+        )
 
     # --- 模块注册表：启动时硬校验，语法错误/key 重复/缺字段直接拒绝启动 ---
     from cygnusx.infrastructure.config.module_registry import init_module_registry

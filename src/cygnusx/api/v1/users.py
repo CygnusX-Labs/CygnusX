@@ -12,7 +12,9 @@ from cygnusx.application.schemas.agent_memory import (
     AgentMemoryDTO,
     MemoryBlockDTO,
     MemoryBlockUpdateRequest,
+    MemoryForgetResponse,
     MemoryOverviewDTO,
+    MemoryResidualActionRequest,
 )
 from cygnusx.application.schemas.user import (
     ChangePasswordRequest,
@@ -23,7 +25,7 @@ from cygnusx.application.schemas.user import (
 from cygnusx.application.services import UserService
 from cygnusx.application.services.agent_memory_service import AgentMemoryService
 from cygnusx.core.config import get_settings
-from cygnusx.core.exceptions import AuthorizationError
+from cygnusx.core.exceptions import AuthorizationError, BusinessError, NotFoundError
 from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
 from cygnusx.infrastructure.database.models.user import UserModel
@@ -68,7 +70,7 @@ async def list_my_memories(
     current_user_id: CurrentUserId,
     db: DbSession,
     agent_id: str | None = Query(None, max_length=50),
-    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary|episode)$"),
     project_id: str | None = Query(None, max_length=64),
 ) -> list[AgentMemoryDTO]:
     """列出当前用户可管理的跨会话 Agent 记忆。"""
@@ -83,12 +85,14 @@ async def get_my_memory_overview(
     current_user_id: CurrentUserId,
     db: DbSession,
     agent_id: str | None = Query(None, max_length=50),
-    scope: str | None = Query(None, pattern="^(profile|project|preference|summary)$"),
+    project_id: str | None = Query(None, max_length=50),
+    scope: str | None = Query(None, pattern="^(profile|project|preference|summary|episode)$"),
     include_archived: bool = Query(False),
 ) -> MemoryOverviewDTO:
     overview = await AgentMemoryService(db).get_memory_overview(
         current_user_id,
         agent_id=agent_id,
+        project_id=project_id,
         scope=scope,
         include_archived=include_archived,
     )
@@ -101,14 +105,26 @@ async def update_my_memory_block(
     req: MemoryBlockUpdateRequest,
     current_user_id: CurrentUserId,
     db: DbSession,
-    agent_id: str = Query(..., min_length=1, max_length=50),
+    agent_id: str = Query("", max_length=50),
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> MemoryBlockDTO:
+    if project_id is not None:
+        if block_name != "current_focus" or not get_settings().memory_focus_per_project_enabled:
+            raise BusinessError("项目焦点编辑当前不可用")
+        from cygnusx.infrastructure.database.models.project import ProjectModel
+
+        owned = await db.scalar(select(ProjectModel.id).where(
+            ProjectModel.id == project_id, ProjectModel.user_id == uuid.UUID(current_user_id),
+        ))
+        if owned is None:
+            raise NotFoundError("项目不存在")
     block = await AgentMemoryService(db).update_memory_block(
         current_user_id,
         agent_id,
         block_name,
         req.content,
         req.expected_version,
+        project_id=str(project_id) if project_id is not None else None,
     )
     return MemoryBlockDTO(**block)
 
@@ -145,13 +161,37 @@ async def rebuild_my_memories(
     return {"status": "queued", "queued": len(sessions)}
 
 
+@router.post("/me/memories/{memory_id}/forget", response_model=MemoryForgetResponse)
+async def forget_my_memory(
+    memory_id: str, current_user_id: CurrentUserId, db: DbSession,
+    agent_id: Annotated[str | None, Query(max_length=50)] = None,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> MemoryForgetResponse:
+    """归档指定记忆，返回可见范围内的词面残留提示。"""
+    result = await AgentMemoryService(db).forget_memory(
+        user_id=current_user_id, memory_id=memory_id, agent_id=agent_id,
+        project_id=str(project_id) if project_id else None,
+    )
+    return MemoryForgetResponse(**result)
+
+
+@router.post("/me/memory-residual-actions", status_code=204)
+async def record_memory_residual_action(
+    req: MemoryResidualActionRequest, current_user_id: CurrentUserId, db: DbSession,
+) -> None:
+    """记录本人报告的处理点击；不授予权限、不修改记忆。"""
+    from cygnusx.application.services.memory_residual_service import MemoryResidualService
+
+    await MemoryResidualService(db).record_action(current_user_id, **req.model_dump())
+
+
 @router.delete("/me/memories/{memory_id}", status_code=204)
 async def delete_my_memory(
     memory_id: str,
     current_user_id: CurrentUserId,
     db: DbSession,
 ) -> None:
-    """永久删除当前用户的一条记忆。"""
+    """兼容删除入口：v2 归档；需要残留提示时使用 forget 入口。"""
     await AgentMemoryService(db).delete_memory(current_user_id, memory_id)
 
 

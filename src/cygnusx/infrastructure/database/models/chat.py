@@ -366,6 +366,12 @@ class ChatMessageModel(Base):
         UniqueConstraint("message_id", name="chat_messages_message_id_key"),
         Index("idx_chat_messages_session_created", "session_id", "created_at"),
         Index(
+            "ix_chat_messages_session_created_message",
+            "session_id",
+            "created_at",
+            "message_id",
+        ),
+        Index(
             "uq_chat_messages_matrix_event",
             "session_id",
             text("(metadata_json ->> 'matrix_event_id')"),

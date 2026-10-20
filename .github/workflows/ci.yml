@@ -46,6 +46,8 @@ jobs:
         run: uv run python scripts/render_worker_config.py --check
       - name: 文档计数一致性校验（ORM/迁移/镜像/工具/安全清单）
         run: uv run python scripts/check_doc_counts.py
+      - name: 记忆配置示例漂移校验
+        run: uv run python scripts/check_env_example_drift.py
       - name: ruff check
         run: uv run ruff check src/ tests/
       - name: pytest（单测 + 契约 + 默认可跑 e2e）

@@ -69,6 +69,7 @@
 | --- | --- |
 | `wiki/features/workflows.md` | 拆分“外部 MCP”与“内置 Chat”两条链：外部含 `cygnusx_get_flow_detail`；内置为 `platform_list_flows` → `cygnusx_prepare` → 确认 → `cygnusx_submit`，无 detail 工具；注明动态 per-flow 工具受 `LEGACY_PIPELINE_TOOLS` 控制 |
 | `wiki/development/flow-extension.md` | 同上，分通道描述并补默认开关语义 |
+| `wiki/architecture/flow-runtime.md` | 顶部流程图与 AI 接入段同样拆为两条固定链（外部 MCP 含 detail，内置 Chat 无 detail）；第六阶段二次检索发现的同类遗漏，已按同一口径修正 |
 | `ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md` | 删除“Chat 内置与外部 MCP 同名单”表述，改为两条固定链 |
 | `ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md` | 19 工具/18 启用；`tools_schema.yaml` 静态 45 条；动态 Flow 工具由 `FlowToolSchemaCompiler` 运行时生成，不写入该文件 |
 | `wiki/features/toolbox.md` | 同上，并保留“以文件为准” |
@@ -104,7 +105,7 @@
 | L3 | 发现报告未被索引 | 收入 `ARCHITECTURE_DESIGN/README.md` §7 并在条目中标注审计快照性质 | 已解决 |
 | L4 | “14 images”历史记录 | 保留原文，追加日期与历史快照说明 | 已解决（按要求不改写历史） |
 
-**补充验证**：全库检索未再发现下列现状表述：`87 表`、`39 个模型`、`88+ 迁移`、`43+`、`24 项`、`14 镜像`、`同名单`；仅剩的历史行与历史评审条目均带日期或明确历史语境。
+**补充验证**：全库检索未再发现下列现状表述：`87 表`、`39 个模型`、`88+ 迁移`、`43+`、`24 项`、`14 镜像`、`同名单`；仅剩的历史行与历史评审条目均带日期或明确历史语境。第六阶段二次检索另在 `wiki/architecture/flow-runtime.md` 发现并修正两处内外 Flow 工具链混写（顶部流程图与 AI 接入段），修正后再次检索确认无同类现状表述。
 
 ---
 
@@ -139,7 +140,7 @@ make check-doc-counts
 | 2 | `uv run ruff check scripts/check_doc_counts.py` | All checks passed |
 | 3 | AST 解析 `scripts/check_doc_counts.py` | AST OK |
 | 4 | PyYAML 解析 `.github/workflows/ci.yml` | OK，jobs：gitleaks / backend / bridge / frontend |
-| 5 | 相对链接检查（113 个 Markdown，含本报告，跳过代码围栏） | 639 条相对链接，**0 条缺失**（链接检查中发现并修复 1 个既有断链，见 §2.4） |
+| 5 | 相对链接检查（140 个 Markdown：`ARCHITECTURE_DESIGN/` 45、`wiki/` 62、`docs/audits/` 31、根 `README.md`/`AGENTS.md`；跳过代码围栏与 `deprecated/`） | 686 条相对链接，**0 条缺失**（链接检查中发现并修复 1 个既有断链，见 §2.4） |
 | 6 | `git diff --stat -- src alembic deploy data flows tool_configs` | 空：未改运行逻辑、Schema、部署配置或工具注册表 |
 | 7 | 子模块状态检查 | `Protocol/FlowFrame`、`pipelines/{ATACFlow,RNAFlow,tools}` 仅有修订前既存脏状态，本次未进入子模块、未提交 |
 
@@ -168,7 +169,7 @@ studio_tools 28 | security_checks 15
 | --- | --- |
 | 11 项问题均有处理或待决策记录 | ✅ 全部在文档侧解决；代码侧未改 |
 | 文档现状表述无相互冲突 | ✅ 全库检索旧口径，仅剩带日期的历史记录 |
-| 链接与索引有效 | ✅ 639 条相对链接 0 缺失；README/Sidebar 未受破坏 |
+| 链接与索引有效 | ✅ 140 个 Markdown、686 条相对链接 0 缺失；README/Sidebar 未受破坏 |
 | 图与文字一致 | ✅ 流程图（Flow 双通道）与 Dataset 实体树均按新枚举改写 |
 | 历史快照未被破坏 | ✅ 2026-09-11、2026-07-17、2026-10-01 记录保留；仅新增历史标识 |
 | 未改运行逻辑/Schema/部署/权限 | ✅ `git diff` 对 `src/ alembic/ deploy/ data/ flows/ tool_configs/` 为空 |
@@ -191,10 +192,10 @@ studio_tools 28 | security_checks 15
 
 ## 8. 工作区说明
 
-修订前工作区已存在未提交内容（此前 Wiki 重写、根 README 路线图补充、记忆审计/路线图文档等），本次全部保留：
+修订主体已提交为 `d451c7e1`（`docs: 对齐架构与 Wiki 文档事实并加入计数校验`），包含 §2 的文档、`scripts/check_doc_counts.py`、Makefile 与 CI 入口。第六阶段二次复核新增的 `wiki/architecture/flow-runtime.md` 修正与本报告补记当前未提交：
 
-- 既有未提交文档与新增 Wiki 页面未被还原、未被覆盖；
-- 本次修订产生的文件见 §2，均可通过 `git diff` / `git status` 审查；
-- 未创建提交，未推送，未进入任何子模块。
+- 修订前既有的未提交文档与新增 Wiki 页面未被还原、未被覆盖；
+- 当前未提交改动仅 `wiki/architecture/flow-runtime.md` 与本报告，可通过 `git diff` 审查；
+- 未推送，未进入任何子模块；子模块仅有修订前既存的脏状态。
 
 **结论**：11 项审核问题已在文档侧闭环，计数校验与 CI 入口已建立；运行代码、数据库 Schema、部署配置与权限机制保持原样。

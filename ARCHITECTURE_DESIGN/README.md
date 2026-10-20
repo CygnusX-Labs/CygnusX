@@ -157,8 +157,13 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `CygnusX_domain_prompt_sedimentation.md` — 领域知识渐进沉淀设计（提案草案 v1，2026-08-06，未实施）
 注意：主题是"提示词/领域资产沉淀"而非 agent 并行。四环闭环：感知层 `DomainMissEvent`（`domain_miss_events` 表、脱敏）→ 候选聚合（指纹聚类、`domain_candidates`、浮现阈值）→ 沉淀层（轻=知识库条目/中=skill/重=Domain Pack，LLM 起草+人审+回放测试）→ 生效层（`data/ai/domains/<domain>.yaml` 热重载、灰度、回滚）。依赖 Domain Pack 设计，V0–V3 分阶段，附四条反模式红线。
 
-### `CygnusX_memory_architecture.md` — AI 记忆系统（as-built，2026-08-22）
-自研 PostgreSQL + pgvector 薄层记忆（不依赖 mem0），v2 灰度：三层数据模型——归档 `agent_memories`、常驻 `memory_blocks`（profile/preferences/current_focus 块、乐观锁）、召回 `memory_facts`（HNSW cosine、`content_hash` 幂等、`superseded_by` 修正）；`AgentMemoryService`/`FactStore`、四个记忆工具、异步 `settle_session_memory`（游标增量+区间幂等）；Studio 文件型记忆（MEMORY.md 索引 + `.memory/*.md` + Git 检查点）；L4 AgentTeams 会诊接入与注入纪律；`memory_v2_enabled` 开关、OTel 观测指标、已落地/未收口清单与修改指南。§1 含 mem0 遗留现状更正（2026-10-03）：引擎代码已删除，遗留 `mem0_memories` 表 + `MEM0_*` 配置段为受保护迁移残留。
+### `CygnusX_memory_architecture.md` — AI 记忆系统（as-built 工作区代码基线，2026-10-20；未部署，运行验收待完成）
+
+[当前记忆架构](CygnusX_memory_architecture.md)：记录数据库长期记忆、Studio 文件记忆与知识库证据检索的职责边界；覆盖 user/agent/project 分区、同模型过滤与 RRF 混合召回、预算注入、显式写入、SQL 游标 settle/尾批、周度整理与按 run 回滚、遗忘残留提示、TTL 回执、管理 API/UI 和迁移回退。默认 v2 及新增检索/尾批开关关闭；真实 PostgreSQL/pgvector、Provider/Worker/Beat、质量基线、看板和告警仍待验收，不能将工作区代码等同生产启用。
+
+### `CygnusX_memory_embedding_operations.md` — 记忆模型切换运行手册（as-built 工具契约，运行验收待完成）
+
+[运行手册](CygnusX_memory_embedding_operations.md)：同模型向量过滤的默认关闭开关、旧模型词面补位、显式 DSN 的 dry-run/分批重嵌入、同库 Provider 选择、覆盖率/样本新鲜度指标、真实 EXPLAIN 与质量门禁、向量重建的回退边界。当前未部署，不代表生产准入或真实模型验证通过。
 
 ### `CygnusX_memory_optimization_audit.md` — 记忆系统现状审计与优化路线（审计+路线，2026-10-20；非 as-built）
 对 v2 记忆链路的代码、配置、运行数据与前端投影做三方对账：配置矩阵（`MEMORY_V2_ENABLED` / embedding / 抽取模型 / 站点开关 / 工具包授权）、读取-工具写入-settle-管理端-Studio-L4 全链路图、`memory_blocks`/`memory_facts`/`memory_settlements` 数据模型与分区语义、本机运行证据（0 blocks / 10 条事实且全无向量 / 82 次 settlement）；按 P0–P2 列出 4 个 P0（召回恒空、v2 遗忘工具失效、项目隔离缺失、抽取失败永久跳区间）与共享分区、block 生命周期、管理端 gate、embedding 模型耦合、Studio 跨会话等 P1/P2；给出 Phase 0–4 修复顺序、验收清单与需人工决策项（D1–D7）。**现状基线仍以 `CygnusX_memory_architecture.md` 为准，本文用于优化排期与回归验收。**
@@ -206,8 +211,8 @@ L1 生信工具箱（`/tools`）的后端框架与跨链路全景：`src/cygnusx
 ### `CygnusX_worker_images_plan.md` — Worker 轻量镜像计划（提案）
 `Dockerfile.worker` 边界：python:3.11-slim + Celery + Snakemake + Micromamba，不打包流程/参考基因组/Conda 环境；运行时挂载约定（`/opt/cygnusx/pipelines:ro`、`.conda_envs` 按内容哈希复用）；六步实施（依赖盘点、compose 挂载、`SNAKEMAKE_CONDA_PREFIX`、PUID/PGID 与并发预热、构建验证）；验收标准、风险与 Rule 级容器化/Slurm/K8s 演进方向。
 
-### `CygnusX_knowledge_architecture.md` — 知识库架构（as-built 快照，2026-07-31）
-"一份数据两个消费方"（人类页面 + AI 检索）：`knowledge_bases`（show_in_lab/ai_searchable/is_enabled 三开关）、`kb_documents` 双指针版本、`doc_revisions`、`doc_editors`/`doc_audit_logs`/`kb_issues` 六表与迁移；`import_scseq_knowledge.py` 幂等导入 209 篇单细胞笔记；页面 `api/v1/docs.py` 过滤与编辑审核流；§6 `knowledge_search` 子串匹配现状（**已被 pgvector 向量检索取代**，见 memory/database 文档）；管理端 CRUD。
+### `CygnusX_knowledge_architecture.md` — 知识库架构（as-built，2026-10-20；真实运行验收待完成）
+“一份内容、页面与 AI 两个消费方”：`knowledge_bases` 展示/AI/启停开关，`kb_documents` + `doc_revisions` 双指针审核，`kb_chunks` Markdown 章节索引与 1024 维 pgvector/HNSW；发布/编辑后重建 chunk，启动时通过互斥任务增量对齐已发布索引；AI function tool `knowledge_search` 复用项目/库可见性过滤、向量召回、关键词回退/候选重排和引用 ID，Chat 前端将有效 citation marker 展示为来源。检索不是向量与关键词双路 RRF；与个人记忆的边界、索引更新、管理 API 和限制见本文。真实 pgvector/Provider/P95 验收仍待完成。
 
 ### `CygnusX_network_architecture.md` — 平台网络配置架构（as-built 快照，2026-09-21）
 梳理平台所有出站/入站网络路径、白名单与 SSRF 校验标准：五条独立网络路径（chat 工具出站、Studio 沙盒每会话内网 + CONNECT 代理、终端沙盒 `cygnusx-sandbox-net`、web_search 后端 SearchProvider、宿主机翻墙客户端 fake-ip DNS）；各沙盒 network 白名单与 Egress Proxy 域名清单；fake-ip（198.18.0.0/15）误判问题的根因与修复记录。涉及沙盒网络、出站白名单或代理配置的修改前必读。

@@ -5,13 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy import update
 
 from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
 from cygnusx.application.services.agent_memory_service import AgentMemoryService
 from cygnusx.core.exceptions import BusinessError
 from cygnusx.infrastructure.database.models.chat import ChatSessionModel
-from cygnusx.infrastructure.database.models.agent_memory import MemoryBlockModel
 
 
 class AgentMemoryToolService:
@@ -22,6 +20,17 @@ class AgentMemoryToolService:
         if context is None:
             raise BusinessError("长期记忆工具需要受控的会话调用上下文")
         return AgentMemoryService(context.db)
+
+    @staticmethod
+    async def _assert_runtime(context: ToolInvocationContext | None, user_id: str) -> None:
+        from cygnusx.application.services.memory_runtime_policy import is_memory_runtime_enabled
+
+        if context is None:
+            raise BusinessError("长期记忆工具需要受控的会话调用上下文")
+        if context.user_id != user_id:
+            raise BusinessError("记忆身份与调用上下文不一致")
+        if not await is_memory_runtime_enabled(context.db):
+            raise BusinessError("平台记忆功能当前不可用或已被管理员关闭")
 
     @staticmethod
     def _memory_agent_id(scope: str, context: ToolInvocationContext | None) -> str | None:
@@ -35,7 +44,10 @@ class AgentMemoryToolService:
         if context is None:
             return None
         session = await context.db.scalar(
-            select(ChatSessionModel).where(ChatSessionModel.session_id == context.session_id)
+            select(ChatSessionModel).where(
+                ChatSessionModel.session_id == context.session_id,
+                ChatSessionModel.user_id == context.user_id,
+            )
         )
         return session.project_id if session else None
 
@@ -49,6 +61,7 @@ class AgentMemoryToolService:
         context: ToolInvocationContext | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        await self._assert_runtime(context, user_id)
         result = await self._service(context).save_memory(
             user_id=user_id,
             content=content,
@@ -62,7 +75,8 @@ class AgentMemoryToolService:
             "success": True,
             "memory_id": result["memory"]["id"],
             "action": result["action"],
-            "summary": "已保存跨会话记忆。",
+            "content": result["memory"]["content"],
+            "summary": f"已记住：{result['memory']['content']}",
         }
 
     async def update_memory(
@@ -75,6 +89,7 @@ class AgentMemoryToolService:
         context: ToolInvocationContext | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        await self._assert_runtime(context, user_id)
         result = await self._service(context).update_memory(
             user_id=user_id,
             memory_id=memory_id,
@@ -97,8 +112,18 @@ class AgentMemoryToolService:
         context: ToolInvocationContext | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
-        result = await self._service(context).forget_memory(user_id=user_id, memory_id=memory_id)
-        return {"success": True, **result, "summary": "已遗忘指定记忆。"}
+        await self._assert_runtime(context, user_id)
+        result = await self._service(context).forget_memory(
+            user_id=user_id, memory_id=memory_id,
+            agent_id=context.agent_id if context else None,
+            project_id=await self._project_id(context),
+        )
+        summary = "已归档该条记忆；词面检查不能保证清除所有复述。"
+        if result.get("residual_hints"):
+            summary = "已归档该条，但摘要、画像或其他事实中可能仍有相关表述，请确认是否清理。"
+        elif result.get("scan_status") in {"disabled", "failed"}:
+            summary = "已归档该条，残留检查未启用或未完成；其他载体可能仍有相关表述。"
+        return {"success": True, **result, "summary": summary}
 
     async def search_memory(
         self,
@@ -110,6 +135,7 @@ class AgentMemoryToolService:
         context: ToolInvocationContext | None = None,
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        await self._assert_runtime(context, user_id)
         result = await self._service(context).search_memory(
             user_id=user_id,
             query=query,
@@ -132,34 +158,13 @@ class AgentMemoryToolService:
     ) -> dict[str, Any]:
         if context is None or not context.agent_id:
             raise BusinessError("更新记忆块需要当前 Agent 上下文")
-        if block_name not in {"profile", "preferences", "current_focus"}:
-            raise BusinessError("无效的记忆块名称")
-        block = await context.db.scalar(
-            select(MemoryBlockModel).where(
-                MemoryBlockModel.user_id == user_id,
-                MemoryBlockModel.agent_id == context.agent_id,
-                MemoryBlockModel.block_name == block_name,
-            )
+        await self._assert_runtime(context, user_id)
+        result = await self._service(context).update_memory_block(
+            user_id, context.agent_id, block_name, content, expected_version,
+            project_id=await self._project_id(context) if block_name == "current_focus" else None,
         )
-        if block is None:
-            raise BusinessError("记忆块尚未初始化，请先执行记忆迁移任务")
-        if len(content) > block.char_limit:
-            raise BusinessError(f"超出块容量 {block.char_limit} 字符，请精简后重试")
-        result = await context.db.execute(
-            update(MemoryBlockModel)
-            .where(
-                MemoryBlockModel.id == block.id,
-                MemoryBlockModel.version == expected_version,
-            )
-            .values(content=content, version=expected_version + 1)
-        )
-        if result.rowcount == 0:
-            fresh = await context.db.scalar(
-                select(MemoryBlockModel).where(MemoryBlockModel.id == block.id)
-            )
-            raise BusinessError(
-                f"块已被并发修改，最新内容为：{fresh.content if fresh else ''}，"
-                f"当前版本为 {fresh.version if fresh else '未知'}，请基于最新内容重试"
-            )
         await context.db.commit()
-        return {"success": True, "block_name": block_name, "version": expected_version + 1, "summary": "记忆块已更新。"}
+        return {
+            "success": True, "block_name": block_name, "version": result["version"],
+            "summary": "记忆块已更新。",
+        }

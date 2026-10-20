@@ -64,15 +64,20 @@
 
         <NCard title="命名记忆块" :bordered="false" class="admin-memory-card">
           <NEmpty v-if="!overview.blocks.length" description="暂无命名记忆块" />
-          <div v-else class="admin-block-grid">
-            <article v-for="block in overview.blocks" :key="block.id" class="admin-block">
+          <div v-else>
+            <section v-for="group in blockGroups" :key="group.key">
+              <h4 class="admin-block-group-title">{{ group.label }}</h4>
+              <div class="admin-block-grid">
+            <article v-for="block in group.blocks" :key="block.id" class="admin-block">
               <div class="admin-block__title">
                 <strong>{{ blockLabels[block.block_name] || block.block_name }}</strong>
-                <NTag size="tiny" round>{{ block.agent_id }} · v{{ block.version }}</NTag>
+                <NTag size="tiny" round>{{ block.agent_id || '全局共享' }} · v{{ block.version }}{{ block.status === 'archived' ? ' · 历史归档' : '' }}</NTag>
               </div>
               <p>{{ block.content || '空' }}</p>
               <small>{{ block.content.length }} / {{ block.char_limit }} 字符</small>
             </article>
+              </div>
+            </section>
           </div>
         </NCard>
 
@@ -124,10 +129,11 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 import apiClient from '@/api/client'
+import type { MemoryBlock } from '@/types/memory'
+import { groupMemoryBlocks } from '@/utils/memoryBlocks'
 import PageHeader from '@/components/PageHeader.vue'
 
 interface AdminUser { id: string; username: string; nickname?: string | null; email?: string | null }
-interface MemoryBlock { id: number; agent_id: string; block_name: string; content: string; char_limit: number; version: number }
 interface MemoryFact { id: number; agent_id: string; scope: string; content: string; confidence: number; status: string; created_at: string | null; last_recalled_at: string | null }
 interface LegacyMemory { id: string; scope: string; content: string }
 interface MemoryOverview { mode: 'legacy' | 'v2'; agent_ids: string[]; blocks: MemoryBlock[]; facts: MemoryFact[]; legacy_memories: LegacyMemory[] }
@@ -140,15 +146,16 @@ const selectedUserId = ref<string | null>(null)
 const selectedAgentId = ref<string | null>(null)
 const selectedScope = ref<string | null>(null)
 const overview = ref<MemoryOverview | null>(null)
+const blockGroups = computed(() => groupMemoryBlocks(overview.value?.blocks || []))
 const blockLabels: Record<string, string> = { profile: '用户画像', preferences: '长期偏好', current_focus: '当前焦点' }
-const scopeLabels: Record<string, string> = { profile: '用户画像', preference: '偏好', project: '项目', summary: '摘要' }
+const scopeLabels: Record<string, string> = { profile: '用户画像', preference: '偏好', project: '项目', summary: '摘要', episode: '会话进展' }
 const scopeOptions = Object.entries(scopeLabels).map(([value, label]) => ({ value, label }))
 const userOptions = computed(() => users.value.map((user) => ({ value: user.id, label: `${user.nickname || user.username} · ${user.email || user.username}` })))
 const agentOptions = computed(() => [...new Set([
   ...(overview.value?.agent_ids || []),
   ...(overview.value?.blocks || []).map((item) => item.agent_id),
   ...(overview.value?.facts || []).map((item) => item.agent_id),
-])].map((value) => ({ value, label: value })))
+])].map((value) => ({ value, label: value || '全局共享' })))
 
 function formatDate(value: string | null) {
   if (!value) return '—'
@@ -157,7 +164,7 @@ function formatDate(value: string | null) {
 }
 
 const factColumns: DataTableColumns<MemoryFact> = [
-  { title: 'Agent', key: 'agent_id', width: 160, align: 'center', ellipsis: { tooltip: true } },
+  { title: 'Agent', key: 'agent_id', width: 160, align: 'center', ellipsis: { tooltip: true }, render: (row) => row.agent_id || '全局共享' },
   { title: '范围', key: 'scope', width: 100, align: 'center', render: (row) => h(NTag, { size: 'small', round: true }, { default: () => scopeLabels[row.scope] || row.scope }) },
   { title: '事实内容', key: 'content', width: 360, ellipsis: { tooltip: true } },
   { title: '状态', key: 'status', width: 100, align: 'center', render: (row) => h(NTag, { size: 'small', type: row.status === 'active' ? 'success' : 'warning', round: true }, { default: () => row.status }) },
@@ -223,6 +230,7 @@ onMounted(async () => {
 .admin-memory-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); }
 .admin-memory-summary span { display: block; color: var(--neutral-text-3); font-size: 13px; }
 .admin-memory-summary strong { display: block; margin-top: 6px; color: var(--neutral-text-1); font-size: 26px; }
+.admin-block-group-title { margin: var(--space-lg) 0 var(--space-md); font-size: 13px; overflow-wrap: anywhere; }
 .admin-block-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); }
 .admin-block { min-height: 140px; padding: var(--space-md); border: 1px solid var(--neutral-border); border-radius: var(--radius-md); }
 .admin-block__title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }

@@ -161,6 +161,8 @@ scripts/check_schema_drift.py   metadata ↔ 真实库对账（entrypoint fail-f
 
 `vector.py` 自带 `Vector(dimensions)` UserDefinedType（cosine_distance 走 `<=>`），刻意不引入 `pgvector` Python 包依赖。绑定侧校验维度与有限值，结果侧解析 `[]` 字符串。
 
+`cosine_distance` 的表达式结果类型显式为 Float，右侧查询参数仍按 Vector(dimensions) 绑定；距离不是向量，不能交给向量字符串解析器处理。`test_vector_type.py` 固化浮点结果与向量参数的双侧契约，知识/记忆查询回归共用该适配器；真实 asyncpg/pgvector 验证仍需对应集成环境。
+
 ### 4.5 relationship 与懒加载纪律
 
 `AsyncSession` 下访问未 preload 的 `lazy="select"` relationship 会抛 `MissingGreenlet`。规则：

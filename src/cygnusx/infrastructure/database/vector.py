@@ -7,8 +7,11 @@ Keeping this local avoids making the application import depend on the optional
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
+from sqlalchemy import Float
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.types import UserDefinedType
 
 
@@ -18,8 +21,8 @@ class Vector(UserDefinedType[list[float]]):
     cache_ok = True
 
     class comparator_factory(UserDefinedType.Comparator[list[float]]):  # noqa: N801
-        def cosine_distance(self, other: list[float]):
-            return self.expr.op("<=>")(other)
+        def cosine_distance(self, other: list[float]) -> ColumnElement[float]:
+            return self.expr.op("<=>", return_type=Float)(other)
 
     def __init__(self, dimensions: int) -> None:
         self.dimensions = dimensions
@@ -27,7 +30,7 @@ class Vector(UserDefinedType[list[float]]):
     def get_col_spec(self, **_kwargs: Any) -> str:
         return f"vector({self.dimensions})"
 
-    def bind_processor(self, _dialect: Any):
+    def bind_processor(self, _dialect: Any) -> Callable[[Any], str | None]:
         def process(value: list[float] | tuple[float, ...] | None) -> str | None:
             if value is None:
                 return None
@@ -42,7 +45,9 @@ class Vector(UserDefinedType[list[float]]):
 
         return process
 
-    def result_processor(self, _dialect: Any, _coltype: Any):
+    def result_processor(
+        self, _dialect: Any, _coltype: Any,
+    ) -> Callable[[Any], list[float] | None]:
         def process(value: str | list[float] | None) -> list[float] | None:
             if value is None or isinstance(value, list):
                 return value

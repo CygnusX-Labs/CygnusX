@@ -6,8 +6,14 @@ from uuid import uuid4
 
 import pytest
 
-from cygnusx.api.v1.admin.users import get_user_memory_overview
-from cygnusx.application.schemas.agent_memory import MemoryOverviewDTO
+from cygnusx.api.v1.admin.users import (
+    get_user_memory_overview,
+    rollback_memory_consolidation,
+)
+from cygnusx.application.schemas.agent_memory import (
+    MemoryConsolidationRollbackRequest,
+    MemoryOverviewDTO,
+)
 from cygnusx.core.exceptions import NotFoundError
 
 
@@ -45,6 +51,7 @@ async def test_admin_memory_overview_forwards_filters_and_returns_v2_data() -> N
             _admin="admin",
             db=db,
             agent_id="agent-rna",
+            project_id="project-a",
             scope="project",
             include_archived=False,
         )
@@ -54,6 +61,27 @@ async def test_admin_memory_overview_forwards_filters_and_returns_v2_data() -> N
     service_type.return_value.get_memory_overview.assert_awaited_once_with(
         str(user_id),
         agent_id="agent-rna",
+        project_id="project-a",
         scope="project",
         include_archived=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_admin_consolidation_rollback_passes_authenticated_actor() -> None:
+    db = AsyncMock()
+    expected = {"status": "dry_run", "run_key": "run-1", "conflicts": []}
+    with patch(
+        "cygnusx.infrastructure.memory.consolidation.MemoryConsolidator.rollback_run",
+        new=AsyncMock(return_value=expected),
+    ) as rollback:
+        result = await rollback_memory_consolidation(
+            "run-1",
+            MemoryConsolidationRollbackRequest(dry_run=True),
+            current_user_id="admin-7",
+            _admin=None,
+            db=db,
+        )
+
+    assert result == expected
+    rollback.assert_awaited_once_with("run-1", "admin-7", dry_run=True)
