@@ -269,6 +269,16 @@ flowchart TD
 
 ### Near-term engineering priorities
 
+The next platform development cycle has three connected priorities (planned; not a statement of current availability):
+
+| Priority | Next-step scope | Acceptance focus |
+| --- | --- | --- |
+| **Complete the collaboration room as a multi-agent system** | Strengthen role-based delegation, dependency-aware parallel work, shared project context, handoffs, review, interruption and recovery. | Demonstrate distinct Agents cooperating on an approved real case, with traceable contributions, controlled execution and failure recovery. |
+| **Fine-tune the memory system** | Improve retrieval, reliable settlement, project isolation, correction/forgetting, and consistent Chat/Studio/L4 semantics. This means system and retrieval tuning; model-weight fine-tuning is not assumed. | Verify relevant recall, isolation, retry safety, deletion behavior, latency and token cost against a fixed evaluation set. |
+| **Implement the three scientific capabilities** | Scientific Reasoning produces testable hypotheses and reviewable designs; Scientific Validation evaluates methods, results and claims; Research Evolution preserves evidence-linked knowledge and proposes justified follow-up studies. | Connect hypothesis, reviewed plan, controlled execution, validation and expert-reviewed iteration with reproducible evidence. |
+
+These priorities may require incremental changes to orchestration, memory boundaries, research-state contracts and evidence provenance. The detailed [next-stage platform roadmap](ARCHITECTURE_DESIGN/CygnusX_platform_next_stage_roadmap.md) records the proposed boundaries, sequencing and acceptance criteria. Engineering preparation can proceed before M2's formal research launch; it does not change the January 1, 2027 milestone or bypass M1 runtime acceptance.
+
 Before claiming M1 completion or moving protected workflows to production, close the current runtime/evidence gaps: freeze the source and image baseline; validate real PostgreSQL migrations and transaction/concurrency behavior; verify execution isolation and authorization in the deployed runtime; complete RC04 browser and fault-injection evidence; and demonstrate the first real RNAFlow → scientific BioReport → independent replay chain. External prerequisites (legacy database baseline, historical frozen artifacts, approved S3 test resources) must be recorded as blocked rather than fabricated.
 
 ## Deployment and data boundaries

@@ -96,6 +96,9 @@ sequenceDiagram
 
 ## 1. 平台总览与总体规范
 
+### `CygnusX_platform_next_stage_roadmap.md` — 平台下一阶段推进路线（规划，非 as-built）
+聚焦协作室向真实多智能体协作闭环完善、现有记忆系统微调，以及科学推理（Scientific Reasoning）、科学验证（Scientific Validation）、研究演进（Research Evolution）三项能力建设；记录架构调整候选、分阶段交付和验收标准。工程准备与 M1 收口衔接，保留根 README 的 M2 正式启动日期；不能据此宣称功能已实现或运行门禁已通过。
+
 ### `CygnusX_platform_architecture_maps.md` — 当前平台架构图汇总（简练版 + 详细版，2026-09-26）
 以仓库现状为依据，提供一页简图，以及部署拓扑、Chat 请求、Agent 工具边界、Studio 沙箱、AgentTeams/Worker、FlowFrame、生信分析链和数据/事件横切面的 Mermaid 详细图。该文档是看图入口，具体契约仍以各领域 as-built 文档为准。
 
@@ -124,7 +127,7 @@ Agent 下载/分析/取消保持后端禁用；不代表部署验收。
 回答"一个 Agent 在 CygnusX 里到底怎么定义、怎么调用、怎么维持状态、怎么调工具、怎么跑起来、依赖什么、怎么和别的 Agent 协作"的实现细节层快照。Agent 是**数据驱动**（20 个 `data/ai/*.yaml` → `agent_templates` 表）而非基类继承；入口为 `POST /api/v1/chat/stream` SSE，出入参是 OpenAI 消息 dict 列表 → `AsyncIterator[ChatChunk>`；辨析两个同名 `AgentContext` 的职责边界；对话历史由**前端显式传入**、后端 per-request 无会话状态机，三层上下文裁剪；`AgentState` TypedDict 刻意不引入 LangChain 消息封装（reducer 用 `operator.add`）；checkpoint 仅编排图启用、单 Agent ReAct 图不用；工具调用的 OpenAI Function Calling 规范、tool_packs 请求级裁剪、MCP 三传输与 circuit breaker、双通道 `llm_payload`/`ui_payload`；轻量 Docker 沙箱（warm pool + Docker SDK exec）与 Studio 沙箱（一会话一容器 + Unix Socket）两种执行环境、MAS 执行准入策略、supervised 审批闸五步链路；全异步全流式与并发治理参数；依赖生态实测版本（langgraph 1.2.10 / langchain-core 仅间接依赖 / mcp 2.0.0 / 自研 httpx Provider，**无 Anthropic SDK、LlamaIndex、mem0**）；四种多 Agent 协同模式（Supervisor / Handoff / Map-Reduce / Group Chat）的落地位置。附关键实现位置索引（26 项）与 9 条改造约束。另记录一处配置漂移：`.env.example` 仍有 `MEM0_ENGINE_ENABLED=true` 但代码已无 mem0 引擎（实际为自研 Postgres FactStore + fastembed）。
 
 ### `CygnusX_agent_execution_framework.md` — 当前执行框架（as-built 主文档，2026-08-18；已吸收 observability 文档）
-Agent 执行面的唯一现状快照：多入口、共享工具契约、分路径执行；`execution_path` 六路径登记表（chat_legacy / chat_langgraph / studio_chat_loop / agentteams_manager_consultation / agentteams_worker_react / agentteams_tool_execution，含 degraded 降级语义）；Legacy ReAct、LangGraph 节点（`llm_call_node`/`tool_exec_node`/双 route）、Worker 受限 ReAct（独立 child_session、五条禁止）三类闭环；AgentTeams 协助室意图四态判定与 Case 执行链；统一事件框架（七字段、生命周期事件 + 已并入的 `agent_tool_call`/`agent_tool_started`/`agent_tool_result` 三级工具事件链、`tool_call_id` 贯穿、Worker→房间证据投影表、前端事件→文案映射与"默认展开底层事件"）；运行保护（轮次治理、`StudioLoopGuard`、`duplicate_tool_call` 与无进展 Guard 语义）；消息/Case/Workspace 状态边界；修改扩展规则与验证清单。
+Agent 执行面的唯一现状快照：多入口、共享工具契约、分路径执行；`execution_path` 实际发射五路径登记表（chat_legacy / chat_langgraph / studio_chat_loop / agentteams_worker_react / agentteams_tool_execution，含 degraded 降级语义；`agentteams_manager_consultation` 是早期文档中的规划值，当前代码未发射，Manager 会诊的事件投影记录为 `agentteams_worker_react`）；Legacy ReAct、LangGraph 节点（`llm_call_node`/`tool_exec_node`/双 route）、Worker 受限 ReAct（独立 child_session、五条禁止）三类闭环；AgentTeams 协助室意图四态判定与 Case 执行链；统一事件框架（七字段、生命周期事件 + 已并入的 `agent_tool_call`/`agent_tool_started`/`agent_tool_result` 三级工具事件链、`tool_call_id` 贯穿、Worker→房间证据投影表、前端事件→文案映射与"默认展开底层事件"）；运行保护（轮次治理、`StudioLoopGuard`、`duplicate_tool_call` 与无进展 Guard 语义）；消息/Case/Workspace 状态边界；修改扩展规则与验证清单。
 
 ### `CygnusX_model_routing_architecture.md` — 动态模型路由架构（as-built，2026-10-11）
 记录 Router 专家意图路由与模型选型的边界、Provider 档位和成本配置、complexity 难度、健康监控、LangGraph 接入、级联与决策审计；明确默认关闭、覆盖路径和真实调用验收缺口。动态模型调度相关改动先读本文，并以代码、配置和迁移核对现状。
@@ -157,6 +160,9 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `CygnusX_memory_architecture.md` — AI 记忆系统（as-built，2026-08-22）
 自研 PostgreSQL + pgvector 薄层记忆（不依赖 mem0），v2 灰度：三层数据模型——归档 `agent_memories`、常驻 `memory_blocks`（profile/preferences/current_focus 块、乐观锁）、召回 `memory_facts`（HNSW cosine、`content_hash` 幂等、`superseded_by` 修正）；`AgentMemoryService`/`FactStore`、四个记忆工具、异步 `settle_session_memory`（游标增量+区间幂等）；Studio 文件型记忆（MEMORY.md 索引 + `.memory/*.md` + Git 检查点）；L4 AgentTeams 会诊接入与注入纪律；`memory_v2_enabled` 开关、OTel 观测指标、已落地/未收口清单与修改指南。§1 含 mem0 遗留现状更正（2026-10-03）：引擎代码已删除，遗留 `mem0_memories` 表 + `MEM0_*` 配置段为受保护迁移残留。
 
+### `CygnusX_memory_optimization_audit.md` — 记忆系统现状审计与优化路线（审计+路线，2026-10-20；非 as-built）
+对 v2 记忆链路的代码、配置、运行数据与前端投影做三方对账：配置矩阵（`MEMORY_V2_ENABLED` / embedding / 抽取模型 / 站点开关 / 工具包授权）、读取-工具写入-settle-管理端-Studio-L4 全链路图、`memory_blocks`/`memory_facts`/`memory_settlements` 数据模型与分区语义、本机运行证据（0 blocks / 10 条事实且全无向量 / 82 次 settlement）；按 P0–P2 列出 4 个 P0（召回恒空、v2 遗忘工具失效、项目隔离缺失、抽取失败永久跳区间）与共享分区、block 生命周期、管理端 gate、embedding 模型耦合、Studio 跨会话等 P1/P2；给出 Phase 0–4 修复顺序、验收清单与需人工决策项（D1–D7）。**现状基线仍以 `CygnusX_memory_architecture.md` 为准，本文用于优化排期与回归验收。**
+
 ---
 
 ## 4. Studio 与沙箱
@@ -183,7 +189,7 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 ### `CygnusX_mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个、BioThings 10 个、research-data 28 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；MCP 外部通道与内置 preset 共享 provider service 的边界、17项科研数据库覆盖、隔离身份下的部分正向验收及剩余provider/Agent限制见 2026-10-19 补充；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线；§11 为 **MCP 工具固定化**目标接入架构（固定 4 能力 + 动态 Flow 目录，工具清单不随 Flow 数增长；阶段 0/1 已完成：冻结政策、旧四件套与 per-flow 自动生成工具 `[DEPRECATED]` 软弃用标注、固定 `cygnusx_prepare`/`cygnusx_submit` 内外双端落地并复用同一 `AnalysisFlowToolService` + 确认凭证链；阶段 2–4 路线与红线：校验对等矩阵、兼容包装下线、插件机制）；§12 为 **2026-10-16 架构审查响应**（实验池 invoke 门禁 + 输出限额、目录分页与 llm_payload 预算已落地并测试；版本治理差距清单——契约指纹/依赖锁定/generation 原子激活/回退制品语义——诚实记录为后续 P1/P2 路线）。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"，§9 含 Flow 工具冻结政策）。
 
 ### `CygnusX_database_architecture.md` — 数据库基础设施基线（as-built + 规范，2026-09-11）
-`session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 87 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
+`session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 116 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
 
 ### `CygnusX_token_billing_architecture.md` — Token 与饼干消耗架构（as-built + 对账规范，2026-09-22）
 记录模型 Provider `usage` 到消息、会话、饼干流水、统计 API 和前端元估算的完整数据流；统一字段映射与多轮合并规则；输入/输出缓存 token 的识别、子集约束和分项价格公式；`ai_token_cookie_rate` 的逐消息舍入、幂等扣费、余额封顶与折扣语义；平台饼干和供应商元账单的边界；token/金额不一致时的逐步对账流程与修改验证清单。该文档是 token、缓存、费用、余额相关改动的唯一架构基线。
@@ -195,7 +201,7 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 L1 分析中心流程接入链路现状：仓库根 `flows/*.yaml` 六段 FlowConfig schema（meta/ai/parameters/sample_sheet/execution/pipeline_mapping，`domain/flow/` 严格模式权威定义）；`FileSystemFlowRepository` 磁盘扫描 + mtime 热重载（无 DB 注册、免重启）；`ai.enabled` 流程由 `FlowToolSchemaCompiler` 运行时编译为 `cygnusx_prepare_{tool_slug}_submission` 动态工具（确认门 PENDING→APPROVED→消费）；表单与 AI 双通道在 `TaskService.submit()` 九步链汇合（`GenericFlowBuilder` 按 `pipeline_mapping` 生成 analysisyaml/samples.csv/contrasts.csv → Celery `run_snakemake`）；与 FlowFrame analysisyaml 的键一致性约定（人工对齐、无交叉校验，改键须同 PR）；非 YAML-only 通道的硬编码边界（`/api/v1/pipelines/*` Literal、mcp-server preset、前端 union、`data/ai/flows/` 第二注册表）与新流程接入清单。前身 `flows/flows_design*.md` 提案已全部落地（见"相关文档"）。
 
 ### `CygnusX_toolbox_architecture.md` — 生信工具箱子系统（as-built，2026-10-03）
-L1 生信工具箱（`/tools`）的后端框架与跨链路全景：`src/cygnusx/tools/` 子包自动发现挂载机制（`register_tool_routers`，零侵入 router.py）与三处命名映射（kebab-case key ↔ snake_case 子包）；双注册表解耦（`tools_setting.yaml` 前端卡片 19 工具 / `tools_schema.yaml` LLM function 43+ 动态条目，互不自动对齐，lint + 检索评测门禁）；12 项 `*_config_yaml` 配置加载器范式（单例 + mtime 热重载 + 失败回退）；异步任务体系（共享 `tasks` 表按 flow_id 域隔离 + BLAST 独立 `blast_tasks` 表、`enqueue_task` 统一投递、Celery include/task_routes 手动登记清单、分析容器镜像契约与 `tool_configs/terminal/docker/` 存量豁免、`create_project_run_dir()` 目录协议）；ToolBridge 五种 invocation_mode 分发与 `upload://file_id`/双 payload 通道；工具域修改验证矩阵与已知缺口（FASTQ QC 待接 API、phylo 下线、config_dir 无对账）。工具**页面**规范仍以 `tool_configs/tools_design.md` 为唯一详细来源。
+L1 生信工具箱（`/tools`）的后端框架与跨链路全景：`src/cygnusx/tools/` 子包自动发现挂载机制（`register_tool_routers`，零侵入 router.py）与三处命名映射（kebab-case key ↔ snake_case 子包）；双注册表解耦（`tools_setting.yaml` 前端卡片 19 工具 / `tools_schema.yaml` 静态 45 个 LLM function，动态 Flow 工具由 `FlowToolSchemaCompiler` 在运行时生成、不计入该文件；互不自动对齐，lint + 检索评测门禁）；12 项 `*_config_yaml` 配置加载器范式（单例 + mtime 热重载 + 失败回退）；异步任务体系（共享 `tasks` 表按 flow_id 域隔离 + BLAST 独立 `blast_tasks` 表、`enqueue_task` 统一投递、Celery include/task_routes 手动登记清单、分析容器镜像契约与 `tool_configs/terminal/docker/` 存量豁免、`create_project_run_dir()` 目录协议）；ToolBridge 五种 invocation_mode 分发与 `upload://file_id`/双 payload 通道；工具域修改验证矩阵与已知缺口（FASTQ QC 待接 API、phylo 下线、config_dir 无对账）。工具**页面**规范仍以 `tool_configs/tools_design.md` 为唯一详细来源。
 
 ### `CygnusX_worker_images_plan.md` — Worker 轻量镜像计划（提案）
 `Dockerfile.worker` 边界：python:3.11-slim + Celery + Snakemake + Micromamba，不打包流程/参考基因组/Conda 环境；运行时挂载约定（`/opt/cygnusx/pipelines:ro`、`.conda_envs` 按内容哈希复用）；六步实施（依赖盘点、compose 挂载、`SNAKEMAKE_CONDA_PREFIX`、PUID/PGID 与并发预热、构建验证）；验收标准、风险与 Rule 级容器化/Slurm/K8s 演进方向。
@@ -216,6 +222,9 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 ---
 
 ## 7. 其他
+
+### `ARCHITECTURE_DISCOVERY_REPORT.md` — 单文件架构审计与批量测试计划（审计快照，2026-10-18，进行中）
+首轮只读架构调查：架构全景、三条纵向切片、架构核验、分层测试策略与批量测试计划；批量测试全部未执行，结论均为静态证据，不得当作运行验收。证据根目录见文档内 `evidence/architecture-audit/arch-audit-20261018T1940+0800-e78fd1ef/`。
 
 ### `CygnusX_skill_architecture.md` — CygnusX Skill 体系全生命周期（as-built，2026-09-18）
 由代码实勘得出的 Skill 子系统权威文档：两套 Skill 体系辨析（Kimi CLI Agent Skills vs 平台 Skill）；双层存储（`data/ai/skills/` 磁盘真相源 + skills/skill_versions/skill_invocations DB 三表索引）；SKILL.md 解析规范与 skill_store 读写；Agent `skill_ids` 声明式绑定与三层渐进披露发现；运行时工具路由、事件流与审计；五入口"预览→确认"导入管线、管理端创建、Studio 提炼、阿里云官方源同步（`ALIYUN_SKILLS_ENABLED` 默认关闭）；双轨版本管理；管理端 API 清单、数据表与迁移、前端组件；对旧文档的修正记录。
