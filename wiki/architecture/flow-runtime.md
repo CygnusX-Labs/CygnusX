@@ -14,7 +14,9 @@ flows/*.yaml
   │     └─ FlowToolSchemaCompiler → 固定 Flow 工具 / 旧 per-flow 工具
   │
   ├─ 表单通道：POST /api/v1/tasks
-  └─ AI 通道：list_flows → get_flow_detail → prepare → 人类确认 → submit
+  └─ AI 通道
+       ├─ 外部 MCP：list_flows → get_flow_detail → prepare → 人类确认 → submit
+       └─ 内置 Chat：platform_list_flows → prepare → 人类确认 → submit
                     │
                     ▼
              TaskService.submit() 九步
@@ -59,7 +61,7 @@ flows/*.yaml
 
 ## AI 接入与确认门
 
-- `ai.enabled: true` 的 Flow 由 `FlowToolSchemaCompiler` 编译为工具契约；工具固定化后，AI 通道统一走 `cygnusx_list_flows` → `get_flow_detail` → `prepare` → `submit`，新增 Flow **零新增 MCP 工具**。
+- `ai.enabled: true` 的 Flow 由 `FlowToolSchemaCompiler` 编译为工具契约。工具固定化后，外部 MCP 通道固定链为 `cygnusx_list_flows` → `cygnusx_get_flow_detail` → `cygnusx_prepare` → `cygnusx_submit`；内置 Chat 的目录工具是 `platform_list_flows`（仅 id/name/category/version），没有 detail 工具，固定链为 `cygnusx_prepare` → `cygnusx_submit`。新增 Flow **零新增 MCP 工具**。
 - `prepare` 执行 `FlowSubmissionValidator`：参数白名单、`max_samples`/`max_comparisons`、样本表列约束、可选的 `fastq_workspace` 校验插件。
 - 通过后创建 PENDING 确认记录；人类 JWT 在前端确认卡批准；`confirm_and_submit` 一次性消费凭证并进入 `TaskService.submit()`。
 - 契约漂移防线：确认时冻结 Flow 版本；提交时版本不符返回 `FLOW_CONTRACT_CHANGED`，要求重新 prepare。
