@@ -44,3 +44,7 @@ items:
   title: CygnusX AI 助手与超频模式指南
   file: platform/ai-assistants-and-overdrive.md
   category: 平台使用指南
+- id: platform-treasure-mouse
+  title: 寻宝鼠（科研数据发现）页面指南
+  file: platform/treasure-mouse.md
+  category: 平台使用指南

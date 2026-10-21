@@ -63,3 +63,31 @@ def test_keyword_rerank_returns_traceable_citations() -> None:
 
     assert ranked[0].doc_id == "project-guide"
     assert ranked[0].url == "/knowledge/project-guide"
+
+
+def test_keyword_rerank_prefers_title_match_over_generic_page() -> None:
+    service = VectorRetrievalService(db=None)  # type: ignore[arg-type]
+    candidates = [
+        KnowledgeCitation(
+            doc_id="generic-feature-page",
+            title="Wiki · 功能特性",
+            category="平台 Wiki",
+            excerpt="本章节介绍平台的功能与页面入口。",
+            section_path="功能特性",
+            url="/knowledge/generic-feature-page",
+            score=1.0,
+        ),
+        KnowledgeCitation(
+            doc_id="platform-treasure-mouse",
+            title="寻宝鼠（科研数据发现）页面指南",
+            category="平台使用指南",
+            excerpt="本页面介绍寻宝鼠的主要功能、使用流程和执行边界。",
+            section_path="快速结论",
+            url="/knowledge/platform-treasure-mouse",
+            score=1.0,
+        ),
+    ]
+
+    ranked = service._keyword_rerank(candidates, "寻宝鼠 页面 功能", limit=1)
+
+    assert ranked[0].doc_id == "platform-treasure-mouse"

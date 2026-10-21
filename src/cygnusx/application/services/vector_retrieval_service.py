@@ -155,9 +155,12 @@ class VectorRetrievalService:
         terms = self._terms(query)
 
         def score(item: KnowledgeCitation) -> tuple[float, str]:
-            haystack = f"{item.title} {item.section_path} {item.excerpt}".lower()
+            title = item.title.lower()
+            haystack = f"{title} {item.section_path} {item.excerpt}".lower()
             keyword_score = sum(term in haystack for term in terms) / max(len(terms), 1)
-            return item.score + keyword_score * 0.15, item.doc_id
+            # 标题命中比正文命中更有区分度，避免“页面/功能”等泛词把目标文档挤出前列。
+            title_score = sum(term in title for term in terms) / max(len(terms), 1)
+            return item.score + keyword_score * 0.15 + title_score * 0.1, item.doc_id
 
         return sorted(candidates, key=score, reverse=True)[:limit]
 
