@@ -1119,7 +1119,7 @@ const UserAvatar = () => {
 .top-nav-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .user-refresh-trigger {

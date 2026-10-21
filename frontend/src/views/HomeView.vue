@@ -267,7 +267,7 @@ onMounted(async () => {
         </div>
       </div>
       <div class="entry-grid">
-        <button v-for="entry in quickEntries" :key="entry.key" type="button" class="entry-card arco-card arco-card-hover" @click="goTo(entry.to)">
+        <button v-for="entry in quickEntries" :key="entry.key" type="button" class="entry-card arco-card" @click="goTo(entry.to)">
           <span class="entry-icon" :style="{ background: quickEntryBgColors[entry.icon_bg], color: quickEntryIconColors[entry.icon_bg] }">
             <NIcon :size="22"><component :is="entry.iconComponent" /></NIcon>
           </span>
@@ -365,6 +365,8 @@ onMounted(async () => {
   overflow-x: hidden;
   background: var(--neutral-bg);
 }
+
+.home-page .animate-fade-in-up { animation-duration: 400ms; }
 
 .hero {
   position: relative;
@@ -466,7 +468,7 @@ onMounted(async () => {
   border-radius: 10px;
   font-size: 13px;
   font-weight: 650;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  transition: transform 0.2s ease;
 }
 .n-button.hero-btn-primary {
   border: 0;
@@ -537,6 +539,7 @@ onMounted(async () => {
 
 .entry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .entry-card {
+  position: relative;
   display: flex;
   width: 100%;
   min-width: 0;
@@ -547,13 +550,28 @@ onMounted(async () => {
   text-align: left;
   cursor: pointer;
   font: inherit;
+  transition: transform 200ms ease;
 }
+.entry-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+.entry-card:hover,
+.entry-card:focus-visible { transform: translateY(-2px); }
+.entry-card:hover::after,
+.entry-card:focus-visible::after { opacity: 1; }
 .entry-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 11px; transition: transform 0.2s ease; }
 .entry-card:hover .entry-icon { transform: scale(1.05); }
 .entry-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .entry-title { overflow: hidden; color: var(--neutral-text-1); font-size: 14px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .entry-desc { overflow: hidden; color: var(--neutral-text-3); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-.entry-arrow { flex: 0 0 auto; color: var(--neutral-text-4); transition: color 0.2s ease, transform 0.2s ease; }
+.entry-arrow { flex: 0 0 auto; color: var(--neutral-text-4); transition: transform 0.2s ease; }
 .entry-card:hover .entry-arrow { color: var(--brand-primary); transform: translateX(2px); }
 
 .mechanism-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 0.8fr); gap: 14px; }
@@ -592,8 +610,7 @@ onMounted(async () => {
 .maturity-badge { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--neutral-border); border-radius: 999px; color: var(--neutral-text-3); font-size: 10px; line-height: 1.3; }
 
 .ecosystem-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.ecosystem-card { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--radius-card); color: inherit; text-decoration: none; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
-.ecosystem-card:hover { border-color: color-mix(in srgb, var(--brand-primary) 35%, var(--neutral-border)); box-shadow: var(--shadow-card-hover); transform: translateY(-1px); }
+.ecosystem-card { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--radius-card); color: inherit; text-decoration: none; }
 .ecosystem-card__mark { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--brand-primary-light); color: var(--brand-primary); }
 .ecosystem-card__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .ecosystem-card__copy strong { overflow: hidden; color: var(--neutral-text-1); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -614,14 +631,16 @@ onMounted(async () => {
 .capability-item--preview .legend-dot { background: #8059d8; }
 .capability-item--roadmap .legend-dot { background: var(--neutral-text-4); }
 
-.admin-banner { position: relative; display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 20px; border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
-.admin-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--admin-hero-gradient); }
+.admin-banner { position: relative; display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 20px; border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); cursor: pointer; transition: transform 0.2s ease; }
+.admin-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--brand-gradient); }
 .admin-banner:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
 .admin-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--arco-primary-light); color: var(--arco-primary); }
 .admin-text { min-width: 0; flex: 1; }
 .admin-title { margin: 0 0 4px; color: var(--neutral-text-1); font-size: 15px; font-weight: 600; }
 .admin-desc { margin: 0; color: var(--neutral-text-3); font-size: 13px; line-height: 1.5; }
-.n-button.admin-cta { flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 10px; background: var(--admin-hero-gradient); color: #fff; font-size: 13px; font-weight: 650; }
+.n-button.admin-cta { flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 10px; background: var(--brand-gradient); color: #fff; font-size: 13px; font-weight: 650; transition: transform 200ms ease; }
+.n-button.admin-cta:hover,
+.n-button.admin-cta:focus-visible { transform: translateY(-1px); }
 .n-button.admin-cta :deep(.n-button__border),
 .n-button.admin-cta :deep(.n-button__state-border) { display: none; }
 
@@ -672,11 +691,26 @@ onMounted(async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .home-page .animate-fade-in-up { animation: none; }
+  .entry-card,
+  .entry-card::after,
   .entry-icon,
   .entry-arrow,
   .ecosystem-card,
   .admin-banner,
+  .n-button.admin-cta,
   .n-button.hero-btn-primary,
   .n-button.hero-btn-secondary { transition: none; }
+  .entry-card:hover,
+  .entry-card:focus-visible,
+  .entry-card:hover .entry-icon,
+  .entry-card:hover .entry-arrow,
+  .admin-banner:hover,
+  .n-button.admin-cta:hover,
+  .n-button.admin-cta:focus-visible,
+  .n-button.hero-btn-primary:hover,
+  .n-button.hero-btn-primary:focus-visible,
+  .n-button.hero-btn-secondary:hover,
+  .n-button.hero-btn-secondary:focus-visible { transform: none; }
 }
 </style>

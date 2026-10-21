@@ -198,7 +198,6 @@ onMounted(async () => {
   overflow: hidden;
   background: var(--brand-gradient);
   box-shadow: 0 4px 12px rgba(76, 111, 255, 0.18);
-  transition: filter 0.2s ease;
 }
 .announcement-banner:hover {
   filter: brightness(1.05);
@@ -257,7 +256,7 @@ onMounted(async () => {
   font-weight: 700;
   letter-spacing: 0.3px;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4), 0 2px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease;
 }
 .n-button.banner-btn:hover,
 .n-button.banner-btn:focus {
@@ -282,7 +281,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s ease, background 0.2s ease;
+  transition: transform 0.2s ease;
 }
 .banner-close:hover {
   background: rgba(255, 255, 255, 0.3);
@@ -298,18 +297,13 @@ onMounted(async () => {
   opacity: 0;
 }
 
-/* 离场：高度 + 透明度收起 */
+/* 离场只过渡位移与透明度，不逐帧触发布局。 */
 .banner-slide-leave-active {
-  transition: transform 0.3s ease-out, opacity 0.3s ease-out,
-    max-height 0.3s ease-out, margin 0.3s ease-out, padding 0.3s ease-out;
-  max-height: 80px;
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
 }
 .banner-slide-leave-to {
   transform: translateY(-10px);
   opacity: 0;
-  max-height: 0;
-  margin: 0;
-  padding: 0;
 }
 
 /* 移动端：文字换行，避免按钮/关闭溢出 */
@@ -327,5 +321,15 @@ onMounted(async () => {
   .banner-desc {
     white-space: normal;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-slide-enter-active,
+  .banner-slide-leave-active,
+  .n-button.banner-btn,
+  .banner-close { transition: none; }
+  .n-button.banner-btn:hover,
+  .n-button.banner-btn:focus,
+  .banner-close:hover { transform: none; }
 }
 </style>

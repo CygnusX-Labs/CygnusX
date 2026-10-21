@@ -34,8 +34,18 @@ onMounted(async () => {
 
 <style scoped>
 .cookie-badge {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  margin-right: 12px;
+}
+
+.cookie-badge :deep(.n-tag) {
+  height: auto;
+  min-height: 28px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 </style>

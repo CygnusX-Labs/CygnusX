@@ -1352,9 +1352,11 @@ Hero 横幅（`HomeView.vue` 的 `<section class="hero">`）背景不是位图�
 
 Canvas 层必须遵守 §31 的装饰覆盖层契约：`position:absolute; inset:0; pointer-events:none; z-index:0`，并 `aria-hidden`，置于 `.hero-inner` 之下、渐变底色之上；**严禁**被父级 `.hero > *` 之类通配选择器命中（否则 `absolute` 被拉成 `relative`，撑高 hero 并顶坏布局，见 §31.2 / §31.4）。内容层只允许按**类名**显式抬升 `z-index`。
 
-**使用方局部压暗（不改引擎）**：首页 Hero 在 `.hero :deep(.omic-canvas)` 上将画布整体压暗到 `opacity: 0.4`（`≤768px` 时 `0.25`），保证双栏文字区（见下）的对比度优先；登录页无此处理。这是接入方的使用方式调整，引擎 `CONFIG` 档位不变。
+**使用方局部压暗（不改引擎）**：首页在 `.hero :deep(.omic-canvas)` 使用 `opacity: 0.4`（`≤640px` 为 `0.24`）；另以 `.hero::after` 的 `rgba(8,11,18,0.48)` 遮罩位于画布与内容之间，保证玻璃卡副文字的对比度。遮罩 `pointer-events:none; z-index:1`，`.hero-inner` 为 `z-index:2`。登录页与动画引擎档位不变。
 
-**文案与布局（首页 Hero）**：卡片内容由 `/api/v1/site-content` 的 `hero` 段驱动（`title` 平台名 / `slogan` 核心标语 / `description` 平台介绍 / `tags` 能力标签 / `vision` 右侧愿景区），前端 `DEFAULT_CONTENT` 逐层合并兜底——接口失败或旧配置缺新增字段时仍能完整渲染。桌面端 `.hero-inner` 为 `65fr / 35fr` 双栏：左栏 `.hero-main` 依次放问候语、语义 H1（仅一个）、标语、介绍（`max-width: 58ch` 防碎行）、轻量半透明标签（`flex-wrap` 自然换行）与 §5.7 两档按钮（主"开始分析"，次"问问星尘AI / 了解平台"）；右栏 `.hero-vision` 放英文标语 + 中文愿景 + 小字标注，`1px` 半透明左边线留白分隔。`≤1024px` 收为上下布局（愿景横排精简），`≤768px` 更紧凑且 DOM 顺序保证"介绍 + 按钮在前、精简愿景在后"。能力标签是 `12px` 半透明圆角小标签，禁止做成抢眼大按钮；愿景文案是长期方向表达，不得写成"已全面实现"的能力承诺。
+**文案与布局（首页 Hero）**：`/api/v1/site-content` 的 `hero` 段驱动平台名、标语、介绍、标签与愿景，`DEFAULT_CONTENT` 逐层兜底。桌面端 `.hero-inner` 为 `minmax(0,1.3fr) / minmax(280px,0.85fr)` 双栏；左栏依次展示平台名、问候语、唯一 H1、英文定位、介绍、能力标签、两档按钮与愿景。H1 在首个中文逗号后分行，以 `clamp(24px,2.5vw,38px)`、`text-wrap:balance`、`word-break:keep-all` 控制默认标语两行内排完；后台自定义长文案用 `overflow-wrap:anywhere` 兜底。Hero `min-height:380px; padding:40px 32px`，与公告间隔 `16px`；内容多时允许自然增高。右栏 `.hero-lifecycle` 展示科研生命周期，使用 `rgba(255,255,255,0.10)`、`blur(16px)`、白色主文字与 `rgba(255,255,255,0.85)` 副文字；减少透明度时退回实色。`≤1100px` 收为上下布局，`≤640px` 精简生命周期后续步骤并以说明文字保留语义。
+
+**首页工作台与交互层级**：`ResearchWorkbenchPanel.vue` 仍通过既有项目、运行/排队任务、报告 API 聚合；三张卡片为 `repeat(3,minmax(0,1fr))`，视口 `<1280px` 时单列。长标题单行省略，保留原文 `title`；任务和报告共用 `NTag.status-badge`，蓝/绿/灰区分运行/完成/过期，排队与失败另有黄/红状态。工作台和快捷入口 hover 上移 `2px`，阴影伪元素通过透明度过渡，时长 `200ms`；支柱和生态无悬停位移。`prefers-reduced-motion` 下关闭位移、入场和过渡。首页管理按钮使用 `--brand-gradient`。首页公告传 `remember-dismissal`，按公告 ID 和可见内容版本持久关闭；不传时继续遵守后台 daily/forever/none 策略。顶部积分 `NTag` 使用 `padding:4px 12px`，右侧控件间距 `12px`。
 
 引擎对外契约不变：组件 `onMounted` 动态 `import('@/utils/animationLibrary')`，按 `context` 取 `window.initHeroAnimation(canvas)`，返回的 cleanup 在 `onUnmounted` 调用；引擎内部监听 `resize` 与 `visibilitychange`（切后台停 rAF、回前台续），cleanup 一并解绑，杜绝句柄/内存泄漏。Hero 档位 `opacity:0.82 / density:5000 / speed:0.8 / glow:true`，登录页档位更淡更慢（`0.3 / 10000 / 0.6`）。渐变太抢眼，动画既要"压得住被看见"，又必须**克制、舒缓**——`speed` 取慢档、`opacity` 留余量，避免频率过高或过亮而喧宾夺主、抢标题与按钮（见 §32.3 频率克制原则）。整体转速另由主循环 **60fps 封顶**兜底（见 §32.3 原则 5），与 `speed` 解耦——保证高刷屏不会比 60Hz 转得更快。
 
