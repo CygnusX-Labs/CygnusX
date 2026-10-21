@@ -275,7 +275,7 @@ onMounted(() => void loadData())
 .section-eyebrow {
   margin: 0 0 4px;
   color: var(--neutral-text-3);
-  font-size: 10px;
+  font-size: var(--home-font-eyebrow, 11px);
   font-weight: 700;
   letter-spacing: 1.2px;
 }
@@ -283,15 +283,15 @@ onMounted(() => void loadData())
 .section-heading h2 {
   margin: 0;
   color: var(--neutral-text-1);
-  font-size: 21px;
+  font-size: var(--home-font-section, 24px);
   font-weight: 650;
   line-height: 1.35;
 }
 
 .section-subtitle {
   margin: 5px 0 0;
-  color: var(--neutral-text-3);
-  font-size: 13px;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-body, 14px);
   line-height: 1.5;
 }
 
@@ -304,8 +304,8 @@ onMounted(() => void loadData())
 .workbench-card {
   position: relative;
   min-width: 0;
-  min-height: 244px;
-  padding: 17px 18px 12px;
+  min-height: 264px;
+  padding: 20px 20px 12px;
   border: 1px solid var(--neutral-border);
   border-radius: var(--radius-card);
   background: var(--neutral-card);
@@ -350,7 +350,7 @@ onMounted(() => void loadData())
   overflow: hidden;
   margin: 0;
   color: var(--neutral-text-1);
-  font-size: 14px;
+  font-size: var(--home-font-card-title, 16px);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -358,8 +358,8 @@ onMounted(() => void loadData())
 
 .workbench-card__icon {
   display: grid;
-  width: 31px;
-  height: 31px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 9px;
@@ -385,8 +385,8 @@ onMounted(() => void loadData())
   flex: 0 0 auto;
   align-items: center;
   gap: 2px;
-  color: var(--neutral-text-3);
-  font-size: 12px;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-small, 13px);
   text-decoration: none;
 }
 
@@ -403,11 +403,11 @@ onMounted(() => void loadData())
 .workbench-item {
   display: flex;
   min-width: 0;
-  min-height: 54px;
+  min-height: 62px;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 2px;
+  padding: 10px 2px;
   border-top: 1px solid color-mix(in srgb, var(--neutral-border) 70%, transparent);
   color: inherit;
   text-decoration: none;
@@ -433,20 +433,22 @@ onMounted(() => void loadData())
 }
 
 .workbench-item__main strong {
+  line-height: 1.5;
   color: var(--neutral-text-1);
-  font-size: 12px;
+  font-size: var(--home-font-body, 14px);
   font-weight: 600;
 }
 
 .workbench-item__main small {
-  color: var(--neutral-text-3);
-  font-size: 11px;
+  line-height: 1.5;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-meta, 12px);
 }
 
 .workbench-item__meta {
   flex: 0 0 auto;
-  color: var(--neutral-text-3);
-  font-size: 10px;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-meta, 12px);
 }
 
 .workbench-skeleton {
@@ -472,8 +474,8 @@ onMounted(() => void loadData())
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--neutral-text-3);
-  font-size: 12px;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-body, 14px);
 }
 
 .workbench-unavailable > :first-child {
@@ -482,26 +484,26 @@ onMounted(() => void loadData())
 
 .workbench-partial-note {
   margin: -3px 0 4px;
-  color: var(--neutral-text-3);
-  font-size: 10px;
+  color: var(--neutral-text-2);
+  font-size: var(--home-font-meta, 12px);
 }
 
 .workbench-empty-link {
   color: var(--brand-primary);
-  font-size: 12px;
+  font-size: var(--home-font-body, 14px);
   text-decoration: none;
 }
 
 .status-badge {
   flex: 0 0 auto;
-  height: 24px;
+  height: 26px;
   padding: 0 8px;
   border-radius: 999px;
   background: var(--badge-bg);
   color: var(--badge-color);
-  font-size: 11px;
+  font-size: var(--home-font-meta, 12px);
   font-weight: 600;
-  line-height: 22px;
+  line-height: 24px;
 }
 
 .status-badge--running { --badge-bg: rgba(76, 141, 255, 0.12); --badge-color: #2459ad; }
@@ -515,6 +517,14 @@ onMounted(() => void loadData())
 [data-theme="dark"] .status-badge--expired { --badge-color: #b8c2d1; }
 [data-theme="dark"] .status-badge--pending { --badge-color: #fcd37b; }
 [data-theme="dark"] .status-badge--failed { --badge-color: #fca5a5; }
+
+.section-heading > .n-button {
+  font-size: var(--home-font-body, 14px);
+}
+
+.workbench-card :deep(.n-empty__description) {
+  font-size: var(--home-font-body, 14px);
+}
 
 .workbench-card :deep(.n-empty) {
   padding-top: 18px;
@@ -536,7 +546,7 @@ onMounted(() => void loadData())
     align-items: flex-start;
   }
 
-  .section-heading h2 { font-size: 19px; }
+  .section-heading h2 { font-size: 22px; }
 
   .workbench-grid {
     grid-template-columns: minmax(0, 1fr);
