@@ -229,7 +229,7 @@ onMounted(async () => {
             </NButton>
             <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
               <template #icon><NIcon><SparklesOutline /></NIcon></template>
-              让 Agent 帮我规划
+              AI 规划研究方案
             </NButton>
           </div>
           <p class="hero-vision-line">{{ content.hero.vision?.title_en }} · {{ content.hero.vision?.text }}</p>
@@ -244,7 +244,7 @@ onMounted(async () => {
           </div>
           <ol class="lifecycle-list">
             <li v-for="(step, index) in lifecycleSteps" :key="step.label" class="lifecycle-step">
-              <span class="lifecycle-step__node"><NIcon :size="14"><component :is="step.icon" /></NIcon></span>
+              <span class="lifecycle-step__node"><NIcon :size="16"><component :is="step.icon" /></NIcon></span>
               <span class="lifecycle-step__label">{{ step.label }}</span>
               <span v-if="index < lifecycleSteps.length - 1" class="lifecycle-step__connector" aria-hidden="true" />
             </li>
@@ -402,7 +402,7 @@ onMounted(async () => {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.85fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr);
   gap: 32px;
   align-items: center;
 }
@@ -513,15 +513,16 @@ onMounted(async () => {
 
 .hero-lifecycle {
   min-width: 0;
-  padding: 19px 20px 17px;
+  min-height: 340px;
+  padding: 28px 28px 24px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.10);
   color: #fff;
   backdrop-filter: blur(16px);
 }
-.hero-lifecycle__header { display: flex; gap: 11px; align-items: flex-start; }
-.hero-lifecycle__line { width: 3px; height: 36px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
+.hero-lifecycle__header { display: flex; gap: 12px; align-items: flex-start; }
+.hero-lifecycle__line { width: 3px; height: 44px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
 .hero-lifecycle__eyebrow {
   margin: 0 0 3px;
   font-size: var(--home-font-eyebrow);
@@ -529,13 +530,13 @@ onMounted(async () => {
   letter-spacing: 1.25px;
   color: rgba(255, 255, 255, 0.85);
 }
-.hero-lifecycle h2 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.35; }
-.lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 20px 0 0; padding: 0; list-style: none; }
-.lifecycle-step { position: relative; display: flex; min-width: 0; align-items: center; gap: 7px; min-height: 40px; }
-.lifecycle-step__node { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
-.lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: var(--home-font-small); line-height: 1.35; }
+.hero-lifecycle h2 { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.4; }
+.lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 24px 0 0; padding: 0; list-style: none; }
+.lifecycle-step { position: relative; display: flex; min-width: 0; align-items: center; gap: 10px; min-height: 44px; }
+.lifecycle-step__node { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
+.lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: var(--home-font-body); line-height: 1.5; }
 .lifecycle-step__connector { display: none; }
-.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.85); font-size: var(--home-font-meta); line-height: 1.5; }
+.hero-lifecycle__note { margin: 20px 0 0; color: rgba(255, 255, 255, 0.85); font-size: var(--home-font-small); line-height: 1.5; }
 .hero-lifecycle__note--mobile { display: none; }
 
 .section { margin-bottom: 31px; }
@@ -673,9 +674,9 @@ onMounted(async () => {
   .hero-title { font-size: clamp(22px, 6vw, 28px); }
   .hero-positioning { font-size: var(--home-font-meta); letter-spacing: 1px; }
   .hero :deep(.omic-canvas) { opacity: 0.24; }
-  .hero-lifecycle { padding: 16px; }
-  .lifecycle-list { grid-template-columns: minmax(0, 1fr); margin-top: 15px; }
-  .lifecycle-step { min-height: 31px; }
+  .hero-lifecycle { min-height: 0; padding: 20px; }
+  .lifecycle-list { grid-template-columns: minmax(0, 1fr); row-gap: 4px; margin-top: 16px; }
+  .lifecycle-step { min-height: 36px; }
   .lifecycle-step:nth-child(n + 6) { display: none; }
   .hero-lifecycle__note--desktop { display: none; }
   .hero-lifecycle__note--mobile { display: block; }
