@@ -1,7 +1,8 @@
 # CygnusX 知识库实现说明
 
-> 本文说明当前代码真实采用的知识库路径、目录与数据库的关系、检索入口，以及 PDF/图片混合检索的实现边界。
-> 26.8.8
+> 本文说明早期知识库路径、目录与数据库的关系、检索入口，以及 PDF/图片混合检索的实现边界。
+> 26.8.8（2026-10-21 校正目录导航与召回边界；权威实现以
+> [`ARCHITECTURE_DESIGN/CygnusX_knowledge_architecture.md`](../../ARCHITECTURE_DESIGN/CygnusX_knowledge_architecture.md) 为准）
 
 ## 1. 先给结论
 
@@ -34,7 +35,7 @@ PostgreSQL: kb_documents + kb_chunks
 
 ```text
 docs/knowledge/
-├── meta.yaml                    # 文档中心导航配置，不是 AI 检索路由表
+├── meta.yaml                    # 导入登记与页面标题配置，不是运行时导航或 AI 检索路由表
 ├── rna-seq/                     # RNA-seq 入口 Markdown 与论文 PDF
 ├── sc-seq/                      # 单细胞 Markdown 笔记、图片、PDF 等附件
 ├── atac-seq/                    # ATAC-seq 领域资料
@@ -43,7 +44,7 @@ docs/knowledge/
 
 领域目录遵循“Markdown 作为入口、附件留在同目录”的约定。附件可以是 PDF、PNG、JPG、WEBP、GIF、BMP、TIFF 或 SVG。
 
-`meta.yaml` 主要服务于知识库页面的树形导航和文件阅读回退；它不会决定 AI 只搜索 RNA-seq 还是只搜索单细胞。AI 是否能搜到某个领域，取决于对应文档是否已导入 `kb_documents`，以及所属知识库的 `ai_searchable`、`is_enabled` 状态。
+`meta.yaml` 主要服务于 `docs/knowledge/` 文档的导入登记、页面标题和数据库未导入时的文件回退；实验室导航本身读取数据库，`show_in_lab` 与 `is_enabled` 决定可见性。它不会决定 AI 只搜索 RNA-seq 还是只搜索单细胞。AI 是否能搜到某个领域，取决于对应文档是否已导入 `kb_documents`，以及所属知识库的 `ai_searchable`、`is_enabled` 状态。
 
 ## 3. 文件如何进入数据库
 
@@ -107,7 +108,7 @@ python scripts/import_cloud_knowledge.py --auto-admin
 
 ### 3.6 部署启动自动校验
 
-Web 应用启动后会在后台运行一次 `KnowledgeIndexService.ensure_published_indexes()`：
+Web 应用启动后，`KNOWLEDGE_AUTO_REINDEX_ENABLED=true`（Settings 默认 true）会在后台运行一次 `KnowledgeIndexService.ensure_published_indexes()`：
 
 - 自动检查所有已发布文档的当前修订、同级附件内容和 embedding 模型；
 - chunk 内容哈希和 embedding 模型都未变化时直接跳过，不重复调用 embedding 服务；
@@ -162,11 +163,11 @@ src/cygnusx/application/services/vector_retrieval_service.py::VectorRetrievalSer
 
 1. 使用配置项 `agent_memory_embedding_model` 生成查询向量；
 2. 如果向量可用，在 `kb_chunks.embedding` 上执行余弦距离召回；
-3. 如果 embedding 失败、维度不匹配、pgvector 不可用或没有向量，回退到标题/正文 `ILIKE` 关键词召回；
-4. 对候选结果进行关键词重排；
+3. 如果 embedding 失败、维度不匹配、pgvector 查询失败或没有向量命中，回退到标题/正文 `ILIKE` 关键词候选；
+4. 向量候选存在时，关键词匹配只用于对向量候选加权重排，不会额外并入第二套候选集；
 5. 返回前 `limit` 条引用，每条包含 `doc_id/title/category/excerpt/section_path/url/score`。
 
-目前是“向量 + 关键词”的混合召回，不是 BM25，也不是独立的图片向量库。
+因此当前是“向量召回 + 关键词回退/重排”，不是双路并集或 RRF，不是 BM25，也不是独立的图片向量库。
 
 ## 5. PDF 与图片混合检索
 
