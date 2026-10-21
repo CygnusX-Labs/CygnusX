@@ -55,4 +55,13 @@
 | `uv run mypy src/cygnusx/` | 失败：216 个文件共 1028 项错误；本轮未修改任何 Python 文件 |
 | `uv run pytest tests/unit tests/e2e -q -m 'not quarantine'` | 3963 passed，15 failed，22 skipped，63 deselected；失败集中于现有 Agent/Provider/Studio/Tool 后端用例 |
 
-完整输出保存在证据目录 `cygnusx-home-*.log`。由于 AGENTS.md 要求“提交前必须全绿”，全量后端门禁尚未满足；本次首页改动暂留工作区，尚未创建计划要求的三个阶段提交。不得将本次前端验证描述为仓库全量门禁通过。
+完整输出保存在证据目录 `cygnusx-home-*.log`。全量后端门禁存在上述失败，不能将本次前端验证描述为仓库全量门禁通过。用户在知悉该限制后明确要求提交，本轮仅按逻辑拆分提交首页及品牌图标相关改动，保留无关工作区改动，不推送远端。
+
+
+## 后续交付
+
+以上尺寸与样式对照表为初轮 P0～P2 验收快照。后续字号、Hero 生命周期卡片放大及「AI 规划研究方案」按钮文案见 [字号可读性优化记录](CygnusX首页字号可读性优化记录.md)；当前实现以 `ARCHITECTURE_DESIGN/CygnusX_frontend.md` 和代码为准。
+
+浏览器 favicon、顶栏与手机侧栏品牌图标已统一使用 `frontend/public/cygnusx-logo.png`，保留用户原图像素及透明通道。最新前端类型检查、619 项测试与构建均通过；实际页面与资源加载验证见 `evidence/brand-logo-20261021/`。
+
+首页三列同时加载失败的日志权限故障已恢复，真实项目/任务/报告接口及刷新行为验证通过，详见 [加载失败排查记录](CygnusX首页工作台加载失败排查记录.md)。本地运行证据、截图、用户上传的 docs 图片及其他未关联改动不纳入本轮提交。
