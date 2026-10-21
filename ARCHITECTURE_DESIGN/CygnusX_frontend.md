@@ -386,6 +386,7 @@ async function refreshDashboard() {
 ### 5.6 导航、弹窗与认证页
 
 - 顶部导航和侧栏是持久化空间锚点；同一导航项在所有状态下保持相同位置和高亮逻辑。
+- 品牌图标使用 `frontend/public/cygnusx-logo.png`（用户提供的透明天鹅轨道徽标，原图像素与透明通道保留）。`frontend/index.html` 的 PNG favicon、`DefaultLayout.vue` 顶部品牌区及移动侧栏共用同一资源；页面图标盒为 `40px`、`object-fit:contain`，与相邻 CygnusX 文字配合时图片使用空 alt，避免重复播报。
 - 折叠侧栏保持 `80px` 宽（`DefaultLayout.vue` 中 `:collapsed-width="80"`，展开宽 `220px`），内部左右留白为 `8px`；图标选中面必须占满可用的 `64px` 宽度并使用 `44px` 高圆角胶囊。选中态同时提供低强调主色底、连续内描边和左缘短状态条，避免只留下窄竖线或小面积底色。状态条使用 `3px` 宽、距左侧 `4px`，展开态高 `26px`、折叠态高 `30px`，始终以 `top: 50% + translateY(-50%)` 相对行内容垂直居中；不得使用 `top/bottom` 撑满整项。
 - 菜单展开、收起、进入和退出遵循同一路径；移动端抽屉支持关闭、键盘逃逸和焦点管理。
 - 普通确认使用 `NPopconfirm`；复杂表单或需要更多上下文时使用 `NModal` 或 `NDrawer`。

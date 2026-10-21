@@ -10,7 +10,7 @@ import {
   DocumentTextOutline, CloudUploadOutline, DownloadOutline, BarChartOutline, SettingsOutline,
   InformationCircleOutline, PersonOutline, LogOutOutline, MoonOutline, SunnyOutline,
   MenuOutline, ChevronForwardOutline, ChevronDownOutline,
-  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline, Planet,
+  NotificationsOutline, HelpCircleOutline, ChatbubblesOutline,
   WalletOutline, SparklesOutline, ConstructOutline, LayersOutline,
   TerminalOutline, SearchOutline, DesktopOutline, LockClosedOutline, /* 团队协作室/部门下线后暂无用 PeopleOutline, */ BulbOutline,
   WarningOutline, BriefcaseOutline, ServerOutline, ArchiveOutline,
@@ -465,9 +465,7 @@ const UserAvatar = () => {
         </NButton>
         <div class="logo-block">
           <div class="logo-icon">
-            <NIcon :size="24">
-              <Planet />
-            </NIcon>
+            <img class="logo-image" src="/cygnusx-logo.png" width="40" height="40" alt="" aria-hidden="true" />
           </div>
           <span class="logo-text">CygnusX</span>
         </div>
@@ -853,9 +851,7 @@ const UserAvatar = () => {
         <NDrawerContent body-content-style="padding: 0">
           <div class="mobile-sider">
             <div class="mobile-logo">
-              <NIcon :size="26" class="mobile-logo-icon">
-                <Planet />
-              </NIcon>
+              <img class="mobile-logo-icon" src="/cygnusx-logo.png" width="40" height="40" alt="" aria-hidden="true" />
               <span class="mobile-logo-text">CygnusX</span>
             </div>
             <nav class="mobile-nav-group">
@@ -1055,14 +1051,19 @@ const UserAvatar = () => {
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--arco-primary-light);
-  color: var(--arco-primary);
-  border-radius: 8px;
+}
+
+.logo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .logo-text {
@@ -1722,7 +1723,11 @@ const UserAvatar = () => {
 }
 
 .mobile-logo-icon {
-  color: var(--arco-primary);
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .mobile-logo-text {
