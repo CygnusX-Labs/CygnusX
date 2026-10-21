@@ -133,6 +133,11 @@ const capabilityMaturity = [
 ]
 
 const content = ref<SiteContent>(DEFAULT_CONTENT)
+const heroTitleLines = computed(() => {
+  const slogan = content.value.hero.slogan || DEFAULT_CONTENT.hero.slogan!
+  // 保留后台配置文案，仅在第一个中文逗号后建立语义断点。
+  return slogan.replace('，', '，\n').split('\n')
+})
 const configuredQuickEntries = ref<HomeQuickEntry[] | null>(null)
 const todayFestival = ref<FestivalConfig | null>(null)
 const festivalClaimed = ref(false)
@@ -211,7 +216,7 @@ onMounted(async () => {
         <div class="hero-main">
           <p class="hero-kicker">{{ content.hero.title }}</p>
           <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }}</p>
-          <h1 class="hero-title">{{ content.hero.slogan || '让科学问题，抵达可验证的发现。' }}</h1>
+          <h1 class="hero-title"><span v-for="(line, index) in heroTitleLines" :key="index" class="hero-title__line">{{ line }}</span></h1>
           <p class="hero-positioning">AI for Science Infrastructure for Life Sciences</p>
           <p class="hero-desc">{{ content.hero.description }}</p>
           <ul v-if="content.hero.tags?.length" class="hero-tags" aria-label="平台能力">
@@ -250,7 +255,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <AnnouncementBanner />
+    <AnnouncementBanner remember-dismissal />
     <ResearchWorkbenchPanel />
 
     <section class="section quick-entry-section animate-fade-in-up delay-100" aria-labelledby="quick-entry-title">
@@ -364,8 +369,9 @@ onMounted(async () => {
 .hero {
   position: relative;
   overflow: hidden;
-  margin-bottom: 20px;
-  padding: 34px 36px;
+  min-height: 380px;
+  margin-bottom: 16px;
+  padding: 40px 32px;
   border-radius: 16px;
   background: linear-gradient(135deg, #165DFF 0%, #6B8DD6 50%, #8E54E9 100%);
   color: #fff;
@@ -373,38 +379,49 @@ onMounted(async () => {
 
 .hero :deep(.omic-canvas) { opacity: 0.4; }
 
+/* 压暗画布与渐变，保证白色玻璃卡上的副文字也有足够对比度。 */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgba(8, 11, 18, 0.48);
+  pointer-events: none;
+}
+
 .hero-inner {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  gap: 40px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.85fr);
+  gap: 32px;
   align-items: center;
 }
 
 .hero-main { min-width: 0; }
 .hero-kicker {
-  margin: 0 0 7px;
+  margin: 0 0 4px;
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.3px;
   opacity: 0.94;
 }
 .hero-greeting {
-  margin: 0 0 9px;
+  margin: 0 0 6px;
   font-size: 13px;
   opacity: 0.74;
 }
 .hero-title {
-  max-width: 14em;
-  margin: 0 0 9px;
-  font-size: clamp(26px, 3vw, 38px);
+  margin: 0 0 8px;
+  font-size: clamp(24px, 2.5vw, 38px);
   font-weight: 750;
   line-height: 1.25;
   letter-spacing: -0.4px;
+  text-wrap: balance;
 }
+.hero-title__line { display: block; word-break: keep-all; overflow-wrap: anywhere; }
 .hero-positioning {
-  margin: 0 0 13px;
+  margin: 0 0 8px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 1.5px;
@@ -412,16 +429,16 @@ onMounted(async () => {
 }
 .hero-desc {
   max-width: 58ch;
-  margin: 0 0 16px;
-  font-size: 14px;
-  line-height: 1.75;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
   opacity: 0.9;
 }
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  margin: 0 0 20px;
+  margin: 0 0 12px;
   padding: 0;
   list-style: none;
 }
@@ -436,7 +453,7 @@ onMounted(async () => {
 }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .hero-vision-line {
-  margin: 20px 0 0;
+  margin: 12px 0 0;
   color: rgba(255, 255, 255, 0.72);
   font-size: 11px;
   line-height: 1.55;
@@ -488,10 +505,11 @@ onMounted(async () => {
 .hero-lifecycle {
   min-width: 0;
   padding: 19px 20px 17px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 14px;
-  background: rgba(14, 25, 88, 0.18);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
+  backdrop-filter: blur(16px);
 }
 .hero-lifecycle__header { display: flex; gap: 11px; align-items: flex-start; }
 .hero-lifecycle__line { width: 3px; height: 36px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
@@ -500,7 +518,7 @@ onMounted(async () => {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.25px;
-  opacity: 0.7;
+  color: rgba(255, 255, 255, 0.85);
 }
 .hero-lifecycle h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
 .lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 20px 0 0; padding: 0; list-style: none; }
@@ -508,7 +526,7 @@ onMounted(async () => {
 .lifecycle-step__node { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
 .lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: 11px; line-height: 1.35; }
 .lifecycle-step__connector { display: none; }
-.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.62); font-size: 11px; line-height: 1.5; }
+.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.85); font-size: 11px; line-height: 1.5; }
 .hero-lifecycle__note--mobile { display: none; }
 
 .section { margin-bottom: 31px; }
@@ -626,7 +644,7 @@ onMounted(async () => {
 @media (max-width: 640px) {
   .home-page { padding: 16px; }
   .hero { padding: 25px 20px; }
-  .hero-title { max-width: none; font-size: 26px; }
+  .hero-title { font-size: clamp(20px, 5.5vw, 26px); }
   .hero-positioning { font-size: 10px; letter-spacing: 1px; }
   .hero :deep(.omic-canvas) { opacity: 0.24; }
   .hero-lifecycle { padding: 16px; }
@@ -647,6 +665,10 @@ onMounted(async () => {
   .capability-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-banner { align-items: flex-start; flex-wrap: wrap; }
   .admin-cta { margin-left: 60px; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .hero-lifecycle { background: #293c6b; backdrop-filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   to?: string
   dismissKey?: string
   closable?: boolean
+  rememberDismissal?: boolean
 }>(), {
   title: '',
   description: '',
@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<{
   to: '',
   dismissKey: '',
   closable: true,
+  rememberDismissal: false,
 })
 
 const banner = ref<Announcement | null>(null)
@@ -39,6 +41,22 @@ const displayDescription = computed(() => props.description || banner.value?.des
 const displayActionText = computed(() => props.actionText || banner.value?.button_text || '')
 const canDismiss = computed(() => isStatic.value ? props.closable : banner.value?.dismiss_behavior !== 'none')
 
+function storageKey(b: Announcement): string {
+  if (!props.rememberDismissal) return STORAGE_PREFIX + b.id
+  // 首页按可见内容建立版本；同一公告更新文案后可重新展示。
+  // 不用 updated_at：临时优惠公告在每次加载时都会生成新的时间戳。
+  const version = JSON.stringify([b.title, b.description, b.icon, b.link, b.button_text])
+  return `announcement:${b.id}:${encodeURIComponent(version)}:dismissed`
+}
+
+function readDismissal(key: string): string | null {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+
+function writeDismissal(key: string, value: string) {
+  try { localStorage.setItem(key, value) } catch { /* 存储不可用时仍允许关闭当前横幅。 */ }
+}
+
 /** 今日日期字符串 YYYY-MM-DD，用于 daily 关闭判断 */
 function todayStr(): string {
   const d = new Date()
@@ -49,8 +67,9 @@ function todayStr(): string {
 /** 该通知是否已被当前用户关闭 */
 function isDismissed(b: Announcement): boolean {
   if (b.dismiss_behavior === 'none') return false
-  const val = localStorage.getItem(STORAGE_PREFIX + b.id)
+  const val = readDismissal(storageKey(b))
   if (!val) return false
+  if (props.rememberDismissal) return true
   if (b.dismiss_behavior === 'forever') return true
   if (b.dismiss_behavior === 'daily') return val === todayStr()
   return false
@@ -58,17 +77,17 @@ function isDismissed(b: Announcement): boolean {
 
 function dismiss() {
   if (isStatic.value) {
-    localStorage.setItem(staticStorageKey.value, 'forever')
+    writeDismissal(staticStorageKey.value, 'forever')
     visible.value = false
     return
   }
   if (!banner.value) return
   const b = banner.value
   if (b.dismiss_behavior !== 'none') {
-    const val = b.dismiss_behavior === 'daily' ? todayStr() : 'forever'
-    localStorage.setItem(STORAGE_PREFIX + b.id, val)
+    const val = !props.rememberDismissal && b.dismiss_behavior === 'daily' ? todayStr() : 'forever'
+    writeDismissal(storageKey(b), val)
   }
-  // 触发 Transition leave（height + opacity 收起）
+  // 触发 Transition leave。
   visible.value = false
 }
 
@@ -94,7 +113,7 @@ const iconDisplay = computed(() => {
 
 onMounted(async () => {
   if (isStatic.value) {
-    visible.value = !props.closable || localStorage.getItem(staticStorageKey.value) !== 'forever'
+    visible.value = !props.closable || readDismissal(staticStorageKey.value) !== 'forever'
     return
   }
   try {
