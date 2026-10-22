@@ -34,7 +34,7 @@ import GoalStatusCard from './GoalStatusCard.vue'
 import { readActiveMentionQuery } from './mentionQuery'
 import { pushRecent, recentRank } from './recentItems'
 import { formatMentions } from '@/utils/agentTeamsRoom'
-import { DATA_MANAGEMENT_UPLOAD_HINT, requiresDataManagementUpload } from './attachmentPolicy'
+import { CHAT_UPLOAD_ACCEPT, DATA_MANAGEMENT_UPLOAD_HINT, requiresDataManagementUpload } from './attachmentPolicy'
 import { clipboardAttachmentFiles } from './clipboardAttachments'
 import {
   STAR_MODE_COMMANDS,
@@ -1334,7 +1334,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
           <div class="drag-drop-hint">
             <n-icon size="28"><AttachOutline /></n-icon>
             <span>释放以上传文件</span>
-            <small>图片可直接识别，PDF、文本和树文件可读取内容</small>
+            <small>图片可直接识别，PDF、Word、Excel、PPT 和文本可读取内容</small>
           </div>
         </div>
       </Transition>
@@ -1465,7 +1465,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
         ref="fileInputRef"
         type="file"
         multiple
-        accept=".png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico,.pdf,.txt,.md,.doc,.docx,.csv,.tsv,.json,.yaml,.yml,.fastq,.fq,.fasta,.fa,.fna,.faa,.ffn,.bam,.cram,.sam,.vcf,.gff,.gff3,.gtf,.bed,.h5ad,.rds,.qs,.gz,.zip,.tar,.bz2,.xz,.nwk,.newick,.nhx,.nh,.tree,.tre,.trees,.dnd,.nex,.nexus,.iqtree,.treefile,.contree,.bionj,.mldist,.ufboot,.log,.aln,.phy,.phylip,.sto"
+        :accept="CHAT_UPLOAD_ACCEPT"
         style="display: none"
         @change="handleFileChange"
       />
@@ -1478,7 +1478,7 @@ watch(() => agentHub.currentSessionId, refreshGoalStatus)
                 <n-icon size="18"><AttachOutline /></n-icon>
               </n-button>
             </template>
-            添加附件；也可直接粘贴或拖入文件。图片可直接识别，PDF、文本和树文件可读取内容
+            添加附件；也可直接粘贴或拖入文件。图片可直接识别，PDF/Office/文本代码/压缩文本/结构与组学元数据可读取或预览；大体积二进制数据请走文件管理
           </n-tooltip>
           <n-tooltip v-if="toolbar.workspaceReference" trigger="hover">
             <template #trigger>

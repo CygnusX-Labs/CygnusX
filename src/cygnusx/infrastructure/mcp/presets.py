@@ -533,12 +533,18 @@ async def _platform_read_file(
 #   workspace_list_files / workspace_read_file / workspace_get_file_info
 # 权限硬限定为当前登录用户的工作区根目录；默认只读，不暴露任何写/删除能力。
 
-# 可直接返回内容预览的文本类扩展名
+# 可直接返回内容预览的文本类扩展名；压缩文本（.csv.gz 等）由内层后缀判定
 _TEXT_SUFFIXES = frozenset(
     {
         ".txt", ".md", ".csv", ".tsv", ".json", ".yaml", ".yml", ".log",
-        ".vcf", ".gff", ".gtf", ".bed", ".sam", ".fasta", ".fa", ".fna",
-        ".py", ".r", ".sh", ".xml", ".html", ".tsv.gz", ".csv.gz",
+        ".vcf", ".gff", ".gff3", ".gtf", ".bed", ".sam", ".fasta", ".fa", ".fna",
+        ".faa", ".ffn", ".fastq", ".fq", ".py", ".r", ".sh", ".xml", ".html", ".ipynb",
+        # 文献引用 / 通路基因集 / 代码文档
+        ".bib", ".ris", ".enw", ".nbib", ".gmt", ".gmx", ".rnk",
+        ".rmd", ".qmd", ".tex", ".rst", ".sql", ".toml", ".ini", ".cfg",
+        # 结构 / 系统发育文本 / 邮件
+        ".nxs", ".raxml", ".star", ".pdb", ".cif", ".mmcif", ".sdf", ".mol2", ".xyz",
+        ".eml",
     }
 )
 
@@ -562,7 +568,15 @@ _PDF_READ_MAX_CHARS = 50_000
 
 def _is_text_file(name: str) -> bool:
     lower = name.lower()
-    return any(lower.endswith(suf) for suf in _TEXT_SUFFIXES)
+    if any(lower.endswith(suf) for suf in _TEXT_SUFFIXES):
+        return True
+    if Path(lower).suffix in {".gz", ".bz2", ".xz"}:
+        from cygnusx.application.services.chat.runtime_support import (
+            compressed_text_inner_suffix,
+        )
+
+        return compressed_text_inner_suffix(name) is not None
+    return False
 
 
 def _human_size(size: int) -> str:
@@ -1013,6 +1027,117 @@ async def _workspace_read_file(
         meta["summary"] = (
             f"DOCX {name}（{meta['size_human']}）正文文本"
             + (f"，已截断至前 {max_bytes} 字符" if truncated else "")
+        )
+        return meta
+
+    lower_name = name.lower()
+    if lower_name.endswith((".xlsx", ".xlsm")):
+        from cygnusx.application.services.chat.runtime_support import extract_xlsx_text
+
+        text = await asyncio.to_thread(extract_xlsx_text, str(target))
+        if not text:
+            return {
+                "error": "无法提取内容：该 Excel 可能已损坏、为空或含不支持的二进制格式。",
+                **meta,
+            }
+        truncated = len(text) > max_bytes
+        meta["content"] = text[:max_bytes]
+        meta["truncated"] = truncated
+        meta["summary"] = (
+            f"Excel {name}（{meta['size_human']}）工作表文本"
+            + (f"，已截断至前 {max_bytes} 字符" if truncated else "")
+        )
+        return meta
+
+    if lower_name.endswith((".pptx", ".pptm")):
+        from cygnusx.application.services.chat.runtime_support import extract_pptx_text
+
+        text = await asyncio.to_thread(extract_pptx_text, str(target))
+        if not text:
+            return {
+                "error": "无法提取内容：该 PPTX 可能已损坏或不含文本。",
+                **meta,
+            }
+        truncated = len(text) > max_bytes
+        meta["content"] = text[:max_bytes]
+        meta["truncated"] = truncated
+        meta["summary"] = (
+            f"PPTX {name}（{meta['size_human']}）幻灯片文本"
+            + (f"，已截断至前 {max_bytes} 字符" if truncated else "")
+        )
+        return meta
+
+    from cygnusx.application.services.chat.runtime_support import (
+        compressed_text_inner_suffix,
+        decompress_text_preview,
+        extract_biom_text,
+        extract_data_container_summary,
+        extract_eml_text,
+        extract_structure_summary,
+        read_text_preview,
+    )
+
+    def _text_result(text: str, label: str) -> dict[str, Any]:
+        truncated = len(text) > max_bytes
+        meta["content"] = text[:max_bytes]
+        meta["truncated"] = truncated
+        meta["summary"] = (
+            f"{label} {name}（{meta['size_human']}）"
+            + (f"，已截断至前 {max_bytes} 字符" if truncated else "")
+        )
+        return meta
+
+    if lower_name.endswith(".eml"):
+        text = await asyncio.to_thread(extract_eml_text, str(target))
+        if not text:
+            text = await asyncio.to_thread(read_text_preview, str(target), max_bytes=max_bytes)
+        if not text:
+            return {"error": "无法提取邮件内容：该 EML 可能已损坏或为空。", **meta}
+        return _text_result(text, "EML 邮件")
+
+    if lower_name.endswith((".pdb", ".cif", ".mmcif")):
+        text = await asyncio.to_thread(extract_structure_summary, str(target), name)
+        if not text:
+            text = await asyncio.to_thread(read_text_preview, str(target), max_bytes=max_bytes)
+        if not text:
+            return {"error": "无法解析结构文件：可能已损坏或缺少坐标记录。", **meta}
+        return _text_result(text, "结构摘要")
+
+    if lower_name.endswith(".biom"):
+        text = await asyncio.to_thread(extract_biom_text, str(target))
+        if not text:
+            return {"error": "无法解析 BIOM：可能已损坏或不是受支持的 BIOM 版本。", **meta}
+        return _text_result(text, "BIOM 丰度表")
+
+    if lower_name.endswith((".h5", ".hdf5", ".mat")):
+        text = await asyncio.to_thread(extract_data_container_summary, str(target), name)
+        if text:
+            return _text_result(text, "数据容器摘要")
+
+    compression = Path(lower_name).suffix
+    if compression in {".gz", ".bz2", ".xz"}:
+        inner_suffix = compressed_text_inner_suffix(name)
+        if inner_suffix:
+            text, compressed_truncated = await asyncio.to_thread(
+                decompress_text_preview,
+                str(target),
+                compression,
+                max_bytes=max_bytes,
+            )
+            meta["content"] = text[:max_bytes]
+            meta["truncated"] = compressed_truncated
+            meta["summary"] = (
+                f"压缩文本 {name}（{meta['size_human']}，内层 {inner_suffix}）解压预览"
+                + (f"，已截断至前 {max_bytes} 字节" if compressed_truncated else "")
+            )
+            return meta
+
+    if lower_name.endswith(".xlsb"):
+        meta["content"] = None
+        meta["truncated"] = False
+        meta["summary"] = (
+            f"{name} 为 Excel 二进制工作簿（{meta['size_human']}），"
+            "无法在线抽取；请在沙盒中转换为 .xlsx 后读取。"
         )
         return meta
 

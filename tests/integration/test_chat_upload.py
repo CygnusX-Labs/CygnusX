@@ -12,7 +12,6 @@ from cygnusx.infrastructure.config.storage_config import StorageConfig
 from cygnusx.infrastructure.storage import reset_storage_backend
 from cygnusx.infrastructure.storage.path_factory import get_path_factory
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -122,12 +121,95 @@ async def test_chat_upload_accepts_phylogenetic_formats(
     assert file_path.read_text() == content
 
 
+@pytest.mark.parametrize(
+    "filename",
+    ["counts.xlsx", "counts.xlsm", "legacy.xls", "slides.pptx", "table.ods"],
+)
+@pytest.mark.asyncio
+async def test_chat_upload_accepts_spreadsheet_and_slide_formats(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    storage_path: Path,
+    filename: str,
+) -> None:
+    """Excel / PPTX / ODS 等办公文档应被聊天上传接口接收并落盘。"""
+    response = await client.post(
+        "/api/v1/files/chat-upload",
+        files={"file": (filename, io.BytesIO(b"document-bytes"), "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == filename
+
+    expected_dir = storage_path / "users" / "test-user" / "workspace" / "chat-uploads"
+    file_path = expected_dir / f"{body['id']}{Path(filename).suffix}"
+    assert file_path.exists()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "refs.bib",
+        "genes.gmt",
+        "protein.pdb",
+        "mail.eml",
+        "table.biom",
+        "data.h5",
+        "data.mat",
+        "figure.tif",
+        "legacy.xlsb",
+        "counts.csv.gz",
+    ],
+)
+@pytest.mark.asyncio
+async def test_chat_upload_accepts_document_structure_and_omics_formats(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    storage_path: Path,
+    filename: str,
+) -> None:
+    """新增的文本/结构/元数据格式应可被聊天上传接口接收。"""
+    response = await client.post(
+        "/api/v1/files/chat-upload",
+        files={"file": (filename, io.BytesIO(b"document-bytes"), "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == filename
+
+    expected_dir = storage_path / "users" / "test-user" / "workspace" / "chat-uploads"
+    file_path = expected_dir / f"{body['id']}{Path(filename).suffix}"
+    assert file_path.exists()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["matrix.parquet", "flow.fcs", "spectra.mzML", "calls.bcf", "qiime.qza"],
+)
+@pytest.mark.asyncio
+async def test_chat_upload_rejects_managed_formats_with_file_management_hint(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    filename: str,
+) -> None:
+    """第三档格式应提示前往文件管理，而不是直接进入聊天附件链路。"""
+    response = await client.post(
+        "/api/v1/files/chat-upload",
+        files={"file": (filename, io.BytesIO(b"x"), "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "文件管理" in response.text
+
+
 @pytest.mark.asyncio
 async def test_chat_upload_rejects_unknown_suffix(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     """未登记的扩展名仍应被拒绝（白名单语义不放松）。"""
     response = await client.post(
         "/api/v1/files/chat-upload",
-        files={"file": ("mystery.xyz", io.BytesIO(b"x"), "application/octet-stream")},
+        files={"file": ("mystery.zzz", io.BytesIO(b"x"), "application/octet-stream")},
         headers=auth_headers,
     )
     assert response.status_code == 422

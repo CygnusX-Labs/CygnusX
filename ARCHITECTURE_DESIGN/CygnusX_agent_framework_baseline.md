@@ -197,9 +197,11 @@ ChatService.stream_agent_chat()
 | --- | --- |
 | `list_workspace_files(path?, pattern?)` | 列出当前用户工作区目录项，返回文件 ID、名称、类型、大小、路径和时间。 |
 | `search_workspace_files(query, limit?)` | 递归按文件名搜索当前用户工作区。 |
-| `workspace_read_file(file_id, max_bytes?)` | 按 file_id 读取文本文件内容预览（默认前 100KB）；二进制/测序文件只回元数据。 |
+| `workspace_read_file(file_id, max_bytes?)` | 按 file_id 读取内容预览（默认前 100KB）：文本/代码/引用/结构文本直接预览；PDF/DOCX/XLSX/PPTX 抽取正文；EML、PDB/mmCIF 结构摘要、BIOM、HDF5/MAT 元数据、`.csv.gz`/`.tsv.gz` 等压缩文本可解析；`.xlsb` 与测序原始二进制（BAM/CRAM/H5AD/FCS/mzML 等）只回元数据。 |
 | `workspace_get_file_info(file_id)` | 按 file_id 返回文件元数据，不读内容。 |
 | `find_session_uploads(session_id?)` | 按会话标记找回该聊天窗口上传过的文件；跨会话兜底列表仅用于向用户确认（见 §5.5）。 |
+
+聊天附件（`application/services/chat/runtime_support.py`）与上述工具共享同一批抽取器：图片（含 TIF/TIFF/BMP/ICO，自动缩放转 PNG）注入视觉模型；PDF/Office/EML/PDB-mmCIF/BIOM/HDF5-MAT 及 `.csv.gz` 等压缩文本抽取后注入；测序原始二进制只注入元数据，并提示改用文件管理与沙盒。
 
 提示词边界：
 

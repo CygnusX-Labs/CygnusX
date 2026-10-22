@@ -82,6 +82,703 @@ def is_docx_attachment(mime_type: str, filename: str) -> bool:
     return mime_type == _DOCX_MIME or Path(filename).suffix.lower() == ".docx"
 
 
+_EXCEL_MIME_TYPES = frozenset(
+    {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel.sheet.macroenabled.12",
+    }
+)
+_EXCEL_SUFFIXES = frozenset({".xlsx", ".xlsm"})
+_PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+_PPTX_SUFFIXES = frozenset({".pptx", ".pptm"})
+
+_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".tif", ".tiff"}
+)
+# 视觉模型普遍只接受 png/jpeg/gif/webp；其它位图先转 PNG 再注入。
+_IMAGE_CONVERT_SUFFIXES = frozenset({".tif", ".tiff", ".bmp", ".ico"})
+_IMAGE_CONVERT_MIME_TYPES = frozenset(
+    {"image/tiff", "image/bmp", "image/x-icon", "image/vnd.microsoft.icon"}
+)
+
+# 旧版二进制 Office / 压缩包不能在聊天里按 UTF-8 硬读，否则会向模型注入乱码。
+_BINARY_ATTACHMENT_SUFFIXES = frozenset(
+    {
+        ".doc",
+        ".ppt",
+        ".xls",
+        ".xlsb",
+        ".bam",
+        ".cram",
+        ".h5ad",
+        ".rds",
+        ".qs",
+        ".gz",
+        ".tar",
+        ".bz2",
+        ".xz",
+        ".zip",
+        ".npy",
+        ".npz",
+        ".pkl",
+        ".parquet",
+        ".feather",
+        ".tif",
+        ".tiff",
+        ".biom",
+        ".h5",
+        ".hdf5",
+        ".mat",
+        ".fcs",
+        ".mzml",
+        ".mzxml",
+        ".mgf",
+        ".raw",
+        ".bw",
+        ".bigwig",
+        ".bcf",
+        ".maf",
+        ".idat",
+        ".cel",
+        ".qza",
+        ".qzv",
+    }
+)
+
+# 压缩文本（如 counts.csv.gz）可透明解压预览；其余压缩包只回元数据。
+_COMPRESSION_SUFFIXES = frozenset({".gz", ".bz2", ".xz"})
+_COMPRESSED_TEXT_SUFFIXES = frozenset(
+    {
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".tab",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".xml",
+        ".html",
+        ".htm",
+        ".vcf",
+        ".gff",
+        ".gff3",
+        ".gtf",
+        ".bed",
+        ".sam",
+        ".fasta",
+        ".fa",
+        ".fna",
+        ".faa",
+        ".ffn",
+        ".fastq",
+        ".fq",
+        ".nwk",
+        ".newick",
+        ".nhx",
+        ".nex",
+        ".nxs",
+        ".tree",
+        ".tre",
+        ".trees",
+        ".dnd",
+        ".aln",
+        ".phy",
+        ".phylip",
+        ".sto",
+        ".gmt",
+        ".gmx",
+        ".rnk",
+        ".bib",
+        ".ris",
+        ".log",
+        ".eml",
+    }
+)
+_STRUCTURE_SUFFIXES = frozenset({".pdb", ".cif", ".mmcif"})
+_CONTAINER_SUFFIXES = frozenset({".h5", ".hdf5", ".mat"})
+_HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
+
+_ATTACHMENT_TEXT_MAX_BYTES = 256 * 1024
+_EML_MAX_PARSE_BYTES = 5 * 1024 * 1024
+_BIOM_MAX_PARSE_BYTES = 5 * 1024 * 1024
+_STRUCTURE_MAX_PARSE_BYTES = 50 * 1024 * 1024
+_IMAGE_MAX_PIXELS = 20_000_000
+_IMAGE_MAX_SIDE = 2048
+
+
+def is_image_attachment(mime_type: str, filename: str) -> bool:
+    """按 MIME 或扩展名识别图片附件；MIME 缺失时也能走视觉链路。"""
+    return mime_type.startswith("image/") or Path(filename).suffix.lower() in _IMAGE_SUFFIXES
+
+
+def compressed_text_inner_suffix(filename: str) -> str | None:
+    """返回压缩文本的内层扩展名（如 counts.csv.gz → .csv）；非文本压缩返回 None。"""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _COMPRESSION_SUFFIXES:
+        return None
+    inner = Path(filename).with_suffix("").suffix.lower()
+    return inner if inner in _COMPRESSED_TEXT_SUFFIXES else None
+
+
+def is_excel_attachment(mime_type: str, filename: str) -> bool:
+    """按 MIME 或扩展名识别可提取文本的 OOXML Excel 附件。"""
+    return mime_type in _EXCEL_MIME_TYPES or Path(filename).suffix.lower() in _EXCEL_SUFFIXES
+
+
+def is_pptx_attachment(mime_type: str, filename: str) -> bool:
+    """按 MIME 或扩展名识别可提取文本的 PPTX 附件。"""
+    return mime_type == _PPTX_MIME or Path(filename).suffix.lower() in _PPTX_SUFFIXES
+
+
+def _column_index(cell_ref: str) -> int:
+    """把单元格引用（如 BM12）的列字母转成 0 起始列号。"""
+    index = 0
+    for char in cell_ref:
+        if not char.isalpha():
+            break
+        index = index * 26 + (ord(char.upper()) - ord("A") + 1)
+    return max(index - 1, 0)
+
+
+_OOXML_MAX_XML_BYTES = 10 * 1024 * 1024
+
+
+def _read_ooxml_entry(zf: Any, name: str) -> bytes:
+    """读取 OOXML zip 条目，拒绝超大条目（防 zip bomb）。"""
+    try:
+        info = zf.getinfo(name)
+    except KeyError:
+        return b""
+    if info.file_size > _OOXML_MAX_XML_BYTES:
+        return b""
+    try:
+        return bytes(zf.read(name))
+    except Exception:  # noqa: BLE001
+        return b""
+
+
+def _parse_ooxml_xml(data: bytes) -> Any:
+    """解析 OOXML XML，拒绝 DTD/实体声明以规避实体膨胀攻击。"""
+    if not data:
+        return None
+    lowered = data.lower()
+    if b"<!doctype" in lowered or b"<!entity" in lowered:
+        return None
+    from xml.etree import ElementTree as ET
+
+    try:
+        return ET.fromstring(data)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def extract_xlsx_text(
+    source: Any,
+    *,
+    max_rows_per_sheet: int = 200,
+    max_cols: int = 50,
+    max_chars: int = 30_000,
+) -> str:
+    """从 xlsx/xlsm（OOXML zip 容器）提取工作表内容，仅依赖标准库。
+
+    source 可以是本地路径（str/Path）或文件字节（bytes）。输出按工作表分段，
+    行内以制表符分隔；超出预览上限时追加截断标记。提取失败返回空串。
+    """
+    import io
+    import posixpath
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    main_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    pkg_rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    def _cell_text(cell: ET.Element, shared: list[str]) -> str:
+        cell_type = cell.get("t")
+        if cell_type == "inlineStr":
+            return "".join(node.text or "" for node in cell.iter(f"{{{main_ns}}}t"))
+        value_node = cell.find(f"{{{main_ns}}}v")
+        if value_node is None:
+            return ""
+        raw = value_node.text or ""
+        if cell_type == "s":
+            try:
+                return shared[int(raw)]
+            except (ValueError, IndexError):
+                return ""
+        if cell_type == "b":
+            return "TRUE" if raw == "1" else "FALSE"
+        return raw
+
+    try:
+        if isinstance(source, bytes):
+            zf_ctx = zipfile.ZipFile(io.BytesIO(source))
+        else:
+            zf_ctx = zipfile.ZipFile(str(source))
+        with zf_ctx as zf:
+            names = set(zf.namelist())
+            if "xl/workbook.xml" not in names:
+                return ""
+            workbook = _parse_ooxml_xml(_read_ooxml_entry(zf, "xl/workbook.xml"))
+            if workbook is None:
+                return ""
+
+            rels: dict[str, str] = {}
+            rel_root = _parse_ooxml_xml(_read_ooxml_entry(zf, "xl/_rels/workbook.xml.rels"))
+            if rel_root is not None:
+                for rel in rel_root.findall(f"{{{pkg_rel_ns}}}Relationship"):
+                    rels[str(rel.get("Id") or "")] = str(rel.get("Target") or "")
+
+            shared: list[str] = []
+            shared_root = _parse_ooxml_xml(_read_ooxml_entry(zf, "xl/sharedStrings.xml"))
+            if shared_root is not None:
+                for item in shared_root.findall(f"{{{main_ns}}}si"):
+                    shared.append(
+                        "".join(node.text or "" for node in item.iter(f"{{{main_ns}}}t"))
+                    )
+
+            sheets: list[tuple[str, str]] = []
+            for sheet in workbook.findall(f"{{{main_ns}}}sheets/{{{main_ns}}}sheet"):
+                target = rels.get(str(sheet.get(f"{{{rel_ns}}}id") or ""), "")
+                if not target:
+                    continue
+                path = target.lstrip("/")
+                if not path.startswith("xl/"):
+                    path = posixpath.normpath(posixpath.join("xl", path))
+                if path in names:
+                    sheets.append((str(sheet.get("name") or ""), path))
+            if not sheets:
+                fallback = sorted(
+                    name
+                    for name in names
+                    if name.startswith("xl/worksheets/") and name.endswith(".xml")
+                )
+                sheets = [(Path(name).stem, name) for name in fallback]
+
+            sections: list[str] = []
+            total_chars = 0
+            for sheet_name, path in sheets[:20]:
+                sheet_root = _parse_ooxml_xml(_read_ooxml_entry(zf, path))
+                if sheet_root is None:
+                    continue
+                rows: list[str] = []
+                truncated = False
+                for row_index, row in enumerate(sheet_root.iter(f"{{{main_ns}}}row")):
+                    if row_index >= max_rows_per_sheet:
+                        truncated = True
+                        break
+                    values: dict[int, str] = {}
+                    for cell in row.findall(f"{{{main_ns}}}c"):
+                        column = _column_index(str(cell.get("r") or "A"))
+                        if column >= max_cols:
+                            truncated = True
+                            continue
+                        value = _cell_text(cell, shared)
+                        if value:
+                            values[column] = value.replace("\t", " ").replace("\n", " ")
+                    if not values:
+                        continue
+                    width = max(values) + 1
+                    rows.append("\t".join(values.get(i, "") for i in range(width)))
+                if not rows:
+                    continue
+                section = f"# 工作表: {sheet_name}\n" + "\n".join(rows)
+                if truncated:
+                    section += "\n...（预览已截断，完整数据请在沙盒中读取）"
+                sections.append(section)
+                total_chars += len(section)
+                if total_chars >= max_chars:
+                    break
+            return "\n\n".join(sections)[:max_chars].strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def extract_pptx_text(source: Any, *, max_slides: int = 100, max_chars: int = 30_000) -> str:
+    """从 pptx（OOXML zip 容器）提取幻灯片文本，仅依赖标准库。"""
+    import io
+    import re as _re
+    import zipfile
+
+    drawing_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    try:
+        if isinstance(source, bytes):
+            zf_ctx = zipfile.ZipFile(io.BytesIO(source))
+        else:
+            zf_ctx = zipfile.ZipFile(str(source))
+        with zf_ctx as zf:
+            slide_items: list[tuple[int, str]] = []
+            for name in zf.namelist():
+                match = _re.fullmatch(r"ppt/slides/slide(\d+)\.xml", name)
+                if match:
+                    slide_items.append((int(match.group(1)), name))
+            slide_items.sort()
+
+            sections: list[str] = []
+            total_chars = 0
+            for slide_number, path in slide_items[:max_slides]:
+                root = _parse_ooxml_xml(_read_ooxml_entry(zf, path))
+                if root is None:
+                    continue
+                texts = [
+                    (node.text or "").strip()
+                    for node in root.iter(f"{{{drawing_ns}}}t")
+                    if (node.text or "").strip()
+                ]
+                if not texts:
+                    continue
+                section = f"# 幻灯片 {slide_number}\n" + "\n".join(texts)
+                sections.append(section)
+                total_chars += len(section)
+                if total_chars >= max_chars:
+                    break
+            if len(slide_items) > max_slides:
+                sections.append("...（幻灯片过多，预览已截断）")
+            return "\n\n".join(sections)[:max_chars].strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _format_size(size: int) -> str:
+    if size >= 1024 * 1024:
+        return f"{size / 1024 / 1024:.1f}MB"
+    if size >= 1024:
+        return f"{size / 1024:.1f}KB"
+    return f"{size}B"
+
+
+def _source_size(source: Any) -> int:
+    if isinstance(source, (bytes, bytearray)):
+        return len(source)
+    try:
+        return Path(source).stat().st_size
+    except OSError:
+        return 0
+
+
+def _read_source_head(source: Any, max_bytes: int) -> bytes:
+    if isinstance(source, (bytes, bytearray)):
+        return bytes(source[:max_bytes])
+    try:
+        with open(source, "rb") as fh:
+            return fh.read(max_bytes)
+    except OSError:
+        return b""
+
+
+def _decode_text_preview(raw: bytes, *, max_bytes: int = _ATTACHMENT_TEXT_MAX_BYTES) -> str:
+    truncated = len(raw) > max_bytes
+    text = raw[:max_bytes].decode("utf-8", errors="ignore")
+    if truncated:
+        text += "\n...（内容预览已截断）"
+    return text
+
+
+def read_text_preview(source: Any, *, max_bytes: int = _ATTACHMENT_TEXT_MAX_BYTES) -> str:
+    """读取文本预览，最多读取 max_bytes，避免大文件整体进内存。"""
+    return _decode_text_preview(_read_source_head(source, max_bytes + 1), max_bytes=max_bytes)
+
+
+def decompress_text_preview(
+    source: Any,
+    compression: str,
+    *,
+    max_bytes: int = _ATTACHMENT_TEXT_MAX_BYTES,
+) -> tuple[str, bool]:
+    """有界解压 gz/bz2/xz 文本，返回（预览文本, 是否截断）。"""
+    import bz2
+    import gzip
+    import io
+    import lzma
+
+    openers: dict[str, Any] = {".gz": gzip.open, ".bz2": bz2.open, ".xz": lzma.open}
+    opener = openers.get(compression)
+    if opener is None:
+        return "", False
+    handle: Any = (
+        io.BytesIO(bytes(source))
+        if isinstance(source, (bytes, bytearray))
+        else str(source)
+    )
+    try:
+        with opener(handle, "rb") as fh:
+            raw = fh.read(max_bytes + 1)
+    except Exception:  # noqa: BLE001
+        return "", False
+    truncated = len(raw) > max_bytes
+    text = raw[:max_bytes].decode("utf-8", errors="ignore")
+    if truncated:
+        text += "\n...（压缩文本预览已截断）"
+    return text, truncated
+
+
+def extract_eml_text(source: Any, *, max_chars: int = 30_000) -> str:
+    """提取 .eml 邮件的头信息与正文文本，仅依赖标准库。"""
+    import email
+    from email import policy
+    from html import unescape
+
+    raw = _read_source_head(source, _EML_MAX_PARSE_BYTES)
+    if not raw:
+        return ""
+    try:
+        message = email.message_from_bytes(raw, policy=policy.default)
+    except Exception:  # noqa: BLE001
+        return ""
+
+    lines = ["# 邮件"]
+    for label, key in (
+        ("主题", "Subject"),
+        ("发件人", "From"),
+        ("收件人", "To"),
+        ("日期", "Date"),
+    ):
+        value = message.get(key)
+        if value:
+            lines.append(f"- {label}: {value}")
+
+    body_text = ""
+    try:
+        body = message.get_body(preferencelist=("plain", "html"))
+        if body is not None:
+            content = body.get_content()
+            if isinstance(content, bytes):
+                content = content.decode(body.get_content_charset() or "utf-8", errors="ignore")
+            body_text = str(content)
+            if body.get_content_type() == "text/html":
+                body_text = unescape(re.sub(r"<[^>]+>", " ", body_text))
+    except Exception:  # noqa: BLE001
+        body_text = ""
+    body_text = re.sub(r"[ \t]+", " ", body_text)
+    body_text = re.sub(r"\n{3,}", "\n\n", body_text).strip()
+    if body_text:
+        lines.extend(["", body_text])
+    return "\n".join(lines)[:max_chars].strip()
+
+
+def extract_structure_summary(
+    source: Any, filename: str, *, max_chars: int = 30_000
+) -> str:
+    """用 Biopython 生成 PDB/mmCIF 结构摘要；解析失败返回空串。"""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _STRUCTURE_SUFFIXES:
+        return ""
+    size = _source_size(source)
+    if size > _STRUCTURE_MAX_PARSE_BYTES:
+        return (
+            f"# 结构文件: {Path(filename).name}\n"
+            f"- 大小: {_format_size(size)}\n"
+            "- 超过在线摘要上限（50MB），请在沙盒中读取结构。"
+        )
+
+    temp_path: str | None = None
+    try:
+        import tempfile
+        import warnings
+
+        from Bio.PDB.MMCIFParser import MMCIFParser
+        from Bio.PDB.PDBParser import PDBParser
+
+        parser_source: Any = source
+        if isinstance(source, (bytes, bytearray)):
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(bytes(source))
+                temp_path = tmp.name
+            parser_source = temp_path
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if suffix == ".pdb":
+                structure = PDBParser(QUIET=True).get_structure(  # type: ignore[no-untyped-call]
+                    "attachment", parser_source
+                )
+            else:
+                structure = MMCIFParser(QUIET=True).get_structure(  # type: ignore[no-untyped-call]
+                    "attachment", parser_source
+                )
+
+        models = list(structure.get_models())
+        if not models:
+            return f"# 结构文件: {Path(filename).name}\n- 未找到可解析的坐标记录。"
+        model = models[0]
+        chains = list(model.get_chains())
+        residues = list(model.get_residues())
+        atoms = list(model.get_atoms())
+        hetero = sum(1 for residue in residues if residue.id[0].strip())
+        chain_ids = ", ".join(str(chain.id) for chain in chains[:10])
+        if len(chains) > 10:
+            chain_ids += f" 等 {len(chains)} 条"
+        return "\n".join(
+            [
+                f"# 结构文件: {Path(filename).name}",
+                f"- 模型数: {len(models)}",
+                f"- 链数: {len(chains)}" + (f"（{chain_ids}）" if chain_ids else ""),
+                f"- 残基数: {len(residues)}（含配体/水等杂原子残基 {hetero}）",
+                f"- 原子数: {len(atoms)}",
+            ]
+        )[:max_chars]
+    except Exception:  # noqa: BLE001
+        return ""
+    finally:
+        if temp_path:
+            import contextlib
+
+            with contextlib.suppress(OSError):
+                Path(temp_path).unlink(missing_ok=True)
+
+
+def extract_biom_text(source: Any, *, max_chars: int = 30_000) -> str:
+    """生成 BIOM 丰度表摘要；JSON 解析维度，HDF5 容器只回元数据。"""
+    import json
+
+    size = _source_size(source)
+    head = _read_source_head(source, 8)
+    if head == _HDF5_MAGIC:
+        return (
+            "# BIOM 丰度表（HDF5 容器）\n"
+            f"- 大小: {_format_size(size)}\n"
+            "- 后端未内置 HDF5 解析器，请在沙盒中用 h5py/biom 读取。"
+        )
+    if size > _BIOM_MAX_PARSE_BYTES:
+        return (
+            "# BIOM 丰度表\n"
+            f"- 大小: {_format_size(size)}\n"
+            "- 超过在线摘要上限（5MB），请在沙盒中读取。"
+        )
+
+    try:
+        payload = json.loads(_read_source_head(source, _BIOM_MAX_PARSE_BYTES).decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+
+    def _ids(items: Any) -> list[str]:
+        if not isinstance(items, list):
+            return []
+        values: list[str] = []
+        for item in items[:10]:
+            value = (item.get("id") or item.get("name") or "") if isinstance(item, dict) else item
+            if value:
+                values.append(str(value))
+        return values
+
+    rows = payload.get("rows") or []
+    columns = payload.get("columns") or []
+    shape = payload.get("shape")
+    try:
+        if not isinstance(shape, (list, tuple)) or len(shape) < 2:
+            raise ValueError("invalid shape")
+        n_features, n_samples = int(shape[0]), int(shape[1])
+    except (TypeError, ValueError):
+        n_features, n_samples = len(rows), len(columns)
+
+    lines = [
+        "# BIOM 丰度表",
+        f"- 类型: {payload.get('type') or '未知'}",
+        f"- 维度: {n_features} 个特征 × {n_samples} 个样本",
+    ]
+    data = payload.get("data")
+    if isinstance(data, list):
+        lines.append(f"- 稀疏非零值: {len(data)}")
+    feature_ids = _ids(rows)
+    sample_ids = _ids(columns)
+    if feature_ids:
+        lines.append("- 特征示例: " + ", ".join(feature_ids))
+    if sample_ids:
+        lines.append("- 样本示例: " + ", ".join(sample_ids))
+    return "\n".join(lines)[:max_chars]
+
+
+def extract_data_container_summary(
+    source: Any, filename: str, *, max_chars: int = 30_000
+) -> str:
+    """生成 HDF5/MAT 容器摘要；HDF5 只回元数据，MAT 用 scipy 枚举变量。"""
+    suffix = Path(filename).suffix.lower()
+    size = _source_size(source)
+    head = _read_source_head(source, 512)
+    if suffix in {".h5", ".hdf5"}:
+        if head[:8] != _HDF5_MAGIC:
+            return ""
+        return (
+            "# HDF5 数据文件\n"
+            f"- 文件: {Path(filename).name}\n"
+            f"- 大小: {_format_size(size)}\n"
+            "- 后端未内置 h5py，无法枚举数据集；请在沙盒中用 h5py/pandas 读取。"
+        )
+    if suffix != ".mat":
+        return ""
+    if head.startswith(b"MATLAB 7.3") or head[:8] == _HDF5_MAGIC:
+        return (
+            "# MATLAB 数据文件（v7.3 / HDF5）\n"
+            f"- 文件: {Path(filename).name}\n"
+            f"- 大小: {_format_size(size)}\n"
+            "- 该版本为 HDF5 容器，请在沙盒中用 h5py 读取变量。"
+        )
+
+    try:
+        import io
+
+        from scipy.io import whosmat  # type: ignore[import-untyped]
+
+        handle: Any = (
+            io.BytesIO(bytes(source))
+            if isinstance(source, (bytes, bytearray))
+            else str(source)
+        )
+        entries = whosmat(handle)
+    except Exception:  # noqa: BLE001
+        return ""
+
+    lines = [
+        "# MATLAB 数据文件",
+        f"- 文件: {Path(filename).name}",
+        f"- 大小: {_format_size(size)}",
+    ]
+    if not entries:
+        lines.append("- 未发现可读变量。")
+        return "\n".join(lines)[:max_chars]
+    lines.append(f"- 变量数: {len(entries)}")
+    for name, shape, class_name in entries[:30]:
+        lines.append(f"- {name}: {class_name} {shape}")
+    if len(entries) > 30:
+        lines.append(f"- ...（其余 {len(entries) - 30} 个变量已省略）")
+    return "\n".join(lines)[:max_chars]
+
+
+def _convert_image_to_png(data: bytes) -> bytes | None:
+    """把 TIFF/BMP/ICO 等视觉模型不支持的位图转成 PNG 预览。"""
+    import io
+
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as image:
+            if image.width * image.height > _IMAGE_MAX_PIXELS:
+                return None
+            image.seek(0)
+            preview: Any = image
+            if preview.mode.startswith("I") or preview.mode == "F":
+                import numpy as np
+
+                array = np.asarray(preview, dtype=np.float32)
+                if array.size:
+                    low = float(array.min())
+                    high = float(array.max())
+                    if high > low:
+                        array = (array - low) * (255.0 / (high - low))
+                    preview = Image.fromarray(np.clip(array, 0, 255).astype(np.uint8))
+            if preview.mode not in ("RGB", "RGBA"):
+                preview = preview.convert("RGBA" if "A" in preview.getbands() else "RGB")
+            preview.thumbnail((_IMAGE_MAX_SIDE, _IMAGE_MAX_SIDE))
+            output = io.BytesIO()
+            preview.save(output, format="PNG", optimize=True)
+            return output.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class ChatRuntimeSupport:
     """供聊天 Runtime 复用的无状态能力混入。"""
 
@@ -767,7 +1464,10 @@ class ChatRuntimeSupport:
         ]
 
         has_image = any(
-            att.get("type") == "image" or (att.get("mime_type", "").startswith("image/"))
+            att.get("type") == "image"
+            or is_image_attachment(
+                str(att.get("mime_type", "")), str(att.get("name", ""))
+            )
             for att in attachment_dicts
         )
 
@@ -840,7 +1540,7 @@ class ChatRuntimeSupport:
         for att in attachment_dicts:
             att_type = att.get("type", "file")
             mime = att.get("mime_type", "")
-            if att_type == "image" or (mime and mime.startswith("image/")):
+            if att_type == "image" or is_image_attachment(mime, str(att.get("name", ""))):
                 data_url = await ChatRuntimeSupport._read_attachment_data_url(att)
                 if data_url:
                     content.append({"type": "image_url", "image_url": {"url": data_url}})
@@ -905,11 +1605,13 @@ class ChatRuntimeSupport:
 
     @staticmethod
     async def _read_attachment_data_url(att: dict[str, Any]) -> str:
-        """读取附件并返回 base64 data URL（主要用于图片）。"""
+        """读取附件并返回 base64 data URL；TIFF/BMP/ICO 先转 PNG 再交给视觉模型。"""
         import base64
 
         att_url = att.get("url", "")
-        mime = att.get("mime_type") or "application/octet-stream"
+        mime = str(att.get("mime_type") or "application/octet-stream")
+        filename = str(att.get("name", ""))
+        suffix = Path(filename).suffix.lower()
         local_path = ChatRuntimeSupport._resolve_attachment_path(att_url)
         try:
             if local_path:
@@ -923,6 +1625,13 @@ class ChatRuntimeSupport:
                     resp = await client.get(att_url)
                     resp.raise_for_status()
                     data = resp.content
+            if suffix in _IMAGE_CONVERT_SUFFIXES or mime in _IMAGE_CONVERT_MIME_TYPES:
+                converted = await anyio.to_thread.run_sync(_convert_image_to_png, data)
+                if not converted:
+                    logger.warning(f"图片转 PNG 失败，已跳过: {filename}")
+                    return ""
+                data = converted
+                mime = "image/png"
             encoded = base64.b64encode(data).decode("ascii")
             return f"data:{mime};base64,{encoded}"
         except Exception as e:  # noqa: BLE001
@@ -931,23 +1640,58 @@ class ChatRuntimeSupport:
 
     @staticmethod
     async def _read_attachment_text(att: dict[str, Any]) -> str:
-        """读取文本类附件内容；PDF/DOCX 走专用抽取，避免二进制乱码注入模型。"""
+        """读取文本类附件；Office/压缩文本/结构文件走专用抽取，避免二进制乱码注入模型。"""
         att_url = att.get("url", "")
         local_path = ChatRuntimeSupport._resolve_attachment_path(att_url)
         mime_type = str(att.get("mime_type", "")).lower()
         filename = str(att.get("name", ""))
-        is_pdf = mime_type == "application/pdf" or Path(filename).suffix.lower() == ".pdf"
+        suffix = Path(filename).suffix.lower()
+        is_pdf = mime_type == "application/pdf" or suffix == ".pdf"
         is_docx = is_docx_attachment(mime_type, filename)
+        is_excel = is_excel_attachment(mime_type, filename)
+        is_pptx = is_pptx_attachment(mime_type, filename)
+        compression = suffix if suffix in _COMPRESSION_SUFFIXES else ""
+        inner_suffix = compressed_text_inner_suffix(filename)
+
+        def _extract_office(source: Any) -> str:
+            if is_docx:
+                return extract_docx_text(source)
+            if is_excel:
+                return extract_xlsx_text(source)
+            if is_pptx:
+                return extract_pptx_text(source)
+            return ""
+
+        def _extract_special(source: Any) -> str | None:
+            if suffix == ".eml":
+                return extract_eml_text(source) or read_text_preview(source)
+            if suffix in _STRUCTURE_SUFFIXES:
+                return extract_structure_summary(source, filename) or read_text_preview(source)
+            if suffix == ".biom":
+                return extract_biom_text(source)
+            if suffix in _CONTAINER_SUFFIXES:
+                return extract_data_container_summary(source, filename)
+            if suffix == ".xlsb":
+                return (
+                    "# Excel 二进制工作簿（.xlsb）\n"
+                    "- 该格式无法在线抽取文本；请在沙盒中转换为 .xlsx 后读取。"
+                )
+            if compression:
+                return decompress_text_preview(source, compression)[0] if inner_suffix else ""
+            return None
+
         try:
             if local_path:
                 if is_pdf:
                     return await ChatRuntimeSupport._extract_pdf_text(local_path)
-                if is_docx:
-                    return await anyio.to_thread.run_sync(extract_docx_text, local_path)
-                async with await anyio.open_file(
-                    local_path, "r", encoding="utf-8", errors="ignore"
-                ) as f:
-                    return await f.read()
+                if is_docx or is_excel or is_pptx:
+                    return await anyio.to_thread.run_sync(_extract_office, local_path)
+                special = await anyio.to_thread.run_sync(_extract_special, local_path)
+                if special is not None:
+                    return special
+                if suffix in _BINARY_ATTACHMENT_SUFFIXES:
+                    return ""
+                return await anyio.to_thread.run_sync(read_text_preview, local_path)
             if ChatRuntimeSupport._is_internal_url(att_url):
                 logger.warning(f"拒绝读取内网/非法附件 URL: {att_url}")
                 return ""
@@ -957,17 +1701,22 @@ class ChatRuntimeSupport:
                 if is_pdf:
                     import tempfile
 
-                    suffix = Path(filename).suffix or ".pdf"
-                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    pdf_suffix = Path(filename).suffix or ".pdf"
+                    with tempfile.NamedTemporaryFile(suffix=pdf_suffix, delete=False) as tmp:
                         tmp.write(resp.content)
                         tmp_path = tmp.name
                     try:
                         return await ChatRuntimeSupport._extract_pdf_text(tmp_path)
                     finally:
                         await anyio.Path(tmp_path).unlink(missing_ok=True)
-                if is_docx:
-                    return await anyio.to_thread.run_sync(extract_docx_text, resp.content)
-                return resp.text
+                if is_docx or is_excel or is_pptx:
+                    return await anyio.to_thread.run_sync(_extract_office, resp.content)
+                special = await anyio.to_thread.run_sync(_extract_special, resp.content)
+                if special is not None:
+                    return special
+                if suffix in _BINARY_ATTACHMENT_SUFFIXES:
+                    return ""
+                return read_text_preview(resp.content)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"读取文本附件失败 {att.get('name')}: {e}")
             return ""
