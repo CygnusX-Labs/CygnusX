@@ -5,8 +5,8 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from cygnusx.api.deps import CurrentUserId, DbSession
-from cygnusx.application.schemas.project import ProjectOverviewResponse
+from cygnusx.api.deps import CurrentJwtUserId, CurrentUserId, DbSession
+from cygnusx.application.schemas.project import ProjectCapabilityStatus, ProjectOverviewResponse
 from cygnusx.application.services.project_overview_service import ProjectOverviewService
 from cygnusx.application.services.project_service import ProjectService
 
@@ -32,11 +32,12 @@ class ProjectCreateRequest(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=2000)
     status: Literal["active", "completed", "handed_over"] | None = Field(
         None, description="项目状态：active/completed/handed_over"
     )
-    # WP3 任务 3：项目级设置（整体替换）；当前仅约定 research_mode 键，
-    # 新建会话时继承为会话初始 research_mode
+    # RFC 7396: omitted keys stay unchanged; null removes a key.
     settings: dict[str, Any] | None = Field(None, description="项目级设置 JSON 对象")
 
 
@@ -45,7 +46,7 @@ async def list_projects(
     current_user_id: CurrentUserId,
     service: ProjectServiceDep,
 ) -> list[dict[str, Any]]:
-    """返回当前用户的所有分析项目。首次访问会从磁盘回填历史项目。"""
+    """只读返回当前用户的分析项目；磁盘导入使用显式同步端点。"""
     from uuid import UUID
 
     return await service.list_projects(UUID(current_user_id))
@@ -79,8 +80,31 @@ async def create_project(
         from cygnusx.core.exceptions import ConflictError, ValidationError
 
         if isinstance(exc, (ConflictError, ValidationError)):
-            raise HTTPException(status_code=400 if isinstance(exc, ValidationError) else 409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=400 if isinstance(exc, ValidationError) else 409, detail=str(exc)
+            ) from exc
         raise
+
+
+@router.post("/sync-from-disk", summary="显式同步当前用户的历史项目目录")
+async def sync_projects_from_disk(
+    current_user_id: CurrentJwtUserId, service: ProjectServiceDep
+) -> dict[str, int]:
+    from uuid import UUID
+
+    return await service.sync_from_disk(UUID(current_user_id))
+
+
+@router.get("/{project_id}/capability-status", response_model=ProjectCapabilityStatus)
+async def project_capability_status(
+    project_id: str, current_user_id: CurrentUserId, service: ProjectServiceDep
+) -> ProjectCapabilityStatus:
+    from uuid import UUID
+
+    try:
+        return await service.capability_status(UUID(current_user_id), UUID(project_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
 
 
 @router.get("/{project_id}", summary="获取项目详情")
@@ -147,30 +171,16 @@ async def update_project(
     project_id: str,
     req: ProjectUpdateRequest,
 ) -> dict[str, Any]:
-    """更新项目元信息（status：active/completed/handed_over；settings：项目级设置）。
-
-    标记 completed/handed_over 时，其下 studio 会话工作区会后台休眠打包。
-    settings 整体替换，当前仅约定 research_mode 键（科研模式三开关），
-    创建会话时继承为会话初始 research_mode。
-    """
+    """原子修改名称/描述/状态和 Merge Patch 设置，保留 slug 与物理路径。"""
     from uuid import UUID
 
     from cygnusx.core.exceptions import NotFoundError
     from cygnusx.core.exceptions import ValidationError as DomainValidationError
 
     try:
-        payload: dict[str, Any] = {}
-        if req.status is not None:
-            payload = await service.mark_project_status(
-                UUID(current_user_id), UUID(project_id), req.status
-            )
-        if req.settings is not None:
-            payload = await service.update_project_settings(
-                UUID(current_user_id), UUID(project_id), req.settings
-            )
-        if not payload:
-            raise DomainValidationError("请求体为空：status 与 settings 至少传一个")
-        return payload
+        return await service.update_project(
+            UUID(current_user_id), UUID(project_id), req.model_dump(exclude_unset=True)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
     except DomainValidationError as exc:

@@ -1,0 +1,38 @@
+{
+  "status": "applied_and_verified",
+  "changed_env_key_names": [
+    "AGENT_MEMORY_EMBEDDING_MODEL",
+    "AGENT_MEMORY_EMBEDDING_PROVIDER_ID",
+    "AGENT_MEMORY_EMBEDDING_DIMENSIONS",
+    "MEMORY_MAINTENANCE_DATABASE_URL",
+    "SILICONFLOW_API_KEY"
+  ],
+  "env_backup": "/tmp/cygnusx-memory-wiring-ygvd6tl2/env.before",
+  "backup_permissions": "0600 in 0700 directory outside evidence",
+  "maintenance_target_database": "omichub",
+  "maintenance_target_source": "Explicit POSTGRES_HOST/PORT/USER/PASSWORD/DB; business DATABASE_URL never used as a fallback",
+  "model_corrected_to_yaml_full_id": true,
+  "provider_uuid_state": "synced UUID configured; active=true, default=false",
+  "siliconflow_api_key_present": true,
+  "containers_recreated": true,
+  "real_calls": {
+    "embedding": 0,
+    "extraction": 0
+  },
+  "preparation_snapshot": {
+    "status": "prepared_pending_user_key",
+    "provider_uuid_state": "temporarily empty until startup sync",
+    "siliconflow_api_key_present": false,
+    "containers_recreated": false,
+    "real_calls": {
+      "embedding": 0,
+      "extraction": 0
+    }
+  },
+  "effective_settings_evidence": "step3-effective-settings.json",
+  "real_calls_scope": "Original preparation was read-only/no calls; cumulative ledger is authoritative",
+  "cumulative_calls": {
+    "embedding": 41,
+    "extraction": 7
+  }
+}

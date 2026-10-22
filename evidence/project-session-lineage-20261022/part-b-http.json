@@ -1,0 +1,317 @@
+[
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/d38c3881-93b4-45fd-b22a-a4c722dba38f/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "需要绑定项目的会话",
+      "code": "PROJECT_REQUIRED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/9def0a07-cf78-466d-90e0-38e37867ef01/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 404,
+    "status": 404,
+    "response": {
+      "detail": "会话不存在或无权访问"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "1.0",
+      "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+      "result": {
+        "mode": "PLAN_ONLY",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "write_enabled": false,
+        "gate": "WRITE_GATE_BLOCKED",
+        "state": "REVIEW_REQUIRED",
+        "gaps": [
+          "ASSAY_REVIEW_REQUIRED",
+          "SAMPLE_GROUPS_NOT_CONFIRMED"
+        ],
+        "handoff_frozen": false
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/review",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "assay_type": "bulk_rnaseq",
+      "history": [
+        {
+          "assay_type": "bulk_rnaseq",
+          "reason": "Human JWT explicit FASTQ assay review for isolated PLAN_ONLY pilot",
+          "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+          "reviewed_at": "2026-10-21T17:19:09.407005+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/samples/sample1/review",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "sample_key": "sample1",
+      "group": "control",
+      "mapping_status": "CONFIRMED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "1.0",
+      "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+      "result": {
+        "mode": "PLAN_ONLY",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "write_enabled": false,
+        "gate": "WRITE_GATE_BLOCKED",
+        "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+        "flow_id": "rna_seq",
+        "parameters": {
+          "project_name": "Explicit FASTQ PLAN_ONLY",
+          "client": "Dataset import",
+          "Genome_Version": "hg38",
+          "species": "Homo sapiens",
+          "Library_Types": "fr-unstranded",
+          "deg": false,
+          "raw_data_path": "directory://raw_data"
+        },
+        "sample_sheet": [
+          {
+            "sample": "sample1",
+            "sample_name": "paired-pilot",
+            "group": "control"
+          }
+        ],
+        "comparisons": [],
+        "parameters_hash": "255e3ce8b7905786f8511d34c9ca0b20fc082e639933f22f6722a047516866e6",
+        "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+        "expires_at": "2026-10-21T17:49:09.508277+00:00",
+        "resource_hint": {
+          "cores": 8,
+          "memory": "32G",
+          "time": "4h"
+        },
+        "worker_paths_verified": false,
+        "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+        "state": "PREPARED",
+        "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+        "handoff_frozen": true
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "1.0",
+      "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+      "result": {
+        "mode": "PLAN_ONLY",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "write_enabled": false,
+        "gate": "WRITE_GATE_BLOCKED",
+        "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+        "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+        "state": "PREPARED",
+        "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+        "handoff_frozen": true
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 409,
+    "status": 409,
+    "response": {
+      "detail": "请求键已绑定其他输入或项目",
+      "code": "REQUEST_KEY_REUSED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/analysis-proposals/c075f3cf-920d-4142-91fe-c184646ee4aa/approve",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+      "state": "APPROVED",
+      "write_enabled": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/analysis-proposals/c075f3cf-920d-4142-91fe-c184646ee4aa/execute",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "Agent 写操作运行门禁未通过",
+      "code": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/analysis-proposals/c075f3cf-920d-4142-91fe-c184646ee4aa",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+      "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+      "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+      "expires_at": "2026-10-21T17:49:09.508277+00:00",
+      "parameters_hash": "255e3ce8b7905786f8511d34c9ca0b20fc082e639933f22f6722a047516866e6",
+      "state": "APPROVED",
+      "task_id": null,
+      "preview": {
+        "parameters": {
+          "project_name": "Explicit FASTQ PLAN_ONLY",
+          "client": "Dataset import",
+          "Genome_Version": "hg38",
+          "species": "Homo sapiens",
+          "Library_Types": "fr-unstranded",
+          "deg": false,
+          "raw_data_path": "directory://raw_data"
+        },
+        "sample_sheet": [
+          {
+            "sample": "sample1",
+            "sample_name": "paired-pilot",
+            "group": "control"
+          }
+        ],
+        "comparisons": [],
+        "resource_hint": {
+          "cores": 8,
+          "memory": "32G",
+          "time": "4h"
+        }
+      },
+      "write_enabled": false,
+      "gate": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/runs/3994b334-77c9-42b7-998e-c011cf7a3790/confirm",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "Agent 写操作运行门禁未通过",
+      "code": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/delivery-inventory",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+      "datasets": [
+        {
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+          "analyses": [
+            {
+              "analysis_link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+              "task_id": null,
+              "compute_state": "PREPARED",
+              "delivery_state": "BLOCKED",
+              "gaps": [
+                "TASK_NOT_CREATED"
+              ]
+            }
+          ],
+          "gaps": []
+        },
+        {
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "c86197b1-b227-459f-a9a0-9bdaf2da026d",
+          "dataset_version_id": "e56be7ef-7589-42ac-bd27-58e0ae368669",
+          "handoff_hash": null,
+          "analyses": [],
+          "gaps": [
+            "HANDOFF_NOT_FROZEN"
+          ]
+        }
+      ],
+      "runtime_admission": "BLOCKED",
+      "truncated": false,
+      "association_status": "VERIFIED_ASSOCIATION",
+      "association_scope": "explicit_dataset_links_only",
+      "historical_tasks": {
+        "status": "NOT_RECORDED",
+        "reason": "NO_PROJECT_FK_NO_BACKFILL"
+      },
+      "export_enabled": false
+    }
+  }
+]

@@ -1,7 +1,7 @@
 """长期记忆异步摘要任务的无外部依赖契约测试。"""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -145,6 +145,10 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
     """压缩事件属于审计流，settle 仍只消费 chat_messages 的新消息区间。"""
     from cygnusx.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
 
+    extraction_failures = SimpleNamespace(add=MagicMock())
+    monkeypatch.setattr(
+        "cygnusx.infrastructure.celery_app.tasks.memory._settle_extract_failed", extraction_failures
+    )
     chat_session = _session(
         session_id="chat-compaction-memory-1",
         message_count=2,
@@ -254,6 +258,7 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
         assert databases[0].added == []
         assert databases[0].committed is False
         assert chat_session.last_settled_message_id is None
+        extraction_failures.add.assert_called_once_with(1)
         return
 
     assert result == {
@@ -263,6 +268,7 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
     }
     assert len(databases) == 2
     assert databases[1].committed is True
+    extraction_failures.add.assert_not_called()
     assert chat_session.last_settled_message_id == "memory-assistant-1"
 
 

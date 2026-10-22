@@ -1,0 +1,40 @@
+[
+  {
+    "name": "browser_launched",
+    "evidence": "131.0.6778.33"
+  },
+  {
+    "name": "real_ui_login",
+    "evidence": {
+      "browser": "131.0.6778.33",
+      "chromiumSandbox": true
+    }
+  },
+  {
+    "name": "saved_true_is_visible",
+    "evidence": true
+  },
+  {
+    "name": "saved_true_survives_refresh",
+    "evidence": true
+  },
+  {
+    "name": "same_view_project_switch_resets_saved_false",
+    "evidence": true
+  },
+  {
+    "name": "disabled_surfaces_make_zero_research_requests",
+    "evidence": {
+      "unwanted": [],
+      "capabilityRequests": 3
+    }
+  },
+  {
+    "name": "ui_toggle_persisted_by_real_patch",
+    "evidence": true
+  },
+  {
+    "name": "pageerrors",
+    "evidence": []
+  }
+]

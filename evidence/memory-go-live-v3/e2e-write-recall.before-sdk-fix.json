@@ -1,0 +1,9 @@
+{
+  "synthetic_only": true,
+  "database": "omichub",
+  "status": "failed",
+  "checks": {},
+  "real_embedding_source": "configured SiliconFlow Provider via LiteLLMProvider",
+  "error_type": "AssertionError",
+  "cleanup": "synthetic facts, blocks, KB and recall receipts removed; owner facts absence verified"
+}

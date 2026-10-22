@@ -10,6 +10,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -39,16 +40,34 @@ class ProjectModel(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # 可选客户名（项目归属客户/课题组）
     customer: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
-    # 项目状态：active（NULL 视为进行中）/ completed / handed_over；
+    # 项目状态：active / completed / handed_over；读取侧 NULL 兼容至 lifecycle02。
     # 标记 completed/handed_over 时触发其下会话工作区休眠打包。
-    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
     # 项目级设置（WP3 任务 3，JSONB）：{"research_mode": {...}}；
     # 创建会话时 research_mode 继承为会话 sandbox_meta.research_mode 初始值。
-    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
+
+
+class ProjectTombstoneModel(Base):
+    """Reserve deleted project identities without moving retained artifacts."""
+
+    __tablename__ = "project_tombstones"
+    __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_project_tombstones_user_slug"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

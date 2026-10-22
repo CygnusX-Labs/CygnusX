@@ -1,0 +1,7 @@
+Original objective: /home/zj/.codex/attachments/0fb88f63-0b83-4cf8-ab9a-f5bb782384a0/pasted-text-1.txt
+Accepted source baseline: stage 2 worktree, not production root. No commits/push/deploy.
+A: owned JWT preview/approve/commit claim endpoint; strict archive + FileRegistry checksum, mandatory purpose; existing Dataset/Version/Handoff/Link; historical-only status and frozen worker false; no Task; rename/move/content-bound idempotency; durable append-only audit including rejects.
+B: existing platform_runs project_id nullable exact user/slug migration, unmatched NULL; reserved attempt_number=0; stage2 Run/Dataset Task convergence remains.
+C: materialized metadata in platform_runs; automatic archive-write index, explicit sync/claim/delete refresh; overview database-only paginated runs; dedicated one-time project backfill timing report.
+D: GET reconciliation, read-only actual disk-versus-DB: unclaimed dirs, missing archives, Run/Link/Task binding conflicts. Action guidance; no repair/adoption.
+Evidence required: complete/missing-manifest/tampered/already-claimed fixtures; real API + dedicated PG/Redis; pre/post DB records; 3 reconciliation categories; migration matching/unmatched owner-safe backfill; old scan vs indexed response timings; auth negatives, traversal, tamper, append-only SQL mutation rejection; runtime source and config write gates remain false. Inventory clearly historical. Deliver incremental patch/line locations, migration/flags (zero new), logs/data, no self-acceptance.

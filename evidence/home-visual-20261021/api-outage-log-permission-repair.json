@@ -1,0 +1,16 @@
+{
+  "reason": "Root-owned JSON log blocked UID 1000 web and beat startup",
+  "original": "/data/omichub/logs/app/cygnusx.json.log",
+  "backup": "/data/omichub/logs/app/cygnusx.json.permission-backup-20261021T080305Z.log",
+  "before": {
+    "uid": 0,
+    "gid": 0,
+    "mode": "0o644"
+  },
+  "after": {
+    "uid": 1000,
+    "gid": 1000,
+    "mode": "0o644"
+  },
+  "historyPreserved": true
+}

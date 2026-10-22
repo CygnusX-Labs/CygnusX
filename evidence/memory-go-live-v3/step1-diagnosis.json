@@ -1,0 +1,721 @@
+{
+  "captured_at_utc": "2026-10-21T14:11:50.119688+00:00",
+  "env_file": {
+    "path": ".env",
+    "mtime_utc": "2026-10-21T02:41:32.908467+00:00",
+    "nonempty_keys": {
+      "AGENT_MEMORY_EMBEDDING_MODEL": true,
+      "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": true,
+      "AGENT_MEMORY_EMBEDDING_DIMENSIONS": true,
+      "SILICONFLOW_API_KEY": false,
+      "MEMORY_MAINTENANCE_DATABASE_URL": false
+    }
+  },
+  "services": [
+    {
+      "service": "web",
+      "container": "cygnusx-web",
+      "created_at": "2026-10-18T11:44:26.583180181Z",
+      "started_at": "2026-10-21T08:42:05.71968417Z",
+      "env_file_modified_after_container_created": true,
+      "env_key_presence": {
+        "AGENT_MEMORY_EMBEDDING_MODEL": false,
+        "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": false,
+        "AGENT_MEMORY_EMBEDDING_DIMENSIONS": false,
+        "SILICONFLOW_API_KEY": false,
+        "MEMORY_MAINTENANCE_DATABASE_URL": false
+      },
+      "compose_sources": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.yml,/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.pgvector.yml,/home/zj/zj_code_libarary/OmicHub/deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "source_references": [
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 53,
+          "source": "env_file:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 54,
+          "source": "- ../../.env"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 55,
+          "source": "environment:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 84,
+          "source": "- ../../src:/app/src:ro  # 开发环境热重载"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 89,
+          "source": "- ../../data:/app/data:ro  # AI Provider YAML 配置（热重载）"
+        }
+      ],
+      "relevant_mounts": [
+        {
+          "destination": "/app/src",
+          "source": "/home/zj/zj_code_libarary/OmicHub/src",
+          "read_only": true
+        },
+        {
+          "destination": "/app/data",
+          "source": "/home/zj/zj_code_libarary/OmicHub/data",
+          "read_only": true
+        }
+      ],
+      "provider_yaml_source": "bind mount",
+      "env_contract": "env_file loads all five keys when present at container creation; no fixed allowlist blocks new keys",
+      "timing_limitation": "mtime is whole-file metadata; does not date individual key edits"
+    },
+    {
+      "service": "beat",
+      "container": "cygnusx-beat",
+      "created_at": "2026-10-18T11:44:27.02788826Z",
+      "started_at": "2026-10-21T08:41:55.957090068Z",
+      "env_file_modified_after_container_created": true,
+      "env_key_presence": {
+        "AGENT_MEMORY_EMBEDDING_MODEL": false,
+        "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": false,
+        "AGENT_MEMORY_EMBEDDING_DIMENSIONS": false,
+        "SILICONFLOW_API_KEY": false,
+        "MEMORY_MAINTENANCE_DATABASE_URL": false
+      },
+      "compose_sources": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.yml,/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.pgvector.yml,/home/zj/zj_code_libarary/OmicHub/deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "source_references": [
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 182,
+          "source": "env_file:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 183,
+          "source": "- ../../.env"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 184,
+          "source": "environment:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.yml",
+          "line": 197,
+          "source": "- ../../src:/app/src:ro  # 开发环境热重载"
+        }
+      ],
+      "relevant_mounts": [
+        {
+          "destination": "/app/src",
+          "source": "/home/zj/zj_code_libarary/OmicHub/src",
+          "read_only": true
+        }
+      ],
+      "provider_yaml_source": "image or absent (not required by Beat)",
+      "env_contract": "env_file loads all five keys when present at container creation; no fixed allowlist blocks new keys",
+      "timing_limitation": "mtime is whole-file metadata; does not date individual key edits"
+    },
+    {
+      "service": "worker",
+      "container": "cygnusx-worker",
+      "created_at": "2026-10-18T11:47:34.654628402Z",
+      "started_at": "2026-10-18T11:47:35.234857363Z",
+      "env_file_modified_after_container_created": true,
+      "env_key_presence": {
+        "AGENT_MEMORY_EMBEDDING_MODEL": false,
+        "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": false,
+        "AGENT_MEMORY_EMBEDDING_DIMENSIONS": false,
+        "SILICONFLOW_API_KEY": false,
+        "MEMORY_MAINTENANCE_DATABASE_URL": false
+      },
+      "compose_sources": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.worker.yml",
+      "source_references": [
+        {
+          "file": "deploy/docker/docker-compose.worker.yml",
+          "line": 89,
+          "source": "env_file:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.worker.yml",
+          "line": 90,
+          "source": "- ../../.env"
+        },
+        {
+          "file": "deploy/docker/docker-compose.worker.yml",
+          "line": 91,
+          "source": "environment:"
+        },
+        {
+          "file": "deploy/docker/docker-compose.worker.yml",
+          "line": 113,
+          "source": "- ../../src:/app/src:ro"
+        },
+        {
+          "file": "deploy/docker/docker-compose.worker.yml",
+          "line": 114,
+          "source": "- ../../data:/app/data:ro  # Agent YAML/提示词等站点内容（agentteams 会诊/房间响应等 celery 任务依赖 capability registry）"
+        }
+      ],
+      "relevant_mounts": [
+        {
+          "destination": "/app/src",
+          "source": "/home/zj/zj_code_libarary/OmicHub/src",
+          "read_only": true
+        },
+        {
+          "destination": "/app/data",
+          "source": "/home/zj/zj_code_libarary/OmicHub/data",
+          "read_only": true
+        }
+      ],
+      "provider_yaml_source": "bind mount",
+      "env_contract": "env_file loads all five keys when present at container creation; no fixed allowlist blocks new keys",
+      "timing_limitation": "mtime is whole-file metadata; does not date individual key edits"
+    }
+  ],
+  "real_calls": {
+    "embedding": 0,
+    "extraction": 0
+  },
+  "worker_embedding_errors": {
+    "docker_logs_exit_code": 0,
+    "matched_lines": 47,
+    "sanitized_contexts": [
+      {
+        "docker_timestamp": "2026-10-21T10:18:18.067768788Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:23:18.068608511Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:28:18.067013329Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:33:18.066553895Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:38:18.066621015Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:43:18.066879761Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:48:18.067076048Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:53:18.066439923Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T10:58:18.068237641Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:03:18.068192205Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:08:18.067867125Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:13:18.067172910Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:18:18.068203787Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:23:18.066787975Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:28:18.067304363Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:33:18.067489062Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:38:18.067232733Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:43:18.067248404Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:48:18.067292592Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:53:18.067601132Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T11:58:18.066944313Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:03:18.067765760Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:08:18.068433711Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:13:18.067427375Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:18:18.067947472Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:23:18.067179962Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:28:18.067954936Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:33:18.067465100Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:38:18.067665125Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:43:18.067414648Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:48:18.067384046Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:53:18.068859832Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T12:58:18.067566064Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:03:18.067953373Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:08:18.068889484Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:13:18.068368425Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:18:18.067648232Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:23:18.068122953Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:28:18.069013868Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:33:18.067798046Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:38:18.068093830Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:43:18.068458347Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:48:18.069752304Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:53:18.068238236Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T13:58:18.068291411Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T14:03:18.067835927Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      },
+      {
+        "docker_timestamp": "2026-10-21T14:08:18.067967321Z",
+        "exception_types": [],
+        "missing_schema_or_attribute_identifiers": [],
+        "frames": [],
+        "memory_events": [
+          "memory.collect_embedding_coverage"
+        ],
+        "context_redaction": "Only exception class, schema identifier and code frames retained; messages, SQL parameters, user content and credentials excluded"
+      }
+    ],
+    "unregistered_coverage_task_count": 47,
+    "unregistered_task_names": [
+      "cygnusx.infrastructure.celery_app.tasks.memory.collect_embedding_coverage"
+    ]
+  },
+  "diagnosis": {
+    "configuration": "Existing env_file covers the required keys; current containers predate applicable file contents or were created without these values. Timing and key-presence evidence above.",
+    "yaml": "Web/Worker use read-only data bind mounts. No image rebuild is required to see providers.yaml. Web startup YAML synchronization still requires an operational database and valid interpolation environment.",
+    "credential": "SILICONFLOW_API_KEY nonempty presence checked only; user supplies key.",
+    "maintenance": "Explicit dedicated MEMORY_MAINTENANCE_DATABASE_URL still required before maintenance; no implicit DATABASE_URL fallback permitted.",
+    "worker_error": {
+      "root_cause": "Running Celery worker does not have the coverage task in its loaded registry; source is bind-mounted but worker imports remain from process start",
+      "evidence": "docker logs cygnusx-worker: Received unregistered task of type (fully qualified task name recorded)",
+      "count": 47,
+      "tasks": [
+        "cygnusx.infrastructure.celery_app.tasks.memory.collect_embedding_coverage"
+      ],
+      "code_references": [
+        "src/cygnusx/infrastructure/celery_app/celery.py:42",
+        "src/cygnusx/infrastructure/celery_app/celery.py:107",
+        "src/cygnusx/infrastructure/celery_app/tasks/memory.py:346"
+      ],
+      "remediation": "force-recreate worker; verify loaded registry contains the current full task name and a targeted coverage task completes",
+      "registry_coverage_task_loaded": false
+    },
+    "provider_sync": {
+      "root_cause": "Startup YAML sync rolls back on uq_ai_provider_configs_default when ORM flush enables a new default before clearing the previous one",
+      "live_default_metadata": "The existing default points to an inactive provider; YAML specifies its own current default",
+      "evidence": "web_provider_sync_failures and provider-default-postgres.json",
+      "remediation": "Two ordered UPDATE statements in the same transaction, preserving caller/YAML target and active state",
+      "fix_status": "Code and isolated PostgreSQL regression verified; runtime synchronization pending credential and recreation"
+    }
+  },
+  "worker_loaded_registry": {
+    "status": "collected",
+    "inspect_exit_code": 0,
+    "coverage_task_loaded": false,
+    "memory_tasks": [
+      "cygnusx.infrastructure.celery_app.tasks.memory.backfill_embeddings",
+      "cygnusx.infrastructure.celery_app.tasks.memory.migrate_legacy_memories",
+      "cygnusx.infrastructure.celery_app.tasks.memory.settle_session_memory"
+    ]
+  },
+  "web_provider_sync_failures": [
+    {
+      "exception_types": [
+        "IntegrityError",
+        "UniqueViolationError"
+      ],
+      "constraint_names": [
+        "uq_ai_provider_configs_default"
+      ],
+      "timestamp": "2026-10-21 08:42:20.172"
+    },
+    {
+      "exception_types": [
+        "IntegrityError",
+        "UniqueViolationError"
+      ],
+      "constraint_names": [
+        "uq_ai_provider_configs_default"
+      ],
+      "timestamp": "2026-10-21 08:42:20.237"
+    }
+  ]
+}

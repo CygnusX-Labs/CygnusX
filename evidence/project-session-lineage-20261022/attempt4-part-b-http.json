@@ -1,0 +1,71 @@
+[
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/d38c3881-93b4-45fd-b22a-a4c722dba38f/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "需要绑定项目的会话",
+      "code": "PROJECT_REQUIRED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/9def0a07-cf78-466d-90e0-38e37867ef01/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 404,
+    "status": 404,
+    "response": {
+      "detail": "会话不存在或无权访问"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 200,
+    "status": 422,
+    "response": {
+      "detail": "RNAFlow 预案参数未通过验证",
+      "code": "ANALYSIS_PREPARE_INVALID"
+    }
+  }
+]

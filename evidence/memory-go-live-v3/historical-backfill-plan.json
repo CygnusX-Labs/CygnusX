@@ -1,0 +1,43 @@
+{
+  "status": "dry_run",
+  "database": "omichub",
+  "limit": 10,
+  "planned_updates": 10,
+  "selection_statuses": [
+    "archived",
+    "superseded"
+  ],
+  "state_counts": {
+    "archived": 9,
+    "superseded": 1
+  },
+  "dry_run": {
+    "mode": "missing",
+    "storage": "facts",
+    "target_model": "Qwen/Qwen3-Embedding-8B",
+    "before": {
+      "status": "collected",
+      "storage": "facts",
+      "target_model": "Qwen/Qwen3-Embedding-8B",
+      "active": 1,
+      "compatible": 1,
+      "missing": 0,
+      "mismatched": 0,
+      "pending": 0,
+      "coverage": 1.0
+    },
+    "selection_statuses": [
+      "archived",
+      "superseded"
+    ],
+    "status": "dry_run",
+    "pending": 10,
+    "updated": 0
+  },
+  "unchanged_columns_fingerprint": "bf8061983bb7e5f8c9b539cd1352d68541fd482b5051bb266941881c25183094",
+  "backup_path": "/tmp/cygnusx-memory-historical-backup-8xlezgrx/memory_facts.dump",
+  "backup_size_bytes": 12991,
+  "backup_sha256": "76acdec5b008ed8f25b1355f6a961f4efd6a75ccfad7d4dfe3e940e0fd8d54c9",
+  "backup_toc_verified": true,
+  "preservation": "Every column except embedding and embedding_model; no status transitions"
+}

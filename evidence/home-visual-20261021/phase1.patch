@@ -1,0 +1,388 @@
+diff --git a/frontend/src/components/AnnouncementBanner.vue b/frontend/src/components/AnnouncementBanner.vue
+index 43e495b8..6af72b6f 100644
+--- a/frontend/src/components/AnnouncementBanner.vue
++++ b/frontend/src/components/AnnouncementBanner.vue
+@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
+   to?: string
+   dismissKey?: string
+   closable?: boolean
++  rememberDismissal?: boolean
+ }>(), {
+   title: '',
+   description: '',
+@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<{
+   to: '',
+   dismissKey: '',
+   closable: true,
++  rememberDismissal: false,
+ })
+ 
+ const banner = ref<Announcement | null>(null)
+@@ -39,6 +41,22 @@ const displayDescription = computed(() => props.description || banner.value?.des
+ const displayActionText = computed(() => props.actionText || banner.value?.button_text || '')
+ const canDismiss = computed(() => isStatic.value ? props.closable : banner.value?.dismiss_behavior !== 'none')
+ 
++function storageKey(b: Announcement): string {
++  if (!props.rememberDismissal) return STORAGE_PREFIX + b.id
++  // 首页按可见内容建立版本；同一公告更新文案后可重新展示。
++  // 不用 updated_at：临时优惠公告在每次加载时都会生成新的时间戳。
++  const version = JSON.stringify([b.title, b.description, b.icon, b.link, b.button_text])
++  return `announcement:${b.id}:${encodeURIComponent(version)}:dismissed`
++}
++
++function readDismissal(key: string): string | null {
++  try { return localStorage.getItem(key) } catch { return null }
++}
++
++function writeDismissal(key: string, value: string) {
++  try { localStorage.setItem(key, value) } catch { /* 存储不可用时仍允许关闭当前横幅。 */ }
++}
++
+ /** 今日日期字符串 YYYY-MM-DD，用于 daily 关闭判断 */
+ function todayStr(): string {
+   const d = new Date()
+@@ -49,8 +67,9 @@ function todayStr(): string {
+ /** 该通知是否已被当前用户关闭 */
+ function isDismissed(b: Announcement): boolean {
+   if (b.dismiss_behavior === 'none') return false
+-  const val = localStorage.getItem(STORAGE_PREFIX + b.id)
++  const val = readDismissal(storageKey(b))
+   if (!val) return false
++  if (props.rememberDismissal) return true
+   if (b.dismiss_behavior === 'forever') return true
+   if (b.dismiss_behavior === 'daily') return val === todayStr()
+   return false
+@@ -58,17 +77,17 @@ function isDismissed(b: Announcement): boolean {
+ 
+ function dismiss() {
+   if (isStatic.value) {
+-    localStorage.setItem(staticStorageKey.value, 'forever')
++    writeDismissal(staticStorageKey.value, 'forever')
+     visible.value = false
+     return
+   }
+   if (!banner.value) return
+   const b = banner.value
+   if (b.dismiss_behavior !== 'none') {
+-    const val = b.dismiss_behavior === 'daily' ? todayStr() : 'forever'
+-    localStorage.setItem(STORAGE_PREFIX + b.id, val)
++    const val = !props.rememberDismissal && b.dismiss_behavior === 'daily' ? todayStr() : 'forever'
++    writeDismissal(storageKey(b), val)
+   }
+-  // 触发 Transition leave（height + opacity 收起）
++  // 触发 Transition leave。
+   visible.value = false
+ }
+ 
+@@ -94,7 +113,7 @@ const iconDisplay = computed(() => {
+ 
+ onMounted(async () => {
+   if (isStatic.value) {
+-    visible.value = !props.closable || localStorage.getItem(staticStorageKey.value) !== 'forever'
++    visible.value = !props.closable || readDismissal(staticStorageKey.value) !== 'forever'
+     return
+   }
+   try {
+diff --git a/frontend/src/components/__tests__/AnnouncementBanner.test.ts b/frontend/src/components/__tests__/AnnouncementBanner.test.ts
+new file mode 100644
+index 00000000..5ad50815
+--- /dev/null
++++ b/frontend/src/components/__tests__/AnnouncementBanner.test.ts
+@@ -0,0 +1,110 @@
++// @vitest-environment jsdom
++import { createApp, h, nextTick } from 'vue'
++import { createMemoryHistory, createRouter } from 'vue-router'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import type { Announcement } from '@/types/announcement'
++import AnnouncementBanner from '../AnnouncementBanner.vue'
++
++const api = vi.hoisted(() => ({ getActive: vi.fn(), getAiTokenRate: vi.fn() }))
++vi.mock('@/api/announcements', () => ({ announcementApi: { getActive: api.getActive } }))
++vi.mock('@/api/cookies', () => ({ cookieApi: { getAiTokenRate: api.getAiTokenRate } }))
++
++const announcement: Announcement = {
++  id: 'rna-atac-ready',
++  title: 'RNA-seq / ATAC-seq 分析已就绪',
++  description: '选择分析流程，开始研究',
++  type: 'feature',
++  link: '/flows',
++  button_text: '开始分析',
++  dismiss_behavior: 'daily',
++  start_time: '2026-10-01T00:00:00Z',
++  priority: 1,
++  is_enabled: true,
++  created_at: '2026-10-01T00:00:00Z',
++  updated_at: '2026-10-01T00:00:00Z',
++}
++
++let app: ReturnType<typeof createApp> | undefined
++let host: HTMLDivElement | undefined
++function unmount() {
++  app?.unmount()
++  host?.remove()
++}
++async function mount(rememberDismissal = true) {
++  unmount()
++  const router = createRouter({
++    history: createMemoryHistory(),
++    routes: ['/', '/flows'].map(path => ({ path, component: { render: () => h('div') } })),
++  })
++  await router.push('/')
++  host = document.createElement('div')
++  document.body.appendChild(host)
++  app = createApp({ render: () => h(AnnouncementBanner, { rememberDismissal }) })
++  app.use(router)
++  app.mount(host)
++  for (let i = 0; i < 8; i++) {
++    await Promise.resolve()
++    await nextTick()
++  }
++  return { page: host, router }
++}
++function close(page: HTMLDivElement) {
++  page.querySelector<HTMLButtonElement>('.banner-close')!.click()
++}
++
++beforeEach(() => {
++  localStorage.clear()
++  api.getActive.mockResolvedValue([{ ...announcement }])
++  api.getAiTokenRate.mockResolvedValue({})
++})
++afterEach(() => {
++  unmount()
++  app = undefined
++  host = undefined
++  vi.restoreAllMocks()
++  vi.useRealTimers()
++})
++
++describe('homepage announcement dismissal', () => {
++  it('persists across remounts and days, and reappears when content changes', async () => {
++    vi.useFakeTimers({ toFake: ['Date'] })
++    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'))
++    close((await mount()).page)
++    expect(localStorage.length).toBe(1)
++    expect((await mount()).page.querySelector('.announcement-banner')).toBeNull()
++    vi.setSystemTime(new Date('2026-10-22T12:00:00Z'))
++    expect((await mount()).page.querySelector('.announcement-banner')).toBeNull()
++    api.getActive.mockResolvedValue([{ ...announcement, description: '新增分析能力' }])
++    expect((await mount()).page.textContent).toContain('新增分析能力')
++  })
++
++  it('ignores regenerated timestamps and shows a new announcement ID', async () => {
++    close((await mount()).page)
++    api.getActive.mockResolvedValue([{ ...announcement, updated_at: new Date().toISOString() }])
++    expect((await mount()).page.querySelector('.announcement-banner')).toBeNull()
++    api.getActive.mockResolvedValue([{ ...announcement, id: 'rna-atac-ready-v2' }])
++    expect((await mount()).page.querySelector('.announcement-banner')).not.toBeNull()
++  })
++
++  it('preserves daily and non-dismissible policies outside the homepage override', async () => {
++    vi.useFakeTimers({ toFake: ['Date'] })
++    vi.setSystemTime(new Date('2026-10-21T12:00:00Z'))
++    close((await mount(false)).page)
++    expect((await mount(false)).page.querySelector('.announcement-banner')).toBeNull()
++    vi.setSystemTime(new Date('2026-10-22T12:00:00Z'))
++    expect((await mount(false)).page.querySelector('.announcement-banner')).not.toBeNull()
++    api.getActive.mockResolvedValue([{ ...announcement, dismiss_behavior: 'none' }])
++    expect((await mount()).page.querySelector('.banner-close')).toBeNull()
++  })
++
++  it('keeps the action destination and still closes when storage is unavailable', async () => {
++    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
++    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
++    const { page, router } = await mount()
++    page.querySelector<HTMLButtonElement>('.banner-btn')!.click()
++    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/flows'))
++    close(page)
++    await nextTick()
++    await vi.waitFor(() => expect(page.querySelector('.announcement-banner')).toBeNull())
++  })
++})
+diff --git a/frontend/src/views/HomeView.vue b/frontend/src/views/HomeView.vue
+index a32ed90e..dc65c09e 100644
+--- a/frontend/src/views/HomeView.vue
++++ b/frontend/src/views/HomeView.vue
+@@ -133,6 +133,11 @@ const capabilityMaturity = [
+ ]
+ 
+ const content = ref<SiteContent>(DEFAULT_CONTENT)
++const heroTitleLines = computed(() => {
++  const slogan = content.value.hero.slogan || DEFAULT_CONTENT.hero.slogan!
++  // 保留后台配置文案，仅在第一个中文逗号后建立语义断点。
++  return slogan.replace('，', '，\n').split('\n')
++})
+ const configuredQuickEntries = ref<HomeQuickEntry[] | null>(null)
+ const todayFestival = ref<FestivalConfig | null>(null)
+ const festivalClaimed = ref(false)
+@@ -211,7 +216,7 @@ onMounted(async () => {
+         <div class="hero-main">
+           <p class="hero-kicker">{{ content.hero.title }}</p>
+           <p class="hero-greeting">{{ greeting }}{{ displayName ? '，' + displayName : '' }}</p>
+-          <h1 class="hero-title">{{ content.hero.slogan || '让科学问题，抵达可验证的发现。' }}</h1>
++          <h1 class="hero-title"><span v-for="(line, index) in heroTitleLines" :key="index" class="hero-title__line">{{ line }}</span></h1>
+           <p class="hero-positioning">AI for Science Infrastructure for Life Sciences</p>
+           <p class="hero-desc">{{ content.hero.description }}</p>
+           <ul v-if="content.hero.tags?.length" class="hero-tags" aria-label="平台能力">
+@@ -250,7 +255,7 @@ onMounted(async () => {
+       </div>
+     </section>
+ 
+-    <AnnouncementBanner />
++    <AnnouncementBanner remember-dismissal />
+     <ResearchWorkbenchPanel />
+ 
+     <section class="section quick-entry-section animate-fade-in-up delay-100" aria-labelledby="quick-entry-title">
+@@ -364,8 +369,9 @@ onMounted(async () => {
+ .hero {
+   position: relative;
+   overflow: hidden;
+-  margin-bottom: 20px;
+-  padding: 34px 36px;
++  min-height: 380px;
++  margin-bottom: 16px;
++  padding: 40px 32px;
+   border-radius: 16px;
+   background: linear-gradient(135deg, #165DFF 0%, #6B8DD6 50%, #8E54E9 100%);
+   color: #fff;
+@@ -373,38 +379,49 @@ onMounted(async () => {
+ 
+ .hero :deep(.omic-canvas) { opacity: 0.4; }
+ 
++/* 压暗画布与渐变，保证白色玻璃卡上的副文字也有足够对比度。 */
++.hero::after {
++  content: '';
++  position: absolute;
++  inset: 0;
++  z-index: 1;
++  background: rgba(8, 11, 18, 0.48);
++  pointer-events: none;
++}
++
+ .hero-inner {
+   position: relative;
+   z-index: 2;
+   display: grid;
+-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+-  gap: 40px;
++  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.85fr);
++  gap: 32px;
+   align-items: center;
+ }
+ 
+ .hero-main { min-width: 0; }
+ .hero-kicker {
+-  margin: 0 0 7px;
++  margin: 0 0 4px;
+   font-size: 13px;
+   font-weight: 650;
+   letter-spacing: 0.3px;
+   opacity: 0.94;
+ }
+ .hero-greeting {
+-  margin: 0 0 9px;
++  margin: 0 0 6px;
+   font-size: 13px;
+   opacity: 0.74;
+ }
+ .hero-title {
+-  max-width: 14em;
+-  margin: 0 0 9px;
+-  font-size: clamp(26px, 3vw, 38px);
++  margin: 0 0 8px;
++  font-size: clamp(24px, 2.5vw, 38px);
+   font-weight: 750;
+   line-height: 1.25;
+   letter-spacing: -0.4px;
++  text-wrap: balance;
+ }
++.hero-title__line { display: block; word-break: keep-all; overflow-wrap: anywhere; }
+ .hero-positioning {
+-  margin: 0 0 13px;
++  margin: 0 0 8px;
+   font-size: 12px;
+   font-weight: 600;
+   letter-spacing: 1.5px;
+@@ -412,16 +429,16 @@ onMounted(async () => {
+ }
+ .hero-desc {
+   max-width: 58ch;
+-  margin: 0 0 16px;
+-  font-size: 14px;
+-  line-height: 1.75;
++  margin: 0 0 12px;
++  font-size: 13px;
++  line-height: 1.6;
+   opacity: 0.9;
+ }
+ .hero-tags {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 7px;
+-  margin: 0 0 20px;
++  margin: 0 0 12px;
+   padding: 0;
+   list-style: none;
+ }
+@@ -436,7 +453,7 @@ onMounted(async () => {
+ }
+ .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+ .hero-vision-line {
+-  margin: 20px 0 0;
++  margin: 12px 0 0;
+   color: rgba(255, 255, 255, 0.72);
+   font-size: 11px;
+   line-height: 1.55;
+@@ -488,10 +505,11 @@ onMounted(async () => {
+ .hero-lifecycle {
+   min-width: 0;
+   padding: 19px 20px 17px;
+-  border: 1px solid rgba(255, 255, 255, 0.2);
++  border: 1px solid rgba(255, 255, 255, 0.18);
+   border-radius: 14px;
+-  background: rgba(14, 25, 88, 0.18);
+-  backdrop-filter: blur(10px);
++  background: rgba(255, 255, 255, 0.10);
++  color: #fff;
++  backdrop-filter: blur(16px);
+ }
+ .hero-lifecycle__header { display: flex; gap: 11px; align-items: flex-start; }
+ .hero-lifecycle__line { width: 3px; height: 36px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
+@@ -500,7 +518,7 @@ onMounted(async () => {
+   font-size: 10px;
+   font-weight: 700;
+   letter-spacing: 1.25px;
+-  opacity: 0.7;
++  color: rgba(255, 255, 255, 0.85);
+ }
+ .hero-lifecycle h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
+ .lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 20px 0 0; padding: 0; list-style: none; }
+@@ -508,7 +526,7 @@ onMounted(async () => {
+ .lifecycle-step__node { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
+ .lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: 11px; line-height: 1.35; }
+ .lifecycle-step__connector { display: none; }
+-.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.62); font-size: 11px; line-height: 1.5; }
++.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.85); font-size: 11px; line-height: 1.5; }
+ .hero-lifecycle__note--mobile { display: none; }
+ 
+ .section { margin-bottom: 31px; }
+@@ -626,7 +644,7 @@ onMounted(async () => {
+ @media (max-width: 640px) {
+   .home-page { padding: 16px; }
+   .hero { padding: 25px 20px; }
+-  .hero-title { max-width: none; font-size: 26px; }
++  .hero-title { font-size: clamp(20px, 5.5vw, 26px); }
+   .hero-positioning { font-size: 10px; letter-spacing: 1px; }
+   .hero :deep(.omic-canvas) { opacity: 0.24; }
+   .hero-lifecycle { padding: 16px; }
+@@ -649,6 +667,10 @@ onMounted(async () => {
+   .admin-cta { margin-left: 60px; }
+ }
+ 
++@media (prefers-reduced-transparency: reduce) {
++  .hero-lifecycle { background: #293c6b; backdrop-filter: none; }
++}
++
+ @media (prefers-reduced-motion: reduce) {
+   .entry-icon,
+   .entry-arrow,

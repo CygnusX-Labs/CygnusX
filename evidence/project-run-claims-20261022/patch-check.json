@@ -1,0 +1,9 @@
+{
+  "accepted_base": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree",
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "applied": false,
+  "files": 35,
+  "patch_sha256": "04f8436ecc22d694997679fad054b1223c64e90e6c801b954f8bf96f053b2b27"
+}

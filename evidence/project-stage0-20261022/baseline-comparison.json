@@ -1,0 +1,15 @@
+{
+  "same_nine_current_failures_reproduced": true,
+  "tests": [
+    "test_approval_required_tools_cover_write_and_execute",
+    "test_container_mounts_match",
+    "test_control_params_not_reported_as_ignored",
+    "test_fanout_merges_token_usage_across_rounds_and_children",
+    "test_promote_copies_package",
+    "test_promote_dry_run_does_not_copy",
+    "test_promote_replace_overwrites",
+    "test_requires_confirm_carries_confirmation_code",
+    "test_research_pack_binds_database_mcp_presets"
+  ],
+  "relocated_full_suite_comparable": false
+}

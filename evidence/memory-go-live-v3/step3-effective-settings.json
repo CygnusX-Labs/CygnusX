@@ -1,0 +1,91 @@
+{
+  "captured_at_utc": "2026-10-21T16:14:25.919013+00:00",
+  "containers": [
+    {
+      "name": "cygnusx-web",
+      "created_at": "2026-10-21T16:05:36.456627048Z",
+      "started_at": "2026-10-21T16:05:39.660736598Z",
+      "health": "healthy",
+      "settings": {
+        "model": "Qwen/Qwen3-Embedding-8B",
+        "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+        "dimensions": 1024,
+        "key_present": true,
+        "maintenance_dsn_present": true,
+        "knowledge_auto_reindex_enabled": false,
+        "memory_settle_tail_enabled": false
+      },
+      "settings_evidence": "get_settings() in separate interpreter using current container environment; PID 1 key evidence also in preflight"
+    },
+    {
+      "name": "cygnusx-worker",
+      "created_at": "2026-10-21T16:05:40.506276867Z",
+      "started_at": "2026-10-21T16:05:43.947243292Z",
+      "health": "healthy",
+      "settings": {
+        "model": "Qwen/Qwen3-Embedding-8B",
+        "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+        "dimensions": 1024,
+        "key_present": true,
+        "maintenance_dsn_present": true,
+        "knowledge_auto_reindex_enabled": false,
+        "memory_settle_tail_enabled": false
+      },
+      "settings_evidence": "get_settings() in separate interpreter using current container environment; PID 1 key evidence also in preflight"
+    },
+    {
+      "name": "cygnusx-beat",
+      "created_at": "2026-10-21T16:05:38.202394632Z",
+      "started_at": "2026-10-21T16:05:40.124060866Z",
+      "health": "healthy",
+      "settings": {
+        "model": "Qwen/Qwen3-Embedding-8B",
+        "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+        "dimensions": 1024,
+        "key_present": true,
+        "maintenance_dsn_present": true,
+        "knowledge_auto_reindex_enabled": false,
+        "memory_settle_tail_enabled": false
+      },
+      "settings_evidence": "get_settings() in separate interpreter using current container environment; PID 1 key evidence also in preflight"
+    }
+  ],
+  "worker_registry": {
+    "coverage_task_loaded": true,
+    "settle_task_loaded": true
+  },
+  "status": "passed",
+  "provider_sync": {
+    "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+    "is_active": true,
+    "is_default": false,
+    "root_env_uuid_written": true,
+    "recreate": [
+      {
+        "services": [
+          "web",
+          "beat"
+        ],
+        "exit_code": 0
+      },
+      {
+        "services": [
+          "worker"
+        ],
+        "exit_code": 0
+      }
+    ]
+  },
+  "runtime_embedding_smoke": {
+    "status": "passed",
+    "dimensions": 1024,
+    "model": "Qwen/Qwen3-Embedding-8B"
+  },
+  "credential_source": "interactive Zsh export loaded into protected root .env, then Compose force-recreate",
+  "pending_project_migration_applied_by_standard_entrypoint": {
+    "before": "memory_settle_cursor01",
+    "after": "project_lifecycle01",
+    "predeploy_database_backup": "predeploy-backup.json"
+  },
+  "latest_recreation": "recreate-final-sdk-metrics.json"
+}

@@ -1,0 +1,165 @@
+{
+  "captured_at_utc": "2026-10-21T17:22:45.159029+00:00",
+  "status": "passed",
+  "scope": "Step 0 only; stop before Steps 1-7 if any prerequisite fails",
+  "local_key_presence_only": {
+    "host_process": {
+      "AGENT_MEMORY_EMBEDDING_MODEL": false,
+      "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": false,
+      "AGENT_MEMORY_EMBEDDING_DIMENSIONS": false,
+      "SILICONFLOW_API_KEY": false,
+      "MEMORY_MAINTENANCE_DATABASE_URL": false
+    },
+    ".env": {
+      "AGENT_MEMORY_EMBEDDING_MODEL": true,
+      "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": true,
+      "AGENT_MEMORY_EMBEDDING_DIMENSIONS": true,
+      "SILICONFLOW_API_KEY": true,
+      "MEMORY_MAINTENANCE_DATABASE_URL": true
+    },
+    ".env.test": {
+      "AGENT_MEMORY_EMBEDDING_MODEL": true,
+      "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": true,
+      "AGENT_MEMORY_EMBEDDING_DIMENSIONS": true,
+      "SILICONFLOW_API_KEY": false,
+      "MEMORY_MAINTENANCE_DATABASE_URL": false
+    }
+  },
+  "containers": [
+    {
+      "name": "cygnusx-web",
+      "started_at": "2026-10-21T16:05:39.660736598Z",
+      "running": true,
+      "health": "healthy",
+      "compose_service": "web",
+      "compose_config_files": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.yml,/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.pgvector.yml,/home/zj/zj_code_libarary/OmicHub/deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "process_check": {
+        "pid": 1,
+        "inspector_uid": 1000,
+        "comm": "uvicorn",
+        "env_key_presence": {
+          "AGENT_MEMORY_EMBEDDING_MODEL": true,
+          "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": true,
+          "AGENT_MEMORY_EMBEDDING_DIMENSIONS": true,
+          "SILICONFLOW_API_KEY": true,
+          "MEMORY_MAINTENANCE_DATABASE_URL": true
+        },
+        "settings_evidence": "Settings reloaded in separate interpreter with PID 1 environment and cwd; not live object introspection",
+        "env_file_exists_in_process_cwd": false,
+        "settings": {
+          "model": "Qwen/Qwen3-Embedding-8B",
+          "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+          "provider_id_present": true,
+          "provider_id_valid_uuid": true,
+          "dimensions": 1024
+        },
+        "settings_prerequisites_pass": true,
+        "database": {
+          "transaction_read_only": "on",
+          "selected_provider": {
+            "id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+            "name": "provider-embedding-qwen3",
+            "model": "Qwen/Qwen3-Embedding-8B",
+            "is_active": true,
+            "is_default": false
+          },
+          "yaml_named_candidates": [
+            {
+              "id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+              "name": "provider-embedding-qwen3",
+              "model": "Qwen/Qwen3-Embedding-8B",
+              "is_active": true,
+              "is_default": false
+            }
+          ],
+          "selected_provider_pass": true,
+          "scope": "Provider metadata only; no memory/user content or credentials queried"
+        }
+      },
+      "startup_logs": {
+        "exit_code": 0,
+        "since": "2026-10-21T16:05:39.660736598Z",
+        "lines_scanned": 44913,
+        "embedding_lines": 69,
+        "embedding_error_lines": 0,
+        "raw_logs_retained": false,
+        "no_embedding_error": true,
+        "limitation": "Docker-retained logs since current container start; absence of errors does not prove configuration enabled"
+      }
+    },
+    {
+      "name": "cygnusx-worker",
+      "started_at": "2026-10-21T16:05:43.947243292Z",
+      "running": true,
+      "health": "healthy",
+      "compose_service": "worker",
+      "compose_config_files": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.worker.yml",
+      "process_check": {
+        "pid": 1,
+        "inspector_uid": 1000,
+        "comm": "celery",
+        "env_key_presence": {
+          "AGENT_MEMORY_EMBEDDING_MODEL": true,
+          "AGENT_MEMORY_EMBEDDING_PROVIDER_ID": true,
+          "AGENT_MEMORY_EMBEDDING_DIMENSIONS": true,
+          "SILICONFLOW_API_KEY": true,
+          "MEMORY_MAINTENANCE_DATABASE_URL": true
+        },
+        "settings_evidence": "Settings reloaded in separate interpreter with PID 1 environment and cwd; not live object introspection",
+        "env_file_exists_in_process_cwd": false,
+        "settings": {
+          "model": "Qwen/Qwen3-Embedding-8B",
+          "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+          "provider_id_present": true,
+          "provider_id_valid_uuid": true,
+          "dimensions": 1024
+        },
+        "settings_prerequisites_pass": true,
+        "database": {
+          "transaction_read_only": "on",
+          "selected_provider": {
+            "id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+            "name": "provider-embedding-qwen3",
+            "model": "Qwen/Qwen3-Embedding-8B",
+            "is_active": true,
+            "is_default": false
+          },
+          "yaml_named_candidates": [
+            {
+              "id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+              "name": "provider-embedding-qwen3",
+              "model": "Qwen/Qwen3-Embedding-8B",
+              "is_active": true,
+              "is_default": false
+            }
+          ],
+          "selected_provider_pass": true,
+          "scope": "Provider metadata only; no memory/user content or credentials queried"
+        }
+      },
+      "startup_logs": {
+        "exit_code": 0,
+        "since": "2026-10-21T16:05:43.947243292Z",
+        "lines_scanned": 270683,
+        "embedding_lines": 82,
+        "embedding_error_lines": 0,
+        "raw_logs_retained": false,
+        "no_embedding_error": true,
+        "limitation": "Docker-retained logs since current container start; absence of errors does not prove configuration enabled"
+      }
+    }
+  ],
+  "blockers": [],
+  "real_calls": {
+    "embedding": 0,
+    "extraction": 0
+  },
+  "database_mutations": 0,
+  "production_defaults_modified": false,
+  "maintenance_dsn_visible": true,
+  "call_count_scope": "real_calls=0 applies only to this read-only preflight invocation; cumulative actual HTTP attempts are in call-ledger.json",
+  "cumulative_calls_at_report": {
+    "embedding": 41,
+    "extraction": 7
+  }
+}

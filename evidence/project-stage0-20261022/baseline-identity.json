@@ -1,0 +1,11 @@
+{
+  "method": "Copy current src including pre-existing work; replace only five stage0 source files with their task-start HEAD versions (these files were clean at task start). Tests/data/env remain current.",
+  "baseline_source": "/tmp/cygnusx-project-stage0-baseline-adfyxq8r",
+  "restored": [
+    "application/services/project_service.py",
+    "application/services/project_overview_service.py",
+    "application/schemas/project.py",
+    "api/v1/projects.py",
+    "infrastructure/database/models/project.py"
+  ]
+}

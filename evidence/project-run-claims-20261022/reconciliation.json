@@ -1,0 +1,47 @@
+{
+  "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+  "read_only": true,
+  "unclaimed_archives": [
+    {
+      "run_dir": "legacy-missing-manifest-20261022-020758",
+      "missing_parts": [
+        "manifest.json"
+      ],
+      "action": "REPAIR_ARCHIVE",
+      "next_step": "补齐归档三件套后重新预审",
+      "claim_endpoint": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-missing-manifest-20261022-020758/claim"
+    },
+    {
+      "run_dir": "legacy-tampered-20261022-020758",
+      "missing_parts": [],
+      "action": "PREVIEW_CLAIM",
+      "next_step": "owner 提交用途声明与显式文件引用，预审并人工确认认领",
+      "claim_endpoint": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim"
+    }
+  ],
+  "missing_archives": [
+    {
+      "run_id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+      "run_dir": "missing-directory-legacy",
+      "action": "VERIFY_STORAGE_OR_RESTORE",
+      "next_step": "核对挂载/备份及显式目录同步；不删除 Run 或重投 Task"
+    },
+    {
+      "run_id": "c315f352-2d83-4d23-866d-879850b58890",
+      "run_dir": "missing-link-legacy",
+      "action": "VERIFY_STORAGE_OR_RESTORE",
+      "next_step": "核对挂载/备份及显式目录同步；不删除 Run 或重投 Task"
+    }
+  ],
+  "binding_conflicts": [
+    {
+      "run_id": "c315f352-2d83-4d23-866d-879850b58890",
+      "analysis_link_id": "f8dfcd4b-fa82-413b-940c-1b5cba029f35",
+      "reason": "RUN_LINK_MISSING",
+      "code": "RECONCILIATION_REQUIRED",
+      "action": "MANUAL_RECONCILIATION",
+      "next_step": "人工核对原确认、Run/Link/Task 事务与队列日志；不自动纳管或重试"
+    }
+  ],
+  "automatic_repairs": 0
+}

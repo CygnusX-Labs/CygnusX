@@ -7,8 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from cygnusx.core.exceptions import ValidationError
 from cygnusx.tools.enrichments.runner import EnrichmentDockerRunner, EnrichmentRunParams
 from cygnusx.tools.enrichments.service import EnrichmentService
+
+pytestmark = pytest.mark.unit
 
 
 def test_runner_passes_local_go_and_kegg_references_to_r_container() -> None:
@@ -17,6 +20,7 @@ def test_runner_passes_local_go_and_kegg_references_to_r_container() -> None:
         enrichment_docker_network="cygnusx_app_net",
         enrichment_proxy_url="",
         enrichment_data_mount="/data/cygnusx",
+        storage_path="/data/cygnusx",
         enrichment_memory="2g",
         enrichment_cpus=2.0,
         enrichment_docker_image="cygnusx-r-enrichment:v1",
@@ -51,6 +55,7 @@ def test_runner_uses_docker_default_bridge_when_network_is_not_configured() -> N
         enrichment_docker_network="",
         enrichment_proxy_url="",
         enrichment_data_mount="/data/cygnusx",
+        storage_path="/data/cygnusx",
         enrichment_memory="2g",
         enrichment_cpus=2.0,
         enrichment_docker_image="cygnusx-r-enrichment:v1",
@@ -65,6 +70,81 @@ def test_runner_uses_docker_default_bridge_when_network_is_not_configured() -> N
     command = runner.build_command(params, "cygnusx-enrich-test")
 
     assert "--network" not in command
+
+
+@pytest.mark.parametrize(
+    ("storage_root", "mount_source", "reference_root"),
+    [
+        ("/data/cygnusx", "/data/cygnusx", "/data/cygnusx"),
+        ("/data/omichub", "/data/omichub", "/data/omichub"),
+        ("/data/omichub", "/data/omichub", "/data/cygnusx"),
+        ("/worker/data", "/srv/shared", "/worker/data"),
+        ("/worker/data", "/srv/shared", "/srv/shared"),
+    ],
+)
+def test_runner_maps_all_file_arguments_to_the_data_volume(
+    storage_root: str, mount_source: str, reference_root: str
+) -> None:
+    runner = EnrichmentDockerRunner.__new__(EnrichmentDockerRunner)
+    runner._settings = SimpleNamespace(
+        storage_path=storage_root,
+        enrichment_data_mount=mount_source,
+        enrichment_docker_network="",
+        enrichment_proxy_url="",
+        enrichment_memory="2g",
+        enrichment_cpus=2.0,
+        enrichment_docker_image="cygnusx-r-enrichment:v1",
+    )
+    run = "users/u1/projects/COP1-HY5_Example/runs/enrichment-20261022-141407"
+    reference = "omichub_data/reference/ITAG4.1"
+    params = EnrichmentRunParams(
+        input_path=f"{storage_root}/{run}/input/gene_list.txt",
+        output_path=f"{storage_root}/{run}/output/enrichment_result.csv",
+        kegg_code="sly",
+        id_type="ITAG4.1",
+        go_obo=f"{reference_root}/{reference}/go-basic.obo",
+        go_annotation=f"{reference_root}/{reference}/go.annot",
+        kegg_id_map=f"{reference_root}/{reference}/kegg.id",
+    )
+
+    command = runner.build_command(params, "cygnusx-enrich-test")
+
+    assert command[command.index("-v") + 1] == f"{mount_source}:/data/cygnusx"
+    expected_paths = {
+        "--input": f"/data/cygnusx/{run}/input/gene_list.txt",
+        "--output": f"/data/cygnusx/{run}/output/enrichment_result.csv",
+        "--go_obo": f"/data/cygnusx/{reference}/go-basic.obo",
+        "--go_annotation": f"/data/cygnusx/{reference}/go.annot",
+        "--kegg_id_map": f"/data/cygnusx/{reference}/kegg.id",
+    }
+    for flag, expected in expected_paths.items():
+        assert command[command.index(flag) + 1] == expected
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    ["/data/omichub-backup/genes.txt", "/data/omichub/../private/genes.txt", "genes.txt"],
+)
+def test_runner_rejects_file_paths_outside_the_shared_volume(invalid_path: str) -> None:
+    runner = EnrichmentDockerRunner.__new__(EnrichmentDockerRunner)
+    runner._settings = SimpleNamespace(
+        storage_path="/data/omichub",
+        enrichment_data_mount="/data/omichub",
+        enrichment_docker_network="",
+        enrichment_proxy_url="",
+        enrichment_memory="2g",
+        enrichment_cpus=2.0,
+        enrichment_docker_image="cygnusx-r-enrichment:v1",
+    )
+    params = EnrichmentRunParams(
+        input_path=invalid_path,
+        output_path="/data/omichub/output/enrichment_result.csv",
+        kegg_code="sly",
+        id_type="ITAG4.1",
+    )
+
+    with pytest.raises(ValidationError, match="共享数据挂载"):
+        runner.build_command(params, "cygnusx-enrich-test")
 
 
 def test_uploaded_csv_and_tsv_accept_only_gene_id_column() -> None:

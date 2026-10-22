@@ -2,6 +2,8 @@
 
 > 基线日期：2026-09-18。本文由代码实勘得出，修正了旧文档中过时的描述；
 > 与 `agent_framework_baseline.md` §5.2（Skill 契约）、`agent_framework_baseline.md` §12 与 §2.2（挂载与绑定，原 `agent_architecture_and_extension_guide.md` 已并入其中）互为补充，冲突时以本文为准。
+>
+> **接入面注记（2026-10-21）**：Skill 如何被 `skill_route` 路由、五入口导入、按用户覆盖并与 MCP/助手资源统一装配，见 [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；本文只负责 Skill 生命周期、存储与调用审计。
 
 ## 这个平台 Skill 模块如何发挥作用
 

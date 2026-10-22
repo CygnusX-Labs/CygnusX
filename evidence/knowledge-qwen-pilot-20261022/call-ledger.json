@@ -1,0 +1,178 @@
+{
+  "status": "completed",
+  "baseline": {
+    "embedding": 41,
+    "extraction": 7
+  },
+  "baseline_file": "evidence/memory-go-live-v3/call-ledger.json",
+  "limits": {
+    "embedding": 150,
+    "extraction": 20
+  },
+  "pilot_limit_embedding": 12,
+  "pilot_calls": 9,
+  "total": {
+    "embedding": 50,
+    "extraction": 7
+  },
+  "calls": [
+    {
+      "id": 1,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:55.641689+00:00",
+      "http_status": 200,
+      "duration_ms": 222.71,
+      "usage": {
+        "prompt_tokens": 25,
+        "completion_tokens": 0,
+        "total_tokens": 25
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 2,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:55.877457+00:00",
+      "http_status": 200,
+      "duration_ms": 1630.7,
+      "usage": {
+        "prompt_tokens": 114,
+        "completion_tokens": 0,
+        "total_tokens": 114
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 3,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:57.512726+00:00",
+      "http_status": 200,
+      "duration_ms": 131.83,
+      "usage": {
+        "prompt_tokens": 224,
+        "completion_tokens": 0,
+        "total_tokens": 224
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 4,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:57.655298+00:00",
+      "http_status": 200,
+      "duration_ms": 123.32,
+      "usage": {
+        "prompt_tokens": 119,
+        "completion_tokens": 0,
+        "total_tokens": 119
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 5,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:57.792324+00:00",
+      "http_status": 200,
+      "duration_ms": 1080.12,
+      "usage": {
+        "prompt_tokens": 98,
+        "completion_tokens": 0,
+        "total_tokens": 98
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 6,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:58.877130+00:00",
+      "http_status": 200,
+      "duration_ms": 90.71,
+      "usage": {
+        "prompt_tokens": 21,
+        "completion_tokens": 0,
+        "total_tokens": 21
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 7,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:59.000495+00:00",
+      "http_status": 200,
+      "duration_ms": 185.92,
+      "usage": {
+        "prompt_tokens": 17,
+        "completion_tokens": 0,
+        "total_tokens": 17
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 8,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:59.222819+00:00",
+      "http_status": 200,
+      "duration_ms": 134.6,
+      "usage": {
+        "prompt_tokens": 17,
+        "completion_tokens": 0,
+        "total_tokens": 17
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    },
+    {
+      "id": 9,
+      "status": "received",
+      "model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions_parameter": 1024,
+      "started_at_utc": "2026-10-22T07:16:59.388221+00:00",
+      "http_status": 200,
+      "duration_ms": 125.69,
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 0,
+        "total_tokens": 18
+      },
+      "returned_dimensions": [
+        1024
+      ]
+    }
+  ],
+  "billing_amount": null,
+  "remaining_cumulative": {
+    "embedding": 100,
+    "extraction": 13
+  }
+}

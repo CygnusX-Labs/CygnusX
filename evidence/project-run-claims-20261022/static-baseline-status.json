@@ -1,0 +1,5 @@
+{
+  "mypy-existing-baseline": 1,
+  "mypy-feature-final": 1,
+  "ruff-baseline-full": 1
+}

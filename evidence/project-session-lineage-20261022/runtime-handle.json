@@ -1,0 +1,7 @@
+{
+  "private_root": "/tmp/cygnusx-session-lineage-runtime-oxda70uj",
+  "api_pid": 3656927,
+  "worktree": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree",
+  "postgres": "cygnusx-lineage-pg-oxda70uj",
+  "redis": "cygnusx-lineage-redis-oxda70uj"
+}

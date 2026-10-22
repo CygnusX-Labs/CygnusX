@@ -1,0 +1,247 @@
+[
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_database_architecture.md",
+    "line": 375,
+    "new": false,
+    "sha256": "977f41b0597a4d94dfe64c62fb6280a8b9caa9012438f76559d54f7f09982904",
+    "accepted_base_sha256": "660121cdae94eabff8eb0b4babb61b951726b4f20f9ec5e62baf92b025d56009"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md",
+    "line": 109,
+    "new": false,
+    "sha256": "dbb558d029aad309e58e6ae2a6a5d0df6bdfb1079de36eecaa81817f877bff73",
+    "accepted_base_sha256": "c300b56b1ae2f4e61004236585a2d19b292936e6b50c5bd0e32cbbd1f1610f72"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md",
+    "line": 1,
+    "new": false,
+    "sha256": "7555fcd9675ec42fdaecdaa2d364ea60438c171c088f6bdbc233306660af5665",
+    "accepted_base_sha256": "44eb13594915bace0250c7fe3b693f7ac1ede7ba01141e48142bf703bbdfe5c3"
+  },
+  {
+    "path": "alembic/versions/project_run_claim_audit02.py",
+    "line": 1,
+    "new": true,
+    "sha256": "7289feb90f144fdc9176e7c1e22cb75f662d02f7b694f386dcf59019c62930db",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "alembic/versions/project_run_identity01.py",
+    "line": 1,
+    "new": true,
+    "sha256": "b0a24ba7b014dc1218ee44a89e2cac838597a76ac3d9aa5c7f9cf376c110139c",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "frontend/src/api/projects.ts",
+    "line": 41,
+    "new": false,
+    "sha256": "1addae6581a19e0a3818de6b188f6c2c6ad5b629adeb5dc548a47d768950585d",
+    "accepted_base_sha256": "cd0a5f918354147159aaaeda22f3a6c2cec20c6271e04f3ef9c3086aa17e1431"
+  },
+  {
+    "path": "frontend/src/api/researchDelivery.ts",
+    "line": 14,
+    "new": false,
+    "sha256": "1d739c2f630958de36245c8cb2cb64dac252bb5b2734278d96434a9a58344baf",
+    "accepted_base_sha256": "8fe160c03badd4098b417e151190c809700dc9b23d8c6a7ffc1bece7551ab241"
+  },
+  {
+    "path": "frontend/src/components/ProjectResearchDelivery.vue",
+    "line": 31,
+    "new": false,
+    "sha256": "3fbe9971765eb05c4026495b00ffd8b35d653610ff5265222c8d75ea47e0a024",
+    "accepted_base_sha256": "01595580bddd4d72e34d60f37c38a6959f8b2fc58bc617ce5e9187fae26ee019"
+  },
+  {
+    "path": "frontend/src/components/ResearchDeliveryChain.vue",
+    "line": 74,
+    "new": false,
+    "sha256": "7e468047034f094e542d5ac7be5b66e9d155c44fef653a42aca849cfa3131f79",
+    "accepted_base_sha256": "0fc9fad59a2571a71399f6d1c6799c58fb04942a13354621cc87a2992197349d"
+  },
+  {
+    "path": "frontend/src/components/__tests__/ProjectResearchDelivery.test.ts",
+    "line": 116,
+    "new": false,
+    "sha256": "b52239690ae38e4205bfe4a44f8bc4ffaa2db337a1597f2eead73985f8bcc789",
+    "accepted_base_sha256": "c8b7cf6174716ac920c9d47aa428fab25293759ca1148b08cd218253da7a4f27"
+  },
+  {
+    "path": "frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts",
+    "line": 66,
+    "new": false,
+    "sha256": "d516bbcdacaf6da5d2a52577c78bb067561162b814182c70f185ffeb2f9bfa49",
+    "accepted_base_sha256": "4701808de90a61fb95480805e4cbbc074cbb789966f03eff38b2834e9c3fa9a8"
+  },
+  {
+    "path": "frontend/src/views/ProjectDetailView.vue",
+    "line": 32,
+    "new": false,
+    "sha256": "ef615b272f0c7a0edc0a618cbbbbfc98151df3aa4209ea382025b601671ae64f",
+    "accepted_base_sha256": "554dbf8806b07b437f61224ce752abd24166642bc093e305b79a081d9ba7d6ea"
+  },
+  {
+    "path": "scripts/backfill_project_run_index.py",
+    "line": 1,
+    "new": true,
+    "sha256": "af71bb6085a3a13e9e343ba07b4b77753bdef931359e06512600a38f4bc0c0df",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "src/cygnusx/api/v1/projects.py",
+    "line": 1,
+    "new": false,
+    "sha256": "2944058518001bf6b146f80be121e2079498b42e4d7dedef1118162b4c430010",
+    "accepted_base_sha256": "583a33a76ccada73259783d20f202be4f982819a22214f7930ef5dedff8b7f87"
+  },
+  {
+    "path": "src/cygnusx/api/v1/runs.py",
+    "line": 43,
+    "new": false,
+    "sha256": "b6f7e228a99914e0b1b030f1151fb0a9d76ebd81ac7d97a0447a91318047d9c1",
+    "accepted_base_sha256": "4aae058f67036fd9637faeb578a89f43877308c2300a7070773be15be0398553"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/project.py",
+    "line": 52,
+    "new": false,
+    "sha256": "89f0590455857226588fe6639796e4bf96b8171a3616282b5686b4a1313bbd7a",
+    "accepted_base_sha256": "4551fe07bd3e59988b748221a37efbb6504c25aa709f993a98f3d18ecce74f5e"
+  },
+  {
+    "path": "src/cygnusx/application/schemas/run_claim.py",
+    "line": 1,
+    "new": true,
+    "sha256": "d755b55732a62bfa67799de41be02b781c1a810beea79d4e04ffe0f98802d95b",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "src/cygnusx/application/schemas/run_plan.py",
+    "line": 4,
+    "new": false,
+    "sha256": "946b8d368c2fe831cb3dd12fe175ce68b35bdde3819b3874478a534a69b0b537",
+    "accepted_base_sha256": "211a12ee7f812a4759be05209d6c8957714db60246da77d1191d4b78f6ebca44"
+  },
+  {
+    "path": "src/cygnusx/application/services/archive_run_index_service.py",
+    "line": 1,
+    "new": true,
+    "sha256": "10099a791afc312691a72b0f6196eddb277d0e374064b4f1aaef90108f42880b",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "src/cygnusx/application/services/chat_archive_service.py",
+    "line": 27,
+    "new": false,
+    "sha256": "a9f1db35a62849510ebb6272d4bafa3c47152189ee7e56ff5193ba69434e7799",
+    "accepted_base_sha256": "d54ba62005164d4c9e3c1aca7182848650f57688b510b9efef4c4eb67a08c8a6"
+  },
+  {
+    "path": "src/cygnusx/application/services/dataset_analysis_service.py",
+    "line": 17,
+    "new": false,
+    "sha256": "f4dd022f3658e7b853692ac3a04aaf49f899e16db0f139b498cbbc42994c2294",
+    "accepted_base_sha256": "bf72ce01ca5c60fba679ec0010e18d6f69feff27c471fec71b3b7ac3cebb0423"
+  },
+  {
+    "path": "src/cygnusx/application/services/directory_service.py",
+    "line": 168,
+    "new": false,
+    "sha256": "474133f1befd58c47f2f2936a32d5a37c9348ecc6defa2548a4ff3d1be20554f",
+    "accepted_base_sha256": "084ab966cf5b65f5781ff107ed7e30ed465c2edab4c399a2c1c685d769560f44"
+  },
+  {
+    "path": "src/cygnusx/application/services/file_service.py",
+    "line": 63,
+    "new": false,
+    "sha256": "f3d1f47cbc7efc1ac281743383a5ffd5fbf3f1a58183faa7688606c044a35b4f",
+    "accepted_base_sha256": "b5c1fcc0981ca1740913103130a59b7463cba78d64b885c39ee855292975bd7e"
+  },
+  {
+    "path": "src/cygnusx/application/services/historical_run_claim_service.py",
+    "line": 1,
+    "new": true,
+    "sha256": "cb095101f6e67532eef6281675896ed9329dc7217b3c4241bb2e35d936d6f4c1",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "src/cygnusx/application/services/project_archive_service.py",
+    "line": 246,
+    "new": false,
+    "sha256": "74bef5f627503a711785a787318e5955492b729c51359df09da7ef2dc4eec9ac",
+    "accepted_base_sha256": "482a69d787392fa103d31bb4f946c76fe985d303d1bd0801b01e50ae7e254e5b"
+  },
+  {
+    "path": "src/cygnusx/application/services/project_overview_service.py",
+    "line": 3,
+    "new": false,
+    "sha256": "c99287f8beaae47c2df4c9480cbb3c9baf7d786dc64a686da86cd6d3d7c7daf8",
+    "accepted_base_sha256": "4880585f29e509bbe831684c923ffa82170a68afad0979d2713bad9b47be9de9"
+  },
+  {
+    "path": "src/cygnusx/application/services/project_reconciliation_service.py",
+    "line": 1,
+    "new": true,
+    "sha256": "d7ab56c0c9bd09243457160a6afb478eea87476bde2c5e3d69ef38ddc86e268f",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "src/cygnusx/application/services/research_provenance_service.py",
+    "line": 169,
+    "new": false,
+    "sha256": "fe8d4fdcd4b26757775787f8724ef6337afd7643c66e97399273270ef7c085f7",
+    "accepted_base_sha256": "a1c55b2a52f2ac5a59b91958f4397cdc34fb142fc47221e11d185a3e9f216b7d"
+  },
+  {
+    "path": "src/cygnusx/application/services/run_plan_service.py",
+    "line": 61,
+    "new": false,
+    "sha256": "d574abcddf53fe92fd0d38559d722476a653ac294e0644e70fe40d30a58306a5",
+    "accepted_base_sha256": "e833330ce9fef715b19217d89b6309a1e8b794e767b07f3082e3ebc09626a3b6"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/celery_app/tasks/analysis.py",
+    "line": 68,
+    "new": false,
+    "sha256": "362fc5cb401f4a4345f89e9561c6a9d994cfd68cef8468c65afecda185025a56",
+    "accepted_base_sha256": "257a05645f0ac2ba42a8d8cfe0e5d91317eb043a3ed6260e32340843cefc3755"
+  },
+  {
+    "path": "src/cygnusx/infrastructure/database/models/run.py",
+    "line": 4,
+    "new": false,
+    "sha256": "72cd6e05f17d782ff79d2467eb27618f9dfbd751e414f6238057c2394ea11d89",
+    "accepted_base_sha256": "d358d2f31183283e2529c8e3de60830705b39c9c7c692d84ada7c91b197defa5"
+  },
+  {
+    "path": "src/cygnusx/middleware/audit.py",
+    "line": 7,
+    "new": false,
+    "sha256": "555fac62b31b5e195dacad8d7b95d0549a9283dfd7973ed12442e755be5aa8a0",
+    "accepted_base_sha256": "5ce3d82f1d0ca33065f8ba4f7c023c6ef4c4f45214d7945ba529f573e5124e84"
+  },
+  {
+    "path": "tests/unit/test_historical_run_claim.py",
+    "line": 1,
+    "new": true,
+    "sha256": "430176d865e90f745135dddbc8c21c3fcf9ddb6eb5b63dd0c04c20aad1aef2cb",
+    "accepted_base_sha256": null
+  },
+  {
+    "path": "tests/unit/test_project_archive_service.py",
+    "line": 8,
+    "new": false,
+    "sha256": "67ed720d7a136ff31823fa4e1836267a4f4e81002dabe77c76cfa618f9a7b0d3",
+    "accepted_base_sha256": "f028f98f2503eb8e07ff0733200d58b5a3d7eb23cd7c18bcdfc5a8981ce3ace0"
+  },
+  {
+    "path": "tests/unit/test_project_overview.py",
+    "line": 85,
+    "new": false,
+    "sha256": "3d6e3f0f6ef99bf63d68737a375a666d8ed77e9dedc01ddb8353f283cf56c5eb",
+    "accepted_base_sha256": "02ccd3f8c911a99121988aaaa10bedc456d821945c489cf0f6412df36b223509"
+  }
+]

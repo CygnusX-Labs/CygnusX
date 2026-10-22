@@ -1,0 +1,129 @@
+[
+  {
+    "endpoint": "research-plans",
+    "actor": "anonymous",
+    "status": 401,
+    "response": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "endpoint": "research-plans",
+    "actor": "lineage_other",
+    "status": 403,
+    "response": {
+      "detail": "无权访问该项目",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "endpoint": "research-plans",
+    "actor": "lineage_owner",
+    "status": 200,
+    "response": []
+  },
+  {
+    "endpoint": "research-delivery",
+    "actor": "anonymous",
+    "status": 401,
+    "response": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "endpoint": "research-delivery",
+    "actor": "lineage_other",
+    "status": 403,
+    "response": {
+      "detail": "无权访问该项目",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "endpoint": "research-delivery",
+    "actor": "lineage_owner",
+    "status": 200,
+    "response": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "a365ef1a-9c11-4cff-859d-5e6db30f6392",
+      "datasets": [],
+      "runtime_admission": "BLOCKED",
+      "truncated": false
+    }
+  },
+  {
+    "endpoint": "delivery-inventory",
+    "actor": "anonymous",
+    "status": 401,
+    "response": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "endpoint": "delivery-inventory",
+    "actor": "lineage_other",
+    "status": 403,
+    "response": {
+      "detail": "无权访问该项目",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "endpoint": "delivery-inventory",
+    "actor": "lineage_owner",
+    "status": 200,
+    "response": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "a365ef1a-9c11-4cff-859d-5e6db30f6392",
+      "datasets": [],
+      "runtime_admission": "BLOCKED",
+      "truncated": false,
+      "association_status": "VERIFIED_ASSOCIATION",
+      "association_scope": "explicit_dataset_links_only",
+      "historical_tasks": {
+        "status": "NOT_RECORDED",
+        "reason": "NO_PROJECT_FK_NO_BACKFILL"
+      },
+      "export_enabled": false
+    }
+  },
+  {
+    "endpoint": "capability-status",
+    "actor": "anonymous",
+    "status": 401,
+    "response": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "endpoint": "capability-status",
+    "actor": "lineage_other",
+    "status": 403,
+    "response": {
+      "detail": "无权访问该项目",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "endpoint": "capability-status",
+    "actor": "lineage_owner",
+    "status": 200,
+    "response": {
+      "research_plan": {
+        "enabled": true,
+        "allowed": true,
+        "reason": "AVAILABLE"
+      },
+      "research_delivery_read": {
+        "enabled": true,
+        "allowed": true,
+        "reason": "AVAILABLE"
+      },
+      "project_export": {
+        "enabled": false,
+        "allowed": false,
+        "reason": "SERVICE_DISABLED"
+      }
+    }
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "full_query_results_unchanged": true,
+  "counts": {
+    "datasets": 3,
+    "dataset_versions": 3,
+    "dataset_analysis_links": 3,
+    "platform_runs": 110,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "audit_logs": 155
+  }
+}

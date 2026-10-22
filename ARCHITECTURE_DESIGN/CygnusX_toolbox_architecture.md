@@ -167,7 +167,7 @@ tool_configs/tools_setting.yaml
 
 ### 3.2 任务投递：enqueue_task 统一分发
 
-`infrastructure/task_queue/dispatcher.py::enqueue_task` 是唯一投递入口，按 `task_queue_backend`（celery/rocketmq/hybrid）分流。工具任务全部经它投递，不直接 `apply_async`。
+`infrastructure/task_queue/dispatcher.py::enqueue_task` 是工具箱任务的统一投递入口，按 `task_queue_backend`（celery/rocketmq/hybrid）分流；工具任务不直接 `apply_async`。注意该入口不是全平台唯一投递点——AgentTeams、Goal、日程等仍有直接 `.delay`/`.apply_async` 调用，RocketMQ 模式不覆盖它们。完整队列拓扑与传输语义见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md)。
 
 ### 3.3 Celery 登记（手动，易漏）
 
@@ -176,13 +176,14 @@ tool_configs/tools_setting.yaml
 | 任务模块 | 队列 |
 |---|---|
 | `cygnusx.tools.jbrowse.tasks` | analysis |
-| `cygnusx.tools.phylogenetic_tree.tasks` | phylo_tree（专用 Worker，已停建） |
+| `cygnusx.tools.phylogenetic_tree.tasks` | phylo_tree（专用 Worker 经 `phylo` profile 门控，默认不启动） |
 | `cygnusx.tools.blast.tasks` | blast_search / blast_db_build（双队列拆分） |
 | `cygnusx.tools.enrichments.tasks` | analysis |
+| `cygnusx.tools.gsea.tasks` | analysis |
 | `cygnusx.tools.deg.tasks` | analysis |
 | `cygnusx.tools.synteny.tasks` | analysis |
 
-（GSEA 复用 enrichments 的 include 条目链，`gsea.tasks` 经 `enrichments.config` 间接登记——见 `gsea/tasks.py` 的 shared_task 注册。）
+**GSEA 默认加载已补齐**：`celery.py` 的 `include` 与 `task_routes` 均登记 `cygnusx.tools.gsea.tasks`，不依赖 Web 提交时的局部 import。`test_gsea_worker_registration.py` 在新进程实际运行默认模块加载并验证任务存在、路由为 `analysis`；已运行 Worker 需重启后才能加载这项源码变更，真实 Worker 仍须用 `celery inspect registered` 验收。
 
 ### 3.4 分析容器体系
 
@@ -196,6 +197,8 @@ tool_configs/tools_setting.yaml
 | 终端镜像族 | `tool_configs/terminal/docker/`（存量豁免位） | 同目录 | `make docker-build-sandboxes` |
 
 Dockerfile 归属规范：统一放 `deploy/docker/Dockerfile.<purpose>`；`tool_configs/terminal/docker/` 为登记过的历史存量豁免（详见 `tools_design.md` §5.1.2 存量豁免注记与 `deploy/docker/README.md` 镜像清单）。Worker 的 Docker Socket GID 约定见 `tools_design.md` §5.1.2（`scripts/worker-compose.sh` 动态读取，禁写死）。
+
+GO/KEGG、GSEA、共线性的数据卷源为 `ENRICHMENT_DATA_MOUNT`，DEG 为 `DEG_DATA_MOUNT`（默认均派生 `STORAGE_PATH`）；容器目标固定为 `/data/cygnusx`。四个执行器统一使用 `ToolDataMount` 转换全部输入/输出/参考文件，兼容已有容器绝对路径，拒绝卷外路径。Worker 继续按原 `work_dir` 读取结果。GO/KEGG 与 GSEA 通过带参数类型的 `EnrichmentDockerRunnerBase` 复用执行与超时逻辑，各自构造命令。富集物种配置和 JBrowse 参考资产支持相对 `REFERENCE_GENOMES_YAML` 所在目录的路径，避免固定内部数据目录名。回归覆盖 `test_container_paths.py`、`test_jbrowse_paths.py`、`test_storage_config_contract.py` 与富集原有用例；真实 Docker 验收需有宿主 socket 权限。
 
 ### 3.5 结果目录协议
 

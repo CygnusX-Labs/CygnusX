@@ -1,0 +1,54 @@
+src/cygnusx/application/services/session_dataset_preparation_service.py:38:CAPABILITY = "analysis.prepare_from_session_files"
+src/cygnusx/application/services/session_dataset_preparation_service.py:41:class SessionDatasetPreparationService:
+src/cygnusx/application/services/session_dataset_preparation_service.py:46:    async def prepare(
+src/cygnusx/application/schemas/agent_tools.py:60:class SessionFastqSample(ToolArgs):
+src/cygnusx/application/schemas/agent_tools.py:69:class SessionRnaParameters(ToolArgs):
+src/cygnusx/application/schemas/agent_tools.py:76:class SessionFastqPrepareArgs(ToolArgs):
+src/cygnusx/application/schemas/agent_tools.py:200:    "analysis.prepare_from_session_files": SessionFastqPrepareArgs,
+src/cygnusx/application/schemas/agent_tools.py:228:                "analysis.prepare_from_session_files",
+src/cygnusx/application/schemas/agent_tools.py:238:            "analysis.prepare_from_session_files",
+src/cygnusx/application/schemas/agent_tools.py:256:                "analysis.prepare_from_session_files",
+tests/unit/test_run_task_atomic_binding.py:24:async def test_run_task_and_event_share_commit_before_queue(
+src/cygnusx/api/v1/runs.py:51:async def confirm_run(
+src/cygnusx/api/v1/runs.py:52:    run_id: UUID,
+src/cygnusx/api/v1/runs.py:81:    run_id: UUID,
+src/cygnusx/api/v1/runs.py:94:    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
+src/cygnusx/api/v1/runs.py:104:    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
+tests/unit/test_session_dataset_preparation.py:98:async def test_session_registration_review_freeze_proposal_and_retry(session_inputs: Any) -> None:
+src/cygnusx/application/services/task_service.py:60:        self, user_id: str, req: TaskSubmitRequest, *, run_id: UUID | None = None
+src/cygnusx/application/services/task_service.py:73:            raise ConflictError("Run 请求必须通过审批入口", code="RUN_CONFIRM_REQUIRED")
+src/cygnusx/application/services/task_service.py:90:        run = await self._run_for_request(UUID(user_id), run_id, req) if run_id else None
+src/cygnusx/application/services/task_service.py:116:                    await self._bind_run(run, existing.id)
+src/cygnusx/application/services/task_service.py:253:            await self._bind_run(run, task.id)
+src/cygnusx/application/services/task_service.py:272:    async def _run_for_request(
+src/cygnusx/application/services/task_service.py:273:        self, owner: UUID, run_id: UUID, request: TaskSubmitRequest
+src/cygnusx/application/services/task_service.py:302:    async def _bind_run(self, run: RunModel, task_id: UUID) -> None:
+src/cygnusx/application/services/run_plan_service.py:70:    async def register_dataset_proposal(
+src/cygnusx/application/services/run_plan_service.py:121:    async def dataset_link(self, owner: UUID, run_id: UUID) -> DatasetAnalysisLinkModel | None:
+src/cygnusx/application/services/run_plan_service.py:135:    async def get(self, user_id: UUID, run_id: UUID) -> SnakemakePlanView:
+src/cygnusx/application/services/run_plan_service.py:154:    async def confirm(self, user_id: UUID, run_id: UUID, user_confirmed: bool) -> SnakemakePlanView:
+src/cygnusx/application/services/run_plan_service.py:209:    async def events(self, user_id: UUID, run_id: UUID, limit: int = 200) -> list[dict[str, Any]]:
+src/cygnusx/application/services/run_plan_service.py:237:    async def artifacts(self, user_id: UUID, run_id: UUID) -> list[dict[str, Any]]:
+src/cygnusx/application/services/agent_tool_gateway.py:157:                include_research=getattr(get_settings(), "research_delivery_read_enabled", False),
+src/cygnusx/application/services/agent_tool_gateway.py:173:                        "analysis.prepare_from_session_files",
+src/cygnusx/application/services/agent_tool_gateway.py:210:        if capability_id == "analysis.prepare_from_session_files":
+frontend/src/views/ProjectDetailView.vue:580:    <ProjectCapabilityPanel title="科研执行与交付链" :capability="capabilities?.research_delivery_read" :error="capabilityError">
+frontend/src/views/ProjectDetailView.vue:583:    <ProjectCapabilityPanel title="项目科研成果与可追溯导出" :capability="capabilities?.research_delivery_read" :error="capabilityError">
+frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts:31:beforeEach(() => { vi.clearAllMocks(); vi.mocked(projectsApi.getCapabilityStatus).mockResolvedValue({ research_plan: { enabled: true, allowed: true, reason: 'AVAILABLE' }, research_delivery_read: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' }, project_export: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' } }); route.params.projectId = 'first'; route.query.planId = 'persisted-plan' })
+frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts:76:    research_plan: disabled, research_delivery_read: disabled, project_export: disabled,
+frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts:88:it('mounts the read inventory when delivery read is allowed and export writes are disabled', async () => {
+frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts:92:    research_plan: allowed, research_delivery_read: allowed,
+frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts:107:    .mockResolvedValueOnce({ research_plan: denied, research_delivery_read: denied, project_export: denied })
+src/cygnusx/api/v1/research_plans.py:26:    await ProjectService(db).require_owner(UUID(user), project_id)
+src/cygnusx/api/v1/research_plans.py:52:async def prepare(
+src/cygnusx/application/services/project_service.py:422:        project = await self.require_owner(user_id, project_id)
+src/cygnusx/application/services/project_service.py:443:        read = settings.research_delivery_read_enabled
+src/cygnusx/application/services/project_service.py:446:            research_delivery_read=capability(read, {"files", "reports"}),
+src/cygnusx/application/services/project_service.py:454:    async def require_owner(self, user_id: UUID, project_id: UUID) -> ProjectModel:
+src/cygnusx/application/services/dataset_analysis_service.py:76:    async def prepare(
+src/cygnusx/application/services/dataset_analysis_service.py:471:        run_id: uuid.UUID | None = None,
+src/cygnusx/application/services/dataset_analysis_service.py:528:            if run_id is None and bound.get("invocation_id"):
+src/cygnusx/api/v1/research_delivery.py:33:async def prepare_project_scientific_summary(
+src/cygnusx/api/v1/research_delivery.py:156:    await ProjectService(db).require_owner(UUID(user), project_id)
+src/cygnusx/api/v1/research_delivery.py:161:async def prepare_project_export(
+src/cygnusx/api/v1/research_delivery.py:244:    await ProjectService(db).require_owner(UUID(user), project_id)

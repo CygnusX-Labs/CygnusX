@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NAlert, NButton, NCard, NCollapse, NCollapseItem, NEmpty, NSelect, NSpace, NTag } from 'naive-ui'
 import { researchPlansApi, type PlanEvent, type ResearchPlan } from '@/api/researchPlans'
+import { projectRequestFailure } from '@/api/projectErrors'
 const props = defineProps<{ projectId: string; planId?: string; sessions?: { id: string; title: string; status: string }[] }>()
 const plans = ref<ResearchPlan[]>([])
 const traces = ref<Record<string, PlanEvent[]>>({})
@@ -23,7 +24,7 @@ async function load() {
     if (current === generation && project === props.projectId) {
       plans.value = result.filter(p => p.project_id === project && (!requestedPlan || p.plan_id === requestedPlan))
     }
-  } catch { if (current === generation) error.value = '科研计划暂不可用，请检查功能是否启用及当前项目权限。' }
+  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划') }
   finally { if (current === generation) loading.value = false }
 }
 async function act(plan: ResearchPlan, action: 'review' | 'advance' | 'pause' | 'resume' | 'cancel' | 'reconcile') {
@@ -41,7 +42,7 @@ async function act(plan: ResearchPlan, action: 'review' | 'advance' | 'pause' | 
     if (current === generation && result.project_id === project && project === props.projectId) {
       plans.value = plans.value.map(p => p.plan_id === result.plan_id ? result : p)
     }
-  } catch { if (current === generation) error.value = '操作未完成，请刷新核对计划版本、权限和审阅状态。' }
+  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划操作') }
   finally { if (current === generation) busy.value = false }
 }
 async function showTrace(plan: ResearchPlan) {
@@ -49,7 +50,7 @@ async function showTrace(plan: ResearchPlan) {
   try {
     const events = await researchPlansApi.events(project, plan.plan_id)
     if (current === generation && project === props.projectId) traces.value[plan.plan_id] = events
-  } catch { if (current === generation) error.value = '当前计划轨迹不可读取。' }
+  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划轨迹') }
 }
 function detail(plan: ResearchPlan, stepId: string) { return plan.draft.steps.find(s => s.step_id === stepId) }
 watch(() => [props.projectId, props.planId], () => { selectedSession.value = null; busy.value = false; void load() }, { immediate: true })

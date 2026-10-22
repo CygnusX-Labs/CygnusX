@@ -1,0 +1,8 @@
+{
+  "vector_current_only": true,
+  "old_model_keyword_only": true,
+  "low_vector_excluded": true,
+  "rrf_scores_match_independent_formula": true,
+  "merged_count": 2,
+  "min_similarity": 0.9
+}

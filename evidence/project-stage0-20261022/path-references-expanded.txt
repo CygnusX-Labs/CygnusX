@@ -1,0 +1,164 @@
+deploy/acceptance/repro422.py:18:    f"/projects/{project}/exports/prepare",
+deploy/acceptance/repro422.py:27:    f"/projects/{project}/exports",
+deploy/acceptance/browser-e2e.cjs:76:        await page.goto(`${UI}/projects/${PROJECT_ID}`, { waitUntil: 'networkidle', timeout: 45000 });
+deploy/acceptance/probe-create.cjs:21:  await p.goto(UI + '/projects/' + process.env.RI095_PROJECT, { waitUntil: 'networkidle' });
+deploy/acceptance/e2e_driver.py:150:            f"{API}/projects/{probe_project}/scientific-summary",
+deploy/acceptance/e2e_driver.py:178:        r = c.get(f"{API}/projects/{project}", headers=auth(other))
+deploy/acceptance/e2e_driver.py:232:        f"{API}/projects/{project}/exports/prepare", headers=auth(owner), json={"kind": "evidence"}
+deploy/acceptance/e2e_driver.py:240:        f"{API}/projects/{project}/exports",
+deploy/acceptance/e2e_driver.py:261:        s = c.get(f"{API}/projects/{project}/exports/{export_job}", headers=auth(owner))
+deploy/acceptance/e2e_driver.py:272:        f"{API}/projects/{project}/scientific-summary/prepare",
+deploy/acceptance/e2e_driver.py:294:        rr = c.post(f"{API}/projects/{project}/scientific-summary", headers=auth(owner), json=body)
+deploy/acceptance/e2e_driver.py:329:    r = c.get(f"{API}/projects/{project}/exports/{export_job}/download", headers=auth(owner))
+deploy/acceptance/e2e_driver.py:342:        f"{API}/projects/{project}/scientific-summary/prepare",
+deploy/acceptance/e2e_driver.py:361:    r = c.post(f"{API}/projects/{project}/scientific-summary", headers=auth(owner), json=body)
+deploy/acceptance/e2e_driver.py:369:        s = c.get(f"{API}/projects/{project}/scientific-summary/{report_job}", headers=auth(owner))
+deploy/acceptance/e2e_driver.py:389:        f"{API}/projects/{project}/scientific-summary/{report_job}/download",
+deploy/acceptance/e2e_driver.py:407:            f"{API}/projects/{project}/scientific-summary/{report_job}/download",
+deploy/acceptance/e2e_driver.py:449:    prep2 = c.post(f"{API}/projects/{project}/exports/prepare", headers=auth(owner), json=v2)
+deploy/acceptance/e2e_driver.py:467:            f"{API}/projects/{project}/exports",
+deploy/acceptance/e2e_driver.py:480:                s = c.get(f"{API}/projects/{project}/exports/{v2_job}", headers=auth(owner))
+deploy/acceptance/e2e_driver.py:485:            st = c.get(f"{API}/projects/{project}/exports/{v2_job}", headers=auth(owner)).json()
+deploy/acceptance/e2e_driver.py:495:                    f"{API}/projects/{project}/exports/{v2_job}/download", headers=auth(owner)
+deploy/acceptance/e2e_driver.py:522:                    f"{API}/projects/{project}/exports/{v2_job}/download", headers=auth(other)
+deploy/acceptance/e2e_driver.py:527:    r2 = c.get(f"{API}/projects/{project}/exports/{export_job}/download", headers=auth(owner))
+integrations/agentteams/bridge/cygnusx_agentteams_bridge/app.py:675:    @app.post("/v1/projects/{project_id}/preflight", tags=["Preflight"])
+scripts/poc/e2e_wp3_research_mode_sharing.py:438:                    storage_path=f"users/{user_id}/projects/p/runs/r/output/volcano.png",
+integrations/agentteams/bridge/tests/test_artifact_lineage.py:125:            source_refs=[{"artifact_id": "projects/p1/counts.tsv", "relation": "input_to"}],
+integrations/agentteams/bridge/tests/test_artifact_lineage.py:130:    assert decision.source_refs[0].artifact_id == "projects/p1/counts.tsv"
+integrations/agentteams/bridge/tests/test_artifact_lineage.py:142:        {"artifact_id": "projects/p1/counts.tsv", "relation": "input_to", "note": ""}
+integrations/agentteams/bridge/tests/test_bridge_contract.py:344:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:359:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:467:            "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:517:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:600:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:681:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:734:            "source_refs": [{"artifact_id": "projects/p1/input.fastq", "relation": "input_to"}],
+integrations/agentteams/bridge/tests/test_bridge_contract.py:815:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:821:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:855:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:917:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1247:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1413:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1492:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1565:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1651:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1766:        "/v1/projects/project-1/preflight",
+integrations/agentteams/bridge/tests/test_bridge_contract.py:1851:        "/v1/projects/project-1/preflight",
+scripts/poc/e2e_wp2_artifact_manifest.py:205:        run_dir = factory.create_project_run_dir(user_id, PROJECT_NAME, "studio")
+scripts/poc/e2e_wp2_artifact_manifest.py:251:        for p in users_root.glob(f"*/projects/e2e-wp2-{HEX.lower()}"):
+integrations/agentteams/bridge/tests/test_security_hardening.py:100:        "/v1/projects/project-1/preflight",
+integrations/agentteams/skills/contracts.yaml:12:    request: "POST /projects/{project_id}/preflight"
+integrations/agentteams/demo/run_bridge_demo.py:118:        f"/v1/projects/{project_id}/preflight",
+frontend/src/components/research/__tests__/AgentToolProposalCard.test.ts:20:  normalized_parameters: { accession: 'SRR123', target_directory: 'projects/a/downloads' },
+frontend/src/router/index.ts:116:        path: 'projects/:projectId',
+frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts:105:    expect(links).toContainEqual({ path: '/projects/first', query: { planId: 'history' } })
+frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts:106:    expect(links).toContainEqual({ path: '/projects/first', query: { planId: 'new-version' } })
+integrations/agentteams/worker/production_runner.py:240:                # 已经是工作区相对路径（包含 projects/、inbox/ 或 Worker work 相对路径）。
+frontend/src/views/DownloadsView.vue:133:  { label: 'projects/rna-seq', value: 'projects/rna-seq' },
+frontend/src/views/DownloadsView.vue:134:  { label: 'projects/variant', value: 'projects/variant' },
+frontend/src/components/ResearchPlanWorkbench.vue:69:        <RouterLink :to="{path: `/projects/${plan.project_id}`, query: {planId: plan.plan_id}}">打开此计划版本</RouterLink>
+frontend/src/components/ResearchPlanWorkbench.vue:72:          <RouterLink :to="{path: `/projects/${plan.project_id}`, query: {planId: plan.superseded_by}}">查看新版本</RouterLink>
+src/cygnusx/infrastructure/database/models/project.py:4:物理落盘：``{data_root}/users/{user_id}/projects/{slug}/runs/{run-slug}/``。
+src/cygnusx/infrastructure/database/models/project.py:6:注意：Project 记录的是「用户可见的项目」，与 ``user_directories`` 中 path="projects/{slug}"
+frontend/src/api/projects.ts:6: * （GET /projects/{id}/overview：元数据 + 项目会话 + runs 目录历史分析）。
+frontend/src/api/projects.ts:94:    const res = await apiClient.get<ProjectItem>(`/projects/${projectId}`)
+frontend/src/api/projects.ts:106:    const res = await apiClient.patch<Record<string, unknown>>(`/projects/${projectId}`, { settings })
+frontend/src/api/projects.ts:111:    return (await apiClient.get<ProjectCapabilityStatus>(`/projects/${encodeURIComponent(projectId)}/capability-status`)).data
+frontend/src/api/projects.ts:120:    return (await apiClient.patch<ProjectItem>(`/projects/${encodeURIComponent(projectId)}`, payload)).data
+frontend/src/api/projects.ts:124:    return (await apiClient.post('/projects/sync-from-disk')).data
+frontend/src/api/projects.ts:136:    const res = await apiClient.get<ProjectOverview>(`/projects/${projectId}/overview`, {
+frontend/src/components/home/__tests__/ResearchWorkbenchPanel.test.ts:76:      { path: '/projects/:projectId', name: 'project-detail', component: { render: () => h('div') } },
+frontend/src/components/home/__tests__/ResearchWorkbenchPanel.test.ts:121:    expect(page.querySelector('a[href="/projects/project-1"]')).not.toBeNull()
+frontend/src/api/projectDelivery.ts:21:const base = (project: string) => `/projects/${encodeURIComponent(project)}`
+frontend/src/api/researchDelivery.ts:24:    return (await apiClient.get(`/projects/${encodeURIComponent(projectId)}/research-delivery`, { signal })).data
+frontend/src/api/researchPlans.ts:22:const base = (project: string) => `/projects/${encodeURIComponent(project)}/research-plans`
+frontend/src/api/projectReport.ts:12:const base = (project: string) => `/projects/${encodeURIComponent(project)}/scientific-summary`
+frontend/src/api/claimProvenance.ts:24:    return (await apiClient.post(`/projects/${encodeURIComponent(project)}/research-evidence/claim-provenance`, query, { signal })).data
+frontend/src/api/datasets.ts:11:const base = (project: string) => `/projects/${encodeURIComponent(project)}`
+frontend/src/layouts/DefaultLayout.vue:331:    if (item.key === 'projects') return route.path === '/projects' || route.path.startsWith('/projects/')
+src/cygnusx/tools/phylogenetic_tree/service.py:158:        run_dir = get_path_factory().create_project_run_dir(
+src/cygnusx/infrastructure/storage/path_factory.py:11:- application/services/reproducible_report_service.py 审计报告 → projects/runs/audit-report-*
+src/cygnusx/infrastructure/storage/path_factory.py:12:- application/services/task_service.py          Flow 任务 → projects/{project}/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:16:- application/services/studio_context_service.py Studio 产物登记 → projects/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:17:- application/services/agentteams_service.py    协作室 Case → projects/runs/agentteams-case-*
+src/cygnusx/infrastructure/storage/path_factory.py:19:- tools/{enrichments,deg,gsea,blast,synteny,phylogenetic_tree}/service.py  各工具 → projects/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:120:    def projects_dir(self, user_id: str) -> Path:
+src/cygnusx/infrastructure/storage/path_factory.py:123:    def project_dir(self, user_id: str, project_slug: str) -> Path:
+src/cygnusx/infrastructure/storage/path_factory.py:124:        return self.projects_dir(user_id) / project_slug
+src/cygnusx/infrastructure/storage/path_factory.py:126:    def create_project_run_dir(
+src/cygnusx/infrastructure/storage/path_factory.py:136:        base = self.project_dir(user_id, project) / "runs"
+src/cygnusx/tools/enrichments/service.py:5:2. 创建项目运行目录 ``projects/{project}/runs/enrichment-时间戳/``；
+src/cygnusx/tools/enrichments/service.py:420:        """结果目录：users/{uid}/projects/{project}/runs/enrichment-时间戳/。"""
+src/cygnusx/tools/enrichments/service.py:423:        return get_path_factory().create_project_run_dir(user_id, project_name, "enrichment")
+src/cygnusx/tools/blast/service.py:78:        return get_path_factory().create_project_run_dir(user_id, project_name, "blast") / "input"
+src/cygnusx/tools/deg/service.py:525:        """任务目录：users/{uid}/projects/{project}/runs/deg-时间戳/。"""
+src/cygnusx/tools/deg/service.py:528:        return get_path_factory().create_project_run_dir(user_id, project_name, "deg")
+src/cygnusx/tools/synteny/service.py:47:        work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "synteny")
+src/cygnusx/tools/gsea/service.py:46:        work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "gsea")
+src/cygnusx/api/v1/research_plans.py:26:router = APIRouter(prefix="/projects/{project_id}/research-plans", dependencies=[Depends(enabled)])
+src/cygnusx/api/v1/datasets.py:38:BASE = "/projects/{project_id}/datasets"
+src/cygnusx/api/v1/datasets.py:40:IMPORT = "/projects/{project_id}/import-proposals"
+src/cygnusx/api/v1/datasets.py:224:@router.get("/projects/{project_id}/dataset-discovery/{accession}")
+src/cygnusx/api/v1/research_claims.py:19:    prefix="/projects/{project_id}/research-evidence", dependencies=[Depends(enabled)]
+src/cygnusx/api/v1/research_delivery.py:32:@router.post("/projects/{project_id}/scientific-summary/prepare")
+src/cygnusx/api/v1/research_delivery.py:42:@router.post("/projects/{project_id}/scientific-summary")
+src/cygnusx/api/v1/research_delivery.py:52:@router.get("/projects/{project_id}/scientific-summary/{job_id}")
+src/cygnusx/api/v1/research_delivery.py:72:@router.get("/projects/{project_id}/scientific-summary/{job_id}/preview")
+src/cygnusx/api/v1/research_delivery.py:86:@router.get("/projects/{project_id}/scientific-summary/{job_id}/download")
+src/cygnusx/api/v1/research_delivery.py:103:@router.get("/projects/{project_id}/exports/{job_id}/summary-preview", response_class=HTMLResponse)
+src/cygnusx/api/v1/research_delivery.py:130:@router.get("/projects/{project_id}/delivery-inventory")
+src/cygnusx/api/v1/research_delivery.py:139:@router.post("/projects/{project_id}/exports/prepare")
+src/cygnusx/api/v1/research_delivery.py:152:@router.post("/projects/{project_id}/exports", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:162:@router.get("/projects/{project_id}/exports/{job_id}", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:172:@router.post("/projects/{project_id}/exports/{job_id}/retry", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:195:@router.get("/projects/{project_id}/exports/{job_id}/download")
+src/cygnusx/api/v1/research_delivery.py:216:@router.get("/projects/{project_id}/research-delivery")
+src/cygnusx/application/services/workspace_archive_service.py:211:    agents_path = factory.project_dir(str(session.user_id), project.slug) / "AGENTS.md"
+src/cygnusx/application/services/workspace_archive_service.py:225:                f"- 项目目录: `projects/{project.slug}/`",
+src/cygnusx/application/services/agentteams_service.py:507:                if file_uuid is not None and not candidate.startswith(("projects/", "inbox/")):
+src/cygnusx/application/services/agentteams_service.py:518:                            if location.startswith(("projects/", "inbox/")):
+src/cygnusx/application/services/agentteams_service.py:545:        run_dir = factory.create_project_run_dir(
+src/cygnusx/application/services/agentteams_service.py:1101:        if not run_path or not run_path.startswith("projects/") or "/runs/" not in run_path:
+src/cygnusx/application/services/agentteams_service.py:1133:                elif location.startswith(("projects/", "inbox/")):
+src/cygnusx/application/services/file_service.py:5:  分析输出：{data_root}/users/{user_id}/projects/{project}/runs/{analysis-time}/output/...
+src/cygnusx/application/services/file_service.py:189:    （inbox/projects/raw_data/workspace/temp）标记 is_system=True，其余为用户数据目录。
+src/cygnusx/application/services/file_service.py:849:        """确保用户顶层系统子目录（inbox/projects/raw_data/workspace/downloads/temp）存在。"""
+src/cygnusx/application/services/file_service.py:852:            "projects": self._factory.projects_dir(str(user_id)),
+src/cygnusx/application/services/file_service.py:976:            # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
+src/cygnusx/application/services/file_service.py:1032:        - ``user_root/{path}``（downloads/projects/... 布局）
+src/cygnusx/application/services/file_service.py:1104:        - 顶层命中 _SYNC_SKIP_USER_TOP_DIRS（tasks/projects/temp/results/raw）→ 跳过
+src/cygnusx/application/services/project_delivery_service.py:895:        run = factory.create_project_run_dir(str(job.user_id), project.slug, "research-delivery")
+src/cygnusx/application/services/agent_tool_gateway.py:503:            f"projects/{context.extra['project_slug']}/downloads"
+src/cygnusx/application/services/project_archive_service.py:3:平台约定：每次分析归档到 ``users/{user_id}/projects/{slug}/runs/{分析名}-{时间戳}/``
+src/cygnusx/application/services/project_archive_service.py:214:        f"- 项目目录: `projects/{project.slug}/`",
+src/cygnusx/application/services/project_archive_service.py:379:    project_root = factory.project_dir(user_id, project.slug)
+src/cygnusx/application/services/project_archive_service.py:390:            "directory": f"projects/{project.slug}/runs/{run_dir.name}",
+src/cygnusx/application/services/project_archive_service.py:598:    run_dir = factory.create_project_run_dir(user_id, project.name, analysis_name)
+src/cygnusx/application/services/chat_archive_service.py:97:        run_dir = factory.create_project_run_dir(
+src/cygnusx/application/services/pipeline_result_service.py:138:        projects_root = self._factory.projects_dir(self.context.user_id).resolve()
+src/cygnusx/application/services/pipeline_result_service.py:347:            raise ValidationError("不支持的引用协议，应为工作区相对路径（projects/... 或 inbox/...）")
+src/cygnusx/application/services/geo_processed_data_service.py:112:            directory = factory.project_dir(str(owner), project.slug) / "datasets"
+src/cygnusx/application/services/project_report_publication.py:100:        run = factory.create_project_run_dir(str(job.user_id), project.slug, "project-report")
+src/cygnusx/application/services/directory_service.py:75:            "projects": self._factory.projects_dir(uid),
+src/cygnusx/application/services/directory_service.py:101:        """幂等创建用户默认目录 inbox/projects/... 及物理目录。"""
+src/cygnusx/application/services/dataset_import_service.py:180:        directory = f"projects/{project.slug}/downloads"
+src/cygnusx/application/services/reproducible_report_service.py:439:        run_dir = factory.create_project_run_dir(str(job.user_id), project, "audit-report")
+src/cygnusx/application/services/studio_context_service.py:529:    run_dir = path_factory.create_project_run_dir(user_id, project_name, "studio")
+src/cygnusx/application/services/agentteams_upgrade_advisor.py:13:根目录的 projects/... 或 workspace/... 路径，废弃裸 file://{uuid}——
+src/cygnusx/application/services/project_overview_service.py:6:- 磁盘 ``projects/{slug}/runs/`` 下的历史分析运行目录扫描
+src/cygnusx/application/services/project_overview_service.py:181:        runs_dir = self._factory.project_dir(user_id, project_slug) / "runs"
+src/cygnusx/application/services/project_service.py:4:``users/{user_id}/projects/{slug}/`` 目录，下挂多个 Run。
+src/cygnusx/application/services/project_service.py:102:        - 同步在 ``user_directories`` 登记 ``projects/{slug}`` 目录记录
+src/cygnusx/application/services/project_service.py:137:        dir_path = f"projects/{slug}"
+src/cygnusx/application/services/project_service.py:152:        self._factory.project_dir(str(user_id), slug).mkdir(parents=True, exist_ok=True)
+src/cygnusx/application/services/project_service.py:153:        (self._factory.project_dir(str(user_id), slug) / "runs").mkdir(exist_ok=True)
+src/cygnusx/application/services/project_service.py:336:        dir_path = f"projects/{model.slug}"
+src/cygnusx/application/services/project_service.py:342:    # 回填：从磁盘 projects/ 目录读取缺失项目，写入 DB
+src/cygnusx/application/services/project_service.py:345:        """扫描 ``users/{user_id}/projects/`` 下的一级子目录，为缺失的创建 DB 记录。
+src/cygnusx/application/services/project_service.py:351:        projects_root = self._factory.projects_dir(str(user_id))
+src/cygnusx/application/services/project_service.py:390:                path = f"projects/{project.slug}"
+src/cygnusx/application/schemas/project.py:3:供 ``GET /api/v1/projects/{project_id}/overview`` 使用。
+src/cygnusx/application/services/task_service.py:427:        新路径: users/{uid}/projects/{project}/runs/{flow}-{timestamp}/work/
+src/cygnusx/application/services/task_service.py:433:        run_dir = pf.create_project_run_dir(user_id, project_name, flow_id)
+src/cygnusx/application/services/scientific_report_job.py:179:    run_dir = factory.create_project_run_dir(str(job.user_id), project.slug, "scientific-report")

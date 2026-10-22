@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { NAlert, NButton, NCard, NEmpty, NSpace, NTag } from 'naive-ui'
 import { researchDeliveryApi, type ProjectDelivery } from '@/api/researchDelivery'
+import { projectRequestFailure } from '@/api/projectErrors'
 const props = defineProps<{ projectId: string }>()
 const delivery = ref<ProjectDelivery | null>(null)
 const error = ref('')
@@ -18,8 +19,8 @@ async function load() {
   try {
     const result = await researchDeliveryApi.project(props.projectId, pending.signal)
     if (current === generation && result.project_id === props.projectId) delivery.value = result
-  } catch {
-    if (current === generation) error.value = '科研交付记录暂不可用；可能尚未启用或授权已变更。'
+  } catch (exc) {
+    if (current === generation) error.value = projectRequestFailure(exc, '科研交付记录')
   } finally { if (current === generation) loading.value = false }
 }
 async function downloadArtifact(fileId: string) {

@@ -1,0 +1,2660 @@
+diff --git a/.env.example b/.env.example
+index 4df57ada..93181cb2 100644
+--- a/.env.example
++++ b/.env.example
+@@ -368,6 +368,12 @@ KNOWLEDGE_AUTO_REINDEX_ENABLED=true
+ AGENT_MEMORY_SEMANTIC_RETRIEVAL_ENABLED=false
+ # 必须是当前 Provider 已配置可用的 1024 维模型；空值/失败会降级关键词，不生成向量。
+ AGENT_MEMORY_EMBEDDING_MODEL=
++# 独立 embedding Provider 的数据库 UUID（YAML 同步后查询）；空值沿用默认聊天 Provider。
++AGENT_MEMORY_EMBEDDING_PROVIDER_ID=
++# 指定独立 Provider 时传给 embedding API；记忆/知识库向量列固定为 1024 维。
++AGENT_MEMORY_EMBEDDING_DIMENSIONS=1024
++# data/ai/providers.yaml 的 SiliconFlow 条目引用；由部署环境安全注入真实密钥。
++SILICONFLOW_API_KEY=
+ AGENT_MEMORY_SEMANTIC_CANDIDATE_LIMIT=100
+ # 历史示例，无 Settings 字段/业务消费，仅保留说明；不再作为有效配置。
+ # AGENT_MEMORY_AUTO_SUMMARY_ENABLED=false
+@@ -427,6 +433,7 @@ MEMORY_COLD_AFTER_DAYS=90
+ MEMORY_COLD_MAX_IMPORTANCE=3
+ MEMORY_COLD_BATCH_LIMIT=500
+ 
++
+ # ===== mem0 历史配置（已废弃，无业务消费） =====
+ # 对应 mem0_memories 表保留为受保护的迁移残留；勿删表或本配置段。
+ # 以下旧说明仅供历史追溯，不代表可启用的引擎。
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md b/ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md
+index 41f3f885..13970b89 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md
+@@ -7,6 +7,7 @@
+ > **归档注记（2026-09-22）**：普通 AI 助手的 `chat_sandbox_execute` 已增加会话级分析归档：每次执行保存 input/work/output，并持续生成 `README.md`、`environment.json`、`manifest.json`；索引写入 `chat_sessions.sandbox_meta.analysis_archive`。该归档与 Studio 工作区隔离，但复用 `project_archive_service` 的文档契约。
+ > **执行保护注记（2026-09-22）**：`chat_sandbox_execute` 的代码执行超时之外，流式工具任务还受整体硬 deadline（请求 timeout + 30 秒收尾宽限）保护，覆盖 Docker 会话准备、产物 copy-out、数据库提交、环境探针和归档。到期必须返回失败工具结果；Docker exec 建立/终止调用也有有界等待，超时守卫先唤醒上层再执行 best-effort kill，禁止只发 heartbeat 而永久保持 running。
+ > 文档定位：记录仓库当前已经存在的 Agent 请求装配、思考—工具闭环、LangGraph、Studio、AgentTeams Worker、房间路由和前端事件投影。本文优先描述”现在代码实际怎么运行”，不把未来规划误写成已上线能力。
++> **新增执行面注记（2026-10-21）**：显式目标运行时（`goal_runtime_enabled`，默认关闭）见 [CygnusX_goal_architecture.md](CygnusX_goal_architecture.md)；Skill 路由与资源装配见 [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；管理端会话日志排查见 [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md) §4.4。
+ 
+ > **合并说明（2026-09-18）**：本文档已吸收 `agent_execution_loop_observability_2026-08.md`（2026-08-18 快照）的全部独有内容，原文件已删除。对应关系：闭环统一语义与范围声明并入 §4；`degraded` 降级回退会诊路由细则并入 §5.1；统一事件契约与三级工具事件链并入 §6.1；Worker 证据投影并入 §6.4；协助室前端事件→默认文案映射并入 §6.5；Guard 与失败语义并入 §7.3；验证基线并入 §10.1。与本文原有 §2.1/§6/§11 重复的文字以本文档为准，不再重复收录。
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+index b94f9509..fe13a9e1 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+@@ -183,6 +183,16 @@ domain 层定义 Protocol/ABC（`domain/*/repositories.py`），infrastructure 
+ 
+ **第三类：有实现无接口**：24 个仓储实现类中有 5 个（`MASRepository`、`TeamRepositoryImpl`、`ReportRepositoryImpl`、`SqlAlchemyNotificationRepository`、`SqlAlchemyAnnouncementRepository`）在 infrastructure 提供实现但未建对应 domain 接口。按 §5.2 的升格判据处理：出现复用或接口替换需求时再补接口，此前维持现状。（flow 域的 `FileSystemFlowRepository` 虽不显式继承，但结构上满足 `IFlowRepository` Protocol，不属于此类。）
+ 
++### AI Provider 默认切换的事务约束
++
++`SqlAlchemyAIProviderConfigRepository.set_default()` 在调用方同一事务中先执行
++UPDATE 清除旧默认，再执行 UPDATE 设置目标默认，最后 flush。迁移
++`dynamicrouting01` 的 `uq_ai_provider_configs_default` 部分唯一索引即时校验，
++不能依赖 ORM 按主键批量 flush 时恰好先清除旧标记；否则启动 YAML 同步可能整体回滚，
++新声明的 Provider 也不会落库。目标仍由既有 YAML/管理服务选择，仓储不改变 active 状态或
++模型路由规则。带唯一索引的 SQLite 回归及隔离 PostgreSQL 的修前失败/修后成功、重复切换
++已验证；运行栈重新同步结果仍须另行验收。
++
+ ### 5.2 轻量域：服务层直连模型（显式接受）
+ 
+ chat（13 模型）、goal、overdrive、schedule、knowledge_*、project、blast、agent、agent_memory、audit_log、api_key、search_provider、site_settings、mcp_builder、ai_metric 等域**不建仓储**，服务层直接构造查询。判据：
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+index 9b10ea72..9dd021ff 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+@@ -2,6 +2,35 @@
+ 
+ 类型：as-built；基线：2026-10-15。当前代码已落地，运行准入仍 BLOCKED；本文件是该域活动架构入口。验收快照见 `docs/implementation/cygnusx-phase3-dataset-ingestion-handoff-implementation.md`，公共契约见 `docs/contracts/cygnusx-dataset-handoff-v1.md`。
+ 
++## 会话显式 FASTQ 元数据试点
++
++`analysis.prepare_from_session_files` 经 `AgentToolGateway.context()` 读取已验证的
++ChatSession owner/project，再由 `SessionDatasetPreparationService` 锁会话、复核 active
++项目、模块权限及显式 Sample/FileRecord 引用。调用契约拒绝 owner/project/approved 等
++身份或确认字段；不推测目录归属、不纳管历史 Task。该实现当前位于独立验收工作树，
++未部署现网；默认开关不变。
++
++该路径复用 DatasetService 创建 Dataset/Version、挂资产与样本，初始 assay 为 unknown、
++分组未经确认；owner 必须通过既有 JWT review API 审阅 assay 与分组，再用同一个
++request_key 重试，才复用 Handoff 的真实文件校验、冻结及 AnalysisLink prepare。
++冻结摘要内的 `worker_paths_verified` 保持 false。相同会话/request_key 复用已有记录，
++改变输入则拒绝；并发重试由实际会话行锁串行化。
++
++已有 `platform_runs` 仅作为 AnalysisLink 的预案入口，request_key 使用
++`dataset:{proposal_id}`。Run confirm 委托同一 Dataset execute 与同一人类确认凭证，
++不另建 `run:{id}` Task；TaskService 的服务端 run_id 参数在 Task 提交事务内绑定
++Run、AnalysisLink 和 RunEvent，再提交并入队。直接向 Task API 提供保留的 run: 身份
++会被拒绝。旧跨提交接缝留下的未绑定 Task 只返回人工对账冲突，不在重试时自动纳管。
++Dataset 入口遵循 Link→Run 的加锁顺序，避免与 Run confirm 反向加锁。
++
++只读界面使用 RESEARCH_PLAN_ENABLED、RESEARCH_DELIVERY_READ_ENABLED；Gateway 另需
++TOOL_GATEWAY_READ_ENABLED。元数据准备、review 与冻结使用已有
++DATASET_DISCOVERY_READONLY 门（该门含元数据写入，名称不代表纯 GET），本次仅经用户
++确认在隔离环境开启。源码 WRITE_RUNTIME_ACCEPTED、计算配置写门与 Worker 路径验证
++均未开放：人类批准只代表预案已审阅，不代表计算准入或已完成计算。隔离证据见
++`evidence/project-session-lineage-20261022/`；包含真实 HTTP/PG/Redis、并发复用、三卡片
++空状态及 execute 阻断，验收结论由用户决定。
++
+ ## 关系与边界
+ 
+ ```mermaid
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+index 3d6fe20c..678e688b 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+@@ -269,14 +269,14 @@ Phase 1 已接入独立报告 Job、不可变快照持久化、八模块 HTML 
+ | AI 执行/确认门 | `src/cygnusx/application/services/analysis_flow_tool_service.py`、`domain/flow/submission_validator.py`、`tool_confirmation_service.py` |
+ | 任务提交九步链 | `src/cygnusx/application/services/task_service.py` |
+ | 输入文件构建器 | `src/cygnusx/infrastructure/execution/generic_builder.py` |
+-| Celery 执行 | `src/cygnusx/infrastructure/celery_app/tasks/analysis.py`（`run_snakemake`）、`infrastructure/execution/local.py`（`LocalSnakemakeExecutor`） |
++| Celery 执行 | `src/cygnusx/infrastructure/celery_app/tasks/analysis.py`（`run_snakemake`）、`infrastructure/execution/local.py`（`LocalSnakemakeExecutor`）；队列/Worker/Beat 拓扑见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md) |
+ | API | `src/cygnusx/api/v1/flows.py`、`api/v1/tasks.py` |
+ | 监控推送 | `src/cygnusx/application/services/workflow_monitor_service.py` + FlowFrame §13.5 logger 插件 |
+ | 流程 YAML 实例 | `flows/rna_seq.yaml`、`flows/atac_seq.yaml` |
+ 
+ ### RI13 最小执行证据接线（代码/隔离层）
+ 
+-原 `TaskService.submit` 在权威validator之后，使用原builder生成输入文件，再将v2定义、独立Task绑定和生成文件SHA写入既有 `Task.parameters._execution_evidence`；Task/证据及启用时的原预扣参数以QUEUED在队列可见前持久化。QUEUED是投递意图，投递不明必须对账，不证明broker已ACK。
++原 `TaskService.submit` 在权威validator之后，使用原builder生成输入文件，再将v2定义、独立Task绑定和生成文件SHA写入既有 `Task.parameters._execution_evidence`；Task/证据及启用时的原预扣参数以QUEUED在队列可见前持久化。QUEUED是投递意图，投递不明必须对账，不证明broker已ACK。投递使用固定 task ID `analysis-{task.id}-attempt-0`，Worker 侧以行锁 + 只接受 QUEUED 实现幂等领取；该任务的队列归属、ack 语义与超时规则见异步队列文档 §2、§6。
+ 
+ 原analysis Worker持Task行锁领取QUEUED、推进RUNNING，再做前后证据核验和队列执行参数比对；已运行/终态重复投递不会启动执行器。输入字节仍复用ResearchExecutionBinding/check_inputs；没有替代FlowFrame或新增执行引擎。PG并发、实际队列和挂载尚未验收。
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_log_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_log_architecture.md
+index 1642a179..fb7ba7ae 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_log_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_log_architecture.md
+@@ -149,6 +149,7 @@ sequenceDiagram
+ 
+ - **失败降级**：任务日志目录创建或 sink 添加失败时，只记录 warning，并继续执行任务，不阻断主流程。
+ - **实时链路**：现有 `publish_task_log` + DB 回写 + WebSocket 不变，文件日志只是额外备份。
++- **队列与 Worker 拓扑**：`LoggedTask` 在哪些 Worker 生效、任务如何路由、RocketMQ 消费者如何复用同一 task body，见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md)。
+ 
+ ### 3.3 数据库任务日志边界
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+index cf8f69d8..9bcc749c 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+@@ -7,6 +7,8 @@
+ > **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-18 已补登记 `cygnusx-biothings` 10 个与 `cygnusx-research-data` 26 个；2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
+ 
+ > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
++>
++> **接入面注记（2026-10-21）**：MCP 服务在管理端"AI 资源中心"的登记方式、与 Skill/助手/联网搜索/知识库的统一装配及用户级能力覆盖，见 [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；本文继续作为 MCP 通道、Preset 与构建师的唯一权威。
+ 
+ > **外部通道当前安全契约**：`main.py` 与 `pipelines_main.py` 共用 `core/runtime.py`。
+ > HTTP/SSE 仅允许回环监听且强制独立 `CYGNUSX_HTTP_TOKEN`（至少 32 字符）；旧的
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md
+index 0fd9fdc4..28028b53 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md
+@@ -5,6 +5,8 @@
+ > **审核口径：代码已实现 ≠ 生产已启用 ≠ 真实模型质量已验收。** v2 默认关闭；本轮新增迁移尚未在真实 PostgreSQL 执行，Worker/Provider 联调与 25 案例体验验收待完成。
+ >
+ > 路线与历史问题见 [记忆优化审计](CygnusX_memory_optimization_audit.md)；本文按当前代码组织，不以提案或历史运行数据证明现状。
++>
++> **管理面注记（2026-10-21）**：管理端"记忆审计"页、`/admin/users/{id}/memories` 与整理回滚端点的权限与页面入口见 [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md)；记忆的 user/agent/project 分区与项目隔离契约以本文为准。
+ 
+ 审核导航：[总体与时序](#2-当前拓扑与请求时序) · [数据隔离](#4-数据分层与隔离契约) · [读取与排序](#5-记忆读取链路) · [写入与整理](#6-记忆写入与整理) · [配置与迁移](#9-配置迁移与回退) · [验证依据](#10-观测与验证依据) · [审核重点](#11-审核重点与当前能力边界)
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md b/ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md
+index 3b232293..a5d134b5 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md
+@@ -44,11 +44,15 @@ uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --m
+ 通过前置验证后，在隔离环境逐项启用过滤。此时旧向量不会参与当前模型比较，词面查询提供补位。先小批 apply：
+ 
+ ```bash
+-uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --mode mismatch --limit 100 --apply --output /tmp/memory-model-batch-01.json
++uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --mode mismatch --limit 100 --apply --confirm-database memory_acceptance_test --output /tmp/memory-model-batch-01.json
+ ```
+ 
+ 每次最多 500 行；命令没有自动循环，不会自行扩大成本。`--mode missing` 只补空向量，兼容旧任务语义；切换模型必须显式使用 mismatch（包括缺失及模型不匹配行）。legacy 仅在确需维护旧分支时显式选择 `--storage legacy`。
+ 
++`--confirm-database` 是目标库名二次确认，上例名称须改为已授权的实际验收库名；
++必须与显式维护 DSN 的 database 精确相等。缺失或不符时，在创建数据库引擎和 Provider
++之前拒绝 apply；dry-run 不要求此参数。该保护不能替代回填前备份和 dry-run 计划审核。
++
+ 检查 updated/failed/skipped 和 after：失败项保留原向量/模型，后续可重试；若正文、拥有者、分区、状态、旧模型或旧向量已被其他操作改变，则条件更新跳过，避免覆盖用户归档/编辑或其他回填。每行 Provider 调用绑定本批目标模型，向量与标签成对更新。CLI 整批事务提交成功后才发布更新指标；提交失败则回滚。
+ 
+ failed >0 时 CLI 返回非零；skipped 表示并发变化，不等同模型错误，需核对后重新 dry-run。每批检查后再决定是否继续。不要只比较“处理行数”，应核对实际成功数和 pending 是否下降。
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md b/ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md
+index a82437e6..042443fd 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md
+@@ -368,3 +368,4 @@ flowchart TB
+ - MCP、Skill、记忆、知识：`CygnusX_mcp_architecture.md`、`CygnusX_skill_architecture.md`、`CygnusX_memory_architecture.md`、`CygnusX_knowledge_architecture.md`
+ - 数据、日志、计费：`CygnusX_database_architecture.md`、`CygnusX_log_architecture.md`、`CygnusX_token_billing_architecture.md`
+ - 多 Agent 与流程：`CygnusX_mas_a2a_plan.md`、`CygnusX_multi_agent_fanout.md`、`Protocol/FlowFrame/README.md`
++- 异步执行与运维：`CygnusX_async_task_queue_architecture.md`、`CygnusX_analysis_operations_architecture.md`、`CygnusX_flow_architecture.md`、`CygnusX_toolbox_architecture.md`
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md
+index 24b468ea..cfbc17db 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md
+@@ -6,6 +6,8 @@
+ > 契约语义、零代码移植。验收状态以手册 W0-1 ~ W4-4 人工对照表为准。
+ >
+ > 适用范围：Studio / legacy 链路。LangGraph 路径除本文 §8.2 审批闸外不做科研形态扩展。
++>
++> **管理面注记（2026-10-21）**：工作区归档的管理端总览、强制休眠、删包与 `studio.yaml` 配置热更见 [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md) §4.6；项目/文件/团队模型见 [CygnusX_project_workspace_architecture.md](CygnusX_project_workspace_architecture.md)。
+ 
+ ## 0. 这个科研闭环模块如何发挥作用
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+index d4b0f32e..3423db2d 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+@@ -2,6 +2,14 @@
+ 
+ 本文为当前代码的 as-built 说明。研究计划功能默认关闭；启用后仍为 PLAN_ONLY。真实执行门禁、生产发布和科学 Benchmark 效果均未验收。科研交付事实继续以 [科研交付链](CygnusX_research_delivery_architecture.md) 为准。
+ 
++隔离只读验收补充：项目下计划、交付链与 inventory 的 GET 明确区分匿名 401、
++非 owner 403、owner 200，继续复核 active 用户及 files/tasks/reports 权限。
++ProjectDetail 的科研成果清单由 research_delivery_read 能力控制展示，导出写门仍由
++独立的 project_export 控制。空项目三卡片只读取空状态，不自动生成 ResearchPlan。
++会话显式 FASTQ 挂链试点复用既有 Dataset/Run 预案，不创建 ResearchPlan，详见
++[Dataset 架构](CygnusX_dataset_architecture.md)。这些变更仅在独立工作树与专用服务验收，
++现网部署、生产数据库和默认开关未变。
++
+ ## 模块作用与边界
+ 
+ ResearchPlan 是项目内版本化科研意图与步骤状态的持久协调层。它不替代 RunPlan、MASPlan、Task、Dataset 或报告，不新增 LLM 循环、下载器和统计执行器。模型提交严格 draft；服务器从身份上下文确定 owner/project，并生成 ID、版本、digest、审阅和步骤状态。新版本不继承旧审批。
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md
+index f54d8f67..fe49498f 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md
+@@ -2,6 +2,8 @@
+ 
+ > 基线日期：2026-09-18。本文由代码实勘得出，修正了旧文档中过时的描述；
+ > 与 `agent_framework_baseline.md` §5.2（Skill 契约）、`agent_framework_baseline.md` §12 与 §2.2（挂载与绑定，原 `agent_architecture_and_extension_guide.md` 已并入其中）互为补充，冲突时以本文为准。
++>
++> **接入面注记（2026-10-21）**：Skill 如何被 `skill_route` 路由、五入口导入、按用户覆盖并与 MCP/助手资源统一装配，见 [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；本文只负责 Skill 生命周期、存储与调用审计。
+ 
+ ## 这个平台 Skill 模块如何发挥作用
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md
+index 47f572f5..ea1eef7d 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md
+@@ -3,6 +3,8 @@
+ > 文档类型：as-built + 对账规范  
+ > 基线：2026-09-22  
+ > 适用范围：普通 Chat、Studio/Agent 工具循环、AgentTeams 会诊、个人用量统计和工作台费用展示。
++>
++> **边界注记（2026-10-21）**：饼干账户、定价、任务冻结/结算/退款、余额 WebSocket 推送与管理端账本见 [CygnusX_cookie_economy_architecture.md](CygnusX_cookie_economy_architecture.md)；本文只负责 Provider usage → AI token 扣费这一段。
+ 
+ ## 0. 这个计费模块如何发挥作用
+ 
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md
+index d5c8859e..50239627 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md
+@@ -167,7 +167,7 @@ tool_configs/tools_setting.yaml
+ 
+ ### 3.2 任务投递：enqueue_task 统一分发
+ 
+-`infrastructure/task_queue/dispatcher.py::enqueue_task` 是唯一投递入口，按 `task_queue_backend`（celery/rocketmq/hybrid）分流。工具任务全部经它投递，不直接 `apply_async`。
++`infrastructure/task_queue/dispatcher.py::enqueue_task` 是工具箱任务的统一投递入口，按 `task_queue_backend`（celery/rocketmq/hybrid）分流；工具任务不直接 `apply_async`。注意该入口不是全平台唯一投递点——AgentTeams、Goal、日程等仍有直接 `.delay`/`.apply_async` 调用，RocketMQ 模式不覆盖它们。完整队列拓扑与传输语义见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md)。
+ 
+ ### 3.3 Celery 登记（手动，易漏）
+ 
+@@ -176,13 +176,13 @@ tool_configs/tools_setting.yaml
+ | 任务模块 | 队列 |
+ |---|---|
+ | `cygnusx.tools.jbrowse.tasks` | analysis |
+-| `cygnusx.tools.phylogenetic_tree.tasks` | phylo_tree（专用 Worker，已停建） |
++| `cygnusx.tools.phylogenetic_tree.tasks` | phylo_tree（专用 Worker 经 `phylo` profile 门控，默认不启动） |
+ | `cygnusx.tools.blast.tasks` | blast_search / blast_db_build（双队列拆分） |
+ | `cygnusx.tools.enrichments.tasks` | analysis |
+ | `cygnusx.tools.deg.tasks` | analysis |
+ | `cygnusx.tools.synteny.tasks` | analysis |
+ 
+-（GSEA 复用 enrichments 的 include 条目链，`gsea.tasks` 经 `enrichments.config` 间接登记——见 `gsea/tasks.py` 的 shared_task 注册。）
++**GSEA 当前未登记（既有文档此处曾误记为“经 enrichments 间接登记”）**：`celery.py` 的 `include` 与 `task_routes` 都没有 `cygnusx.tools.gsea.tasks`；`enrichments.tasks` 也不导入 GSEA。Web 进程在 `gsea/service.py` 提交时局部 import 会临时注册任务，但 Worker 进程不会加载该模块。2026-10-21 实测 `import_default_modules()` 后注册 69 个任务、GSEA 为 0。接入 GSEA 时必须同时补 `include` 与 `task_routes`，并在真实 Worker 上用 `celery inspect registered` 验证。
+ 
+ ### 3.4 分析容器体系
+ 
+diff --git a/ARCHITECTURE_DESIGN/README.md b/ARCHITECTURE_DESIGN/README.md
+index 31c65b17..f2908c05 100644
+--- a/ARCHITECTURE_DESIGN/README.md
++++ b/ARCHITECTURE_DESIGN/README.md
+@@ -12,6 +12,8 @@
+ 
+ > 三项科研功能运行验收：[CygnusX_Research_Feature_Runtime_Acceptance.md](CygnusX_Research_Feature_Runtime_Acceptance.md)（2026-10-20；真实隔离 Docker/PG、计划审阅及浏览器预览部分通过；真实科研记录/ZIP 因 corpus 门禁 BLOCKED，生产未准入）。
+ 
++> **平台经营面入口（2026-10-21 补齐）**：用户与权限 → [CygnusX_identity_access_architecture.md](CygnusX_identity_access_architecture.md)；管理控制台 → [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md)；饼干经济 → [CygnusX_cookie_economy_architecture.md](CygnusX_cookie_economy_architecture.md)；节日彩蛋 → [CygnusX_festival_architecture.md](CygnusX_festival_architecture.md)；通知/公告/提醒/站点内容 → [CygnusX_notification_engagement_architecture.md](CygnusX_notification_engagement_architecture.md)；项目/文件/团队 → [CygnusX_project_workspace_architecture.md](CygnusX_project_workspace_architecture.md)；目标运行时 → [CygnusX_goal_architecture.md](CygnusX_goal_architecture.md)；Skill/MCP 接入面 → [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；调度与分析运维 → [CygnusX_analysis_operations_architecture.md](CygnusX_analysis_operations_architecture.md)。覆盖对账与残余缺口见 [CygnusX_architecture_coverage_audit.md](CygnusX_architecture_coverage_audit.md)。
++
+ ## 0. 这个架构文档目录如何发挥作用
+ 
+ `ARCHITECTURE_DESIGN` 是代码现状、修改规范和历史方案的文档索引层。开发者先依据本 README 按领域定位文档，再阅读对应的 as-built 基线或规范；修改代码时以代码、配置和迁移为事实来源，用架构文档解释模块边界、数据流、权限和验证门禁。`as-built` 文档描述当前实现，规范文档约束应该如何修改，提案/快照记录目标态或某一时点，`deprecated/` 只保留历史参考，不能覆盖活动基线。
+@@ -74,6 +76,9 @@ sequenceDiagram
+ > 2. `CygnusX_skill_first_sandbox_execution_proposal.md` 补登记（提案 v2，非 as-built）；
+ > 3. 外部独立文档统一进架构库：`mcp-server/ARCHITECTURE.md`（独立权威文档，保留原位，登记于"相关文档"）、`tool_configs/tools_design.md`（工具页面专项规范，保留原位，登记于"相关文档"）；`pipelines/Flow_framework.md`（v1，已被 `Protocol/FlowFrame/flow-framework` v2.0 取代）与 `tool_configs/tools_update.md`（提案已全部落地，现状见 `CygnusX_mcp_architecture.md`）移入 `deprecated/`（见"废弃归档"与"合并记录"）；
+ > 4. `CygnusX_memory_architecture.md` 补 mem0 遗留现状更正（引擎代码 2026-08-19 已删除，`mem0_memories` 遗留表 + `MEM0_*` 配置段为受保护迁移残留，见其 §1）。
++>
++> **2026-10-21 覆盖补齐说明**：对 `api/v1`（49 个路由模块）、`application/services`（196 个服务文件）与前端入口做全覆盖对账后，新增 9 份 as-built 文档，补齐此前只有代码、没有架构汇总的平台经营面：`CygnusX_identity_access_architecture.md`（认证/用户/RBAC/模块门禁）、`CygnusX_admin_console_architecture.md`（系统管理 12 菜单与 18 个 admin 路由模块）、`CygnusX_cookie_economy_architecture.md`（账户/账本/定价/任务结算/AI 扣费）、`CygnusX_festival_architecture.md`（节日彩蛋）、`CygnusX_notification_engagement_architecture.md`（通知/公告/提醒/站点内容）、`CygnusX_project_workspace_architecture.md`（项目/文件/团队/归档）、`CygnusX_goal_architecture.md`（目标运行时）、`CygnusX_skill_mcp_integration_architecture.md`（Skill 路由与 MCP 资源接入面）、`CygnusX_analysis_operations_architecture.md`（调度/工作流监控/运行记录/统计）。覆盖矩阵、本轮纠正的事实与残余缺口（legacy AI 对话、MAS 房间骨架、research claims API 等）见 `CygnusX_architecture_coverage_audit.md`。
++> **2026-10-21 异步队列补充说明**：新增 `CygnusX_async_task_queue_architecture.md`，补齐 Celery 应用配置、6 个逻辑队列、25 条 `task_routes`、34 条 Beat 注册表、Worker/Beat/Flower 部署矩阵、任务级超时/重试、RocketMQ 可选传输与可靠性缺口。`CygnusX_analysis_operations_architecture.md` 只保留调度业务面；worker、queue、`schedules` 消费缺口与 RocketMQ 细节以新文档为准。
+ 
+ 
+ **文档类型口径**：
+@@ -144,6 +149,9 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway 
+ ### `CygnusX_skill_first_sandbox_execution_proposal.md` — Skill-First 沙箱执行架构提案（提案 v2，2026-09-30/v2 2026-10-01，未实施）
+ "将平台全部 Skill 暴露给全部 Agent、以 Skill 引导沙箱代码生成"的目标架构与实施路径。§1 记录三个已核实的问题（Skill 库与 Agent"两个平行宇宙"、`.agents/skills/` 561 个 bio-* 与平台业务 Skill 互不可见、沙箱执行缺乏 Skill 引导）；§2+ 目标态设计与开放问题的 2026-10-01 评审决策。**落地完成前不得作为现状依据**；关联现状文档为 `CygnusX_agent_execution_framework.md` 与沙箱基线文档。
+ 
++### `CygnusX_skill_mcp_integration_architecture.md` — Skill/MCP 接入面与资源装配（as-built，2026-10-21）
++补齐 `CygnusX_skill_architecture.md`（Skill 生命周期）与 `CygnusX_mcp_architecture.md`（MCP 通道）之间的"接入面"：`skill_route` 内置工具的分词/打分/20 候选截断/前 5 正文 6000 字预算、scout 子 Agent、五入口导入（JSON/ZIP/Markdown/GitHub/阿里云）与预览确认、管理端 skills/assistants/agents 三套表面、`user_agent_capabilities` 用户级覆盖、Agent 装配时的工具与资源合并、资源中心六 Tab 与 MCP/Skill 目录。附"对旧文档的校正"表（10 技能上限、YAML 覆盖、`UserAgentCapabilityModel`、`features` ORM/迁移漂移、legacy assistants 等），修改 Skill/MCP 接入前先读本文再回看两份领域基线。
++
+ ---
+ 
+ ## 3. 多智能体编排与记忆
+@@ -217,6 +225,37 @@ L1 生信工具箱（`/tools`）的后端框架与跨链路全景：`src/cygnusx
+ ### `CygnusX_network_architecture.md` — 平台网络配置架构（as-built 快照，2026-09-21）
+ 梳理平台所有出站/入站网络路径、白名单与 SSRF 校验标准：五条独立网络路径（chat 工具出站、Studio 沙盒每会话内网 + CONNECT 代理、终端沙盒 `cygnusx-sandbox-net`、web_search 后端 SearchProvider、宿主机翻墙客户端 fake-ip DNS）；各沙盒 network 白名单与 Egress Proxy 域名清单；fake-ip（198.18.0.0/15）误判问题的根因与修复记录。涉及沙盒网络、出站白名单或代理配置的修改前必读。
+ 
++### 平台经营与用户域（2026-10-21 新增）
++
++> 以下 8 份文档补齐此前没有架构汇总的平台经营面；路由/服务/前端入口与文档的逐项对应见 [CygnusX_architecture_coverage_audit.md](CygnusX_architecture_coverage_audit.md)。
++
++### `CygnusX_identity_access_architecture.md` — 身份、认证与用户管理（as-built，2026-10-21）
++登录/注册/审批、JWT（access 30m + refresh 7d）、bcrypt、TOTP（±1 步）、API Key（`omh_...` + SHA-256）、`token_version` 吊销、登录限流与锁定、实时查库 RBAC、`data/MODULE_LOCKED.yaml` 模块门禁（19 模块 / 17 可锁定）、管理端用户 CRUD/角色/额度/模块/状态/删除，以及前端登录态与路由守卫。记录中间件实际入站顺序（`CookieRequired` 在 Auth 之前、实际空转；`ModuleGate` fail-open）与 JWT 类型、`rejected` 枚举、bcrypt 72 字节等已知缺口。
++
++### `CygnusX_admin_console_architecture.md` — 管理控制台（as-built，2026-10-21）
++"系统管理"12 菜单 → 17 个 `/admin/*` 视图 → 19 个 `api/v1/admin/*` 路由模块的完整映射；五套 `AdminRequired` 实现与 TOTP 实际覆盖面（仅删用户、站点设置、平台敏感字段三处）；用户/饼干/AI 配置与资源/可观测（会话日志、AI 指标、数据库健康、统计、存储、终端）/公告节日/工作区归档/BLAST 各管理面；配置写入与热生效方式、`AuditMiddleware` 审计、前端实现要点与 12 项已知偏差。改管理端菜单、权限或敏感操作前必读。
++
++### `CygnusX_cookie_economy_architecture.md` — 饼干经济（as-built，2026-10-21）
++账户余额/冻结/状态、交易类型（EARN/SPEND/ADJUST/REFUND/FREEZE/UNFREEZE）、定价与折扣、任务冻结-结算-退款、AI token 扣费（按 `message_id` 幂等）、Redis PubSub + WebSocket 余额推送、日账本与异常监控（02:30）。明确与 `CygnusX_token_billing_architecture.md` 的分界（平台饼干 vs 供应商元账单），并记录 `cookie_consumption_logs` 休眠、`cookie_sandbox_base_cost` 未消费、`TaskCookieConsumer` 未接线、任务级扣费无幂等键等缺口。
++
++### `CygnusX_festival_architecture.md` — 节日彩蛋（as-built，2026-10-21）
++`data/festival_config.yaml` 37 个节日定义、SOLAR/LUNAR/SOLAR_TERM 三类日历、2025–2035 节气预计算、按 `(priority, name)` 只激活一个节日、`festival_claims` 唯一 `(user, festival, year)`、领取走饼干 EARN（`source=festival`）；`/festival/today|claim` 与 `/admin/festivals` 管理端；首页弹窗/背景/动效/主题与 `localStorage` 去重。记录容器 `/app/data` 只读、UTC 时区、孤儿领取等风险。
++
++### `CygnusX_notification_engagement_architecture.md` — 通知、公告与站点运营（as-built，2026-10-21）
++站内通知（`read_by` JSON 数组、全局/定向 OR 语义、60s 轮询无 SSE）、公告（时间窗 + 本地去重）、提醒调度（RRULE → occurrences → deliveries → notifications）、注册欢迎通知、站点设置单例与站点内容 YAML、首页快捷入口。记录可见性校验缺口、生产 worker 未消费 `schedules` 队列、快捷入口 label/route 被忽略等问题。
++
++### `CygnusX_project_workspace_architecture.md` — 项目、文件与团队协作（as-built，2026-10-21）
++单属主项目（slug + 磁盘目录、无成员表）、项目概览聚合、归档导出边界；文件记录/目录/上传会话/样本、分块上传（MD5 秒传/去重/配额）、受管引用 `upload://`/`file://`/`directory://`/`sample_sheet_ref://`（5 MB 上限）、团队 ACL（owner/writer/reader）、工作区归档打包/解包。存储路径与目录协议细节回指 `CygnusX_storage_architecture.md`，科研会话归档回指 `CygnusX_research_loop_architecture.md`。
++
++### `CygnusX_goal_architecture.md` — 目标运行时（as-built，2026-10-21）
++默认关闭（`goal_runtime_enabled=false`）的显式目标执行链：`agent_goals`/work units/events 数据模型、生命周期与状态机、单步 Chat 执行器、评估器解析 `goal_result` 围栏 JSON、`goal_complete`/`goal_blocked` 终态工具（仅 manager）、Sub-Agent Fan-out 适配、Redis 租约 + DB 租约 + Celery 续跑/恢复、API/SSE 与前端。记录 Redis/DB 租约不一致、死状态、前端恢复口径与 SSE 未关闭等风险。
++
++### `CygnusX_analysis_operations_architecture.md` — 调度、工作流监控与分析运维（as-built，2026-10-21）
++定时任务（RRULE）与提醒调度、工作流监控 ingest（token + 可选 HMAC）、WebSocket + 5s 轮询、平台运行记录 plan/confirm/events/artifacts、任务/流程/绘图统计缓存与 AI 指标告警。记录生产 worker 缺 `schedules` 队列、ingest HMAC 可选等缺口；AI 指标告警实际由 Beat `ai-metrics-alert-check` 每 5 分钟触发。与 `CygnusX_flow_architecture.md`（Flow 接入）和 `CygnusX_log_architecture.md`（日志）互补，队列拓扑与 Worker 细节回指 `CygnusX_async_task_queue_architecture.md`。
++
++### `CygnusX_async_task_queue_architecture.md` — 异步任务队列与 Celery 调度（as-built，2026-10-21）
++平台异步执行主干的完整架构：`Celery("cygnusx")` 应用配置（Redis DB1 broker / DB2 result backend、JSON、Asia/Shanghai、全局 6h/5h 超时、prefetch=1、max tasks/child=10、默认队列 `analysis`）、26 个 include 模块与 25 条 `task_routes`、6 个逻辑队列（`analysis`/`blast_search`/`blast_db_build`/`phylo_tree`/`mas_apptainer`/`schedules`）及消费方、34 条 Beat 注册表、主栈 Beat/Flower 与独立 Worker 栈/phylo/MAS systemd/跨机/验收部署矩阵、`run_snakemake` 幂等领取与 early ack/late ack 语义、日程扫描状态机、RocketMQ 信封/主题/重试/状态镜像与 at-least-once 边界、`LoggedTask` 每任务日志与 OTel 传播。记录 `schedules` 无消费者、GSEA 未注册、RocketMQ 不覆盖直接派发与忽略 `task_routes`、Beat 单实例、无队列积压告警等风险。改队列/Worker/Beat/`TASK_QUEUE_BACKEND` 前必读。
++
+ ---
+ 
+ ## 6. 前端
+@@ -231,6 +270,9 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
+ ### `ARCHITECTURE_DISCOVERY_REPORT.md` — 单文件架构审计与批量测试计划（审计快照，2026-10-18，进行中）
+ 首轮只读架构调查：架构全景、三条纵向切片、架构核验、分层测试策略与批量测试计划；批量测试全部未执行，结论均为静态证据，不得当作运行验收。证据根目录见文档内 `evidence/architecture-audit/arch-audit-20261018T1940+0800-e78fd1ef/`。
+ 
++### `CygnusX_architecture_coverage_audit.md` — 架构文档覆盖审计（审计快照 + 索引，2026-10-21）
++将 49 个路由模块、196 个服务文件与前端入口逐项映射到架构文档：平台经营面 9 个领域的深度覆盖矩阵、既有 AI/执行链/科研链文档对照、本轮新增 9 份文档清单、核实并纠正的 10 项事实（中间件顺序、五套管理员依赖、前端无 admin 守卫、TOTP 覆盖面、节日 YAML 驱动等），以及 7 项残余缺口与建议（legacy AI 对话/浮动助手、MAS 房间骨架、research claims API 面等）。新增模块或发现文档过期时先更新本文。
++
+ ### `CygnusX_skill_architecture.md` — CygnusX Skill 体系全生命周期（as-built，2026-09-18）
+ 由代码实勘得出的 Skill 子系统权威文档：两套 Skill 体系辨析（Kimi CLI Agent Skills vs 平台 Skill）；双层存储（`data/ai/skills/` 磁盘真相源 + skills/skill_versions/skill_invocations DB 三表索引）；SKILL.md 解析规范与 skill_store 读写；Agent `skill_ids` 声明式绑定与三层渐进披露发现；运行时工具路由、事件流与审计；五入口"预览→确认"导入管线、管理端创建、Studio 提炼、阿里云官方源同步（`ALIYUN_SKILLS_ENABLED` 默认关闭）；双轨版本管理；管理端 API 清单、数据表与迁移、前端组件；对旧文档的修正记录。
+ 
+diff --git a/data/ai/providers.yaml b/data/ai/providers.yaml
+index 470971d3..83ae04fa 100644
+--- a/data/ai/providers.yaml
++++ b/data/ai/providers.yaml
+@@ -80,3 +80,11 @@ providers:
+   vendor: aliyun
+   weight: 100
+   extra_params: {}
++- name: provider-embedding-qwen3
++  provider_type: openai_compatible
++  model: Qwen/Qwen3-Embedding-8B
++  base_url: https://api.siliconflow.cn/v1
++  api_key: ${SILICONFLOW_API_KEY}
++  is_active: true
++  is_default: false
++  tier: light
+diff --git a/deploy/docker/docker-compose.worker.yml b/deploy/docker/docker-compose.worker.yml
+index 8fa84c10..5f6c19c4 100644
+--- a/deploy/docker/docker-compose.worker.yml
++++ b/deploy/docker/docker-compose.worker.yml
+@@ -94,6 +94,12 @@ services:
+       - REDIS_HOST=cache                 # 经 cygnusx_net 解析主栈 Redis 服务名
+       - SERVICE_NAME=worker
+       - PYTHONPATH=/app/src
++      # worker-compose.sh 从根目录 .env 导出；变更后须 force-recreate。
++      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
++      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
++      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
++      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
++      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
+       # Redis  broker/backend 必须携带密码；cache 服务已启用 --requirepass ${REDIS_PASSWORD}。
+       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
+       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2
+diff --git a/deploy/docker/docker-compose.yml b/deploy/docker/docker-compose.yml
+index 04ef1121..9b08cfbb 100644
+--- a/deploy/docker/docker-compose.yml
++++ b/deploy/docker/docker-compose.yml
+@@ -58,6 +58,12 @@ services:
+       - REDIS_HOST=cache
+       - SERVICE_NAME=web
+       - PYTHONPATH=/app/src
++      # 记忆接通：通过根目录 --env-file .env 插值；变更后须 force-recreate。
++      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
++      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
++      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
++      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
++      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
+       - AL_API_KEY=${AL_API_KEY}
+       - ARK_API_KEY=${ARK_API_KEY}
+       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
+@@ -187,6 +193,12 @@ services:
+       - REDIS_HOST=cache
+       - SERVICE_NAME=beat
+       - PYTHONPATH=/app/src
++      # 与 Web/Worker 一致，保留 Settings 的空模型/空 Provider/1024 维默认值。
++      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
++      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
++      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
++      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
++      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
+       - AL_API_KEY=${AL_API_KEY}
+       - ARK_API_KEY=${ARK_API_KEY}
+       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
+diff --git a/frontend/src/api/projects.ts b/frontend/src/api/projects.ts
+index 05602127..3725b32d 100644
+--- a/frontend/src/api/projects.ts
++++ b/frontend/src/api/projects.ts
+@@ -14,6 +14,8 @@ export interface ProjectItem {
+   description: string
+   /** 客户名称（并行开发字段，可能缺省） */
+   customer?: string | null
++  status?: 'active' | 'completed' | 'handed_over'
++  settings?: Record<string, unknown> | null
+   created_at: string | null
+   updated_at: string | null
+ }
+@@ -59,8 +61,19 @@ export interface ProjectOverview {
+   runs: ProjectRunItem[]
+ }
+ 
++export interface ProjectCapability {
++  enabled: boolean
++  allowed: boolean
++  reason: 'SERVICE_DISABLED' | 'NO_PERMISSION' | 'AVAILABLE'
++}
++export interface ProjectCapabilityStatus {
++  research_plan: ProjectCapability
++  research_delivery_read: ProjectCapability
++  project_export: ProjectCapability
++}
++
+ export const projectsApi = {
+-  /** 当前用户的项目列表（后端首次访问会从磁盘回填历史项目） */
++  /** 当前用户的项目列表；读取不会从磁盘隐式创建项目。 */
+   async listProjects(): Promise<ProjectItem[]> {
+     const res = await apiClient.get<ProjectItem[]>('/projects')
+     return res.data || []
+@@ -84,7 +97,7 @@ export const projectsApi = {
+ 
+   /**
+    * 项目级设置（WP3 任务 3 可选项）：如"项目内新会话默认开启科研模式"。
+-   * 后端端点可能稍后到位，调用方必须容忍失败并回滚 UI。
++   * 按 JSON Merge Patch 合并，未提供的键保持不变。
+    */
+   async updateProjectSettings(
+     projectId: string,
+@@ -94,6 +107,23 @@ export const projectsApi = {
+     return res.data
+   },
+ 
++  async getCapabilityStatus(projectId: string): Promise<ProjectCapabilityStatus> {
++    return (await apiClient.get<ProjectCapabilityStatus>(`/projects/${encodeURIComponent(projectId)}/capability-status`)).data
++  },
++
++  async updateProject(projectId: string, payload: {
++    name?: string
++    description?: string
++    status?: 'active' | 'completed' | 'handed_over'
++    settings?: Record<string, unknown> | null
++  }): Promise<ProjectItem> {
++    return (await apiClient.patch<ProjectItem>(`/projects/${encodeURIComponent(projectId)}`, payload)).data
++  },
++
++  async syncFromDisk(): Promise<{ created: number; skipped_deleted: number }> {
++    return (await apiClient.post('/projects/sync-from-disk')).data
++  },
++
+   /** 项目总览：元数据 + 历史会话（分页，可按状态过滤）+ 历史分析 run 目录 */
+   async getProjectOverview(
+     projectId: string,
+diff --git a/frontend/src/components/ProjectResearchDelivery.vue b/frontend/src/components/ProjectResearchDelivery.vue
+index 78be3dff..d8892563 100644
+--- a/frontend/src/components/ProjectResearchDelivery.vue
++++ b/frontend/src/components/ProjectResearchDelivery.vue
+@@ -39,11 +39,11 @@ const analyses = computed(() => {
+ function failure(exc: unknown) {
+   const response = (exc as { response?: { status?: number; data?: { code?: string; error?: { code?: string } } } })?.response
+   const code = response?.data?.code ?? response?.data?.error?.code
+-  if (code === 'FEATURE_DISABLED') return '项目科研交付功能尚未启用。'
+-  if (response?.status === 403) return '没有权限访问项目科研成果。'
+-  if (response?.status === 404) return '项目或导出记录不可用，请核对当前权限。'
+-  if (response?.status === 409) return '导出内容已变化，请重新预览并确认范围。'
+-  return '请求失败，请重试；已有任务不会因此重新分析或下载。'
++  if (code === 'FEATURE_DISABLED') return '服务未启用：项目科研交付功能尚未启用。'
++  if (response?.status === 401 || response?.status === 403) return '当前用户无权限：无法访问项目科研成果。'
++  if (response?.status === 404) return '请求失败：项目或导出记录不存在，请刷新核对。'
++  if (response?.status === 409) return '请求失败：导出内容已变化，请重新预览并确认范围。'
++  return '请求失败：请重试；已有任务不会因此重新分析或下载。'
+ }
+ function remember() {
+   if (job.value) sessionStorage.setItem(`project-export:${props.projectId}`, job.value.id)
+diff --git a/frontend/src/components/ResearchDeliveryChain.vue b/frontend/src/components/ResearchDeliveryChain.vue
+index a11521d4..2a60ba6b 100644
+--- a/frontend/src/components/ResearchDeliveryChain.vue
++++ b/frontend/src/components/ResearchDeliveryChain.vue
+@@ -2,6 +2,7 @@
+ import { onBeforeUnmount, ref, watch } from 'vue'
+ import { NAlert, NButton, NCard, NEmpty, NSpace, NTag } from 'naive-ui'
+ import { researchDeliveryApi, type ProjectDelivery } from '@/api/researchDelivery'
++import { projectRequestFailure } from '@/api/projectErrors'
+ const props = defineProps<{ projectId: string }>()
+ const delivery = ref<ProjectDelivery | null>(null)
+ const error = ref('')
+@@ -18,8 +19,8 @@ async function load() {
+   try {
+     const result = await researchDeliveryApi.project(props.projectId, pending.signal)
+     if (current === generation && result.project_id === props.projectId) delivery.value = result
+-  } catch {
+-    if (current === generation) error.value = '科研交付记录暂不可用；可能尚未启用或授权已变更。'
++  } catch (exc) {
++    if (current === generation) error.value = projectRequestFailure(exc, '科研交付记录')
+   } finally { if (current === generation) loading.value = false }
+ }
+ async function downloadArtifact(fileId: string) {
+diff --git a/frontend/src/components/ResearchPlanWorkbench.vue b/frontend/src/components/ResearchPlanWorkbench.vue
+index d082bfc6..00c56942 100644
+--- a/frontend/src/components/ResearchPlanWorkbench.vue
++++ b/frontend/src/components/ResearchPlanWorkbench.vue
+@@ -2,6 +2,7 @@
+ import { computed, onBeforeUnmount, ref, watch } from 'vue'
+ import { NAlert, NButton, NCard, NCollapse, NCollapseItem, NEmpty, NSelect, NSpace, NTag } from 'naive-ui'
+ import { researchPlansApi, type PlanEvent, type ResearchPlan } from '@/api/researchPlans'
++import { projectRequestFailure } from '@/api/projectErrors'
+ const props = defineProps<{ projectId: string; planId?: string; sessions?: { id: string; title: string; status: string }[] }>()
+ const plans = ref<ResearchPlan[]>([])
+ const traces = ref<Record<string, PlanEvent[]>>({})
+@@ -23,7 +24,7 @@ async function load() {
+     if (current === generation && project === props.projectId) {
+       plans.value = result.filter(p => p.project_id === project && (!requestedPlan || p.plan_id === requestedPlan))
+     }
+-  } catch { if (current === generation) error.value = '科研计划暂不可用，请检查功能是否启用及当前项目权限。' }
++  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划') }
+   finally { if (current === generation) loading.value = false }
+ }
+ async function act(plan: ResearchPlan, action: 'review' | 'advance' | 'pause' | 'resume' | 'cancel' | 'reconcile') {
+@@ -41,7 +42,7 @@ async function act(plan: ResearchPlan, action: 'review' | 'advance' | 'pause' |
+     if (current === generation && result.project_id === project && project === props.projectId) {
+       plans.value = plans.value.map(p => p.plan_id === result.plan_id ? result : p)
+     }
+-  } catch { if (current === generation) error.value = '操作未完成，请刷新核对计划版本、权限和审阅状态。' }
++  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划操作') }
+   finally { if (current === generation) busy.value = false }
+ }
+ async function showTrace(plan: ResearchPlan) {
+@@ -49,7 +50,7 @@ async function showTrace(plan: ResearchPlan) {
+   try {
+     const events = await researchPlansApi.events(project, plan.plan_id)
+     if (current === generation && project === props.projectId) traces.value[plan.plan_id] = events
+-  } catch { if (current === generation) error.value = '当前计划轨迹不可读取。' }
++  } catch (exc) { if (current === generation) error.value = projectRequestFailure(exc, '科研计划轨迹') }
+ }
+ function detail(plan: ResearchPlan, stepId: string) { return plan.draft.steps.find(s => s.step_id === stepId) }
+ watch(() => [props.projectId, props.planId], () => { selectedSession.value = null; busy.value = false; void load() }, { immediate: true })
+diff --git a/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts b/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
+index c94fafd6..91189d23 100644
+--- a/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
++++ b/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
+@@ -75,7 +75,7 @@ it('drops a late inventory from the old project and clears old preview and job',
+ 
+ it.each([
+   [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '尚未启用'],
+-  [{ response: { status: 403 } }, '没有权限'],
++  [{ response: { status: 403 } }, '当前用户无权限'],
+   [new Error('/private/secret'), '请求失败'],
+ ])('distinguishes disabled, denied and failed requests without exposing raw errors (%s)', async (error, text) => {
+   vi.mocked(projectDeliveryApi.inventory).mockRejectedValueOnce(error)
+diff --git a/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts b/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
+index bfdc6635..3c371132 100644
+--- a/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
++++ b/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
+@@ -5,6 +5,17 @@ import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
+ import { researchDeliveryApi, type ResearchProvenance, type ProjectDelivery } from '@/api/researchDelivery'
+ vi.mock('@/api/researchDelivery', () => ({ researchDeliveryApi: { project: vi.fn() } }))
+ const response = (id: string): ProjectDelivery => ({ project_id: id, datasets: [], runtime_admission: 'BLOCKED', truncated: false })
++
++it.each([
++  [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '服务未启用'],
++  [{ response: { status: 403 } }, '当前用户无权限'],
++  [new Error('private'), '请求失败'],
++])('classifies delivery loading failure (%s)', async (error, text) => {
++  vi.mocked(researchDeliveryApi.project).mockRejectedValueOnce(error)
++  const card = mount()
++  try { await settle(); expect(card.host.textContent).toContain(text) }
++  finally { card.close() }
++})
+ async function settle() { for (let i=0;i<8;i++) { await Promise.resolve(); await nextTick() } }
+ function mount() {
+   const project=ref('first'), host=document.createElement('div')
+diff --git a/frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts b/frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
+index 57dfdee3..703f7b64 100644
+--- a/frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
++++ b/frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
+@@ -5,6 +5,17 @@ import ResearchPlanWorkbench from '@/components/ResearchPlanWorkbench.vue'
+ import { researchPlansApi, type ResearchPlan } from '@/api/researchPlans'
+ vi.mock('@/api/researchPlans', () => ({ researchPlansApi: { list: vi.fn(), get: vi.fn(), review: vi.fn(), advance: vi.fn(), control: vi.fn(), events: vi.fn() } }))
+ beforeEach(() => vi.clearAllMocks())
++
++it.each([
++  [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '服务未启用'],
++  [{ response: { status: 403 } }, '当前用户无权限'],
++  [new Error('private'), '请求失败'],
++])('classifies plan loading failure (%s)', async (error, text) => {
++  vi.mocked(researchPlansApi.list).mockRejectedValueOnce(error)
++  const card = mount()
++  try { await settle(); expect(card.host.textContent).toContain(text) }
++  finally { card.close() }
++})
+ function plan(project: string, title = 'Synthetic plan'): ResearchPlan {
+   return { schema_version: 'cygnusx.research_plan.v1', plan_id: 'plan', version: 1, project_id: project, digest: 'a'.repeat(64), status: 'READY_FOR_REVIEW', mode: 'PLAN_ONLY',
+     draft: { schema_version: 'cygnusx.research_plan.v1', research_question: title, assumptions: [], steps: [{ step_id: 'discover', kind: 'DISCOVERY', goal: 'Read sources', depends_on: [], arguments: {}, bindings: [], failure_policy: 'STOP_AND_RECONCILE' }], budget: { max_tool_calls: 20, max_elapsed_seconds: 300, max_model_tokens: 10000, max_retries: 0, estimated_compute_seconds: null, estimated_storage_bytes: null } },
+diff --git a/frontend/src/views/ProjectDetailView.vue b/frontend/src/views/ProjectDetailView.vue
+index c4bad119..478dfd6f 100644
+--- a/frontend/src/views/ProjectDetailView.vue
++++ b/frontend/src/views/ProjectDetailView.vue
+@@ -10,6 +10,9 @@ import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline }
+ import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
+ import ProjectResearchDelivery from '@/components/ProjectResearchDelivery.vue'
+ import ResearchPlanWorkbench from '@/components/ResearchPlanWorkbench.vue'
++import ProjectCapabilityPanel from '@/components/ProjectCapabilityPanel.vue'
++import type { ProjectCapabilityStatus } from '@/api/projects'
++import { projectRequestFailure } from '@/api/projectErrors'
+ import PageHeader from '@/components/PageHeader.vue'
+ import { chatApi } from '@/api/chat'
+ import {
+@@ -30,24 +33,26 @@ const requestedPlanId = computed(() => typeof route.query.planId === 'string' ?
+ const initialLoading = ref(true)
+ const sessionsLoading = ref(false)
+ const overview = ref<ProjectOverview | null>(null)
++const capabilities = ref<ProjectCapabilityStatus | null>(null)
++const capabilityError = ref('')
+ const sessionStatus = ref<ProjectSessionStatus>('active')
+ 
+ const renameTarget = ref<ProjectSessionItem | null>(null)
+ const renameTitle = ref('')
+ const renameSaving = ref(false)
+ 
+-/** 项目级科研模式默认值（WP3 任务 3 可选项）：项目内新会话默认开启科研模式。
+- *  后端项目设置端点可能稍后到位：PATCH 失败时回滚开关并提示，不阻塞页面。 */
++/** 项目内新会话的科研模式默认值，按当前项目保存的 settings 回填。 */
+ const projectResearchDefault = ref(false)
+ const togglingProjectResearch = ref(false)
+ 
+ async function handleProjectResearchToggle(value: boolean) {
+   if (togglingProjectResearch.value) return
+   const previous = projectResearchDefault.value
++  const project = projectId.value, current = overviewGeneration
+   projectResearchDefault.value = value
+   togglingProjectResearch.value = true
+   try {
+-    await projectsApi.updateProjectSettings(projectId.value, {
++    await projectsApi.updateProjectSettings(project, {
+       research_mode: {
+         enabled: value,
+         render_mode: 'message_flow',
+@@ -55,12 +60,14 @@ async function handleProjectResearchToggle(value: boolean) {
+         ptc_llm_query: false,
+       },
+     })
++    if (current !== overviewGeneration || project !== projectId.value) return
+     message.success(value ? '已开启：项目内新会话将默认开启科研模式' : '已关闭项目级科研模式默认开关')
+   } catch (e: any) {
++    if (current !== overviewGeneration || project !== projectId.value) return
+     projectResearchDefault.value = previous
+-    message.error(e?.response?.data?.detail || '项目设置保存失败（后端端点可能尚未上线），已恢复开关状态')
++    message.error('项目设置保存失败，已恢复开关状态')
+   } finally {
+-    togglingProjectResearch.value = false
++    if (current === overviewGeneration) togglingProjectResearch.value = false
+   }
+ }
+ 
+@@ -340,6 +347,8 @@ async function loadOverview() {
+   const project = projectId.value, current = ++overviewGeneration
+   sessionsGeneration++
+   overview.value = null
++  capabilities.value = null
++  capabilityError.value = ''
+   if (!project) { initialLoading.value = false; return }
+   initialLoading.value = true
+   try {
+@@ -349,6 +358,17 @@ async function loadOverview() {
+     })
+     if (current === overviewGeneration && project === projectId.value && data.project.id === project) {
+       overview.value = data
++      const mode = data.project.settings?.research_mode
++      projectResearchDefault.value = !!mode && typeof mode === 'object' &&
++        (mode as { enabled?: unknown }).enabled === true
++      try {
++        const status = await projectsApi.getCapabilityStatus(project)
++        if (current === overviewGeneration && project === projectId.value) capabilities.value = status
++      } catch (exc) {
++        if (current === overviewGeneration && project === projectId.value) {
++          capabilityError.value = projectRequestFailure(exc, '项目能力状态')
++        }
++      }
+     }
+   } catch {
+     if (current === overviewGeneration && project === projectId.value) message.error('加载项目总览失败')
+@@ -388,6 +408,7 @@ watch(projectId, () => {
+   sessionsLoading.value = false
+   renameTarget.value = null
+   projectResearchDefault.value = false
++  togglingProjectResearch.value = false
+   void loadOverview()
+ }, { immediate: true })
+ onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
+@@ -552,9 +573,17 @@ onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
+       </template>
+     </n-modal>
+   </div>
+-  <ResearchPlanWorkbench v-if="overview" :project-id="projectId" :plan-id="requestedPlanId" :sessions="overview.sessions.items" />
+-  <ResearchDeliveryChain v-if="overview" :project-id="projectId" />
+-  <ProjectResearchDelivery v-if="overview" :project-id="projectId" />
++  <template v-if="overview">
++    <ProjectCapabilityPanel title="科研计划与审阅" :capability="capabilities?.research_plan" :error="capabilityError">
++      <ResearchPlanWorkbench :project-id="projectId" :plan-id="requestedPlanId" :sessions="overview.sessions.items" />
++    </ProjectCapabilityPanel>
++    <ProjectCapabilityPanel title="科研执行与交付链" :capability="capabilities?.research_delivery_read" :error="capabilityError">
++      <ResearchDeliveryChain :project-id="projectId" />
++    </ProjectCapabilityPanel>
++    <ProjectCapabilityPanel title="项目科研成果与可追溯导出" :capability="capabilities?.research_delivery_read" :error="capabilityError">
++      <ProjectResearchDelivery :project-id="projectId" />
++    </ProjectCapabilityPanel>
++  </template>
+ </template>
+ 
+ <style scoped>
+diff --git a/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts b/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+index 0715ff05..a84b5c5c 100644
+--- a/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
++++ b/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+@@ -6,7 +6,7 @@ import { projectsApi, type ProjectOverview } from '@/api/projects'
+ const route = reactive({ params: { projectId: 'first' }, query: { planId: 'persisted-plan' } })
+ const message = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+ vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push: vi.fn() }) }))
+-vi.mock('@/api/projects', () => ({ projectsApi: { getProjectOverview: vi.fn() } }))
++vi.mock('@/api/projects', () => ({ projectsApi: { getProjectOverview: vi.fn(), getCapabilityStatus: vi.fn(), updateProjectSettings: vi.fn() } }))
+ vi.mock('@/api/chat', () => ({ chatApi: {} }))
+ vi.mock('naive-ui', async () => ({ ...await vi.importActual('naive-ui'), useMessage: () => message }))
+ vi.mock('@/components/ResearchPlanWorkbench.vue', () => ({ default: {
+@@ -14,6 +14,9 @@ vi.mock('@/components/ResearchPlanWorkbench.vue', () => ({ default: {
+   setup: (props: { projectId: string; planId: string }) => () => h('div', { 'data-plan-context': true }, `${props.projectId}/${props.planId}`),
+ } }))
+ vi.mock('@/components/ResearchDeliveryChain.vue', () => ({ default: { render: () => null } }))
++vi.mock('@/components/ProjectResearchDelivery.vue', () => ({ default: {
++  render: () => h('div', { 'data-inventory-context': true }, '只读科研成果清单'),
++} }))
+ function overview(id: string): ProjectOverview {
+   return { project: { id, name: `Project ${id}`, slug: id, description: `Description ${id}`, created_at: null, updated_at: null }, sessions: { total: 0, limit: 100, offset: 0, items: [] }, runs: [] }
+ }
+@@ -25,7 +28,7 @@ function mount() {
+   app.mount(host)
+   return { host, close: () => app.unmount() }
+ }
+-beforeEach(() => { vi.clearAllMocks(); route.params.projectId = 'first'; route.query.planId = 'persisted-plan' })
++beforeEach(() => { vi.clearAllMocks(); vi.mocked(projectsApi.getCapabilityStatus).mockResolvedValue({ research_plan: { enabled: true, allowed: true, reason: 'AVAILABLE' }, research_delivery_read: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' }, project_export: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' } }); route.params.projectId = 'first'; route.query.planId = 'persisted-plan' })
+ it('isolates project overview and persisted plan context from late previous-project responses', async () => {
+   let finish!: (value: ProjectOverview) => void
+   vi.mocked(projectsApi.getProjectOverview)
+@@ -52,3 +55,64 @@ it('clears previous project data when the next overview fails without leaking ra
+     expect(card.host.textContent).not.toContain('/private/secret')
+   } finally { card.close() }
+ })
++
++it('hydrates saved research mode and resets it from the next project settings', async () => {
++  const first = overview('first')
++  first.project.settings = { research_mode: { enabled: true } }
++  vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(first).mockResolvedValueOnce(overview('second'))
++  const card = mount()
++  try {
++    await settle()
++    expect(card.host.querySelector('[data-test="project-research-default"]')?.getAttribute('aria-checked')).toBe('true')
++    route.params.projectId = 'second'; await settle()
++    expect(card.host.querySelector('[data-test="project-research-default"]')?.getAttribute('aria-checked')).toBe('false')
++  } finally { card.close() }
++})
++
++it('does not mount or request research surfaces when service gates are disabled', async () => {
++  vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(overview('first'))
++  const disabled = { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' as const }
++  vi.mocked(projectsApi.getCapabilityStatus).mockResolvedValueOnce({
++    research_plan: disabled, research_delivery_read: disabled, project_export: disabled,
++  })
++  const card = mount()
++  try {
++    await settle()
++    expect(card.host.querySelector('[data-plan-context]')).toBeNull()
++    expect(card.host.textContent?.match(/服务未启用/g)).toHaveLength(3)
++    expect(card.host.textContent).not.toContain('刷新交付记录')
++    expect(card.host.textContent).not.toContain('刷新科研成果')
++  } finally { card.close() }
++})
++
++it('mounts the read inventory when delivery read is allowed and export writes are disabled', async () => {
++  vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(overview('first'))
++  const allowed = { enabled: true, allowed: true, reason: 'AVAILABLE' as const }
++  vi.mocked(projectsApi.getCapabilityStatus).mockResolvedValueOnce({
++    research_plan: allowed, research_delivery_read: allowed,
++    project_export: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' },
++  })
++  const card = mount()
++  try {
++    await settle()
++    expect(card.host.querySelector('[data-inventory-context]')).not.toBeNull()
++    expect(card.host.textContent).not.toContain('服务未启用')
++  } finally { card.close() }
++})
++
++it('distinguishes denied capability from a failed capability request', async () => {
++  vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(overview('first')).mockResolvedValueOnce(overview('second'))
++  const denied = { enabled: true, allowed: false, reason: 'NO_PERMISSION' as const }
++  vi.mocked(projectsApi.getCapabilityStatus)
++    .mockResolvedValueOnce({ research_plan: denied, research_delivery_read: denied, project_export: denied })
++    .mockRejectedValueOnce(new Error('/private/secret'))
++  const card = mount()
++  try {
++    await settle()
++    expect(card.host.textContent?.match(/当前用户无权限/g)).toHaveLength(3)
++    route.params.projectId = 'second'; await settle()
++    expect(card.host.textContent?.match(/请求失败/g)).toHaveLength(3)
++    expect(card.host.textContent).not.toContain('/private/secret')
++    expect(card.host.querySelector('[data-plan-context]')).toBeNull()
++  } finally { card.close() }
++})
+diff --git a/scripts/backfill_memory_embeddings.py b/scripts/backfill_memory_embeddings.py
+index 879e795f..88ce4aaf 100644
+--- a/scripts/backfill_memory_embeddings.py
++++ b/scripts/backfill_memory_embeddings.py
+@@ -22,10 +22,20 @@ from cygnusx.application.services.memory_embedding_service import (
+     Storage,
+ )
+ from sqlalchemy import text
+-from sqlalchemy.engine import make_url
++from sqlalchemy.engine import URL, make_url
+ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+ 
+ 
++def validate_target(dsn: str, *, apply: bool, confirm_database: str | None = None) -> URL:
++    """Require an independently named target before opening a write connection."""
++    url = make_url(dsn)
++    if url.get_backend_name() != "postgresql":
++        raise ValueError("PostgreSQL required")
++    if apply and (not confirm_database or confirm_database != url.database):
++        raise ValueError("Apply requires --confirm-database matching the explicit DSN target")
++    return url
++
++
+ async def run(
+     dsn: str,
+     *,
+@@ -34,10 +44,9 @@ async def run(
+     limit: int,
+     apply: bool,
+     provider_id: UUID | None = None,
++    confirm_database: str | None = None,
+ ) -> dict[str, Any]:
+-    url = make_url(dsn)
+-    if url.get_backend_name() != "postgresql":
+-        raise ValueError("PostgreSQL required")
++    url = validate_target(dsn, apply=apply, confirm_database=confirm_database)
+     engine = create_async_engine(
+         url.set(drivername="postgresql+asyncpg"),
+         connect_args={"timeout": 10},
+@@ -90,6 +99,9 @@ def main() -> int:
+     parser.add_argument(
+         "--provider-id", type=UUID, help="Optional Provider ID in the explicit maintenance DB"
+     )
++    parser.add_argument(
++        "--confirm-database", help="Required for --apply: independently confirm the target DB name"
++    )
+     parser.add_argument("--output", type=Path, help="Aggregate JSON report, no memory content")
+     args = parser.parse_args()
+     if args.limit < 1:
+@@ -102,6 +114,7 @@ def main() -> int:
+         }
+     else:
+         try:
++            validate_target(dsn, apply=args.apply, confirm_database=args.confirm_database)
+             result = asyncio.run(
+                 run(
+                     dsn,
+@@ -110,6 +123,7 @@ def main() -> int:
+                     limit=args.limit,
+                     apply=args.apply,
+                     provider_id=args.provider_id,
++                    confirm_database=args.confirm_database,
+                 )
+             )
+         except Exception as exc:
+diff --git a/src/cygnusx/api/v1/projects.py b/src/cygnusx/api/v1/projects.py
+index 8ab3edff..4e516998 100644
+--- a/src/cygnusx/api/v1/projects.py
++++ b/src/cygnusx/api/v1/projects.py
+@@ -5,8 +5,8 @@ from typing import Annotated, Any, Literal
+ from fastapi import APIRouter, Depends, HTTPException, Query
+ from pydantic import BaseModel, Field
+ 
+-from cygnusx.api.deps import CurrentUserId, DbSession
+-from cygnusx.application.schemas.project import ProjectOverviewResponse
++from cygnusx.api.deps import CurrentJwtUserId, CurrentUserId, DbSession
++from cygnusx.application.schemas.project import ProjectCapabilityStatus, ProjectOverviewResponse
+ from cygnusx.application.services.project_overview_service import ProjectOverviewService
+ from cygnusx.application.services.project_service import ProjectService
+ 
+@@ -32,11 +32,12 @@ class ProjectCreateRequest(BaseModel):
+ 
+ 
+ class ProjectUpdateRequest(BaseModel):
++    name: str | None = Field(None, min_length=1, max_length=200)
++    description: str | None = Field(None, max_length=2000)
+     status: Literal["active", "completed", "handed_over"] | None = Field(
+         None, description="项目状态：active/completed/handed_over"
+     )
+-    # WP3 任务 3：项目级设置（整体替换）；当前仅约定 research_mode 键，
+-    # 新建会话时继承为会话初始 research_mode
++    # RFC 7396: omitted keys stay unchanged; null removes a key.
+     settings: dict[str, Any] | None = Field(None, description="项目级设置 JSON 对象")
+ 
+ 
+@@ -45,7 +46,7 @@ async def list_projects(
+     current_user_id: CurrentUserId,
+     service: ProjectServiceDep,
+ ) -> list[dict[str, Any]]:
+-    """返回当前用户的所有分析项目。首次访问会从磁盘回填历史项目。"""
++    """只读返回当前用户的分析项目；磁盘导入使用显式同步端点。"""
+     from uuid import UUID
+ 
+     return await service.list_projects(UUID(current_user_id))
+@@ -79,10 +80,33 @@ async def create_project(
+         from cygnusx.core.exceptions import ConflictError, ValidationError
+ 
+         if isinstance(exc, (ConflictError, ValidationError)):
+-            raise HTTPException(status_code=400 if isinstance(exc, ValidationError) else 409, detail=str(exc)) from exc
++            raise HTTPException(
++                status_code=400 if isinstance(exc, ValidationError) else 409, detail=str(exc)
++            ) from exc
+         raise
+ 
+ 
++@router.post("/sync-from-disk", summary="显式同步当前用户的历史项目目录")
++async def sync_projects_from_disk(
++    current_user_id: CurrentJwtUserId, service: ProjectServiceDep
++) -> dict[str, int]:
++    from uuid import UUID
++
++    return await service.sync_from_disk(UUID(current_user_id))
++
++
++@router.get("/{project_id}/capability-status", response_model=ProjectCapabilityStatus)
++async def project_capability_status(
++    project_id: str, current_user_id: CurrentUserId, service: ProjectServiceDep
++) -> ProjectCapabilityStatus:
++    from uuid import UUID
++
++    try:
++        return await service.capability_status(UUID(current_user_id), UUID(project_id))
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
++
++
+ @router.get("/{project_id}", summary="获取项目详情")
+ async def get_project(
+     current_user_id: CurrentUserId,
+@@ -147,30 +171,16 @@ async def update_project(
+     project_id: str,
+     req: ProjectUpdateRequest,
+ ) -> dict[str, Any]:
+-    """更新项目元信息（status：active/completed/handed_over；settings：项目级设置）。
+-
+-    标记 completed/handed_over 时，其下 studio 会话工作区会后台休眠打包。
+-    settings 整体替换，当前仅约定 research_mode 键（科研模式三开关），
+-    创建会话时继承为会话初始 research_mode。
+-    """
++    """原子修改名称/描述/状态和 Merge Patch 设置，保留 slug 与物理路径。"""
+     from uuid import UUID
+ 
+     from cygnusx.core.exceptions import NotFoundError
+     from cygnusx.core.exceptions import ValidationError as DomainValidationError
+ 
+     try:
+-        payload: dict[str, Any] = {}
+-        if req.status is not None:
+-            payload = await service.mark_project_status(
+-                UUID(current_user_id), UUID(project_id), req.status
+-            )
+-        if req.settings is not None:
+-            payload = await service.update_project_settings(
+-                UUID(current_user_id), UUID(project_id), req.settings
+-            )
+-        if not payload:
+-            raise DomainValidationError("请求体为空：status 与 settings 至少传一个")
+-        return payload
++        return await service.update_project(
++            UUID(current_user_id), UUID(project_id), req.model_dump(exclude_unset=True)
++        )
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail="无效的项目 ID") from exc
+     except DomainValidationError as exc:
+diff --git a/src/cygnusx/api/v1/research_delivery.py b/src/cygnusx/api/v1/research_delivery.py
+index c21969ff..bb6834c0 100644
+--- a/src/cygnusx/api/v1/research_delivery.py
++++ b/src/cygnusx/api/v1/research_delivery.py
+@@ -57,15 +57,21 @@ async def project_scientific_summary_status(
+ 
+     job = await ProjectReportService(db).status(UUID(user), project_id, job_id)
+     return {
+-        "id": str(job.id), "project_id": str(job.project_id), "version": job.version,
+-        "status": job.status, "source_digest": job.source_digest,
++        "id": str(job.id),
++        "project_id": str(job.project_id),
++        "version": job.version,
++        "status": job.status,
++        "source_digest": job.source_digest,
+         "source_manifest_job_id": str(job.source_manifest_job_id),
+         "source_selection": job.source_snapshot["manifest"]["selection"],
+         "html_file_record_id": str(job.html_file_record_id) if job.html_file_record_id else None,
+-        "html_sha256": job.html_sha256, "html_size": job.html_size,
++        "html_sha256": job.html_sha256,
++        "html_size": job.html_size,
+         "pdf_file_record_id": str(job.pdf_file_record_id) if job.pdf_file_record_id else None,
+-        "pdf_sha256": job.pdf_sha256, "pdf_size": job.pdf_size,
+-        "pdf_status": job.pdf_status, "error_code": job.error_code,
++        "pdf_sha256": job.pdf_sha256,
++        "pdf_size": job.pdf_size,
++        "pdf_status": job.pdf_status,
++        "error_code": job.error_code,
+     }
+ 
+ 
+@@ -76,16 +82,24 @@ async def preview_project_scientific_summary(
+     from cygnusx.application.services.project_report_service import ProjectReportService
+ 
+     content = await ProjectReportService(db).download(UUID(user), project_id, job_id)
+-    return Response(content, media_type="text/html", headers={
+-        "Cache-Control": "no-store", "X-Report-Status": "published",
+-        "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+-        "X-Content-Type-Options": "nosniff",
+-    })
++    return Response(
++        content,
++        media_type="text/html",
++        headers={
++            "Cache-Control": "no-store",
++            "X-Report-Status": "published",
++            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
++            "X-Content-Type-Options": "nosniff",
++        },
++    )
+ 
+ 
+ @router.get("/projects/{project_id}/scientific-summary/{job_id}/download")
+ async def download_project_scientific_summary(
+-    project_id: UUID, job_id: UUID, user: CurrentJwtUserId, db: DbSession,
++    project_id: UUID,
++    job_id: UUID,
++    user: CurrentJwtUserId,
++    db: DbSession,
+     format: Literal["html", "pdf"] = "html",
+ ) -> Response:
+     import hashlib
+@@ -93,11 +107,16 @@ async def download_project_scientific_summary(
+     from cygnusx.application.services.project_report_service import ProjectReportService
+ 
+     content = await ProjectReportService(db).download(UUID(user), project_id, job_id, format)
+-    return Response(content, media_type="text/html" if format == "html" else "application/pdf", headers={
+-        "Content-Disposition": f'attachment; filename="project-report.{format}"',
+-        "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
+-        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+-    })
++    return Response(
++        content,
++        media_type="text/html" if format == "html" else "application/pdf",
++        headers={
++            "Content-Disposition": f'attachment; filename="project-report.{format}"',
++            "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
++            "Cache-Control": "no-store",
++            "X-Content-Type-Options": "nosniff",
++        },
++    )
+ 
+ 
+ @router.get("/projects/{project_id}/exports/{job_id}/summary-preview", response_class=HTMLResponse)
+@@ -132,13 +151,18 @@ async def delivery_inventory(
+     project_id: UUID, user: CurrentUserId, db: DbSession
+ ) -> dict[str, Any]:
+     from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
++    from cygnusx.application.services.project_service import ProjectService
+ 
++    await ProjectService(db).require_owner(UUID(user), project_id)
+     return await ProjectDeliveryService(db).inventory(UUID(user), project_id)
+ 
+ 
+ @router.post("/projects/{project_id}/exports/prepare")
+ async def prepare_project_export(
+-    project_id: UUID, selection: ExportSelectionV2 | ExportSelection, user: CurrentUserId, db: DbSession
++    project_id: UUID,
++    selection: ExportSelectionV2 | ExportSelection,
++    user: CurrentUserId,
++    db: DbSession,
+ ) -> dict[str, Any]:
+     from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
+ 
+@@ -215,7 +239,12 @@ async def download_project_export(
+ 
+ @router.get("/projects/{project_id}/research-delivery")
+ async def project_delivery(project_id: UUID, user: CurrentUserId, db: DbSession) -> dict[str, Any]:
+-    return await ResearchProvenanceService(db).project(UUID(user), project_id)
++    from cygnusx.application.services.project_service import ProjectService
++
++    await ProjectService(db).require_owner(UUID(user), project_id)
++    service = ResearchProvenanceService(db)
++    await service.repo.require_module(UUID(user), "tasks")
++    return await service.project(UUID(user), project_id)
+ 
+ 
+ @router.get("/tasks/{task_id}/provenance", response_model=ResearchProvenance)
+diff --git a/src/cygnusx/api/v1/research_plans.py b/src/cygnusx/api/v1/research_plans.py
+index 57ca9e7d..dfdc8f0d 100644
+--- a/src/cygnusx/api/v1/research_plans.py
++++ b/src/cygnusx/api/v1/research_plans.py
+@@ -19,8 +19,11 @@ from cygnusx.application.services.research_plan_service import (
+ )
+ 
+ 
+-async def enabled() -> None:
++async def enabled(project_id: UUID, user: CurrentUserId, db: DbSession) -> None:
+     require_plan_enabled()
++    from cygnusx.application.services.project_service import ProjectService
++
++    await ProjectService(db).require_owner(UUID(user), project_id)
+ 
+ 
+ router = APIRouter(prefix="/projects/{project_id}/research-plans", dependencies=[Depends(enabled)])
+diff --git a/src/cygnusx/api/v1/runs.py b/src/cygnusx/api/v1/runs.py
+index f59ad249..65769287 100644
+--- a/src/cygnusx/api/v1/runs.py
++++ b/src/cygnusx/api/v1/runs.py
+@@ -1,19 +1,19 @@
+ """Unified Run read/confirm endpoints (Snakemake MVP)."""
+ 
+-from typing import Annotated
++from typing import Annotated, Any
+ from uuid import UUID
+ 
+ from fastapi import APIRouter, Depends, Query
+ from pydantic import BaseModel
+ 
+-from cygnusx.api.deps import CurrentUserId, DbSession
++from cygnusx.api.deps import CurrentUserId, DbSession, get_current_jwt_user_id, oauth2_scheme
+ from cygnusx.application.schemas.run_plan import SnakemakePlanSubmit, SnakemakePlanView
++from cygnusx.application.services.run_plan_service import RunPlanService
+ from cygnusx.application.services.tool_confirmation_service import (
+     ConfirmationError,
+     get_tool_confirmation_service,
+ )
+ from cygnusx.core.exceptions import ValidationError
+-from cygnusx.application.services.run_plan_service import RunPlanService
+ 
+ router = APIRouter()
+ 
+@@ -53,9 +53,17 @@ async def confirm_run(
+     req: RunConfirmRequest,
+     current_user_id: CurrentUserId,
+     service: ServiceDep,
++    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+ ) -> SnakemakePlanView:
+     if not req.confirmation_id:
+         raise ValidationError("确认 Run 必须携带服务端 confirmation_id")
++    link = await service.dataset_link(UUID(current_user_id), run_id)
++    if link is not None:
++        # An alias must use the same existing human-approved Dataset credential.
++        await get_current_jwt_user_id(token)
++        if req.confirmation_id != link.confirmation_id:
++            raise ValidationError("Run 与 Dataset 确认凭证不匹配")
++        return await service.confirm(UUID(current_user_id), run_id, True)
+     try:
+         await get_tool_confirmation_service().consume_tool_confirmation(
+             current_user_id,
+@@ -74,15 +82,25 @@ async def get_run_events(
+     current_user_id: CurrentUserId,
+     service: ServiceDep,
+     limit: int = Query(default=200, ge=1, le=500),
+-) -> dict:
+-    return {"run_id": str(run_id), "events": await service.events(UUID(current_user_id), run_id, limit)}
++) -> dict[str, Any]:
++    return {
++        "run_id": str(run_id),
++        "events": await service.events(UUID(current_user_id), run_id, limit),
++    }
+ 
+ 
+ @router.get("/{run_id}/artifacts")
+-async def get_run_artifacts(run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep) -> dict:
+-    return {"run_id": str(run_id), "artifacts": await service.artifacts(UUID(current_user_id), run_id)}
++async def get_run_artifacts(
++    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
++) -> dict[str, Any]:
++    return {
++        "run_id": str(run_id),
++        "artifacts": await service.artifacts(UUID(current_user_id), run_id),
++    }
+ 
+ 
+ @router.get("/{run_id}", response_model=SnakemakePlanView)
+-async def get_run(run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep):
++async def get_run(
++    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
++) -> SnakemakePlanView:
+     return await service.get(UUID(current_user_id), run_id)
+diff --git a/src/cygnusx/application/schemas/agent_tools.py b/src/cygnusx/application/schemas/agent_tools.py
+index 39ead32d..0b988f3c 100644
+--- a/src/cygnusx/application/schemas/agent_tools.py
++++ b/src/cygnusx/application/schemas/agent_tools.py
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from typing import Any, Literal
++from typing import Annotated, Any, Literal
+ 
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+@@ -57,6 +57,29 @@ class DatasetAnalysisArgs(DatasetVersionArgs):
+     request: DatasetAnalysisPrepare
+ 
+ 
++class SessionFastqSample(ToolArgs):
++    sample_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
++    sample_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
++    file_record_ids: list[
++        Annotated[str, Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")]
++    ] = Field(min_length=1, max_length=2)
++    group: str = Field(min_length=1, max_length=100)
++
++
++class SessionRnaParameters(ToolArgs):
++    genome_version: str = Field(min_length=1, max_length=100)
++    species: str = Field(min_length=1, max_length=100)
++    library_types: Literal["fr-unstranded", "fr-firststrand", "fr-secondstrand"]
++    deg: Literal[False] = False
++
++
++class SessionFastqPrepareArgs(ToolArgs):
++    request_key: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
++    name: str = Field(min_length=1, max_length=100)
++    samples: list[SessionFastqSample] = Field(min_length=1, max_length=24)
++    parameters: SessionRnaParameters
++
++
+ class AgentToolCall(ToolArgs):
+     capability_id: str = Field(min_length=1, max_length=100)
+     arguments: dict[str, Any] = Field(default_factory=dict)
+@@ -174,6 +197,7 @@ CAPABILITY_MODELS: dict[str, type[ToolArgs]] = {
+     "dataset.prepare_import": DatasetImportArgs,
+     "analysis.list_compatible_workflows": DatasetVersionArgs,
+     "analysis.prepare_from_dataset": DatasetAnalysisArgs,
++    "analysis.prepare_from_session_files": SessionFastqPrepareArgs,
+     "dataset.execute_import": ExecuteArgs,
+     "downloads.submit": ExecuteArgs,
+     "analysis.submit": ExecuteArgs,
+@@ -197,7 +221,12 @@ def capability_catalog(
+             continue
+         if not include_dataset and (
+             name.startswith("dataset.")
+-            or name in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}
++            or name
++            in {
++                "analysis.list_compatible_workflows",
++                "analysis.prepare_from_dataset",
++                "analysis.prepare_from_session_files",
++            }
+         ):
+             continue
+         write = name.endswith(".submit") or name in {"tasks.cancel", "dataset.execute_import"}
+@@ -206,6 +235,7 @@ def capability_catalog(
+         prepare = (name.endswith(".prepare") and not name.startswith("research.plan.")) or name in {
+             "dataset.prepare_import",
+             "analysis.prepare_from_dataset",
++            "analysis.prepare_from_session_files",
+         }
+         scope = (
+             "read:research"
+@@ -219,7 +249,12 @@ def capability_catalog(
+             else "prepare:download"
+             if name in {"downloads.prepare", "dataset.prepare_import"}
+             else "prepare:analysis"
+-            if name in {"analysis.prepare", "analysis.prepare_from_dataset"}
++            if name
++            in {
++                "analysis.prepare",
++                "analysis.prepare_from_dataset",
++                "analysis.prepare_from_session_files",
++            }
+             else "read:datasets"
+             if name.startswith("dataset.") or name == "analysis.list_compatible_workflows"
+             else "read:tasks"
+diff --git a/src/cygnusx/application/schemas/project.py b/src/cygnusx/application/schemas/project.py
+index f0a99a4c..d1e4236b 100644
+--- a/src/cygnusx/application/schemas/project.py
++++ b/src/cygnusx/application/schemas/project.py
+@@ -5,6 +5,8 @@
+ 
+ from __future__ import annotations
+ 
++from typing import Any, Literal
++
+ from pydantic import BaseModel, Field
+ 
+ 
+@@ -16,6 +18,8 @@ class ProjectMetaDTO(BaseModel):
+     slug: str
+     description: str = ""
+     customer: str | None = None
++    status: str = "active"
++    settings: dict[str, Any] | None = None
+     created_at: str | None = None
+     updated_at: str | None = None
+ 
+@@ -61,3 +65,15 @@ class ProjectOverviewResponse(BaseModel):
+     project: ProjectMetaDTO
+     sessions: ProjectSessionListDTO
+     runs: list[ProjectRunItemDTO] = Field(default_factory=list)
++
++
++class ProjectCapability(BaseModel):
++    enabled: bool
++    allowed: bool
++    reason: Literal["SERVICE_DISABLED", "NO_PERMISSION", "AVAILABLE"]
++
++
++class ProjectCapabilityStatus(BaseModel):
++    research_plan: ProjectCapability
++    research_delivery_read: ProjectCapability
++    project_export: ProjectCapability
+diff --git a/src/cygnusx/application/services/agent_tool_gateway.py b/src/cygnusx/application/services/agent_tool_gateway.py
+index 918352ed..fef70aa8 100644
+--- a/src/cygnusx/application/services/agent_tool_gateway.py
++++ b/src/cygnusx/application/services/agent_tool_gateway.py
+@@ -167,7 +167,11 @@ class AgentToolGateway:
+                 or not (
+                     c.capability_id.startswith("dataset.")
+                     or c.capability_id
+-                    in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}
++                    in {
++                        "analysis.list_compatible_workflows",
++                        "analysis.prepare_from_dataset",
++                        "analysis.prepare_from_session_files",
++                    }
+                 )
+             )
+         ]
+@@ -203,6 +207,15 @@ class AgentToolGateway:
+         if capability_id not in allowed:
+             raise AuthorizationError("工具未获授权", code="FORBIDDEN")
+         args = CAPABILITY_MODELS[capability_id].model_validate(arguments).model_dump(mode="json")
++        if capability_id == "analysis.prepare_from_session_files":
++            from cygnusx.application.schemas.agent_tools import SessionFastqPrepareArgs
++            from cygnusx.application.services.session_dataset_preparation_service import (
++                SessionDatasetPreparationService,
++            )
++
++            return await SessionDatasetPreparationService(self.db).prepare(
++                context, SessionFastqPrepareArgs.model_validate(args)
++            )
+         invocation = AgentToolInvocationModel(
+             id=uuid.uuid4(),
+             owner_id=context.user_id,
+diff --git a/src/cygnusx/application/services/dataset_analysis_service.py b/src/cygnusx/application/services/dataset_analysis_service.py
+index 45097bc6..052d9734 100644
+--- a/src/cygnusx/application/services/dataset_analysis_service.py
++++ b/src/cygnusx/application/services/dataset_analysis_service.py
+@@ -28,6 +28,7 @@ from cygnusx.core.exceptions import (
+     ValidationError,
+ )
+ from cygnusx.domain.dataset.validation import checksum, open_owned_file
++from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
+ from cygnusx.infrastructure.database.models.dataset import (
+     DatasetAnalysisLinkModel,
+     DatasetAssetModel,
+@@ -417,8 +418,12 @@ class DatasetAnalysisService:
+         }
+ 
+     async def approve(
+-        self, owner: uuid.UUID, project_id: uuid.UUID, dataset_id: uuid.UUID,
+-        version_id: uuid.UUID, proposal_id: uuid.UUID,
++        self,
++        owner: uuid.UUID,
++        project_id: uuid.UUID,
++        dataset_id: uuid.UUID,
++        version_id: uuid.UUID,
++        proposal_id: uuid.UUID,
+     ) -> dict[str, Any]:
+         return await self.decide(owner, project_id, dataset_id, version_id, proposal_id, True)
+ 
+@@ -449,8 +454,11 @@ class DatasetAnalysisService:
+             await self.confirmations.reject(
+                 user_id=str(owner), confirmation_id=record.confirmation_id
+             )
+-        return {"analysis_proposal_id": str(row.id),
+-                "state": "APPROVED" if approve else "REJECTED", "write_enabled": False}
++        return {
++            "analysis_proposal_id": str(row.id),
++            "state": "APPROVED" if approve else "REJECTED",
++            "write_enabled": False,
++        }
+ 
+     async def execute(
+         self,
+@@ -459,6 +467,8 @@ class DatasetAnalysisService:
+         dataset_id: uuid.UUID,
+         version_id: uuid.UUID,
+         proposal_id: uuid.UUID,
++        *,
++        run_id: uuid.UUID | None = None,
+     ) -> dict[str, Any]:
+         require_agent_write_gate("analysis.submit")
+         if not get_settings().analysis_submit_from_dataset:
+@@ -515,9 +525,18 @@ class DatasetAnalysisService:
+         row.state = "SUBMITTING"
+         await self.db.commit()
+         try:
+-            task = await TaskService(self.db).submit(
+-                str(owner), TaskSubmitRequest.model_validate(bound["request"])
+-            )
++            if run_id is None and bound.get("invocation_id"):
++                invocation = await self.db.get(
++                    AgentToolInvocationModel, uuid.UUID(bound["invocation_id"])
++                )
++                if invocation and invocation.preview.get("analysis_proposal_id") == str(row.id):
++                    alias = invocation.preview.get("run_id")
++                    run_id = uuid.UUID(alias) if alias else None
++            submission = TaskSubmitRequest.model_validate(bound["request"])
++            if run_id is None:
++                task = await TaskService(self.db).submit(str(owner), submission)
++            else:
++                task = await TaskService(self.db).submit(str(owner), submission, run_id=run_id)
+             row.task_id, row.state = task.id, "QUEUED"
+             await self.db.commit()
+         except Exception:
+diff --git a/src/cygnusx/application/services/project_overview_service.py b/src/cygnusx/application/services/project_overview_service.py
+index 56fe97ed..19570190 100644
+--- a/src/cygnusx/application/services/project_overview_service.py
++++ b/src/cygnusx/application/services/project_overview_service.py
+@@ -15,6 +15,7 @@ import asyncio
+ import re
+ from datetime import UTC, datetime
+ from pathlib import Path
++from typing import Any
+ from uuid import UUID
+ 
+ from sqlalchemy import func, select
+@@ -44,7 +45,7 @@ class ProjectOverviewService:
+         session_limit: int = 50,
+         session_offset: int = 0,
+         session_status: str = "active",
+-    ) -> dict:
++    ) -> dict[str, Any]:
+         project = await self._load_project(user_id, project_id)
+         sessions = await self._list_sessions(
+             user_id,
+@@ -59,7 +60,7 @@ class ProjectOverviewService:
+     # ------------------------------------------------------------------
+     # 项目元数据
+     # ------------------------------------------------------------------
+-    async def _load_project(self, user_id: UUID, project_id: UUID) -> dict:
++    async def _load_project(self, user_id: UUID, project_id: UUID) -> dict[str, Any]:
+         stmt = select(ProjectModel).where(
+             ProjectModel.id == project_id, ProjectModel.user_id == user_id
+         )
+@@ -74,6 +75,9 @@ class ProjectOverviewService:
+             "description": model.description,
+             # customer 列由并行开发加入，模型尚未带该字段时兜底为 None
+             "customer": getattr(model, "customer", None),
++            # NULL compatibility through lifecycle01; remove in lifecycle02.
++            "status": getattr(model, "status", None) or "active",
++            "settings": getattr(model, "settings", None),
+             "created_at": model.created_at.isoformat() if model.created_at else None,
+             "updated_at": model.updated_at.isoformat() if model.updated_at else None,
+         }
+@@ -93,7 +97,7 @@ class ProjectOverviewService:
+ 
+     async def _list_sessions(
+         self, user_id: UUID, project_id: UUID, *, status: str, limit: int, offset: int
+-    ) -> dict:
++    ) -> dict[str, Any]:
+         condition = (
+             ChatSessionModel.user_id == str(user_id),
+             ChatSessionModel.project_id == str(project_id),
+@@ -106,9 +110,7 @@ class ProjectOverviewService:
+             )
+         ).scalar_one()
+         result = await self._session.execute(
+-            select(ChatSessionModel)
+-            .where(*condition)
+-            .order_by(ChatSessionModel.updated_at.desc())
++            select(ChatSessionModel).where(*condition).order_by(ChatSessionModel.updated_at.desc())
+         )
+         items = [
+             {
+@@ -118,9 +120,7 @@ class ProjectOverviewService:
+                 "status": s.status,
+                 "mode": s.mode,
+                 "message_count": s.message_count,
+-                "last_message_at": s.last_message_at.isoformat()
+-                if s.last_message_at
+-                else None,
++                "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None,
+                 "created_at": s.created_at.isoformat() if s.created_at else None,
+                 "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                 "room_id": None,
+@@ -142,7 +142,7 @@ class ProjectOverviewService:
+ 
+     async def _list_room_items(
+         self, user_id: UUID, project_id: UUID, *, status: str
+-    ) -> list[dict]:
++    ) -> list[dict[str, Any]]:
+         """项目下的 agentteams 房间条目（owner 维度），按映射后的 status 参与过滤。"""
+         result = await self._session.execute(
+             select(AgentTeamsRoomModel)
+@@ -152,7 +152,7 @@ class ProjectOverviewService:
+             )
+             .order_by(AgentTeamsRoomModel.updated_at.desc())
+         )
+-        items = []
++        items: list[dict[str, Any]] = []
+         for room in result.scalars().all():
+             mapped_status = self._map_room_status(room.status)
+             if mapped_status != status:
+@@ -165,9 +165,7 @@ class ProjectOverviewService:
+                     "status": mapped_status,
+                     "mode": "agentteams",
+                     "message_count": 0,
+-                    "last_message_at": room.updated_at.isoformat()
+-                    if room.updated_at
+-                    else None,
++                    "last_message_at": room.updated_at.isoformat() if room.updated_at else None,
+                     "created_at": room.created_at.isoformat() if room.created_at else None,
+                     "updated_at": room.updated_at.isoformat() if room.updated_at else None,
+                     "room_id": room.room_id,
+@@ -179,11 +177,11 @@ class ProjectOverviewService:
+     # ------------------------------------------------------------------
+     # 磁盘 runs 目录扫描（同步，经 asyncio.to_thread 调用）
+     # ------------------------------------------------------------------
+-    def _scan_runs(self, user_id: str, project_slug: str) -> list[dict]:
++    def _scan_runs(self, user_id: str, project_slug: str) -> list[dict[str, Any]]:
+         runs_dir = self._factory.project_dir(user_id, project_slug) / "runs"
+         if not runs_dir.is_dir():
+             return []
+-        items = []
++        items: list[dict[str, Any]] = []
+         for entry in runs_dir.iterdir():
+             if not entry.is_dir() or entry.name.startswith("."):
+                 continue
+diff --git a/src/cygnusx/application/services/project_service.py b/src/cygnusx/application/services/project_service.py
+index 9ff71739..0f869a53 100644
+--- a/src/cygnusx/application/services/project_service.py
++++ b/src/cygnusx/application/services/project_service.py
+@@ -6,20 +6,29 @@ Project 是用户视角的"分析项目"聚合根。每个 Project 对应磁盘
+ 服务职责：
+ - 列出 / 计数 / 创建 / 删除项目
+ - 与 Directory 记录同步（创建 Project 时同步创建 Directory）
+-- 从磁盘 ``projects/`` 目录回填缺失的 Project 记录（首次访问时懒初始化）
++- 显式同步磁盘项目；读取只查数据库，已删身份通过 tombstone 保留
+ """
+ 
+ from __future__ import annotations
+ 
+ import uuid
+-from typing import Any
++from copy import deepcopy
++from typing import Any, cast
+ from uuid import UUID
+ 
+ from sqlalchemy import func, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
+-from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.application.schemas.project import ProjectCapability, ProjectCapabilityStatus
++from cygnusx.core.config import get_settings
++from cygnusx.core.exceptions import (
++    AuthorizationError,
++    ConflictError,
++    NotFoundError,
++    ValidationError,
++)
++from cygnusx.infrastructure.database.models.project import ProjectModel, ProjectTombstoneModel
++from cygnusx.infrastructure.database.models.user import UserModel
+ from cygnusx.infrastructure.database.repositories import DirectoryRepositoryImpl
+ from cygnusx.infrastructure.storage.path_factory import get_path_factory, project_slug
+ 
+@@ -27,7 +36,7 @@ from cygnusx.infrastructure.storage.path_factory import get_path_factory, projec
+ class ProjectService:
+     """项目管理服务。"""
+ 
+-    def __init__(self, session: AsyncSession):
++    def __init__(self, session: AsyncSession) -> None:
+         self._session = session
+         self._factory = get_path_factory()
+ 
+@@ -37,14 +46,14 @@ class ProjectService:
+     PROJECT_STATUSES = ("active", "completed", "handed_over")
+ 
+     @staticmethod
+-    def _to_dict(model: ProjectModel) -> dict:
++    def _to_dict(model: ProjectModel) -> dict[str, Any]:
+         return {
+             "id": str(model.id),
+             "name": model.name,
+             "slug": model.slug,
+             "description": model.description,
+             "customer": model.customer,
+-            # getattr 兼容测试替身等无 status 属性的投影对象（同 customer 处理）
++            # NULL compatibility for the lifecycle01 transition; remove in lifecycle02.
+             "status": getattr(model, "status", None) or "active",
+             # WP3 任务 3：项目级设置（当前仅 research_mode）；NULL 透出为 None
+             "settings": getattr(model, "settings", None)
+@@ -54,9 +63,8 @@ class ProjectService:
+             "updated_at": model.updated_at.isoformat() if model.updated_at else None,
+         }
+ 
+-    async def list_projects(self, user_id: UUID) -> list[dict]:
+-        """列出用户的所有项目（先回填磁盘已存在但 DB 缺失的项目）。"""
+-        await self._backfill_from_disk(user_id)
++    async def list_projects(self, user_id: UUID) -> list[dict[str, Any]]:
++        """只读列出数据库中的项目，不推断磁盘目录的项目身份。"""
+         stmt = (
+             select(ProjectModel)
+             .where(ProjectModel.user_id == user_id)
+@@ -66,14 +74,13 @@ class ProjectService:
+         return [self._to_dict(m) for m in result.scalars().all()]
+ 
+     async def count_projects(self, user_id: UUID) -> int:
+-        """返回用户项目总数（回填后计数）。"""
+-        await self._backfill_from_disk(user_id)
++        """只读返回数据库中的项目总数。"""
+         result = await self._session.execute(
+             select(func.count()).select_from(ProjectModel).where(ProjectModel.user_id == user_id)
+         )
+         return result.scalar_one()
+ 
+-    async def get_project(self, user_id: UUID, project_id: UUID) -> dict:
++    async def get_project(self, user_id: UUID, project_id: UUID) -> dict[str, Any]:
+         stmt = select(ProjectModel).where(
+             ProjectModel.id == project_id, ProjectModel.user_id == user_id
+         )
+@@ -88,7 +95,7 @@ class ProjectService:
+     # ------------------------------------------------------------------
+     async def create_project(
+         self, user_id: UUID, name: str, description: str = "", customer: str = ""
+-    ) -> dict:
++    ) -> dict[str, Any]:
+         """创建新项目。
+ 
+         - ``slug`` 由 ``project_slug(name)`` 自动生成，保证路径安全
+@@ -102,11 +109,16 @@ class ProjectService:
+         customer = (customer or "").strip()
+         if len(customer) > 200:
+             raise ValidationError("客户名最长 200 字符")
++        if len(description) > 2000:
++            raise ValidationError("项目描述最长 2000 字符")
+ 
+         slug = project_slug(name)
+         if not slug:
+             raise ValidationError("项目名无法生成合法目录 slug")
+ 
++        await self._lock_owner(user_id)
++        await self._require_unreserved_slug(user_id, slug)
++
+         exists = await self._session.execute(
+             select(ProjectModel.id).where(
+                 ProjectModel.user_id == user_id, ProjectModel.slug == slug
+@@ -144,7 +156,7 @@ class ProjectService:
+         await self._session.refresh(model)
+         return self._to_dict(model)
+ 
+-    async def get_or_create_project_by_name(self, user_id: UUID, name: str) -> dict:
++    async def get_or_create_project_by_name(self, user_id: UUID, name: str) -> dict[str, Any]:
+         """按名称复用或创建项目（AgentTeams 聊天 Case 建单场景）。
+ 
+         聊天式 Case 的项目名由需求文本自动生成；删除 Case 不会删除项目，
+@@ -167,29 +179,73 @@ class ProjectService:
+     async def update_project_settings(
+         self, user_id: UUID, project_id: UUID, settings: dict[str, Any]
+     ) -> dict[str, Any]:
+-        """更新项目级 settings（WP3 任务 3，属主）。
++        """按 JSON Merge Patch 合并项目设置。"""
++        return await self.update_project(user_id, project_id, {"settings": settings})
+ 
+-        settings 为整体替换的 JSONB 对象；当前仅约定 research_mode 键，
+-        若存在必须是 dict（enabled 布尔总开关 + 可选子项），其余键原样保存。
+-        """
+-        if not isinstance(settings, dict):
+-            raise ValidationError("settings 必须是 JSON 对象")
+-        research_mode = settings.get("research_mode")
+-        if research_mode is not None and not isinstance(research_mode, dict):
+-            raise ValidationError("settings.research_mode 必须是 JSON 对象")
+-        stmt = select(ProjectModel).where(
+-            ProjectModel.id == project_id, ProjectModel.user_id == user_id
++    @staticmethod
++    def _merge_patch(target: Any, patch: dict[str, Any]) -> dict[str, Any]:
++        result = deepcopy(target) if isinstance(target, dict) else {}
++        for key, value in patch.items():
++            if value is None:
++                result.pop(key, None)
++            elif isinstance(value, dict):
++                result[key] = ProjectService._merge_patch(result.get(key), value)
++            else:
++                result[key] = deepcopy(value)
++        return cast(dict[str, Any], result)
++
++    async def update_project(
++        self, user_id: UUID, project_id: UUID, changes: dict[str, Any]
++    ) -> dict[str, Any]:
++        """原子更新元数据与设置，保留 slug；行锁防止并发合并丢更新。"""
++        if not changes or set(changes) - {"name", "description", "status", "settings"}:
++            raise ValidationError("至少提供 name、description、status、settings 中的一项")
++        result = await self._session.execute(
++            select(ProjectModel)
++            .where(ProjectModel.id == project_id, ProjectModel.user_id == user_id)
++            .with_for_update()
++            .execution_options(populate_existing=True)
+         )
+-        result = await self._session.execute(stmt)
+         model = result.scalar_one_or_none()
+         if model is None:
+             raise NotFoundError(f"项目不存在：{project_id}")
+-        model.settings = settings
++        # Validate all fields before mutating the ORM object or committing anything.
++        values = dict(changes)
++        if "name" in values:
++            name = values["name"]
++            if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200:
++                raise ValidationError("项目名不能为空且最长 200 字符")
++            values["name"] = name.strip()
++        if "description" in values:
++            description = values["description"]
++            if not isinstance(description, str) or len(description) > 2000:
++                raise ValidationError("项目描述须为字符串且最长 2000 字符")
++        if "status" in values and values["status"] not in self.PROJECT_STATUSES:
++            raise ValidationError(f"非法项目状态（允许 {self.PROJECT_STATUSES}）")
++        if "settings" in values:
++            patch = values["settings"]
++            if patch is not None and not isinstance(patch, dict):
++                raise ValidationError("settings 必须是 JSON 对象或 null")
++            merged = self._merge_patch(model.settings, patch) if patch is not None else None
++            if merged is not None and "research_mode" in merged:
++                mode = merged["research_mode"]
++                if not isinstance(mode, dict):
++                    raise ValidationError("settings.research_mode 必须是 JSON 对象")
++                if "enabled" in mode and not isinstance(mode["enabled"], bool):
++                    raise ValidationError("settings.research_mode.enabled 必须为布尔值")
++            values["settings"] = merged
++        previous_status = model.status
++        for key, value in values.items():
++            setattr(model, key, value)
+         await self._session.commit()
+         await self._session.refresh(model)
++        if model.status != previous_status and model.status in {"completed", "handed_over"}:
++            await self._pack_project_sessions(model)
+         return self._to_dict(model)
+ 
+-    async def mark_project_status(self, user_id: UUID, project_id: UUID, status: str) -> dict:
++    async def mark_project_status(
++        self, user_id: UUID, project_id: UUID, status: str
++    ) -> dict[str, Any]:
+         """标记项目状态（属主）；completed/handed_over 触发其下会话工作区休眠打包。
+ 
+         chat_sessions.project_id 存的是 str(projects.id)（已核实线上数据），
+@@ -198,18 +254,7 @@ class ProjectService:
+         status = (status or "").strip().lower()
+         if status not in self.PROJECT_STATUSES:
+             raise ValidationError(f"非法项目状态：{status}（允许 {self.PROJECT_STATUSES}）")
+-        stmt = select(ProjectModel).where(
+-            ProjectModel.id == project_id, ProjectModel.user_id == user_id
+-        )
+-        result = await self._session.execute(stmt)
+-        model = result.scalar_one_or_none()
+-        if model is None:
+-            raise NotFoundError(f"项目不存在：{project_id}")
+-        model.status = None if status == "active" else status
+-        await self._session.commit()
+-        if status in {"completed", "handed_over"}:
+-            await self._pack_project_sessions(model)
+-        return self._to_dict(model)
++        return await self.update_project(user_id, project_id, {"status": status})
+ 
+     async def _pack_project_sessions(self, model: ProjectModel) -> None:
+         """项目完成/移交后，其下 studio 会话全部后台休眠打包（幂等，busy 跳过）。"""
+@@ -255,7 +300,8 @@ class ProjectService:
+         asyncio.create_task(_run())
+ 
+     async def delete_project(self, user_id: UUID, project_id: UUID) -> bool:
+-        """删除项目（仅删 DB 记录 + 目录记录，不删物理文件，避免误删数据）。"""
++        """保留删除身份与物理文件，原子删除项目行及目录索引。"""
++        await self._lock_owner(user_id)
+         stmt = (
+             select(ProjectModel)
+             .where(ProjectModel.id == project_id, ProjectModel.user_id == user_id)
+@@ -280,6 +326,10 @@ class ProjectService:
+                     "项目包含保留的科研导出记录，请先完成保留策略审核",
+                     code="PROJECT_EVIDENCE_RETAINED",
+                 )
++        self._session.add(
++            ProjectTombstoneModel(project_id=model.id, user_id=user_id, slug=model.slug)
++        )
++        await self._session.flush()
+         await self._session.delete(model)
+         # 清理目录记录
+         dirs = DirectoryRepositoryImpl(self._session)
+@@ -291,24 +341,35 @@ class ProjectService:
+     # ------------------------------------------------------------------
+     # 回填：从磁盘 projects/ 目录读取缺失项目，写入 DB
+     # ------------------------------------------------------------------
+-    async def _backfill_from_disk(self, user_id: UUID) -> None:
++    async def sync_from_disk(self, user_id: UUID) -> dict[str, int]:
+         """扫描 ``users/{user_id}/projects/`` 下的一级子目录，为缺失的创建 DB 记录。
+ 
+         幂等：已存在同 slug 的项目跳过。目录名即 slug，显示名暂时等于 slug
+         （后续用户可通过 rename 改为可读名）。
+         """
++        await self._lock_owner(user_id)
+         projects_root = self._factory.projects_dir(str(user_id))
+         if not projects_root.exists():
+-            return
++            return {"created": 0, "skipped_deleted": 0}
+ 
+         existing = await self._session.execute(
+             select(ProjectModel.slug).where(ProjectModel.user_id == user_id)
+         )
+         existing_slugs = set(existing.scalars().all())
++        deleted = await self._session.execute(
++            select(ProjectTombstoneModel.slug).where(ProjectTombstoneModel.user_id == user_id)
++        )
++        deleted_slugs = set(deleted.scalars().all())
++        skipped_deleted = 0
+ 
+         to_insert: list[ProjectModel] = []
+         for entry in projects_root.iterdir():
+-            if not entry.is_dir() or entry.name.startswith("."):
++            if not entry.is_dir() or entry.is_symlink() or entry.name.startswith("."):
++                continue
++            if len(entry.name) > 200:
++                continue
++            if entry.name in deleted_slugs:
++                skipped_deleted += 1
+                 continue
+             if entry.name in existing_slugs:
+                 continue
+@@ -322,4 +383,79 @@ class ProjectService:
+             )
+         if to_insert:
+             self._session.add_all(to_insert)
++            from cygnusx.domain.file.entities import Directory
++
++            directories = DirectoryRepositoryImpl(self._session)
++            for project in to_insert:
++                path = f"projects/{project.slug}"
++                if await directories.get_by_path(user_id, path) is None:
++                    await directories.save(
++                        Directory(
++                            id=uuid.uuid4(),
++                            user_id=user_id,
++                            path=path,
++                            name=project.slug,
++                            parent_path="projects",
++                        )
++                    )
+             await self._session.commit()
++        return {"created": len(to_insert), "skipped_deleted": skipped_deleted}
++
++    async def _lock_owner(self, user_id: UUID) -> None:
++        # All create/delete/sync operations use the same lock to reserve slug identity.
++        await self._session.execute(
++            select(UserModel.id).where(UserModel.id == user_id).with_for_update()
++        )
++
++    async def _require_unreserved_slug(self, user_id: UUID, slug: str) -> None:
++        result = await self._session.execute(
++            select(ProjectTombstoneModel.project_id).where(
++                ProjectTombstoneModel.user_id == user_id, ProjectTombstoneModel.slug == slug
++            )
++        )
++        if result.scalar_one_or_none() is not None:
++            raise ConflictError(
++                "该项目目录保留了已删除项目的身份，请使用新项目名", code="PROJECT_SLUG_RETAINED"
++            )
++
++    async def capability_status(self, user_id: UUID, project_id: UUID) -> ProjectCapabilityStatus:
++        project = await self.require_owner(user_id, project_id)
++        user = await self._session.get(UserModel, user_id, populate_existing=True)
++        settings = get_settings()
++
++        def capability(
++            enabled: bool, modules: set[str], *, active: bool = True
++        ) -> ProjectCapability:
++            permitted = bool(
++                user
++                and user.status == "active"
++                and active
++                and (user.role == "admin" or not modules.intersection(user.disabled_modules or []))
++            )
++            return ProjectCapability(
++                enabled=enabled,
++                allowed=enabled and permitted,
++                reason="SERVICE_DISABLED"
++                if not enabled
++                else ("AVAILABLE" if permitted else "NO_PERMISSION"),
++            )
++
++        read = settings.research_delivery_read_enabled
++        return ProjectCapabilityStatus(
++            research_plan=capability(settings.research_plan_enabled, {"files", "tasks", "reports"}),
++            research_delivery_read=capability(read, {"files", "tasks", "reports"}),
++            project_export=capability(
++                read and settings.project_export_enabled,
++                {"files", "tasks", "reports"},
++                active=project.status in {None, "active", "completed", "handed_over"},
++            ),
++        )
++
++    async def require_owner(self, user_id: UUID, project_id: UUID) -> ProjectModel:
++        """Project read surfaces expose the documented owner/forbidden boundary."""
++        project = await self._session.get(ProjectModel, project_id, populate_existing=True)
++        if project is None:
++            raise NotFoundError("项目不存在")
++        if project.user_id != user_id:
++            raise AuthorizationError("无权访问该项目", code="FORBIDDEN")
++        return project
+diff --git a/src/cygnusx/application/services/run_plan_service.py b/src/cygnusx/application/services/run_plan_service.py
+index 437fdfb6..14efb407 100644
+--- a/src/cygnusx/application/services/run_plan_service.py
++++ b/src/cygnusx/application/services/run_plan_service.py
+@@ -2,7 +2,7 @@
+ 
+ import hashlib
+ import json
+-from datetime import datetime, timezone
++from typing import Any
+ from uuid import UUID
+ 
+ from sqlalchemy import select
+@@ -12,11 +12,18 @@ from cygnusx.application.schemas.run_plan import SnakemakePlanSubmit, SnakemakeP
+ from cygnusx.application.schemas.task import TaskSubmitRequest
+ from cygnusx.application.services.flow_service import FlowService
+ from cygnusx.application.services.task_service import TaskService
+-from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
++from cygnusx.core.exceptions import (
++    AuthorizationError,
++    ConflictError,
++    NotFoundError,
++    ValidationError,
++)
+ from cygnusx.domain.task.value_objects import ExecutionMode
++from cygnusx.infrastructure.database.models.dataset import DatasetAnalysisLinkModel
++from cygnusx.infrastructure.database.models.file import FileRecordModel
++from cygnusx.infrastructure.database.models.project import ProjectModel
+ from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.models.run_event import RunEventModel
+-from cygnusx.infrastructure.database.models.file import FileRecordModel
+ 
+ 
+ class RunPlanService:
+@@ -60,6 +67,71 @@ class RunPlanService:
+         await RunEventService(self._db).emit(run.id, status="plan_pending")
+         return self._view(run)
+ 
++    async def register_dataset_proposal(
++        self, owner: UUID, project: ProjectModel, link: DatasetAnalysisLinkModel
++    ) -> RunModel:
++        """Alias an existing Dataset proposal to the existing platform Run shell."""
++        bound = link.normalized_request
++        if (
++            project.user_id != owner
++            or bound.get("owner_id") != str(owner)
++            or bound.get("project_id") != str(project.id)
++        ):
++            raise AuthorizationError("Dataset Run 上下文不匹配")
++        key = f"dataset:{link.id}"
++        plan = {
++            **bound["request"],
++            "dataset_analysis_link_id": str(link.id),
++            "dataset_id": bound["dataset_id"],
++            "dataset_version_id": str(link.version_id),
++            "project_id": str(project.id),
++            "handoff_hash": link.handoff_hash,
++        }
++        digest = hashlib.sha256(
++            json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
++        ).hexdigest()
++        existing = await self._db.scalar(
++            select(RunModel).where(RunModel.user_id == owner, RunModel.request_key == key)
++        )
++        if existing is not None:
++            if existing.plan_digest != digest:
++                raise ConflictError("Dataset Run 冻结内容变化")
++            return existing
++        run = RunModel(
++            user_id=owner,
++            project_slug=project.slug,
++            flow_id=link.flow_id,
++            release_id=self._flows.get_flow(link.flow_id).meta.version,
++            request_key=key,
++            plan_json=plan,
++            plan_digest=digest,
++            status="plan_pending",
++        )
++        self._db.add(run)
++        await self._db.flush()
++        from cygnusx.application.services.run_event_service import RunEventService
++
++        await RunEventService(self._db).emit(
++            run.id,
++            status="plan_pending",
++            payload={"analysis_link_id": str(link.id), "mode": "PLAN_ONLY"},
++        )
++        return run
++
++    async def dataset_link(self, owner: UUID, run_id: UUID) -> DatasetAnalysisLinkModel | None:
++        run = await self._db.scalar(
++            select(RunModel).where(RunModel.id == run_id, RunModel.user_id == owner)
++        )
++        if run is None:
++            raise NotFoundError("Run 不存在")
++        link_id = run.plan_json.get("dataset_analysis_link_id")
++        if link_id is None:
++            return None
++        link = await self._db.get(DatasetAnalysisLinkModel, UUID(link_id))
++        if link is None or link.normalized_request.get("owner_id") != str(owner):
++            raise ConflictError("Dataset Run 关联不可用")
++        return link
++
+     async def get(self, user_id: UUID, run_id: UUID) -> SnakemakePlanView:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+@@ -68,7 +140,9 @@ class RunPlanService:
+             raise NotFoundError("Run 不存在")
+         return self._view(run)
+ 
+-    async def list_runs(self, user_id: UUID, project_slug: str | None = None, status: str | None = None):
++    async def list_runs(
++        self, user_id: UUID, project_slug: str | None = None, status: str | None = None
++    ) -> list[SnakemakePlanView]:
+         query = select(RunModel).where(RunModel.user_id == user_id)
+         if project_slug:
+             query = query.where(RunModel.project_slug == project_slug)
+@@ -85,12 +159,37 @@ class RunPlanService:
+             raise NotFoundError("Run 不存在")
+         if not user_confirmed:
+             raise ValidationError("必须明确提供真实用户确认")
++        link = await self.dataset_link(user_id, run_id)
++        if link is not None:
++            from cygnusx.application.services.dataset_analysis_service import DatasetAnalysisService
++
++            bound = link.normalized_request
++            await DatasetAnalysisService(self._db).execute(
++                user_id,
++                UUID(bound["project_id"]),
++                UUID(bound["dataset_id"]),
++                link.version_id,
++                link.id,
++                run_id=run.id,
++            )
++            await self._db.refresh(run)
++            return self._view(run)
++        # Dataset execution locks Link before Run in TaskService. Keep that same
++        # ordering for its alias; only standalone Run plans acquire this lock here.
++        run = await self._db.scalar(
++            select(RunModel)
++            .where(RunModel.id == run_id, RunModel.user_id == user_id)
++            .with_for_update()
++            .execution_options(populate_existing=True)
++        )
++        if run is None:
++            raise NotFoundError("Run 不存在")
+         if run.status == "queued":
+             return self._view(run)
+         if run.status != "plan_pending":
+             raise ConflictError(f"Run 当前状态 {run.status!r} 不允许确认")
+         payload = run.plan_json
+-        task = await TaskService(self._db).submit(
++        await TaskService(self._db).submit(
+             str(user_id),
+             TaskSubmitRequest(
+                 flow_id=run.flow_id,
+@@ -101,17 +200,13 @@ class RunPlanService:
+                 execution_mode=ExecutionMode.LOCAL,
+                 idempotency_key=f"run:{run.id}",
+             ),
++            run_id=run.id,
+         )
+-        run.task_id = task.id
+-        run.status = "queued"
+-        run.confirmed_at = datetime.now(timezone.utc)
+-        from cygnusx.application.services.run_event_service import RunEventService
+-
+-        await RunEventService(self._db).emit(run.id, task_id=task.id, status="queued")
+-        await self._db.flush()
++        # TaskService binds both identities before its commit/queue visibility.
++        await self._db.refresh(run)
+         return self._view(run)
+ 
+-    async def events(self, user_id: UUID, run_id: UUID, limit: int = 200) -> list[dict]:
++    async def events(self, user_id: UUID, run_id: UUID, limit: int = 200) -> list[dict[str, Any]]:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+         )
+@@ -139,7 +234,7 @@ class RunPlanService:
+             for event in rows.all()
+         ]
+ 
+-    async def artifacts(self, user_id: UUID, run_id: UUID) -> list[dict]:
++    async def artifacts(self, user_id: UUID, run_id: UUID) -> list[dict[str, Any]]:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+         )
+diff --git a/src/cygnusx/application/services/task_service.py b/src/cygnusx/application/services/task_service.py
+index 1c12842d..fbe7f396 100644
+--- a/src/cygnusx/application/services/task_service.py
++++ b/src/cygnusx/application/services/task_service.py
+@@ -3,11 +3,13 @@
+ from __future__ import annotations
+ 
+ import uuid
++from datetime import UTC, datetime
+ from decimal import Decimal
+ from pathlib import Path
+ from typing import Any
+ from uuid import UUID
+ 
++from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from cygnusx.application.schemas.task import (
+@@ -21,11 +23,12 @@ from cygnusx.application.services.flow_service import FlowService
+ from cygnusx.application.services.managed_file_resolver import ManagedFileResolver
+ from cygnusx.application.services.mas_task_projection import MASTaskProjection
+ from cygnusx.core.config import get_settings
+-from cygnusx.core.exceptions import NotFoundError, ValidationError
++from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
+ from cygnusx.domain.flow.submission_validator import FlowSubmissionValidator
+ from cygnusx.domain.task.services import TaskDomainService
+ from cygnusx.domain.task.value_objects import TaskStatus
+ from cygnusx.infrastructure.celery_app.tasks.analysis import run_snakemake
++from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.repositories.mas_repository import MASRepository
+ from cygnusx.infrastructure.database.repositories.task_repository import (
+     TaskRepositoryImpl,
+@@ -53,7 +56,9 @@ class TaskService:
+         self._flow_service = flow_service or FlowService()
+         self._settings = get_settings()
+ 
+-    async def submit(self, user_id: str, req: TaskSubmitRequest) -> TaskResponse:
++    async def submit(
++        self, user_id: str, req: TaskSubmitRequest, *, run_id: UUID | None = None
++    ) -> TaskResponse:
+         """提交分析任务。
+ 
+         流程：
+@@ -64,6 +69,8 @@ class TaskService:
+         5. 保存执行证据及启用时的预扣参数，持久化 QUEUED；
+         6. 投递 Celery 异步任务，投递不明交由对账。
+         """
++        if req.idempotency_key and req.idempotency_key.startswith("run:") and run_id is None:
++            raise ConflictError("Run 请求必须通过审批入口", code="RUN_CONFIRM_REQUIRED")
+         if req.flow_id == "counts_deg":
+             from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+ 
+@@ -80,12 +87,19 @@ class TaskService:
+         )
+ 
+         dataset_link = await validate_dataset_submission(self._db, UUID(user_id), req)
++        run = await self._run_for_request(UUID(user_id), run_id, req) if run_id else None
+ 
+         if req.idempotency_key:
+             existing = await self._repo.get_by_idempotency_key(req.idempotency_key)
+             if existing is not None:
+                 if str(existing.user_id) != user_id:
+                     raise ValidationError("幂等键已被其他用户使用")
++                if run is not None and run.task_id != existing.id:
++                    # Older submissions may have crossed the former commit seam.
++                    # Never adopt historical Tasks automatically, even on retry.
++                    raise ConflictError(
++                        "Run 与 Task 挂链缺失，请人工对账", code="RECONCILIATION_REQUIRED"
++                    )
+                 return task_to_response(existing)
+ 
+         # Every entry point converges here. Re-run the authoritative Flow validator
+@@ -220,6 +234,8 @@ class TaskService:
+ 
+         if dataset_link is not None:
+             dataset_link.task_id = task.id
++        if run is not None:
++            await self._bind_run(run, task.id)
+         task = await self._domain.transition_status(task, TaskStatus.QUEUED)
+         # Freeze evidence before queue visibility for both manual and Dataset submissions.
+         # Ambiguous queue delivery is reconciled; it is never an implicit execution retry.
+@@ -238,6 +254,47 @@ class TaskService:
+ 
+         return task_to_response(task)
+ 
++    async def _run_for_request(
++        self, owner: UUID, run_id: UUID, request: TaskSubmitRequest
++    ) -> RunModel:
++        run = (
++            await self._db.execute(
++                select(RunModel)
++                .where(RunModel.id == run_id, RunModel.user_id == owner)
++                .with_for_update()
++                .execution_options(populate_existing=True)
++            )
++        ).scalar_one_or_none()
++        if run is None:
++            raise NotFoundError("Run 不存在")
++        link_id = run.plan_json.get("dataset_analysis_link_id")
++        expected_key = f"dataset:{link_id}" if link_id else f"run:{run.id}"
++        if request.idempotency_key != expected_key or request.flow_id != run.flow_id:
++            raise ConflictError("Run 与 Task 幂等身份不匹配")
++        for key in ("name", "parameters", "sample_sheet", "comparisons"):
++            expected = run.plan_json.get(
++                key,
++                {}
++                if key == "parameters"
++                else []
++                if key in {"sample_sheet", "comparisons"}
++                else None,
++            )
++            if request.model_dump(mode="json").get(key) != expected:
++                raise ConflictError("冻结 Run 请求已变化")
++        return run
++
++    async def _bind_run(self, run: RunModel, task_id: UUID) -> None:
++        if run.task_id is not None and run.task_id != task_id:
++            raise ConflictError("Run 已关联其他 Task")
++        if run.task_id == task_id and run.status == "queued":
++            return
++        run.task_id, run.status, run.confirmed_at = task_id, "queued", datetime.now(UTC)
++        from cygnusx.application.services.run_event_service import RunEventService
++
++        await RunEventService(self._db).emit(run.id, task_id=task_id, status="queued")
++        await self._db.flush()
++
+     async def get_task(self, task_id: UUID, user_id: str) -> TaskResponse:
+         """获取任务详情"""
+         task = await self._repo.get_by_id(task_id)
+@@ -306,8 +363,12 @@ class TaskService:
+ 
+             from cygnusx.infrastructure.database.models.task import TaskModel
+ 
+-            await self._db.execute(select(TaskModel).where(TaskModel.id == task_id)
+-                                   .with_for_update().execution_options(populate_existing=True))
++            await self._db.execute(
++                select(TaskModel)
++                .where(TaskModel.id == task_id)
++                .with_for_update()
++                .execution_options(populate_existing=True)
++            )
+             task = await self._repo.get_by_id(task_id)
+             if task is None or str(task.user_id) != user_id:
+                 raise NotFoundError("任务不存在")
+diff --git a/src/cygnusx/core/config.py b/src/cygnusx/core/config.py
+index ebea84d8..7ab52bfa 100644
+--- a/src/cygnusx/core/config.py
++++ b/src/cygnusx/core/config.py
+@@ -262,6 +262,8 @@ class Settings(BaseSettings):
+     # ===== P4 记忆语义召回（默认关闭；失败时回退关键词召回） =====
+     agent_memory_semantic_retrieval_enabled: bool = False
+     agent_memory_embedding_model: str = ""
++    agent_memory_embedding_provider_id: str = ""
++    agent_memory_embedding_dimensions: int = Field(default=1024, ge=1)
+     agent_memory_semantic_candidate_limit: int = 100
+     agent_memory_conflict_adjudication_enabled: bool = False
+     agent_memory_conflict_adjudication_model: str = ""
+diff --git a/src/cygnusx/infrastructure/ai_provider/litellm_provider.py b/src/cygnusx/infrastructure/ai_provider/litellm_provider.py
+index 2022d001..aa8cea59 100644
+--- a/src/cygnusx/infrastructure/ai_provider/litellm_provider.py
++++ b/src/cygnusx/infrastructure/ai_provider/litellm_provider.py
+@@ -12,6 +12,7 @@ from loguru import logger
+ from cygnusx.core.config import get_settings
+ from cygnusx.core.telemetry import get_tracer
+ from cygnusx.domain.ai_provider.entities import AIProviderConfig
++from cygnusx.domain.ai_provider.value_objects import ProviderType
+ from cygnusx.infrastructure.ai_provider.base import StreamEvent
+ from cygnusx.infrastructure.ai_provider.openai_compatible import (
+     _dedupe_tools,
+@@ -428,9 +429,43 @@ class LiteLLMProvider:
+             return bool(self._settings.openai_api_key) and bool(self._settings.openai_model)
+         return bool(self._settings.kimi_api_key) and bool(self._settings.kimi_model)
+ 
++    async def _get_embedding_config(self) -> AIProviderConfig | None:
++        """Resolve the embedding-only UUID without falling back to a chat Provider."""
++        provider_id = self._settings.agent_memory_embedding_provider_id.strip()
++        if not provider_id:
++            return await self._get_config()
++
++        from uuid import UUID
++
++        from cygnusx.infrastructure.database.repositories.ai_provider_repository import (
++            SqlAlchemyAIProviderConfigRepository,
++        )
++        from cygnusx.infrastructure.database.session import get_session_factory
++
++        try:
++            identity = UUID(provider_id)
++        except ValueError:
++            raise ValueError("Embedding Provider ID must be a database UUID") from None
++        config: AIProviderConfig | None
++        if self._config is not None:
++            # Maintenance CLI supplies a Provider from its explicit target database.
++            # Never switch that operation to the application's default database.
++            if self._config.id != identity:
++                raise ValueError("Explicit Provider conflicts with embedding Provider ID")
++            config = self._config
++        else:
++            factory = get_session_factory()
++            if factory is None:
++                raise ValueError("Embedding Provider database is unavailable")
++            async with factory() as session:
++                config = await SqlAlchemyAIProviderConfigRepository(session).get_by_id(identity)
++        if config is None or not config.is_active:
++            raise ValueError("Embedding Provider does not exist or is inactive")
++        return config
++
+     async def embeddings(self, text: str, model: str = "") -> list[float]:
+         """文本嵌入向量（可选能力）"""
+-        config = await self._get_config()
++        config = await self._get_embedding_config()
+         kwargs: dict[str, Any] = {"input": text}
+         if model:
+             kwargs["model"] = model
+@@ -454,6 +489,21 @@ class LiteLLMProvider:
+             str(kwargs.get("model", "")), bool(kwargs.get("api_base"))
+         )
+ 
++        if self._settings.agent_memory_embedding_provider_id.strip():
++            kwargs["dimensions"] = self._settings.agent_memory_embedding_dimensions
++            # Vendor model IDs contain '/', e.g. Qwen/Qwen3-Embedding-8B.
++            # That namespace is not a LiteLLM provider prefix.
++            if (
++                config is not None
++                and config.provider_type == ProviderType.OPENAI_COMPATIBLE
++                and config.base_url
++            ):
++                # LiteLLM otherwise rejects dimensions for non-text-embedding-3
++                # model IDs before reaching the compatible vendor endpoint.
++                kwargs["allowed_openai_params"] = ["dimensions"]
++                if not str(kwargs["model"]).startswith("openai/"):
++                    kwargs["model"] = "openai/" + str(kwargs["model"])
++
+         tracer = get_tracer("cygnusx.ai")
+         with tracer.start_as_current_span(
+             "ai.embedding",
+diff --git a/src/cygnusx/infrastructure/celery_app/tasks/memory.py b/src/cygnusx/infrastructure/celery_app/tasks/memory.py
+index 06ec8f35..6d0f33fa 100644
+--- a/src/cygnusx/infrastructure/celery_app/tasks/memory.py
++++ b/src/cygnusx/infrastructure/celery_app/tasks/memory.py
+@@ -27,6 +27,11 @@ _settle_failed = _memory_meter.create_counter(
+     description="记忆沉淀失败次数，失败区间保留待重试",
+ )
+ 
++_settle_extract_failed = _memory_meter.create_counter(
++    "memory.settle_extract_failed",
++    description="记忆抽取失败次数，与 settle_failed 的 extraction 阶段同时计数",
++)
++
+ _settle_succeeded = _memory_meter.create_counter(
+     "memory.settle_succeeded",
+     description="记忆沉淀成功区间数，作为失败率分母",
+@@ -494,6 +499,7 @@ async def _settle_session_memory_v2(
+             used_targets.add(target)
+     except Exception as exc:
+         _settle_failed.add(1, {"stage": "extraction"})
++        _settle_extract_failed.add(1)
+         # Do not log response text: it can contain private conversation content.
+         logger.warning(
+             "memory.settle_failed session_id={} stage=extraction error_type={}",
+diff --git a/src/cygnusx/infrastructure/database/models/project.py b/src/cygnusx/infrastructure/database/models/project.py
+index ee6f7344..0336f7d8 100644
+--- a/src/cygnusx/infrastructure/database/models/project.py
++++ b/src/cygnusx/infrastructure/database/models/project.py
+@@ -10,6 +10,7 @@
+ 
+ import uuid
+ from datetime import datetime
++from typing import Any
+ 
+ from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+ from sqlalchemy.dialects.postgresql import JSONB, UUID
+@@ -39,12 +40,14 @@ class ProjectModel(Base, TimestampMixin):
+     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+     # 可选客户名（项目归属客户/课题组）
+     customer: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+-    # 项目状态：active（NULL 视为进行中）/ completed / handed_over；
++    # 项目状态：active / completed / handed_over；读取侧 NULL 兼容至 lifecycle02。
+     # 标记 completed/handed_over 时触发其下会话工作区休眠打包。
+-    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
++    status: Mapped[str] = mapped_column(
++        String(20), nullable=False, default="active", server_default="active"
++    )
+     # 项目级设置（WP3 任务 3，JSONB）：{"research_mode": {...}}；
+     # 创建会话时 research_mode 继承为会话 sandbox_meta.research_mode 初始值。
+-    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
++    settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+ 
+     created_at: Mapped[datetime] = mapped_column(
+         DateTime(timezone=True), server_default=func.now(), nullable=True
+@@ -52,3 +55,19 @@ class ProjectModel(Base, TimestampMixin):
+     updated_at: Mapped[datetime] = mapped_column(
+         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+     )
++
++
++class ProjectTombstoneModel(Base):
++    """Reserve deleted project identities without moving retained artifacts."""
++
++    __tablename__ = "project_tombstones"
++    __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_project_tombstones_user_slug"),)
++
++    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
++    user_id: Mapped[uuid.UUID] = mapped_column(
++        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
++    )
++    slug: Mapped[str] = mapped_column(String(200), nullable=False)
++    deleted_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), nullable=False, server_default=func.now()
++    )
+diff --git a/src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py b/src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py
+index 42db2ffd..66db4429 100644
+--- a/src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py
++++ b/src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py
+@@ -4,7 +4,7 @@ from __future__ import annotations
+ 
+ from uuid import UUID
+ 
+-from sqlalchemy import desc, select
++from sqlalchemy import desc, select, update
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from cygnusx.core.security import decrypt_value, encrypt_value
+@@ -76,12 +76,18 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
+ 
+     async def set_default(self, config_id: UUID) -> None:
+         """将指定配置设为默认，并取消其他配置的默认状态"""
++        # 部分唯一索引即时校验；不能依赖 ORM 按主键 flush 时先清除旧默认。
++        # 两次 UPDATE 仍在调用方同一事务内，外部不会看到中间的无默认状态。
+         await self._session.execute(
+-            select(AIProviderConfigModel).where(AIProviderConfigModel.is_default.is_(True))
++            update(AIProviderConfigModel)
++            .where(AIProviderConfigModel.is_default.is_(True))
++            .values(is_default=False)
++        )
++        await self._session.execute(
++            update(AIProviderConfigModel)
++            .where(AIProviderConfigModel.id == config_id)
++            .values(is_default=True)
+         )
+-        result = await self._session.execute(select(AIProviderConfigModel))
+-        for model in result.scalars().all():
+-            model.is_default = model.id == config_id
+         await self._session.flush()
+ 
+     async def count(self) -> int:
+diff --git a/src/cygnusx/main.py b/src/cygnusx/main.py
+index b8824211..9ce85630 100644
+--- a/src/cygnusx/main.py
++++ b/src/cygnusx/main.py
+@@ -78,6 +78,27 @@ async def _init_default_ai_provider() -> None:
+         await session.commit()
+ 
+ 
++async def _validate_memory_embedding_provider() -> None:
++    """Report embedding-only selection errors after Provider YAML synchronization."""
++    from loguru import logger
++
++    from cygnusx.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
++
++    settings = get_settings()
++    if not (
++        settings.agent_memory_embedding_model.strip()
++        and settings.agent_memory_embedding_provider_id.strip()
++    ):
++        return
++    try:
++        config = await LiteLLMProvider()._get_embedding_config()
++    except Exception as exc:  # configuration errors must not expose credentials
++        logger.error("memory.embedding_provider_invalid error_type={}", type(exc).__name__)
++        return
++    if config is not None and config.is_default:
++        logger.warning("memory.embedding_provider_is_chat_default: use a separate chat Provider")
++
++
+ @asynccontextmanager
+ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+     """应用生命周期：启动与关闭
+@@ -288,6 +309,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+         _repair_user_storage_directories(),
+         _init_default_knowledge(),
+     )
++    await _validate_memory_embedding_provider()
+     await _init_builtin_agents()
+ 
+     # 欢迎词补齐：须在 AI Provider 同步完成之后（依赖默认 provider），
+diff --git a/tests/unit/test_agent_memory_tasks.py b/tests/unit/test_agent_memory_tasks.py
+index 70a749c6..957b10c7 100644
+--- a/tests/unit/test_agent_memory_tasks.py
++++ b/tests/unit/test_agent_memory_tasks.py
+@@ -1,7 +1,7 @@
+ """长期记忆异步摘要任务的无外部依赖契约测试。"""
+ 
+ from types import SimpleNamespace
+-from unittest.mock import AsyncMock
++from unittest.mock import AsyncMock, MagicMock
+ 
+ import pytest
+ 
+@@ -145,6 +145,10 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
+     """压缩事件属于审计流，settle 仍只消费 chat_messages 的新消息区间。"""
+     from cygnusx.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
+ 
++    extraction_failures = SimpleNamespace(add=MagicMock())
++    monkeypatch.setattr(
++        "cygnusx.infrastructure.celery_app.tasks.memory._settle_extract_failed", extraction_failures
++    )
+     chat_session = _session(
+         session_id="chat-compaction-memory-1",
+         message_count=2,
+@@ -254,6 +258,7 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
+         assert databases[0].added == []
+         assert databases[0].committed is False
+         assert chat_session.last_settled_message_id is None
++        extraction_failures.add.assert_called_once_with(1)
+         return
+ 
+     assert result == {
+@@ -263,6 +268,7 @@ async def test_settle_ignores_compaction_events_and_advances_message_cursor(
+     }
+     assert len(databases) == 2
+     assert databases[1].committed is True
++    extraction_failures.add.assert_not_called()
+     assert chat_session.last_settled_message_id == "memory-assistant-1"
+ 
+ 
+diff --git a/tests/unit/test_memory_embedding_cli.py b/tests/unit/test_memory_embedding_cli.py
+index 5f20676c..e3ef162d 100644
+--- a/tests/unit/test_memory_embedding_cli.py
++++ b/tests/unit/test_memory_embedding_cli.py
+@@ -35,7 +35,13 @@ def test_explicit_database_and_apply_or_dry_run_are_passed_to_operator_service(
+     script["main"].__globals__["run"] = run
+     monkeypatch.setenv("MEMORY_MAINTENANCE_DATABASE_URL", "postgresql://test/maintenance")
+     monkeypatch.setattr(
+-        "sys.argv", [str(_SCRIPT), "--mode", "mismatch", *(["--apply"] if apply else [])]
++        "sys.argv",
++        [
++            str(_SCRIPT),
++            "--mode",
++            "mismatch",
++            *(["--apply", "--confirm-database", "maintenance"] if apply else []),
++        ],
+     )
+     assert script["main"]() == 0
+     run.assert_awaited_once_with(
+@@ -45,6 +51,7 @@ def test_explicit_database_and_apply_or_dry_run_are_passed_to_operator_service(
+         limit=100,
+         apply=apply,
+         provider_id=None,
++        confirm_database="maintenance" if apply else None,
+     )
+     assert json.loads(capsys.readouterr().out) == result
+ 
+@@ -116,8 +123,48 @@ async def test_apply_resolves_provider_in_explicit_db_and_publishes_only_after_c
+         }
+     )
+     result = await script["run"](
+-        "postgresql://test/maintenance", storage="facts", mode="mismatch", limit=1, apply=True
++        "postgresql://test/maintenance",
++        storage="facts",
++        mode="mismatch",
++        limit=1,
++        apply=True,
++        confirm_database="maintenance",
+     )
+     assert result["updated"] == 1
+     default.assert_awaited_once()
+     engine.dispose.assert_awaited_once()
++
++
++@pytest.mark.parametrize("confirmation", [None, "another_database"])
++@pytest.mark.asyncio
++async def test_apply_rejects_unconfirmed_or_wrong_database_before_connecting(confirmation):
++    script = run_path(str(_SCRIPT))
++    engine = AsyncMock()
++    script["run"].__globals__["create_async_engine"] = engine
++    with pytest.raises(ValueError, match="confirm-database"):
++        await script["run"](
++            "postgresql://test/maintenance",
++            storage="facts",
++            mode="missing",
++            limit=10,
++            apply=True,
++            confirm_database=confirmation,
++        )
++    engine.assert_not_called()
++
++
++def test_cli_rejects_wrong_target_without_provider_or_dsn_disclosure(monkeypatch, capsys):
++    script = run_path(str(_SCRIPT))
++    run = AsyncMock()
++    script["main"].__globals__["run"] = run
++    monkeypatch.setenv(
++        "MEMORY_MAINTENANCE_DATABASE_URL", "postgresql://private:secret@test/unexpected_target"
++    )
++    monkeypatch.setattr(
++        "sys.argv", [str(_SCRIPT), "--apply", "--confirm-database", "authorized_target"]
++    )
++    assert script["main"]() == 2
++    run.assert_not_awaited()
++    output = capsys.readouterr().out
++    assert json.loads(output) == {"status": "error", "error_type": "ValueError"}
++    assert "secret" not in output and "private" not in output and "unexpected_target" not in output
+diff --git a/tests/unit/test_project_delivery_stabilization.py b/tests/unit/test_project_delivery_stabilization.py
+index 7fe408b7..e5ef076e 100644
+--- a/tests/unit/test_project_delivery_stabilization.py
++++ b/tests/unit/test_project_delivery_stabilization.py
+@@ -39,7 +39,7 @@ async def test_current_project_deactivation_bypasses_stale_identity_cache(projec
+         connection.execute(
+             text("UPDATE projects SET status='disabled' WHERE id=:id"), {"id": env.project.hex}
+         )
+-    assert old.status is None
++    assert old.status == "active"
+     with pytest.raises(AuthorizationError):
+         await env.service.download(env.owner, env.project, job.id)
+ 
+diff --git a/tests/unit/test_research_plan_storage_phase5.py b/tests/unit/test_research_plan_storage_phase5.py
+index ec3ff42a..1f3c6eaa 100644
+--- a/tests/unit/test_research_plan_storage_phase5.py
++++ b/tests/unit/test_research_plan_storage_phase5.py
+@@ -169,7 +169,7 @@ async def test_actual_jwt_http_review_rejects_api_key_and_foreign_owner(plans, m
+         transport=httpx.ASGITransport(app=app), base_url="http://test"
+     ) as client:
+         assert (await client.get(path)).status_code == 401
+-        assert (await client.get(path, headers=foreign)).status_code == 404
++        assert (await client.get(path, headers=foreign)).status_code == 403
+         assert (await client.get(path, headers=human)).status_code == 200
+         body = {"expected_digest": view.digest}
+         assert (

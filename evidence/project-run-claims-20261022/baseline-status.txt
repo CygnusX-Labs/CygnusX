@@ -1,0 +1,88 @@
+ M .env.example
+ M ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md
+ M ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_log_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md
+ M ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md
+ M ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md
+ M ARCHITECTURE_DESIGN/README.md
+ T Protocol/FlowFrame
+ M data/ai/providers.yaml
+ M deploy/docker/docker-compose.worker.yml
+ M deploy/docker/docker-compose.yml
+ M frontend/src/api/projects.ts
+ M frontend/src/components/ProjectResearchDelivery.vue
+ M frontend/src/components/ResearchDeliveryChain.vue
+ M frontend/src/components/ResearchPlanWorkbench.vue
+ M frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
+ M frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
+ M frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts
+ M frontend/src/views/ProjectDetailView.vue
+ M frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+ T pipelines/ATACFlow
+ T pipelines/EBIDownload
+ T pipelines/RNAFlow
+ T pipelines/Treasure-Seeking_Mouse
+ T pipelines/scrna
+ T pipelines/tools
+ M scripts/backfill_memory_embeddings.py
+ M src/cygnusx/api/v1/projects.py
+ M src/cygnusx/api/v1/research_delivery.py
+ M src/cygnusx/api/v1/research_plans.py
+ M src/cygnusx/api/v1/runs.py
+ M src/cygnusx/application/schemas/agent_tools.py
+ M src/cygnusx/application/schemas/project.py
+ M src/cygnusx/application/services/agent_tool_gateway.py
+ M src/cygnusx/application/services/dataset_analysis_service.py
+ M src/cygnusx/application/services/project_overview_service.py
+ M src/cygnusx/application/services/project_service.py
+ M src/cygnusx/application/services/run_plan_service.py
+ M src/cygnusx/application/services/task_service.py
+ M src/cygnusx/core/config.py
+ M src/cygnusx/infrastructure/ai_provider/litellm_provider.py
+ M src/cygnusx/infrastructure/celery_app/tasks/memory.py
+ M src/cygnusx/infrastructure/database/models/project.py
+ M src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py
+ M src/cygnusx/main.py
+ M tests/unit/test_agent_memory_tasks.py
+ M tests/unit/test_memory_embedding_cli.py
+ M tests/unit/test_project_delivery_stabilization.py
+ M tests/unit/test_research_plan_storage_phase5.py
+?? .venv
+?? ARCHITECTURE_DESIGN/CygnusX_admin_console_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_analysis_operations_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_architecture_coverage_audit.md
+?? ARCHITECTURE_DESIGN/CygnusX_async_task_queue_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_cookie_economy_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_festival_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_goal_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_identity_access_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_notification_engagement_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_skill_mcp_integration_architecture.md
+?? alembic/versions/project_lifecycle01.py
+?? evidence/run-claims
+?? frontend/node_modules
+?? frontend/src/api/projectErrors.ts
+?? frontend/src/components/ProjectCapabilityPanel.vue
+?? scripts/init_memory_test_databases.sh
+?? scripts/probe_siliconflow_embedding_dimensions.py
+?? scripts/seed_memory_test_data.py
+?? scripts/verify_memory_downgrade_guards.py
+?? scripts/verify_memory_stage1_supplement.py
+?? scripts/verify_memory_stage1_zero.py
+?? src/cygnusx/application/services/session_dataset_preparation_service.py
+?? tests/integration/test_project_lifecycle_http.py
+?? tests/unit/test_ai_provider_default_switch.py
+?? tests/unit/test_embedding_provider_selection.py
+?? tests/unit/test_project_lifecycle.py
+?? tests/unit/test_run_task_atomic_binding.py
+?? tests/unit/test_session_dataset_preparation.py

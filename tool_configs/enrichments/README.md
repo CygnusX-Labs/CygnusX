@@ -33,13 +33,16 @@ CSV/TSV（仅一列 GeneID）
 提交时需要填写项目名称。项目名称会保留在任务历史中，并转换为安全目录名；任务结果目录为：
 
 ```text
-/data/cygnusx/users/<user_id>/enrichments/<project_slug>/<task_id>/
-├── gene_list.txt
-├── enrichment_result.csv
-├── go_dotplot.png             # GO 有显著结果时生成
-├── go_dotplot.pdf
-├── kegg_dotplot.png           # KEGG 有显著结果时生成
-└── kegg_dotplot.pdf
+<storage_root>/users/<user_id>/projects/<project_slug>/runs/enrichment-<timestamp>/
+├── input/gene_list.txt
+├── output/
+│   ├── enrichment_result.csv
+│   ├── go_dotplot.png         # GO 有显著结果时生成
+│   ├── go_dotplot.pdf
+│   ├── kegg_dotplot.png       # KEGG 有显著结果时生成
+│   └── kegg_dotplot.pdf
+├── work/
+└── logs/
 ```
 
 页面可查看当前登录用户最近的富集任务，恢复已完成任务的 GO/KEGG 表格与气泡图，并通过鉴权接口下载容器生成的原始 `enrichment_result.csv`。历史记录不会跨用户展示。
@@ -60,10 +63,11 @@ CSV/TSV（仅一列 GeneID）
 | `p_value_cutoff` | `--p_value_cutoff` | 物种默认 p-value cutoff；页面可覆盖并随任务提交 |
 | `q_value_cutoff` | `--q_value_cutoff` | 物种默认 q-value cutoff；页面可覆盖并随任务提交 |
 
-番茄 ITAG4.1 配置已指向：
+三个参考文件字段支持绝对路径；相对路径以 `REFERENCE_GENOMES_YAML` 所在目录为根。
+番茄 ITAG4.1 使用相对路径，部署时无需在物种配置中固定宿主数据根或内部数据目录名：
 
 ```text
-/data/cygnusx/cygnusx_data/reference/ITAG4.1/
+<REFERENCE_GENOMES_YAML 所在目录>/ITAG4.1/
 ├── go-basic.obo
 ├── ITAG4.1_blast2go_annot.annot_deal
 └── ITAG4.1.kegg.id
@@ -104,4 +108,7 @@ docker compose -f deploy/docker/docker-compose.yml restart web
 Web 仅投递和查询任务。默认 R 容器不指定 `--network`，由 Docker 使用本机默认 `bridge` 网络直接访问
 KEGG REST，避免依赖可能失效的 Compose / Swarm 网络；如部署 squid 或需要访问内网服务，可设置
 `ENRICHMENT_PROXY_URL` 和 `ENRICHMENT_DOCKER_NETWORK`。参考文件和任务目录均通过
-`/data/cygnusx:/data/cygnusx` 挂载。
+`<ENRICHMENT_DATA_MOUNT>:/data/cygnusx` 挂载。Worker 将文件参数转换为容器内路径，
+宿主数据根可以是 `/data/omichub` 等其它目录。仅修改 Python Runner 和参考路径配置时，
+在源码/配置已 bind mount 的开发栈执行 `./scripts/worker-compose.sh restart worker` 即可加载，
+无需重建 R 镜像；随后重新提交原任务完成容器运行验收。

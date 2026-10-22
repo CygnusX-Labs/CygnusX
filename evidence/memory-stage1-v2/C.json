@@ -1,0 +1,94 @@
+{
+  "read_only_transaction": "on",
+  "facts": {
+    "status": "collected",
+    "storage": "facts",
+    "target_model": "synthetic-current",
+    "active": 5,
+    "compatible": 0,
+    "missing": 5,
+    "mismatched": 5,
+    "pending": 5,
+    "coverage": 0.0
+  },
+  "legacy_empty": {
+    "status": "collected",
+    "storage": "legacy",
+    "target_model": "synthetic-current",
+    "active": 0,
+    "compatible": 0,
+    "missing": 0,
+    "mismatched": 0,
+    "pending": 0,
+    "coverage": 0.0
+  },
+  "metrics": [
+    {
+      "metric": "_mismatch",
+      "value": 5,
+      "storage": "facts"
+    },
+    {
+      "metric": "_coverage",
+      "value": 0.0,
+      "storage": "facts"
+    },
+    {
+      "metric": "_sample_time",
+      "value": 1792520119.558634,
+      "storage": "facts"
+    },
+    {
+      "metric": "_mismatch",
+      "value": 0,
+      "storage": "legacy"
+    },
+    {
+      "metric": "_coverage",
+      "value": 0.0,
+      "storage": "legacy"
+    },
+    {
+      "metric": "_sample_time",
+      "value": 1792520119.5604155,
+      "storage": "legacy"
+    },
+    {
+      "metric": "_mismatch",
+      "value": 5,
+      "storage": "facts"
+    },
+    {
+      "metric": "_coverage",
+      "value": 0.0,
+      "storage": "facts"
+    },
+    {
+      "metric": "_sample_time",
+      "value": 1792520119.5878172,
+      "storage": "facts"
+    }
+  ],
+  "gate_closed": {
+    "status": "disabled"
+  },
+  "gate_open": {
+    "status": "collected",
+    "storage": "facts",
+    "target_model": "synthetic-current",
+    "active": 5,
+    "compatible": 0,
+    "missing": 5,
+    "mismatched": 5,
+    "pending": 5,
+    "coverage": 0.0
+  },
+  "schedule": {
+    "task": "cygnusx.infrastructure.celery_app.tasks.memory.collect_embedding_coverage",
+    "schedule": 300,
+    "options": {
+      "queue": "analysis"
+    }
+  },
+  "task_gate": "injected closed/open; real PG coverage"
+}

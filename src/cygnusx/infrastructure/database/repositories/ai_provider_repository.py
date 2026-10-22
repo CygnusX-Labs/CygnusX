@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cygnusx.core.security import decrypt_value, encrypt_value
@@ -76,12 +76,18 @@ class SqlAlchemyAIProviderConfigRepository(IAIProviderConfigRepository):
 
     async def set_default(self, config_id: UUID) -> None:
         """将指定配置设为默认，并取消其他配置的默认状态"""
+        # 部分唯一索引即时校验；不能依赖 ORM 按主键 flush 时先清除旧默认。
+        # 两次 UPDATE 仍在调用方同一事务内，外部不会看到中间的无默认状态。
         await self._session.execute(
-            select(AIProviderConfigModel).where(AIProviderConfigModel.is_default.is_(True))
+            update(AIProviderConfigModel)
+            .where(AIProviderConfigModel.is_default.is_(True))
+            .values(is_default=False)
         )
-        result = await self._session.execute(select(AIProviderConfigModel))
-        for model in result.scalars().all():
-            model.is_default = model.id == config_id
+        await self._session.execute(
+            update(AIProviderConfigModel)
+            .where(AIProviderConfigModel.id == config_id)
+            .values(is_default=True)
+        )
         await self._session.flush()
 
     async def count(self) -> int:

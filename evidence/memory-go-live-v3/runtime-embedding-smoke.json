@@ -1,0 +1,5 @@
+{
+  "status": "passed",
+  "dimensions": 1024,
+  "model": "Qwen/Qwen3-Embedding-8B"
+}

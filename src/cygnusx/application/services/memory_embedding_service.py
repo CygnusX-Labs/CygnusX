@@ -16,6 +16,7 @@ from cygnusx.infrastructure.database.models.agent_memory import AgentMemoryModel
 
 Storage = Literal["facts", "legacy"]
 BackfillMode = Literal["missing", "mismatch"]
+BackfillStatus = Literal["active", "archived", "superseded"]
 _meter = get_meter("cygnusx.memory")
 _mismatch = _meter.create_gauge(
     "memory.embedding_model_mismatch_rows", description="最近采样 active 行中模型标识不匹配数量"
@@ -105,9 +106,13 @@ class MemoryEmbeddingService:
         *,
         mode: BackfillMode = "missing",
         dry_run: bool = True,
+        statuses: tuple[BackfillStatus, ...] = ("active",),
     ) -> dict[str, Any]:
         if mode not in {"missing", "mismatch"}:
             raise ValueError("Invalid backfill mode")
+        if not statuses or any(s not in {"active", "archived", "superseded"} for s in statuses):
+            raise ValueError("Invalid backfill statuses")
+        statuses = tuple(dict.fromkeys(statuses))
         if not self.model_name:
             return {"status": "disabled", "updated": 0, "reason": "embedding_model_not_configured"}
         before = await self.coverage(publish=False)
@@ -117,13 +122,19 @@ class MemoryEmbeddingService:
             "target_model": self.model_name,
             "before": before,
         }
-        pending = before["missing"] if mode == "missing" else before["pending"]
-        if dry_run:
-            return {**base, "status": "dry_run", "pending": pending, "updated": 0}
         table = self.table
         condition: ColumnElement[bool] = table.embedding.is_(None)
         if mode == "mismatch":
             condition = or_(condition, table.embedding_model.is_distinct_from(self.model_name))
+        selected_pending = (
+            select(func.count()).select_from(table).where(table.status.in_(statuses), condition)
+        )
+        pending = before["missing"] if mode == "missing" else before["pending"]
+        if statuses != ("active",):
+            pending = int(await self.db.scalar(selected_pending) or 0)
+            base["selection_statuses"] = list(statuses)
+        if dry_run:
+            return {**base, "status": "dry_run", "pending": pending, "updated": 0}
         # Capture scalars before external calls, so ORM synchronization cannot erase
         # the optimistic conditions used to detect concurrent edits/archives/backfills.
         rows = (
@@ -137,8 +148,9 @@ class MemoryEmbeddingService:
                         table.content,
                         table.embedding,
                         table.embedding_model,
+                        table.status,
                     )
-                    .where(table.status == "active", condition)
+                    .where(table.status.in_(statuses), condition)
                     .order_by(table.id)
                     .limit(max(1, min(limit, 500)))
                 )
@@ -163,7 +175,7 @@ class MemoryEmbeddingService:
                     table.user_id == row["user_id"],
                     table.agent_id.is_not_distinct_from(row["agent_id"]),
                     table.project_id.is_not_distinct_from(row["project_id"]),
-                    table.status == "active",
+                    table.status == row["status"],
                     table.content == row["content"],
                     table.embedding_model.is_not_distinct_from(row["embedding_model"]),
                     table.embedding.is_(None)
@@ -179,6 +191,8 @@ class MemoryEmbeddingService:
             else:
                 updated += 1
         after = await self.coverage(publish=False)
+        if statuses != ("active",):
+            base["remaining_pending"] = int(await self.db.scalar(selected_pending) or 0)
         # Transaction ownership stays with the task/CLI caller.
         return {
             **base,

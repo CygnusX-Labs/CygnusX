@@ -2,9 +2,9 @@
 
 > **用途**：记录现阶段知识库模块的完整实现方式——数据模型、内容导入、页面展示、编辑审核流、AI 助手检索集成与 AI 配置中心管理入口。
 >
-> **最后核对**：2026-10-20
+> **最后核对**：2026-10-22
 >
-> **状态说明**：本文以当前工作区代码为准，知识检索已接入 pgvector 分块索引。代码状态不证明真实 PostgreSQL/Provider 的运行性能或生产准入；检索边界见 §6.4。
+> **状态说明**：知识检索使用现有 PostgreSQL/pgvector，Qwen 真实正文入库与语义召回已在隔离验收库通过三篇小样本验证；正式知识库尚未批量向量化，当前 Web 自动索引开关关闭。代码、运行配置、全库状态与小样本证据分别记录，部署和验收快照见 §9，检索边界见 §6.4。
 
 > **适用范围**：实验室知识库页面、单细胞知识库、AI 助手 `knowledge_search` 工具、AI 配置中心「知识库」管理卡片。
 
@@ -24,10 +24,13 @@ flowchart TB
     Doc --> Rev[doc_revisions\ncurrent_rev / pending_rev]
     Rev --> Review{审核状态}
     Review -->|发布| Index[KnowledgeIndexService\n切块 · embedding · 索引]
-    Index --> Chunks[(kb_chunks: section + content + model-tagged vector)]
+    Index --> DocEmbedding[LiteLLMProvider\n文档 embedding · 当前 Qwen/1024 维]
+    DocEmbedding --> Chunks[(kb_chunks: section + content + model-tagged vector)]
     Review --> Audit[doc_audit_logs · editors · issues]
     Doc --> Lab[实验室知识库页面\nshow_in_lab + is_enabled]
     Chunks --> Search[VectorRetrievalService\npublished + KB/document project scope]
+    Search --> QueryEmbedding[LiteLLMProvider\n同模型查询 embedding]
+    QueryEmbedding --> Search
     Search --> Tool[knowledge_search function tool]
     Tool --> Agent[Chat / Studio / Worker Agent]
     Lab --> Reader[DocTree · Reader · Editor]
@@ -106,6 +109,18 @@ PostgreSQL
 静态附件通过 /docs-static 提供；索引时 KnowledgeAssetService 可将可读附件内容补入派生 chunk，原始附件与版本化 Markdown 正文仍按各自存储路径管理。
 ```
 
+### 2.1 原始资料、修订正文与向量的存储边界
+
+| 载体 | 位置与用途 |
+| --- | --- |
+| 原始知识文件 | 仓库相对目录 `docs/knowledge/`；本机为 `/home/zj/zj_code_libarary/OmicHub/docs/knowledge`，保存 Markdown、PDF、图片、代码、数据与压缩归档 |
+| 发布正文 | `omichub` 数据库的 `kb_documents` + `doc_revisions`；以已发布的 `current_rev` 为索引输入，不因磁盘文件存在而自动进入检索 |
+| 知识向量 | 同一数据库 `kb_chunks.embedding vector(1024)`；章节、正文、模型标签与引用元数据同表保存 |
+| 用户记忆向量 | `memory_facts.embedding`，另有 legacy `agent_memories.embedding`；与知识库共用 PostgreSQL 和 embedding Provider，不共用业务表或权限语义 |
+| PostgreSQL 物理持久化 | 当前 `cygnusx-db` 使用宿主机 bind mount；实际目录与容器映射以[数据库架构 §4.4.1](CygnusX_database_architecture.md#441-当前部署的向量持久化位置)为准 |
+
+Qwen 是生成向量的模型，pgvector 是保存和检索向量的数据库扩展；当前没有迁移到新的向量引擎。`docs/knowledge/` 不是 PostgreSQL 数据目录，向量也不以独立文件写回原文目录。数据库与原始资料需要分别纳入备份；保留数据库目录不等于已备份全部附件。
+
 ---
 
 ## 3. 数据模型
@@ -171,17 +186,38 @@ PostgreSQL
 5. 写入 `kb_documents`（status=1 直接发布，`kb_id='scseq'`）+ `doc_revisions` + `doc_editors`；
 6. `scseq` 知识库行不存在时兜底自建（防库被误删后导入失败）。
 
-**原始 md 文件不动**，重写后的内容只写 DB；附件（PDF/R/数据文件）不入库，经 `/docs-static` 直接下载。
+**原始 Markdown 与附件文件不动**，重写后的正文写入 DB 修订；附件实体经 `/docs-static` 提供。支持的 PDF/DOCX/PPTX/图片可在索引时提取文本进入衍生 chunk，R 脚本、Notebook、原始矩阵和压缩包没有统一的正文解析入口，不能把磁盘总字节直接视为可向量化文本量。
 
 ### 4.2 页面展示配置
 
-`docs_service.list_knowledge` 从数据库读取属于 `show_in_lab=true` 且 `is_enabled=true` 知识库的文档；`docs/knowledge/meta.yaml` 用于页面标题等展示配置，不会把未入库文档追加到导航，也不构成 AI 检索索引。AI 检索数据源是已发布文档的 `kb_chunks`。
+`docs_service.list_knowledge` 从数据库读取属于 `show_in_lab=true` 且 `is_enabled=true` 知识库的文档；`docs/knowledge/meta.yaml` 用于页面展示配置，也由 `scripts/sync_knowledge_from_files.py` 读取显式条目及 `collections`（当前包含 `wiki/` 集合）。配置文件本身不构成 AI 检索索引；文件经导入/发布后，已发布文档的 `kb_chunks` 才是 AI 检索数据源。因此数据库文档数与 `docs/knowledge/**/*.md` 文件数不是同一统计口径。
 
 ### 4.3 发布索引与增量对齐
 
-`DocsService` 在文档初次发布和审核通过时，将新 `current_rev` 正文交给 `KnowledgeIndexService.index_document()`，同一数据库事务中删除该文档旧 chunks、按 Markdown 标题切分并写新 chunks；写入失败随发布事务回滚。每个 section 按最多 1800 字符切片，无 chunk overlap；chunk 内容哈希与 embedding 模型标签用于对账。
+`DocsService` 在文档初次发布和审核通过时，将新 `current_rev` 正文交给 `KnowledgeIndexService.index_document()`，同一数据库事务中删除该文档旧 chunks、按 Markdown 标题切分并写新 chunks；数据库写入失败随发布事务回滚。每个 section 按最多 1800 字符切片，无 chunk overlap；chunk 内容哈希与 embedding 模型标签用于对账。
 
-Web 启动后，`KNOWLEDGE_AUTO_REINDEX_ENABLED=true`（Settings 默认 true）异步扫描当前已发布版本。多实例用 PostgreSQL advisory lock 避免重复重建；`ensure_document_indexed()` 比较 chunk 顺序、内容哈希和模型标签，只重建变化文档。此任务失败会记录告警日志但不阻塞 Web 启动。缺 embedding 模型或 Provider 生成失败时仍保存无向量 chunk，后续检索可走关键词路径。
+`src/cygnusx/main.py` 的 `_auto_reindex_knowledge()` 在 `KNOWLEDGE_AUTO_REINDEX_ENABLED=true` 时，于 Web 启动后通过 `asyncio.create_task()` 执行一次已发布版本的增量对齐。多实例用 PostgreSQL advisory lock 避免重复重建；`ensure_document_indexed()` 比较 chunk 顺序、内容哈希和模型标签，只重建变化文档。任务异常记录警告，不阻塞 Web 启动。
+
+| 开关/操作 | 当前行为 |
+| --- | --- |
+| Settings 默认值 | `knowledge_auto_reindex_enabled=true`（`core/config.py`） |
+| 2026-10-22 当前 Web 环境 | `KNOWLEDGE_AUTO_REINDEX_ENABLED=false`，启动时跳过自动索引 |
+| 仅 restart 当前容器 | 沿用容器已有环境，不会因宿主机 `.env` 修改自动切换开关 |
+| 修改 `.env` 后 force-recreate Web | 新环境进入容器；若开关为 true，启动后触发一次对齐 |
+| Web 停止/重建 | 进程内任务被中断；没有独立队列任务、持久进度或断点续跑检查点 |
+
+这是 Web 进程内的一次性后台协程，不是 Celery/Beat 定时任务。当前启动任务在整轮对齐后统一 `commit`；中断会使本事务尚未提交的变更回滚，已产生的模型调用费用不能回滚，下一次启动会重新对账。
+
+embedding 未配置或生成失败时仍保存无向量 chunk。已配置模型但生成失败时，模型标签仍可能非空；增量比较不检查 `embedding IS NULL`，因此可能将失败块视为已对齐。后续检索虽可回退关键词，但不能据模型标签判断向量已就绪。
+
+### 4.4 手动同步与重建入口
+
+- `scripts/sync_knowledge_from_files.py`：同步 meta 声明的文件/集合，内容变化后创建修订；源文件缺失时跳过，没有自动删除对账。
+- `scripts/import_scseq_knowledge.py`：路径哈希决定 doc_id；已有文档直接跳过，不能用重复导入代替内容/索引更新。
+- `scripts/import_{atacseq,rnaseq,qc,cloud}_knowledge.py`：对应专题的专用导入路径，行为以各脚本为准。
+- `scripts/reindex_knowledge_vectors.py` / `make knowledge-reindex`：重建已发布正文及附件 chunk；`--limit` 按文档计数，默认 10000，不能据此限定 embedding 调用数。当前脚本使用应用会话工厂，无专用维护 DSN、dry-run、持久进度和模型调用预算保护。
+
+这些入口是现有运维工具，不表示全库入库已执行。本轮隔离小样本的 12 次 HTTP 尝试上限只存在于验收脚本，不是业务重建脚本已有能力。
 
 ---
 
@@ -225,9 +261,18 @@ Chat 可从多个运行时入口调用该工具，最终复用 `_knowledge_searc
 | 不是双路并集/RRF | 向量候选存在时，关键词只重排向量候选；关键实体对应的其他 chunk 可能未进入候选 |
 | 600 字符摘录 | 模型只看到局部片段，复杂章节上下文可能不足 |
 | 单 query | 不自动拆分/扩展多条查询，召回受模型给出的 query 质量影响 |
-| 共享 embedding 配置 | 知识 chunk 与个人记忆使用独立表和索引，但共用 `AGENT_MEMORY_EMBEDDING_MODEL`；换模型须重建知识索引并分别评估两类召回 |
+| 共享模型且知识 SQL 未过滤模型标签 | 知识 chunk 与个人记忆使用独立表和索引，但共用 embedding 模型/Provider/维度；知识向量查询仅排除空向量，未限定 `embedding_model`，换模型需同步处理旧向量，不能混用同维度的不同向量空间 |
+| 无显式知识相似度门槛 | 当前直接按 cosine 候选排序，未设置知识检索的 `min_similarity` |
+| 工具结果预算不统一 | LangGraph 普通工具 JSON 按 4000 字符截断；8 条 600 字符摘录加元数据可能被截断，其他运行时处理不完全相同 |
+| 私有知识访问边界未闭环 | AI 检索有项目过滤，但无用户级知识 ACL；页面按 KB 展示开关读取，整个 `docs/` 的静态挂载由认证 `/docs` 前缀放行，不能将这些机制解释为私有附件权限 |
 
-**当前能力边界**：pgvector 分块索引、关键词回退、关键词候选重排和可追溯引用已接入；双路 RRF、检索质量基线、真实 pgvector 查询计划与生产延迟验收尚未完成。
+**当前能力边界**：pgvector 分块索引、关键词回退、关键词候选重排和可追溯引用已接入；隔离库真实 Qwen 正文写入与向量召回已验证。全库向量覆盖、双路 RRF、质量基线、生产规模 EXPLAIN/P95 和可靠后台入库仍未验收。
+
+### 6.5 与个人记忆共处的上下文契约
+
+`AgentMemoryService.build_prompt_context_v2()` 在工具调用前将用户记忆追加到系统提示词，并使用 `<user_memory>` 明示其可能不可信、过时、不能作为指令。代码默认总预算 6000 字节，blocks/episode 配额分别为 2800/3200 字节；实际分配先预留 episode，再装配 blocks 和剩余事实。
+
+知识库结果由 `studio_tools._knowledge_search()` 返回普通 JSON，随后作为 `role=tool` 消息进入模型上下文。两者处于同一轮消息序列，但没有统一来源排序、跨来源字节预算或知识专用的等价不可信包装。L4 Manager 直接读取个人记忆；子 Agent/研究计划可调用知识工具，尚不是统一的记忆与知识检索网关。记忆侧完整契约见[记忆架构](CygnusX_memory_architecture.md)。
 
 ---
 
@@ -261,11 +306,52 @@ Chat 可从多个运行时入口调用该工具，最终复用 `_knowledge_searc
 
 | 层 | 文件 |
 |---|---|
-| 模型 | `infrastructure/database/models/knowledge_base.py`、`knowledge_document.py`、`knowledge_revision.py`、`knowledge_editor.py`、`knowledge_audit_log.py`、`knowledge_issue.py` |
-| 迁移 | `alembic/versions/o3p4q5r6s7t8_add_knowledge_bases.py` |
+| 模型 | `infrastructure/database/models/knowledge_base.py`、`knowledge_document.py`、`knowledge_revision.py`、`knowledge_chunk.py`、`knowledge_editor.py`、`knowledge_audit_log.py`、`knowledge_issue.py` |
+| 迁移 | `alembic/versions/o3p4q5r6s7t8_add_knowledge_bases.py`、`p4q5r6s7t8u9_add_kb_chunks.py`、`j4k5l6m7n8o9_add_pgvector_project_boundaries.py` |
 | 用户侧 API | `api/v1/docs.py` + `application/services/docs_service.py` |
 | 管理侧 API | `api/v1/admin/knowledge_bases.py` + `application/services/knowledge_base_service.py` + `application/schemas/knowledge_base.py` |
-| AI 检索 | `application/services/studio_tools.py`（`_knowledge_search`）、`application/services/chat_service.py`（工具 schema / 系统提示 / 分发 / `_knowledge_search_chat`） |
-| 导入脚本 | `scripts/import_scseq_knowledge.py` |
+| 索引与附件 | `application/services/knowledge_index_service.py`、`knowledge_asset_service.py`、`knowledge_bootstrap_service.py` |
+| AI 检索 | `application/services/vector_retrieval_service.py`、`studio_tools.py`（`_knowledge_search`）、`chat/runtime_support.py`（`_knowledge_search_chat`） |
+| 导入与重建脚本 | `scripts/sync_knowledge_from_files.py`、`import_scseq_knowledge.py`、`import_qc_knowledge.py` 等分库导入脚本、`reindex_knowledge_vectors.py` |
 | 前端 | `views/KnowledgeView.vue` + `components/knowledge/*`（用户侧）；`components/admin/KnowledgeResourceTab.vue` + `api/admin/knowledgeBase.ts` + `views/AdminAIResourceCenterView.vue`（管理侧） |
-| 静态附件 | `main.py:368-371`（`docs/` → `/docs-static`） |
+| 启动对齐与静态附件 | `main.py`（`_auto_reindex_knowledge`；`docs/` → `/docs-static` 挂载） |
+
+---
+
+## 9. 当前部署与 Qwen 小样本验证（2026-10-22）
+
+本节是本次调查/测试的时点快照，不是运行时常量或全量准入声明。当前模型为 `Qwen/Qwen3-Embedding-8B`，通过独立 OpenAI-compatible Provider 生成 1024 维向量；存储仍使用现有 PostgreSQL/pgvector。
+
+### 9.1 源语料与正式库状态
+
+本地 `docs/knowledge/` 有 2029 个常规文件、604 个子目录、24,889,068,946 字节（约 23.18 GiB），包含 308 篇 Markdown、386 个 PDF；根目录 `sc-seq.zip` 占总字节约 66.46%。统计未展开压缩包。正文、附件、代码、原始数据与压缩归档混合存放，不能把全部 23.18 GiB 当作待向量化正文。
+
+正式库 `omichub` 的只读快照与小样本前后复核均为：6 个知识库、367 篇文档、475 个修订、2778 个 chunk；仅 158 篇文档有 chunk，现有 chunk 的向量与模型标签全部为空。
+
+| 知识库 | 文档 | chunk | 有向量 chunk |
+| --- | ---: | ---: | ---: |
+| lab | 71 | 673 | 0 |
+| scseq | 209 | 0 | 0 |
+| qc | 63 | 1513 | 0 |
+| cloud | 23 | 562 | 0 |
+| atacseq | 1 | 30 | 0 |
+| 其余 1 个知识库 | 0 | 0 | 0 |
+| 合计 | 367 | 2778 | 0 |
+
+数据库外键层面的孤立 chunk 为 0；Web 环境中 4 篇文档的登记源路径不可访问，对应 97 个 chunk，尚不能据此判定文件已删除。个人记忆已完成的向量回填不改变本表，也不能用于证明知识库全量向量化已完成。
+
+### 9.2 三篇正文的真实入库与召回
+
+测试使用正式库中已发布的三个修订正文，只读读取源库，在独立 Stage 0 PostgreSQL 的 `cygnusx_maint` 中创建临时 schema。未解析附件，未写正式库，未修改生产开关。
+
+| 文档 | 已提交向量块 | 查询 Top 1 | Top 1 cosine |
+| --- | ---: | --- | ---: |
+| FAST5 | 3 | 对应文档 | 0.737385 |
+| TOML | 1 | 对应文档 | 0.746265 |
+| bwtool | 2 | 对应文档 | 0.806552 |
+
+6 个块经提交后在新会话核验，均为 1024 维且模型标签正确。3 次查询均执行真实向量 SQL，关键词回退次数为 0；重复增量索引跳过三篇且额外模型调用为 0。真实 embedding HTTP 请求共 9 次（全部 200），返回 usage 合计 653 tokens；金额未查询，不记作 0。测试临时 schema 已删除，源库前后聚合计数保持。
+
+正式实例为 PostgreSQL 14 / pgvector 0.8.6；此次隔离实例为 PostgreSQL 15 / pgvector 0.8.7。该结果证明小样本正文可生成向量、提交入库并召回，不证明全库语义质量、附件覆盖、生产规模性能或后台任务可靠性。
+
+证据：[计划](../evidence/knowledge-qwen-pilot-20261022/plan.json)、[结果](../evidence/knowledge-qwen-pilot-20261022/result.json)、[审计](../evidence/knowledge-qwen-pilot-20261022/audit.json)、[调用台账](../evidence/knowledge-qwen-pilot-20261022/call-ledger.json)。验收脚本不属于生产启动或定时任务，容器重启不会自动重跑这次测试。

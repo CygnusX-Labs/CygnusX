@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -16,6 +18,8 @@ class ProjectMetaDTO(BaseModel):
     slug: str
     description: str = ""
     customer: str | None = None
+    status: str = "active"
+    settings: dict[str, Any] | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -61,3 +65,15 @@ class ProjectOverviewResponse(BaseModel):
     project: ProjectMetaDTO
     sessions: ProjectSessionListDTO
     runs: list[ProjectRunItemDTO] = Field(default_factory=list)
+
+
+class ProjectCapability(BaseModel):
+    enabled: bool
+    allowed: bool
+    reason: Literal["SERVICE_DISABLED", "NO_PERMISSION", "AVAILABLE"]
+
+
+class ProjectCapabilityStatus(BaseModel):
+    research_plan: ProjectCapability
+    research_delivery_read: ProjectCapability
+    project_export: ProjectCapability

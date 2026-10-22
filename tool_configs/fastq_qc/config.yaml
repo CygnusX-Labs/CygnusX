@@ -65,7 +65,7 @@ multiqc:
   timeout: 1800
 
 storage:
-  root: "/data/omichub/qc/tasks"
+  root: ""  # 由 STORAGE_PATH 派生 qc/tasks
   subdirs:
     - "input"
     - "output"

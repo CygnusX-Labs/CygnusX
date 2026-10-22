@@ -9,8 +9,9 @@ tool_configs/enrichments/species_config.yaml，仓库内源码管控，仿 flows
  （前端物种下拉降级为空，不影响平台其它功能）；
 - 改文件后由加载器 mtime 自动热重载，无需重启。
 
-物种可选声明本地 GO OBO/注释和 KEGG 基因 ID 映射。Web 服务仅调度 R Docker
-容器；容器使用 clusterProfiler 读取这些参考文件完成分析。
+物种可选声明本地 GO OBO/注释和 KEGG 基因 ID 映射；相对路径以配置的
+reference_genomes_yaml 所在目录为根。Web 服务仅调度 R Docker 容器；
+容器使用 clusterProfiler 读取这些参考文件完成分析。
 """
 
 from __future__ import annotations
@@ -126,6 +127,12 @@ class EnrichmentConfigManager:
             raw = self._load_yaml()
             try:
                 self._config = EnrichmentConfig(**raw)
+                reference_dir = Path(get_settings().reference_genomes_yaml).absolute().parent
+                for species in self._config.species_list:
+                    for field in ("go_obo", "go_annotation", "kegg_id_map"):
+                        value = getattr(species, field)
+                        if value and not Path(value).is_absolute():
+                            setattr(species, field, str(reference_dir / value))
             except Exception:
                 # 字段不合法时回退默认，避免拖垮整个 API
                 self._config = EnrichmentConfig()

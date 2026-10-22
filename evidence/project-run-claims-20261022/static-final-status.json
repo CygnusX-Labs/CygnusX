@@ -1,0 +1,11 @@
+{
+  "ruff-feature-final": {
+    "exit_code": 0
+  },
+  "mypy-feature-final": {
+    "exit_code": 1
+  },
+  "migration-check-final": {
+    "exit_code": 0
+  }
+}

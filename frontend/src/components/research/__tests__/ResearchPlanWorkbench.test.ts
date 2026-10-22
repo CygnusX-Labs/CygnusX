@@ -5,6 +5,17 @@ import ResearchPlanWorkbench from '@/components/ResearchPlanWorkbench.vue'
 import { researchPlansApi, type ResearchPlan } from '@/api/researchPlans'
 vi.mock('@/api/researchPlans', () => ({ researchPlansApi: { list: vi.fn(), get: vi.fn(), review: vi.fn(), advance: vi.fn(), control: vi.fn(), events: vi.fn() } }))
 beforeEach(() => vi.clearAllMocks())
+
+it.each([
+  [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '服务未启用'],
+  [{ response: { status: 403 } }, '当前用户无权限'],
+  [new Error('private'), '请求失败'],
+])('classifies plan loading failure (%s)', async (error, text) => {
+  vi.mocked(researchPlansApi.list).mockRejectedValueOnce(error)
+  const card = mount()
+  try { await settle(); expect(card.host.textContent).toContain(text) }
+  finally { card.close() }
+})
 function plan(project: string, title = 'Synthetic plan'): ResearchPlan {
   return { schema_version: 'cygnusx.research_plan.v1', plan_id: 'plan', version: 1, project_id: project, digest: 'a'.repeat(64), status: 'READY_FOR_REVIEW', mode: 'PLAN_ONLY',
     draft: { schema_version: 'cygnusx.research_plan.v1', research_question: title, assumptions: [], steps: [{ step_id: 'discover', kind: 'DISCOVERY', goal: 'Read sources', depends_on: [], arguments: {}, bindings: [], failure_policy: 'STOP_AND_RECONCILE' }], budget: { max_tool_calls: 20, max_elapsed_seconds: 300, max_model_tokens: 10000, max_retries: 0, estimated_compute_seconds: null, estimated_storage_bytes: null } },

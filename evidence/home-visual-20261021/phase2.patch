@@ -1,0 +1,117 @@
+diff --git a/frontend/src/components/home/ResearchWorkbenchPanel.vue b/frontend/src/components/home/ResearchWorkbenchPanel.vue
+index ec640486..7695d9f7 100644
+--- a/frontend/src/components/home/ResearchWorkbenchPanel.vue
++++ b/frontend/src/components/home/ResearchWorkbenchPanel.vue
+@@ -97,8 +97,12 @@ function taskStatusLabel(status: Task['status']): string {
+   return '已取消'
+ }
+ 
+-function taskStatusType(status: Task['status']): 'info' | 'warning' | 'default' {
+-  return status === 'running' ? 'info' : status === 'queued' ? 'warning' : 'default'
++function taskStatusTone(status: Task['status']): string {
++  if (status === 'running') return 'running'
++  if (status === 'success') return 'completed'
++  if (status === 'queued' || status === 'pending') return 'pending'
++  if (status === 'failed') return 'failed'
++  return 'expired'
+ }
+ 
+ onMounted(() => void loadData())
+@@ -153,7 +157,7 @@ onMounted(() => void loadData())
+             :to="{ name: 'project-detail', params: { projectId: project.id } }"
+           >
+             <span class="workbench-item__main">
+-              <strong>{{ project.name }}</strong>
++              <strong :title="project.name">{{ project.name }}</strong>
+               <small>{{ project.description || '项目工作区' }}</small>
+             </span>
+             <span class="workbench-item__meta">{{ formatTime(project.updated_at || project.created_at) }}</span>
+@@ -197,10 +201,10 @@ onMounted(() => void loadData())
+               :to="{ name: 'task-detail', params: { taskId: task.id } }"
+             >
+               <span class="workbench-item__main">
+-                <strong>{{ task.name }}</strong>
++                <strong :title="task.name">{{ task.name }}</strong>
+                 <small>{{ task.flow_id }} · {{ formatTime(task.created_at) }}</small>
+               </span>
+-              <NTag size="small" round :type="taskStatusType(task.status)">
++              <NTag size="small" round :bordered="false" class="status-badge" :class="`status-badge--${taskStatusTone(task.status)}`">
+                 {{ taskStatusLabel(task.status) }}
+               </NTag>
+             </RouterLink>
+@@ -242,12 +246,12 @@ onMounted(() => void loadData())
+             :to="{ name: 'reports', query: { reportId: report.id } }"
+           >
+             <span class="workbench-item__main">
+-              <strong>{{ report.title }}</strong>
++              <strong :title="report.title">{{ report.title }}</strong>
+               <small>{{ report.flow_name }} · {{ formatTime(report.created_at) }}</small>
+             </span>
+-            <span class="report-state" :class="`report-state--${report.status}`">
++            <NTag size="small" round :bordered="false" class="status-badge" :class="`status-badge--${report.status === 'generating' ? 'running' : report.status}`">
+               {{ report.status === 'completed' ? '已完成' : report.status === 'generating' ? '生成中' : report.status === 'failed' ? '失败' : '已过期' }}
+-            </span>
++            </NTag>
+           </RouterLink>
+         </div>
+       </section>
+@@ -398,6 +402,7 @@ onMounted(() => void loadData())
+ .workbench-item__main {
+   display: flex;
+   min-width: 0;
++  flex: 1;
+   flex-direction: column;
+   gap: 4px;
+ }
+@@ -469,15 +474,29 @@ onMounted(() => void loadData())
+   text-decoration: none;
+ }
+ 
+-.report-state {
++.status-badge {
+   flex: 0 0 auto;
+-  color: var(--neutral-text-3);
+-  font-size: 10px;
++  height: 24px;
++  padding: 0 8px;
++  border-radius: 999px;
++  background: var(--badge-bg);
++  color: var(--badge-color);
++  font-size: 11px;
++  font-weight: 600;
++  line-height: 22px;
+ }
+ 
+-.report-state--completed { color: var(--color-success, #2a9d68); }
+-.report-state--generating { color: var(--color-warning, #d58a24); }
+-.report-state--failed { color: var(--color-error, #d84c5b); }
++.status-badge--running { --badge-bg: rgba(76, 141, 255, 0.12); --badge-color: #2459ad; }
++.status-badge--completed { --badge-bg: rgba(52, 211, 153, 0.12); --badge-color: #12734f; }
++.status-badge--expired { --badge-bg: rgba(148, 163, 184, 0.12); --badge-color: #526074; }
++.status-badge--pending { --badge-bg: rgba(245, 158, 11, 0.12); --badge-color: #875407; }
++.status-badge--failed { --badge-bg: rgba(248, 113, 113, 0.12); --badge-color: #af3030; }
++
++[data-theme="dark"] .status-badge--running { --badge-color: #7fb0ff; }
++[data-theme="dark"] .status-badge--completed { --badge-color: #34d399; }
++[data-theme="dark"] .status-badge--expired { --badge-color: #b8c2d1; }
++[data-theme="dark"] .status-badge--pending { --badge-color: #fcd37b; }
++[data-theme="dark"] .status-badge--failed { --badge-color: #fca5a5; }
+ 
+ .workbench-card :deep(.n-empty) {
+   padding-top: 18px;
+@@ -488,13 +507,9 @@ onMounted(() => void loadData())
+   50% { opacity: 1; }
+ }
+ 
+-@media (max-width: 1080px) {
++@media (width < 1280px) {
+   .workbench-grid {
+-    grid-template-columns: repeat(2, minmax(0, 1fr));
+-  }
+-
+-  .workbench-card:last-child {
+-    grid-column: span 2;
++    grid-template-columns: minmax(0, 1fr);
+   }
+ }
+ 

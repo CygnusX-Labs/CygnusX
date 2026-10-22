@@ -27,6 +27,11 @@ _settle_failed = _memory_meter.create_counter(
     description="记忆沉淀失败次数，失败区间保留待重试",
 )
 
+_settle_extract_failed = _memory_meter.create_counter(
+    "memory.settle_extract_failed",
+    description="记忆抽取失败次数，与 settle_failed 的 extraction 阶段同时计数",
+)
+
 _settle_succeeded = _memory_meter.create_counter(
     "memory.settle_succeeded",
     description="记忆沉淀成功区间数，作为失败率分母",
@@ -494,6 +499,7 @@ async def _settle_session_memory_v2(
             used_targets.add(target)
     except Exception as exc:
         _settle_failed.add(1, {"stage": "extraction"})
+        _settle_extract_failed.add(1)
         # Do not log response text: it can contain private conversation content.
         logger.warning(
             "memory.settle_failed session_id={} stage=extraction error_type={}",

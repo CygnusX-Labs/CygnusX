@@ -1,0 +1,12 @@
+{
+  "database": "cygnusx_maint",
+  "schema": "provider_switch_f48af63d8333",
+  "isolation": "existing disposable Stage 0 PostgreSQL; main business DB not used",
+  "real_model_calls": 0,
+  "cleanup": "verified schema absent",
+  "before": "IntegrityError reproduced on actual partial unique index",
+  "after": "passed",
+  "single_default": true,
+  "old_active_unchanged": true,
+  "repeated_sync": "passed"
+}

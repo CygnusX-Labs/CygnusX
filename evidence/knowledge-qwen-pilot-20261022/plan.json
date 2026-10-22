@@ -1,0 +1,40 @@
+{
+  "status": "dry_run",
+  "model": "Qwen/Qwen3-Embedding-8B",
+  "dimensions": 1024,
+  "documents": [
+    {
+      "source_doc_id": "qc-20f99f087681",
+      "label": "FAST5",
+      "source_path": "/app/docs/knowledge/qc/FAST5/FAST5.md",
+      "characters": 1121,
+      "planned_chunks": 3,
+      "content_sha256": "12396bcf2edd369e529fdd3ac2beb4c62e5523181539bbd9a6e5b5b6b68143bd"
+    },
+    {
+      "source_doc_id": "qc-34bc4b0f06ac",
+      "label": "TOML",
+      "source_path": "/app/docs/knowledge/qc/TOML/TOML.md",
+      "characters": 214,
+      "planned_chunks": 1,
+      "content_sha256": "f5555801e64f9dd257a16d0b8ddca22be60430dd05d84be349a5f3d64a0c1030"
+    },
+    {
+      "source_doc_id": "qc-f876cff3d623",
+      "label": "bwtool",
+      "source_path": "/app/docs/knowledge/qc/bwtool/bwtool.md",
+      "characters": 511,
+      "planned_chunks": 2,
+      "content_sha256": "b949944e295ff71622c6da904bfa8707b8305a66032a2582dd583ae10e569892"
+    }
+  ],
+  "planned_index_embeddings": 6,
+  "planned_query_embeddings": 3,
+  "max_http_attempts": 12,
+  "target_database": "cygnusx_maint",
+  "target_container": "cygnusx-memory-stage0-postgres-1",
+  "scope": "three existing published document bodies copied to disposable isolated schema; no source attachments",
+  "source_business_db_read_only": true,
+  "production_rows_written": 0,
+  "cleanup": "drop only the new random pilot schema"
+}

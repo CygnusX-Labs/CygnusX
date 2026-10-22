@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "read_only": true,
+  "memory_status_counts": [
+    {
+      "status": "active",
+      "rows": 1,
+      "missing": 0
+    },
+    {
+      "status": "archived",
+      "rows": 9,
+      "missing": 0
+    },
+    {
+      "status": "superseded",
+      "rows": 1,
+      "missing": 0
+    }
+  ],
+  "all_vectors": [
+    {
+      "status": "active",
+      "embedding_model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions": 1024,
+      "rows": 1
+    },
+    {
+      "status": "archived",
+      "embedding_model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions": 1024,
+      "rows": 9
+    },
+    {
+      "status": "superseded",
+      "embedding_model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions": 1024,
+      "rows": 1
+    }
+  ],
+  "remaining_marked_synthetic_sessions": 0,
+  "remaining_marked_synthetic_documents": 0
+}

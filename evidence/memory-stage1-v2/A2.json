@@ -1,0 +1,28 @@
+{
+  "faults": {
+    "dimension_mismatch": {
+      "embedding_null": true,
+      "model_null": true
+    },
+    "empty": {
+      "embedding_null": true,
+      "model_null": true
+    },
+    "non_finite": {
+      "embedding_null": true,
+      "model_null": true
+    },
+    "provider_error": {
+      "embedding_null": true,
+      "model_null": true
+    }
+  },
+  "metrics": {
+    "dimension_mismatch": 1,
+    "empty": 1,
+    "non_finite": 1,
+    "provider_error": 1
+  },
+  "real_calls": 0,
+  "provider_error_injection": "mock ConnectionError; no network endpoint request"
+}

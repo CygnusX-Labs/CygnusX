@@ -1,0 +1,51 @@
+[
+  {
+    "services": [
+      "web",
+      "beat"
+    ],
+    "exit_code": 0,
+    "command_without_secrets": [
+      "docker",
+      "compose",
+      "--project-name",
+      "cygnusx",
+      "--env-file",
+      ".env",
+      "-f",
+      "deploy/docker/docker-compose.yml",
+      "-f",
+      "deploy/docker/docker-compose.pgvector.yml",
+      "-f",
+      "deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "up",
+      "-d",
+      "--no-deps",
+      "--no-build",
+      "--pull",
+      "never",
+      "--force-recreate",
+      "web",
+      "beat"
+    ]
+  },
+  {
+    "services": [
+      "worker"
+    ],
+    "exit_code": 0,
+    "command_without_secrets": [
+      "scripts/worker-compose.sh",
+      "--project-name",
+      "cygnusx",
+      "up",
+      "-d",
+      "--no-deps",
+      "--no-build",
+      "--pull",
+      "never",
+      "--force-recreate",
+      "worker"
+    ]
+  }
+]

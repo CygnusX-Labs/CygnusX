@@ -1,0 +1,211 @@
+Protocol/file_protocol.md:16:   - 使用 `StoragePathFactory.create_project_run_dir(user_id, project_name, analysis_name)`。
+Protocol/file_protocol.md:35:├── projects/                      # 所有用户可见分析项目
+Protocol/file_protocol.md:55:users/<user_id>/projects/TnpD_建树项目/runs/phylogenetic-tree-20260803-163000/
+Protocol/file_protocol.md:58:目录名由 `cygnusx.infrastructure.storage.path_factory` 中的模块级函数 `project_slug()` 规范化：压缩连续空白、非法字符替换为 `_`、保留中文/字母/数字/`._-`、截断 80 字符，空名回退为 `untitled-project`。该规范仅用于路径安全，页面、任务历史和报告仍应保存并展示原始项目名称。
+Protocol/file_protocol.md:74:run_dir = path_factory.create_project_run_dir(
+Protocol/file_protocol.md:84:> **注意**：`create_project_run_dir()` 会原子创建运行根目录，并同步创建 `input`、`output`、`work`、`logs` 四个标准子目录。调用方仍必须调用 `ensure_directory_chain()` 登记用户可见目录；工厂不直接依赖数据库会话。
+Protocol/file_protocol.md:123:| 通用 Snakemake/分析流程 | `TaskSubmitRequest.name` | `create_project_run_dir(..., flow_id)`，工作目录为 `<run>/work`。 | ✅ 已接入 |
+Protocol/file_protocol.md:124:| DEG | `project_name` | `create_project_run_dir(..., "deg")`；结果统一写入 `<run>/output/`。 | ✅ 已接入 |
+Protocol/file_protocol.md:125:| 富集分析 | `project_name` | `create_project_run_dir(..., "enrichment")`；基因列表写入 `<run>/input/`。 | ✅ 已接入 |
+Protocol/file_protocol.md:147:  ├─ create_project_run_dir(user_id, project_name, "agentteams-case")
+Protocol/file_protocol.md:148:  ├─ ensure_directory_chain(user_id, projects/<slug>/runs/<run>/...)
+Protocol/file_protocol.md:154:  ├─ context_refs[].location = projects/<slug>/runs/<run>
+Protocol/file_protocol.md:184:run_dir = get_path_factory().create_project_run_dir(
+Protocol/file_protocol.md:203:  "location": "projects/mouse-sc/sn/runs/agentteams-case-20260819-120000",
+Protocol/file_protocol.md:206:    "run_path": "projects/mouse-sc/sn/runs/agentteams-case-20260819-120000"
+Protocol/file_protocol.md:246:- `projects/<project-slug>/runs/<run>/input/<name>`
+Protocol/file_protocol.md:247:- `projects/<project-slug>/runs/<run>/work/<name>`
+Protocol/file_protocol.md:248:- `projects/<project-slug>/runs/<run>/output/<name>`
+Protocol/file_protocol.md:249:- `projects/<project-slug>/runs/<run>/logs/<name>`
+Protocol/file_protocol.md:261:| `projects/...` / `inbox/...` 且文件存在 | 正常预览 |
+Protocol/file_protocol.md:288:| Case 绑定项目 | `project_ref` + `context_refs.location` + `projects/.../runs/...` Directory 记录 |
+Protocol/file_protocol.md:305:- [ ] 使用 `create_project_run_dir()` 创建新运行目录。
+Protocol/file_protocol.md:344:| v1.1 | 2026-08-03 | 对照代码实现核查后修订：明确 `project_slug()` 为模块级函数；说明工厂不强制创建子目录及调用方责任；§3.2/§6/§7 明确禁止 `results/` 等同义目录；§4.1 禁止 Service 层默认项目名；§5 增加各模块真实接入状态与 Studio/MAS 交付差距说明。 |
+frontend/src/views/DownloadsView.vue:133:  { label: 'projects/rna-seq', value: 'projects/rna-seq' },
+frontend/src/views/DownloadsView.vue:134:  { label: 'projects/variant', value: 'projects/variant' },
+frontend/src/api/projects.ts:6: * （GET /projects/{id}/overview：元数据 + 项目会话 + runs 目录历史分析）。
+frontend/src/api/projects.ts:81:    const res = await apiClient.get<ProjectItem>(`/projects/${projectId}`)
+frontend/src/api/projects.ts:93:    const res = await apiClient.patch<Record<string, unknown>>(`/projects/${projectId}`, { settings })
+frontend/src/api/projects.ts:106:    const res = await apiClient.get<ProjectOverview>(`/projects/${projectId}/overview`, {
+frontend/src/api/claimProvenance.ts:24:    return (await apiClient.post(`/projects/${encodeURIComponent(project)}/research-evidence/claim-provenance`, query, { signal })).data
+frontend/src/api/datasets.ts:11:const base = (project: string) => `/projects/${encodeURIComponent(project)}`
+frontend/src/api/projectDelivery.ts:21:const base = (project: string) => `/projects/${encodeURIComponent(project)}`
+frontend/src/api/researchDelivery.ts:24:    return (await apiClient.get(`/projects/${encodeURIComponent(projectId)}/research-delivery`, { signal })).data
+frontend/src/components/research/__tests__/AgentToolProposalCard.test.ts:20:  normalized_parameters: { accession: 'SRR123', target_directory: 'projects/a/downloads' },
+frontend/src/api/researchPlans.ts:22:const base = (project: string) => `/projects/${encodeURIComponent(project)}/research-plans`
+frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts:94:    expect(links).toContainEqual({ path: '/projects/first', query: { planId: 'history' } })
+frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts:95:    expect(links).toContainEqual({ path: '/projects/first', query: { planId: 'new-version' } })
+frontend/src/api/projectReport.ts:12:const base = (project: string) => `/projects/${encodeURIComponent(project)}/scientific-summary`
+frontend/src/layouts/DefaultLayout.vue:331:    if (item.key === 'projects') return route.path === '/projects' || route.path.startsWith('/projects/')
+src/cygnusx/infrastructure/database/models/project.py:4:物理落盘：``{data_root}/users/{user_id}/projects/{slug}/runs/{run-slug}/``。
+src/cygnusx/infrastructure/database/models/project.py:6:注意：Project 记录的是「用户可见的项目」，与 ``user_directories`` 中 path="projects/{slug}"
+src/cygnusx/infrastructure/database/models/project.py:36:    # 目录 slug（URL/路径安全），如 "COP1-HY5_Example"；由 project_slug() 生成
+scripts/poc/e2e_wp3_research_mode_sharing.py:438:                    storage_path=f"users/{user_id}/projects/p/runs/r/output/volcano.png",
+scripts/poc/e2e_wp2_artifact_manifest.py:205:        run_dir = factory.create_project_run_dir(user_id, PROJECT_NAME, "studio")
+scripts/poc/e2e_wp2_artifact_manifest.py:251:        for p in users_root.glob(f"*/projects/e2e-wp2-{HEX.lower()}"):
+frontend/src/router/index.ts:116:        path: 'projects/:projectId',
+tests/unit/test_project_report_selection.py:410:        base = f'/api/v1/projects/{env.project}/scientific-summary'
+src/cygnusx/infrastructure/storage/path_factory.py:11:- application/services/reproducible_report_service.py 审计报告 → projects/runs/audit-report-*
+src/cygnusx/infrastructure/storage/path_factory.py:12:- application/services/task_service.py          Flow 任务 → projects/{project}/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:16:- application/services/studio_context_service.py Studio 产物登记 → projects/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:17:- application/services/agentteams_service.py    协作室 Case → projects/runs/agentteams-case-*
+src/cygnusx/infrastructure/storage/path_factory.py:19:- tools/{enrichments,deg,gsea,blast,synteny,phylogenetic_tree}/service.py  各工具 → projects/runs/
+src/cygnusx/infrastructure/storage/path_factory.py:47:def project_slug(project_name: str, *, fallback: str = "untitled-project") -> str:
+src/cygnusx/infrastructure/storage/path_factory.py:120:    def projects_dir(self, user_id: str) -> Path:
+src/cygnusx/infrastructure/storage/path_factory.py:123:    def project_dir(self, user_id: str, project_slug: str) -> Path:
+src/cygnusx/infrastructure/storage/path_factory.py:124:        return self.projects_dir(user_id) / project_slug
+src/cygnusx/infrastructure/storage/path_factory.py:126:    def create_project_run_dir(
+src/cygnusx/infrastructure/storage/path_factory.py:134:        project = project_slug(project_name)
+src/cygnusx/infrastructure/storage/path_factory.py:135:        analysis = project_slug(analysis_name, fallback="analysis")
+src/cygnusx/infrastructure/storage/path_factory.py:136:        base = self.project_dir(user_id, project) / "runs"
+tests/unit/test_agentteams_data_tools.py:71:        def projects_dir(self, user_id):
+frontend/src/components/ResearchPlanWorkbench.vue:68:        <RouterLink :to="{path: `/projects/${plan.project_id}`, query: {planId: plan.plan_id}}">打开此计划版本</RouterLink>
+frontend/src/components/ResearchPlanWorkbench.vue:71:          <RouterLink :to="{path: `/projects/${plan.project_id}`, query: {planId: plan.superseded_by}}">查看新版本</RouterLink>
+tests/unit/test_download_execution_admission.py:48:                          target_directory="projects/owned/downloads")
+tests/unit/test_dataset_phase3_review.py:143:    path = factory.user_root(str(owner)) / "projects/owned/raw/sample1_R1.fastq"
+tests/unit/test_dataset_phase3_review.py:182:    assert prepared["parameters"]["raw_data_path"].startswith("directory://projects/owned/")
+tests/unit/test_dataset_phase3_review.py:231:    path = factory.user_root(str(owner)) / "projects/owned/data.zip"
+tests/unit/test_dataset_phase3_review.py:312:        path = factory.user_root(str(owner)) / "projects/owned" / name
+tests/unit/test_dataset_phase3_review.py:320:            directory="projects/owned",
+tests/unit/test_dataset_phase3_review.py:434:    route = f"/projects/{project}/import-proposals/{proposal['proposal_id']}"
+tests/unit/test_project_delivery.py:599:        base = f"/api/v1/projects/{env.project}"
+tests/unit/test_file_service.py:610:        d("projects/demo/runs"),
+tests/unit/test_agentteams_context_refs.py:79:            "location": "projects/mouse-sc/runs/agentteams-case-20260819-120000/output/delivery-summary.md",
+frontend/src/components/home/__tests__/ResearchWorkbenchPanel.test.ts:76:      { path: '/projects/:projectId', name: 'project-detail', component: { render: () => h('div') } },
+frontend/src/components/home/__tests__/ResearchWorkbenchPanel.test.ts:121:    expect(page.querySelector('a[href="/projects/project-1"]')).not.toBeNull()
+tests/unit/test_studio_platform_tools.py:419:    # 新路径归置到 projects/{title}/runs/studio-{timestamp}/output/ 下
+tests/integration/test_agentteams_artifact_lineage_api.py:124:        upstream_artifact_id="projects/p1/counts.tsv",
+tests/integration/test_agentteams_artifact_lineage_api.py:142:        {"artifact_id": "projects/p1/counts.tsv", "relation": "input_to"}
+tests/integration/test_reproducible_report_isolated.py:195:    assert path.is_relative_to(synthetic_rna.factory.projects_dir(str(owner)))
+tests/unit/test_agentteams_service.py:1547:                "location": "projects/mouse-sc/runs/agentteams-case-20260819-120000",
+tests/unit/test_agentteams_service.py:1548:                "meta": {"run_path": "projects/mouse-sc/runs/agentteams-case-20260819-120000"},
+tests/unit/test_agentteams_service.py:1557:    assert payload_refs[0]["location"].startswith("projects/")
+tests/unit/test_download_service.py:166:        target_directory="projects/rna-seq",
+tests/unit/test_download_service.py:190:    assert "projects/rna-seq" in created_task.work_dir
+tests/unit/test_research_claim_artifact_phase5.py:37:        directory="projects/owned",
+tests/unit/test_agent_tools_phase2.py:198:    assert proposal["normalized_parameters"]["target_directory"] == "projects/owned/downloads"
+tests/unit/test_session_project_binding.py:171:    assert (factory.project_dir(str(user_id), project["slug"]) / "runs").is_dir()
+tests/unit/test_download_registration_contract.py:110:    work = env.factory.user_root(str(env.owner)) / "projects/owned/downloads/SRR1"
+tests/unit/test_download_registration_contract.py:122:        directory="projects/owned/downloads",
+tests/unit/test_download_registration_contract.py:151:        env.factory.user_root(str(owner)) / "projects/owned/downloads" / f"task-{str(task.id)[:8]}"
+tests/unit/test_download_registration_contract.py:165:        directory="projects/owned/downloads",
+tests/unit/test_project_overview.py:41:    def project_dir(self, user_id: str, project_slug: str) -> Path:
+tests/unit/test_agentteams_rooms.py:1108:                    "location": "projects/mouse/runs/agentteams-case-20260820-010000",
+tests/unit/test_agentteams_rooms.py:1111:                        "run_path": "projects/mouse/runs/agentteams-case-20260820-010000",
+tests/unit/test_agentteams_rooms.py:1149:        def create_project_run_dir(self, user_id, project_name, analysis_name):
+tests/unit/test_agentteams_rooms.py:1196:    assert run_refs[0]["meta"]["run_path"].startswith("projects/")
+tests/unit/test_dataset_import_handoff.py:227:    folder = factory.user_root(str(owner)) / "projects/owned/downloads/SRR1"
+tests/unit/test_dataset_import_handoff.py:236:            directory="projects/owned/downloads",
+tests/unit/test_research_plan_storage_phase5.py:167:    path = f"/projects/{project}/research-plans/{view.plan_id}"
+tests/unit/test_execution_evidence_ri13.py:48:    work = factory.user_root(str(owner)) / "projects/owned/run/work"
+src/cygnusx/tools/phylogenetic_tree/service.py:158:        run_dir = get_path_factory().create_project_run_dir(
+src/cygnusx/application/schemas/project.py:3:供 ``GET /api/v1/projects/{project_id}/overview`` 使用。
+tests/unit/test_dataset_phase3.py:101:        (owner, "projects/owned/raw"),
+tests/unit/test_dataset_phase3.py:103:        (owner, "projects/second/raw"),
+tests/unit/test_dataset_phase3.py:104:        (other, "projects/foreign/raw"),
+tests/unit/test_research_delivery_phase4.py:572:        .filter_by(user_id=owner, directory="projects/owned/raw")
+src/cygnusx/application/services/project_delivery_service.py:895:        run = factory.create_project_run_dir(str(job.user_id), project.slug, "research-delivery")
+tests/unit/tools/test_enrichment_runner.py:92:    project_slug = service._project_slug(project_name)
+src/cygnusx/tools/enrichments/service.py:5:2. 创建项目运行目录 ``projects/{project}/runs/enrichment-时间戳/``；
+src/cygnusx/tools/enrichments/service.py:104:        project_slug_value = project_slug(normalized_project_name, fallback="enrichment-project")
+src/cygnusx/tools/enrichments/service.py:420:        """结果目录：users/{uid}/projects/{project}/runs/enrichment-时间戳/。"""
+src/cygnusx/tools/enrichments/service.py:423:        return get_path_factory().create_project_run_dir(user_id, project_name, "enrichment")
+src/cygnusx/application/services/workspace_archive_service.py:211:    agents_path = factory.project_dir(str(session.user_id), project.slug) / "AGENTS.md"
+src/cygnusx/application/services/workspace_archive_service.py:225:                f"- 项目目录: `projects/{project.slug}/`",
+src/cygnusx/application/services/file_service.py:5:  分析输出：{data_root}/users/{user_id}/projects/{project}/runs/{analysis-time}/output/...
+src/cygnusx/application/services/file_service.py:189:    （inbox/projects/raw_data/workspace/temp）标记 is_system=True，其余为用户数据目录。
+src/cygnusx/application/services/file_service.py:849:        """确保用户顶层系统子目录（inbox/projects/raw_data/workspace/downloads/temp）存在。"""
+src/cygnusx/application/services/file_service.py:852:            "projects": self._factory.projects_dir(str(user_id)),
+src/cygnusx/application/services/file_service.py:976:            # 跳过系统内部目录下的文件（tasks/projects/... 由各自服务登记）
+src/cygnusx/application/services/file_service.py:1032:        - ``user_root/{path}``（downloads/projects/... 布局）
+src/cygnusx/application/services/file_service.py:1104:        - 顶层命中 _SYNC_SKIP_USER_TOP_DIRS（tasks/projects/temp/results/raw）→ 跳过
+tests/unit/test_claim_provenance_ri10.py:243:    url = f"/api/v1/projects/{env.project}/research-evidence/claim-provenance"
+tests/unit/test_studio_sharing.py:218:        storage_path="users/u/projects/p/runs/r/output/volcano.png",
+src/cygnusx/application/services/agentteams_service.py:507:                if file_uuid is not None and not candidate.startswith(("projects/", "inbox/")):
+src/cygnusx/application/services/agentteams_service.py:518:                            if location.startswith(("projects/", "inbox/")):
+src/cygnusx/application/services/agentteams_service.py:545:        run_dir = factory.create_project_run_dir(
+src/cygnusx/application/services/agentteams_service.py:1101:        if not run_path or not run_path.startswith("projects/") or "/runs/" not in run_path:
+src/cygnusx/application/services/agentteams_service.py:1133:                elif location.startswith(("projects/", "inbox/")):
+tests/unit/test_project_summary_prototype.py:124:            f"/api/v1/projects/{env.project}/exports/{job.id}/summary-preview"
+src/cygnusx/application/services/agent_tool_gateway.py:503:            f"projects/{context.extra['project_slug']}/downloads"
+tests/unit/test_agentteams_artifact_lineage.py:56:            "projects/p1/input.fastq",
+tests/unit/test_agentteams_artifact_lineage.py:64:        {"artifact_id": "projects/p1/input.fastq", "relation": "input_to"},
+tests/unit/test_agentteams_artifact_lineage.py:244:                source_refs=[{"artifact_id": "projects/p1/counts.tsv", "relation": "input_to"}],
+tests/unit/test_agentteams_artifact_lineage.py:267:        assert deps[0].upstream_artifact_id == "projects/p1/counts.tsv"
+src/cygnusx/tools/blast/service.py:78:        return get_path_factory().create_project_run_dir(user_id, project_name, "blast") / "input"
+src/cygnusx/application/services/project_report_publication.py:100:        run = factory.create_project_run_dir(str(job.user_id), project.slug, "project-report")
+src/cygnusx/application/services/dataset_import_service.py:180:        directory = f"projects/{project.slug}/downloads"
+tests/unit/test_storage_path_factory.py:16:    assert project_slug(" TnpD / reference: gt05 ") == "TnpD_reference_gt05"
+tests/unit/test_storage_path_factory.py:17:    assert project_slug("../") == "untitled-project"
+tests/unit/test_storage_path_factory.py:24:    first_run = factory.create_project_run_dir("user-1", "TnpD 建树项目", "phylogenetic-tree")
+tests/unit/test_storage_path_factory.py:25:    second_run = factory.create_project_run_dir("user-1", "TnpD 建树项目", "phylogenetic-tree")
+src/cygnusx/application/services/project_archive_service.py:3:平台约定：每次分析归档到 ``users/{user_id}/projects/{slug}/runs/{分析名}-{时间戳}/``
+src/cygnusx/application/services/project_archive_service.py:62:            self.slug = project_slug(self.name)
+src/cygnusx/application/services/project_archive_service.py:214:        f"- 项目目录: `projects/{project.slug}/`",
+src/cygnusx/application/services/project_archive_service.py:379:    project_root = factory.project_dir(user_id, project.slug)
+src/cygnusx/application/services/project_archive_service.py:390:            "directory": f"projects/{project.slug}/runs/{run_dir.name}",
+src/cygnusx/application/services/project_archive_service.py:598:    run_dir = factory.create_project_run_dir(user_id, project.name, analysis_name)
+src/cygnusx/application/services/directory_service.py:75:            "projects": self._factory.projects_dir(uid),
+src/cygnusx/application/services/directory_service.py:101:        """幂等创建用户默认目录 inbox/projects/... 及物理目录。"""
+tests/unit/test_report_snapshot.py:84:    run_dir = factory.create_project_run_dir(str(owner), "synthetic-fixture", "rna")
+src/cygnusx/tools/deg/service.py:114:        project_slug_value = project_slug(normalized_project, fallback="deg-project")
+src/cygnusx/tools/deg/service.py:525:        """任务目录：users/{uid}/projects/{project}/runs/deg-时间戳/。"""
+src/cygnusx/tools/deg/service.py:528:        return get_path_factory().create_project_run_dir(user_id, project_name, "deg")
+tests/unit/test_project_archive_service.py:118:    assert f"projects/{project.slug}/" in content
+tests/unit/test_project_archive_service.py:168:    run_dir = factory.create_project_run_dir(uid, "TP53 项目", "studio")
+tests/unit/test_project_archive_service.py:223:    agents = (factory.project_dir(uid, project.slug) / "AGENTS.md").read_text(encoding="utf-8")
+tests/unit/test_project_archive_service.py:237:    agents_again = (factory.project_dir(uid, project.slug) / "AGENTS.md").read_text(
+tests/unit/test_project_archive_service.py:264:    run_dir = factory.create_project_run_dir(uid, "P", "overdrive")
+tests/unit/test_project_archive_service.py:285:    run_dir = factory.create_project_run_dir(uid, "我的项目", "studio")
+tests/unit/test_project_archive_service.py:312:    agents = (factory.project_dir(uid, "我的项目") / "AGENTS.md").read_text(encoding="utf-8")
+tests/unit/test_project_archive_service.py:359:    assert not factory.projects_dir(uid).exists() or not any(
+tests/unit/test_project_archive_service.py:360:        factory.projects_dir(uid).iterdir()
+tests/unit/test_project_archive_service.py:416:    agents = (factory.project_dir(uid, "TP53_项目") / "AGENTS.md").read_text(encoding="utf-8")
+src/cygnusx/application/services/chat/session_management.py:274:            slug = project_slug(name) or "default"
+src/cygnusx/application/services/agentteams_upgrade_advisor.py:13:根目录的 projects/... 或 workspace/... 路径，废弃裸 file://{uuid}——
+src/cygnusx/application/services/pipeline_result_service.py:138:        projects_root = self._factory.projects_dir(self.context.user_id).resolve()
+src/cygnusx/application/services/pipeline_result_service.py:347:            raise ValidationError("不支持的引用协议，应为工作区相对路径（projects/... 或 inbox/...）")
+src/cygnusx/application/services/scientific_report_job.py:179:    run_dir = factory.create_project_run_dir(str(job.user_id), project.slug, "scientific-report")
+src/cygnusx/application/services/project_service.py:4:``users/{user_id}/projects/{slug}/`` 目录，下挂多个 Run。
+src/cygnusx/application/services/project_service.py:9:- 从磁盘 ``projects/`` 目录回填缺失的 Project 记录（首次访问时懒初始化）
+src/cygnusx/application/services/project_service.py:94:        - ``slug`` 由 ``project_slug(name)`` 自动生成，保证路径安全
+src/cygnusx/application/services/project_service.py:95:        - 同步在 ``user_directories`` 登记 ``projects/{slug}`` 目录记录
+src/cygnusx/application/services/project_service.py:106:        slug = project_slug(name)
+src/cygnusx/application/services/project_service.py:125:        dir_path = f"projects/{slug}"
+src/cygnusx/application/services/project_service.py:140:        self._factory.project_dir(str(user_id), slug).mkdir(parents=True, exist_ok=True)
+src/cygnusx/application/services/project_service.py:141:        (self._factory.project_dir(str(user_id), slug) / "runs").mkdir(exist_ok=True)
+src/cygnusx/application/services/project_service.py:155:        slug = project_slug((name or "").strip())
+src/cygnusx/application/services/project_service.py:286:        dir_path = f"projects/{model.slug}"
+src/cygnusx/application/services/project_service.py:292:    # 回填：从磁盘 projects/ 目录读取缺失项目，写入 DB
+src/cygnusx/application/services/project_service.py:295:        """扫描 ``users/{user_id}/projects/`` 下的一级子目录，为缺失的创建 DB 记录。
+src/cygnusx/application/services/project_service.py:300:        projects_root = self._factory.projects_dir(str(user_id))
+src/cygnusx/application/services/project_overview_service.py:6:- 磁盘 ``projects/{slug}/runs/`` 下的历史分析运行目录扫描
+src/cygnusx/application/services/project_overview_service.py:183:        runs_dir = self._factory.project_dir(user_id, project_slug) / "runs"
+src/cygnusx/application/services/task_service.py:427:        新路径: users/{uid}/projects/{project}/runs/{flow}-{timestamp}/work/
+src/cygnusx/application/services/task_service.py:433:        run_dir = pf.create_project_run_dir(user_id, project_name, flow_id)
+src/cygnusx/application/services/chat_archive_service.py:97:        run_dir = factory.create_project_run_dir(
+src/cygnusx/tools/synteny/service.py:47:        work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "synteny")
+src/cygnusx/application/services/geo_processed_data_service.py:112:            directory = factory.project_dir(str(owner), project.slug) / "datasets"
+src/cygnusx/application/services/geo_processed_data_service.py:115:            stage = directory / ("expanded-" + project_slug(record.original_name) + "-" + sha[:12])
+src/cygnusx/api/v1/research_claims.py:19:    prefix="/projects/{project_id}/research-evidence", dependencies=[Depends(enabled)]
+src/cygnusx/tools/gsea/service.py:46:        work_dir = get_path_factory().create_project_run_dir(user_id, project_name, "gsea")
+src/cygnusx/tools/gsea/service.py:63:                "project_slug": project_slug(project_name, fallback="gsea"),
+src/cygnusx/api/v1/research_delivery.py:32:@router.post("/projects/{project_id}/scientific-summary/prepare")
+src/cygnusx/api/v1/research_delivery.py:42:@router.post("/projects/{project_id}/scientific-summary")
+src/cygnusx/api/v1/research_delivery.py:52:@router.get("/projects/{project_id}/scientific-summary/{job_id}")
+src/cygnusx/api/v1/research_delivery.py:72:@router.get("/projects/{project_id}/scientific-summary/{job_id}/preview")
+src/cygnusx/api/v1/research_delivery.py:86:@router.get("/projects/{project_id}/scientific-summary/{job_id}/download")
+src/cygnusx/api/v1/research_delivery.py:103:@router.get("/projects/{project_id}/exports/{job_id}/summary-preview", response_class=HTMLResponse)
+src/cygnusx/api/v1/research_delivery.py:130:@router.get("/projects/{project_id}/delivery-inventory")
+src/cygnusx/api/v1/research_delivery.py:139:@router.post("/projects/{project_id}/exports/prepare")
+src/cygnusx/api/v1/research_delivery.py:152:@router.post("/projects/{project_id}/exports", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:162:@router.get("/projects/{project_id}/exports/{job_id}", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:172:@router.post("/projects/{project_id}/exports/{job_id}/retry", response_model=ProjectExportStatus)
+src/cygnusx/api/v1/research_delivery.py:195:@router.get("/projects/{project_id}/exports/{job_id}/download")
+src/cygnusx/api/v1/research_delivery.py:216:@router.get("/projects/{project_id}/research-delivery")
+src/cygnusx/application/services/reproducible_report_service.py:439:        run_dir = factory.create_project_run_dir(str(job.user_id), project, "audit-report")
+src/cygnusx/application/services/studio_context_service.py:529:    run_dir = path_factory.create_project_run_dir(user_id, project_name, "studio")
+src/cygnusx/api/v1/datasets.py:38:BASE = "/projects/{project_id}/datasets"
+src/cygnusx/api/v1/datasets.py:40:IMPORT = "/projects/{project_id}/import-proposals"
+src/cygnusx/api/v1/datasets.py:224:@router.get("/projects/{project_id}/dataset-discovery/{accession}")
+src/cygnusx/api/v1/research_plans.py:26:router = APIRouter(prefix="/projects/{project_id}/research-plans", dependencies=[Depends(enabled)])

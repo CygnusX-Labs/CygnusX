@@ -1,0 +1,15 @@
+{
+  "source_WRITE_RUNTIME_ACCEPTED": false,
+  "config": {
+    "AGENT_ANALYSIS_WRITE_ENABLED": "false",
+    "ANALYSIS_SUBMIT_FROM_DATASET": "false"
+  },
+  "worker_paths_verified": false,
+  "worker_guard_error": "WORKER_PATHS_NOT_VERIFIED",
+  "frozen_digest_unchanged": true,
+  "confirmation": {
+    "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+    "status": "APPROVED",
+    "used": false
+  }
+}

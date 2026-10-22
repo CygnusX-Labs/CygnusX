@@ -1,0 +1,6 @@
+{
+  "recorded_http_claim_requests": 45,
+  "matching_request_audits": 109,
+  "every_recorded_outcome_has_durable_request_audit": true,
+  "path_comparison": "URL-decoded ASGI request paths"
+}

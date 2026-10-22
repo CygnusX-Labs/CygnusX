@@ -1,0 +1,4903 @@
+{
+  "lineage": {
+    "sql": "SELECT d.id AS dataset_id,d.user_id,d.project_id,d.status AS dataset_status,\n v.id AS version_id,v.status AS version_status,v.source_snapshot,v.review_annotations,v.handoff,\n l.id AS link_id,l.state AS link_state,l.task_id,l.handoff_hash,l.normalized_request,\n r.id AS run_id,r.project_id AS run_project_id,r.status AS run_status,r.request_key,r.attempt_number,\n r.archive_directory,r.archive_identity,r.archive_manifest_sha256,r.archive_metadata,r.plan_json\n FROM datasets d JOIN dataset_versions v ON v.dataset_id=d.id\n JOIN dataset_analysis_links l ON l.version_id=v.id\n JOIN platform_runs r ON r.plan_json->>'dataset_analysis_link_id'=l.id::text ORDER BY d.created_at",
+    "rows": [
+      {
+        "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "dataset_status": "HISTORICAL_CLAIMED",
+        "version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+        "version_status": "HISTORICAL_CLAIMED",
+        "source_snapshot": {
+          "historical_claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-already-claimed-20261022-020758",
+            "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+            "archive_identity": "64512:5152999",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "file_record_id": "f60020ea-691b-464a-b991-bd67c89084c9",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.218903+00:00",
+            "confirmation_id": "7989f398-2417-4a4c-8112-bf933130ab80",
+            "historical_only": true,
+            "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+            "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295"
+          }
+        },
+        "review_annotations": {
+          "historical_claim": {
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "reviewed_at": "2026-10-22T02:09:37.218903+00:00"
+          }
+        },
+        "handoff": {
+          "handoff_schema_version": "1.0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "source": [],
+          "ingestion": [],
+          "assets": [
+            {
+              "asset_id": "f6b50dd7-22c7-4c1b-944f-fb53b255fdc1",
+              "file_record_id": "f60020ea-691b-464a-b991-bd67c89084c9",
+              "asset_role": "archive",
+              "data_type": "UNKNOWN",
+              "format": "tsv",
+              "size": 23,
+              "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+              "checksum_status": "VERIFIED",
+              "availability": "AVAILABLE"
+            }
+          ],
+          "samples": [],
+          "validation": {
+            "dataset_ready": false,
+            "compatible_flow_ids": [],
+            "blocking_reasons": [
+              "ASSAY_REVIEW_REQUIRED",
+              "NO_MAPPED_SAMPLES"
+            ],
+            "worker_paths_verified": false
+          },
+          "provenance": {
+            "initiated_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "review_annotations": {
+              "historical_claim": {
+                "purpose": "Preserve explicit historical archive references; no new computation.",
+                "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+                "reviewed_at": "2026-10-22T02:09:37.218903+00:00"
+              }
+            },
+            "tool_invocation_ids": [],
+            "agent_session_ids": [],
+            "output_state": "NOT_REQUESTED"
+          },
+          "manifest_hash": "cc63d664af13880f2c85e7a1172734146dac5d54e34d0a197b3b516b1c4167e1"
+        },
+        "link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+        "link_state": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "handoff_hash": "cc63d664af13880f2c85e7a1172734146dac5d54e34d0a197b3b516b1c4167e1",
+        "normalized_request": {
+          "operation": "historical.claim",
+          "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-already-claimed-20261022-020758",
+            "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+            "archive_identity": "64512:5152999",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "file_record_id": "f60020ea-691b-464a-b991-bd67c89084c9",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.218903+00:00",
+            "confirmation_id": "7989f398-2417-4a4c-8112-bf933130ab80",
+            "historical_only": true,
+            "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+            "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295"
+          }
+        },
+        "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+        "run_project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "run_status": "HISTORICAL_CLAIMED",
+        "request_key": "archive:bd94f4ce-3471-44c8-9d31-ba02437d5454:2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+        "attempt_number": 0,
+        "archive_directory": "legacy-already-claimed-20261022-020758",
+        "archive_identity": "64512:5152999",
+        "archive_manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-already-claimed-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        },
+        "plan_json": {
+          "name": "legacy-already-claimed-20261022-020758",
+          "operation": "archive.index",
+          "historical_claim": {
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED",
+                "file_record_id": "f60020ea-691b-464a-b991-bd67c89084c9"
+              }
+            ],
+            "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "run_dir": "legacy-already-claimed-20261022-020758",
+            "samples": [],
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "operation": "project.run.claim",
+            "claimed_at": "2026-10-22T02:09:37.218903+00:00",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "confirmation_id": "7989f398-2417-4a4c-8112-bf933130ab80",
+            "historical_only": true,
+            "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+            "archive_identity": "64512:5152999",
+            "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295"
+          },
+          "execution_allowed": false,
+          "dataset_analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c"
+        }
+      },
+      {
+        "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "dataset_status": "HISTORICAL_CLAIMED",
+        "version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+        "version_status": "HISTORICAL_CLAIMED",
+        "source_snapshot": {
+          "historical_claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-complete-20261022-020758",
+            "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+            "archive_identity": "64512:5152971",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "file_record_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.365428+00:00",
+            "confirmation_id": "1e9b13b1-2ed9-4a0f-8a5b-c6339d71bd38",
+            "historical_only": true,
+            "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+            "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2"
+          }
+        },
+        "review_annotations": {
+          "historical_claim": {
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "reviewed_at": "2026-10-22T02:09:37.365428+00:00"
+          }
+        },
+        "handoff": {
+          "handoff_schema_version": "1.0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "source": [],
+          "ingestion": [],
+          "assets": [
+            {
+              "asset_id": "08759800-878e-414b-a5ae-0901fc2aeef4",
+              "file_record_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2",
+              "asset_role": "archive",
+              "data_type": "UNKNOWN",
+              "format": "tsv",
+              "size": 23,
+              "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+              "checksum_status": "VERIFIED",
+              "availability": "AVAILABLE"
+            }
+          ],
+          "samples": [],
+          "validation": {
+            "dataset_ready": false,
+            "compatible_flow_ids": [],
+            "blocking_reasons": [
+              "ASSAY_REVIEW_REQUIRED",
+              "NO_MAPPED_SAMPLES"
+            ],
+            "worker_paths_verified": false
+          },
+          "provenance": {
+            "initiated_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "review_annotations": {
+              "historical_claim": {
+                "purpose": "Preserve explicit historical archive references; no new computation.",
+                "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+                "reviewed_at": "2026-10-22T02:09:37.365428+00:00"
+              }
+            },
+            "tool_invocation_ids": [],
+            "agent_session_ids": [],
+            "output_state": "NOT_REQUESTED"
+          },
+          "manifest_hash": "15c43390130417e3509f3e6d8f75d572081bfede73f5eef6a36e881c275bf7c7"
+        },
+        "link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+        "link_state": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "handoff_hash": "15c43390130417e3509f3e6d8f75d572081bfede73f5eef6a36e881c275bf7c7",
+        "normalized_request": {
+          "operation": "historical.claim",
+          "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-complete-20261022-020758",
+            "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+            "archive_identity": "64512:5152971",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "file_record_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.365428+00:00",
+            "confirmation_id": "1e9b13b1-2ed9-4a0f-8a5b-c6339d71bd38",
+            "historical_only": true,
+            "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+            "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2"
+          }
+        },
+        "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+        "run_project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "run_status": "HISTORICAL_CLAIMED",
+        "request_key": "archive:bd94f4ce-3471-44c8-9d31-ba02437d5454:28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+        "attempt_number": 0,
+        "archive_directory": "moved-historical-archive",
+        "archive_identity": "64512:5163434",
+        "archive_manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-complete-20261022-020758",
+            "moved-historical-archive",
+            "renamed-historical-archive"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        },
+        "plan_json": {
+          "name": "legacy-complete-20261022-020758",
+          "operation": "archive.index",
+          "historical_claim": {
+            "files": [
+              {
+                "path": "output/result.tsv",
+                "size": 23,
+                "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+                "integrity": "VERIFIED",
+                "file_record_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2"
+              }
+            ],
+            "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "run_dir": "legacy-complete-20261022-020758",
+            "samples": [],
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "operation": "project.run.claim",
+            "claimed_at": "2026-10-22T02:09:37.365428+00:00",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "confirmation_id": "1e9b13b1-2ed9-4a0f-8a5b-c6339d71bd38",
+            "historical_only": true,
+            "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+            "archive_identity": "64512:5152971",
+            "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2"
+          },
+          "execution_allowed": false,
+          "dataset_analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f"
+        }
+      },
+      {
+        "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "dataset_status": "HISTORICAL_CLAIMED",
+        "version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+        "version_status": "HISTORICAL_CLAIMED",
+        "source_snapshot": {
+          "historical_claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-final-source-20261022-024516",
+            "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+            "archive_identity": "64512:5130169",
+            "purpose": "Latest-source explicit historical claim; not computation.",
+            "files": [
+              {
+                "path": "output/result.txt",
+                "file_record_id": "6d141fe2-a5be-4b76-af24-9faeea6d85bb",
+                "size": 41,
+                "sha256": "105a99cd48b3d4a9fd7ebafca3c027dc81810a2e3ce8bf0514e6b3e639a5c29d",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:46:14.374937+00:00",
+            "approval_receipt": {
+              "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+              "parameters_hash": "96967ae616c5bbabed7294b95e0c8bcc80ebb96bc23109d385cc522180c93e33",
+              "status": "CONSUMED"
+            },
+            "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+            "historical_only": true,
+            "previous_run": {
+              "status": "ARCHIVED_UNCLAIMED",
+              "plan_digest": "3ed3e3e3676afa1a0c84c84bb617becaf5ef5655b0805d23f6bcebc02ede0c6f",
+              "task_id": null
+            },
+            "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+            "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7"
+          }
+        },
+        "review_annotations": {
+          "historical_claim": {
+            "purpose": "Latest-source explicit historical claim; not computation.",
+            "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "reviewed_at": "2026-10-22T02:46:14.374937+00:00"
+          }
+        },
+        "handoff": {
+          "handoff_schema_version": "1.0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "source": [],
+          "ingestion": [],
+          "assets": [
+            {
+              "asset_id": "ce2ed617-c49b-4b33-a10b-31629f168c89",
+              "file_record_id": "6d141fe2-a5be-4b76-af24-9faeea6d85bb",
+              "asset_role": "archive",
+              "data_type": "UNKNOWN",
+              "format": "txt",
+              "size": 41,
+              "sha256": "105a99cd48b3d4a9fd7ebafca3c027dc81810a2e3ce8bf0514e6b3e639a5c29d",
+              "checksum_status": "VERIFIED",
+              "availability": "AVAILABLE"
+            }
+          ],
+          "samples": [],
+          "validation": {
+            "dataset_ready": false,
+            "compatible_flow_ids": [],
+            "blocking_reasons": [
+              "ASSAY_REVIEW_REQUIRED",
+              "NO_MAPPED_SAMPLES"
+            ],
+            "worker_paths_verified": false
+          },
+          "provenance": {
+            "initiated_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "review_annotations": {
+              "historical_claim": {
+                "purpose": "Latest-source explicit historical claim; not computation.",
+                "reviewed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+                "reviewed_at": "2026-10-22T02:46:14.374937+00:00"
+              }
+            },
+            "tool_invocation_ids": [],
+            "agent_session_ids": [],
+            "output_state": "NOT_REQUESTED"
+          },
+          "manifest_hash": "641a5f4ae372d8ec0c5d377c55e2adc95a53346eb8a9c41393d0643d7495342c"
+        },
+        "link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+        "link_state": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "handoff_hash": "641a5f4ae372d8ec0c5d377c55e2adc95a53346eb8a9c41393d0643d7495342c",
+        "normalized_request": {
+          "operation": "historical.claim",
+          "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "claim": {
+            "operation": "project.run.claim",
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "run_dir": "legacy-final-source-20261022-024516",
+            "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+            "archive_identity": "64512:5130169",
+            "purpose": "Latest-source explicit historical claim; not computation.",
+            "files": [
+              {
+                "path": "output/result.txt",
+                "file_record_id": "6d141fe2-a5be-4b76-af24-9faeea6d85bb",
+                "size": 41,
+                "sha256": "105a99cd48b3d4a9fd7ebafca3c027dc81810a2e3ce8bf0514e6b3e639a5c29d",
+                "integrity": "VERIFIED"
+              }
+            ],
+            "samples": [],
+            "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:46:14.374937+00:00",
+            "approval_receipt": {
+              "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+              "parameters_hash": "96967ae616c5bbabed7294b95e0c8bcc80ebb96bc23109d385cc522180c93e33",
+              "status": "CONSUMED"
+            },
+            "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+            "historical_only": true,
+            "previous_run": {
+              "status": "ARCHIVED_UNCLAIMED",
+              "plan_digest": "3ed3e3e3676afa1a0c84c84bb617becaf5ef5655b0805d23f6bcebc02ede0c6f",
+              "task_id": null
+            },
+            "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+            "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7"
+          }
+        },
+        "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+        "run_project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "run_status": "HISTORICAL_CLAIMED",
+        "request_key": "archive:bd94f4ce-3471-44c8-9d31-ba02437d5454:83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+        "attempt_number": 0,
+        "archive_directory": "legacy-final-source-20261022-024516",
+        "archive_identity": "64512:5130169",
+        "archive_manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-final-source-20261022-024516"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        },
+        "plan_json": {
+          "name": "legacy-final-source-20261022-024516",
+          "operation": "archive.index",
+          "historical_claim": {
+            "files": [
+              {
+                "path": "output/result.txt",
+                "size": 41,
+                "sha256": "105a99cd48b3d4a9fd7ebafca3c027dc81810a2e3ce8bf0514e6b3e639a5c29d",
+                "integrity": "VERIFIED",
+                "file_record_id": "6d141fe2-a5be-4b76-af24-9faeea6d85bb"
+              }
+            ],
+            "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+            "purpose": "Latest-source explicit historical claim; not computation.",
+            "run_dir": "legacy-final-source-20261022-024516",
+            "samples": [],
+            "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "operation": "project.run.claim",
+            "claimed_at": "2026-10-22T02:46:14.374937+00:00",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+            "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+            "previous_run": {
+              "status": "ARCHIVED_UNCLAIMED",
+              "task_id": null,
+              "plan_digest": "3ed3e3e3676afa1a0c84c84bb617becaf5ef5655b0805d23f6bcebc02ede0c6f"
+            },
+            "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+            "historical_only": true,
+            "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+            "approval_receipt": {
+              "status": "CONSUMED",
+              "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+              "parameters_hash": "96967ae616c5bbabed7294b95e0c8bcc80ebb96bc23109d385cc522180c93e33"
+            },
+            "archive_identity": "64512:5130169",
+            "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7"
+          },
+          "execution_allowed": false,
+          "dataset_analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d"
+        }
+      }
+    ]
+  },
+  "run_index": {
+    "sql": "SELECT id,user_id,project_id,project_slug,status,task_id,archive_directory,archive_present,\n archive_file_count,archive_total_bytes,archive_last_activity,archive_indexed_at,archive_metadata\n FROM platform_runs ORDER BY id",
+    "rows": [
+      {
+        "id": "06581b77-2f57-42ee-9d1d-035a1b4c9286",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-038-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.321178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.407677+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-038-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "08d8cfcd-4874-432d-8d10-26c39f1cc7b8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-missing-manifest-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 2,
+        "archive_total_bytes": 1669,
+        "archive_last_activity": "2026-10-22 02:46:14.900971+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.253066+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-missing-manifest-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": false,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "0b5a6642-b720-4cee-83ba-d5cf5f79827f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-059-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.375177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.485144+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-059-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "11bc7e9d-80be-4551-ae46-77e334b8633a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-062-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.382177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.495987+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-062-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "13ba1e55-1cd2-464c-86c3-c44cba29c753",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-061-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.380177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.493170+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-061-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "18d96dda-8591-42d9-89a3-b245b1bd31b6",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-098-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.475176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.630511+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-098-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "1e7ffbd3-66e4-4991-b00b-b66285284ca0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-083-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.437176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.572950+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-083-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "1ecdc507-e4e3-433f-b419-d6fac7327925",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-085-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.442176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.580681+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-085-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "1f5d0011-5656-4ebf-b02c-b4602df831be",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-069-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.400177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.521119+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-069-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "20cc839b-68aa-45ba-9bc8-cb2ba4a33141",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-077-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.422177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.550634+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-077-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "archive_directory": "moved-historical-archive",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1921,
+        "archive_last_activity": "2026-10-22 02:11:23.724923+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.259141+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-complete-20261022-020758",
+            "moved-historical-archive",
+            "renamed-historical-archive"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "23f9cc8e-3380-49ba-a4bb-9d693e5cfe6e",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-008-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.237179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.311953+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-008-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "26322c4a-0615-4a1e-9469-d66fb3850c0b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-080-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.430176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.562649+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-080-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "26f2940d-88b7-4051-a1ac-7cb5037ff7d2",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-048-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.347178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.446123+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-048-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "2b14d928-78ea-4686-822a-14ac824bbb4d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-005-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.228179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.300681+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-005-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "31132fde-6502-4fcc-a635-4ab9bd5e3219",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-078-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.425177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.554889+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-078-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "31295d93-f5b5-45e3-bb76-e6b737a841d0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-066-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.392177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.510813+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-066-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "3132896c-a674-4f01-9cc7-c39c78b4cb0f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-002-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.221179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.288392+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-002-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "34227506-2e68-4894-9e44-14e1fc70a69b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-025-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.286178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.364776+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-025-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "359b5cbb-2a00-4fda-a65c-3438eeb65397",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-049-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.350177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.448439+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-049-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "3a804f4e-f17d-4d5b-a405-ec0939fc3258",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-087-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.447176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.587620+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-087-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "3b7f8a4e-9e97-42ec-b8ba-93f6d3d4e03c",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-003-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.224179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.292222+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-003-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "42eb30ce-a6bc-4430-9fdf-66363e69ee21",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-009-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.239179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.314607+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-009-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "43a5f822-381b-41d5-a827-1238377737d4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-036-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.316178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.399158+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-036-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "446377d7-4bc9-45b7-91a0-16e1265c570a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-035-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.313178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.395585+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-035-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "4557aed0-434a-40c8-aa2c-0b55ff565d13",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-075-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.417177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.542686+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-075-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "47f26448-ead3-4389-9c1e-8c65fd092875",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-000-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 98,
+        "archive_total_bytes": 13253,
+        "archive_last_activity": "2026-10-22 02:50:14.715339+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.280468+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-000-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "484745f5-5ae8-409d-aeb4-d0d224dfa381",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-084-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.440176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.576508+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-084-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "48e8b53f-ae6a-459f-b32f-4b9a94f9330d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-010-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.242179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.317806+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-010-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "4a4181da-973f-441e-9433-f1c03e12e11f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-041-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.329178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.420445+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-041-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "4e3a902b-ba71-4ca8-a91c-2f501690c01c",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-054-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.362177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.463622+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-054-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "4f652be4-c7d9-4f19-bf65-966873e618e1",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-095-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.468176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.618959+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-095-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "55551ef5-1624-4286-aa48-23bdfd7970eb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": null,
+        "project_slug": "unknown-slug",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "558a699b-c3fd-4dbf-8d23-800c76909c2a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-043-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.334177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.428118+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-043-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "57393c30-2616-4bfa-8fbe-a23e7d98e064",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-027-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.291178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.371612+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-027-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "59552d80-42a4-4970-9ea0-57092a5d6fb5",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-012-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.247179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.324252+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-012-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "5d1c915f-1485-4ead-b330-00158650c536",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-055-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.365177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.467511+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-055-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "5e6ccf52-d814-4714-a086-f2e38aa2116a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-063-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.385177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.499042+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-063-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "61132017-bb8d-4b13-80e5-6e180a036037",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-037-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.319178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.404064+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-037-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "637564e7-063d-4dc4-8a23-9245e7305009",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-057-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.370177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.476873+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-057-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "6478a9a2-64cb-4c50-8f85-6df47bcfcb2f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-092-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.460176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.608719+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-092-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "650a8205-8fe5-4549-a0b4-da37adaca3c7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-047-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.344177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.443397+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-047-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "670bf383-d0af-4784-96e3-9c56ac8db7e8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-006-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.231179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.305148+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-006-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "681c9f5b-a093-402d-823f-4e32d7828869",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-011-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.244179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.321639+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-011-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "68d475e7-27ce-4a46-a563-ea9d1a436025",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-090-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.455176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.599543+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-090-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "6a346f33-13ad-4af1-8770-b391b1977b4e",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-097-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.473176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.626988+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-097-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "6d819d9a-e4bb-4b91-9ab8-e38d90e99fe9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-026-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.288178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.367746+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-026-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "714790a8-117a-44fd-999c-347664955d43",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-022-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.276178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.355168+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-022-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "71a8ca7e-6030-476c-bd27-9c4fcdae147b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-086-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.445176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.583785+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-086-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-final-source-20261022-024516",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1831,
+        "archive_last_activity": "2026-10-22 02:45:16.596611+00:00",
+        "archive_indexed_at": "2026-10-22 03:41:40.589199+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-final-source-20261022-024516"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "72c1d61e-a24d-477d-929f-e938eeff23bc",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-015-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.255178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.332548+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-015-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "758053d5-117a-411e-8f16-7b4ec2f33c77",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-021-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.273178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.350884+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-021-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "7841220b-b43b-45c9-b80e-a51c18cb8bb0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-013-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.249178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.327032+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-013-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "7a294ce4-9be3-4108-a626-f2880d979aa9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-028-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.293178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.374578+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-028-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "7a5af9df-6730-42d1-8aff-63fa7b4c261f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-040-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.326178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.415378+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-040-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "7a75ebb9-d625-4069-97af-91d890b0b465",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-091-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.458176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.604698+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-091-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "7fe48fd2-4c4d-405d-9b12-41aed6de46ae",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-088-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.450176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.591597+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-088-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "825625c8-884f-4085-8fca-c2fb1542f9f9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-056-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.367177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.472412+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-056-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "846a7bf9-01f5-4c08-a5bd-bb8fc382a08b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-073-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.412177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.534309+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-073-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "88c54528-d759-4e5f-a513-f5fdd4e92ec4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-051-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.355177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.454385+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-051-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "88ff9246-00d6-41cd-a2ad-517b9be113ec",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-074-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.414177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.538490+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-074-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "8ff91239-8cfe-4ef1-9745-1033e3587331",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-065-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.390177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.507165+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-065-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9067108d-6cd3-418b-8dc4-16a62b3a2381",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-030-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.299178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.380237+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-030-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "916a86c0-2ba0-402c-8609-2c8bf655eefb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-079-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.427176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.558972+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-079-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "missing-directory-legacy",
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": "2026-10-22 03:37:16.259580+00:00",
+        "archive_metadata": {
+          "dirty": true,
+          "locations": [
+            "missing-directory-legacy"
+          ],
+          "error_code": "ARCHIVE_MISSING",
+          "has_readme": false,
+          "has_manifest": false,
+          "has_environment": false,
+          "last_known_statistics": {
+            "file_count": 0,
+            "total_bytes": 0
+          }
+        }
+      },
+      {
+        "id": "93ae6723-71ab-425c-9059-30bb350eb3fd",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-019-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.265178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.345275+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-019-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "972024a9-1f7b-4dc2-8a6d-08289fcd7c21",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-096-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.470176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.623239+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-096-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9811dd36-2b29-4267-911f-ecadd4356d84",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-082-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.435176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.569726+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-082-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9a0c906d-816e-4dfc-81af-b0e5663c6fe4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": null,
+        "project_slug": "other-only",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "9ad72cd4-fe09-4e90-b090-5539ef9c0e79",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-023-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.279178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.359192+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-023-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-tampered-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1921,
+        "archive_last_activity": "2026-10-22 03:36:32.373852+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.256408+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-tampered-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9d4dc126-c7ac-4b90-9968-698f317b11f2",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-044-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.337178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.433211+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-044-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "9eac93b0-6a28-4319-a715-466699bd4a73",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-039-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.324178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.411401+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-039-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "a0329692-0fcc-49c8-99d3-f1023d4d2e07",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-081-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.432177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.566108+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-081-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "a08d7ff2-f9cc-47e1-b496-cc16765cdde7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-024-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.283178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.362045+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-024-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "a25694d8-9994-4cbf-ba73-87915d92af53",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-064-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.388177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.503236+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-064-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "a421035b-474e-42f4-9e8f-22351501eafb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-031-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.302178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.382857+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-031-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "a8b36601-f5e1-4984-b97f-1c0e732ecece",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-016-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.258178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.335948+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-016-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b19e6511-860d-4861-8ef8-f7d77403fe88",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-004-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.226179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.296733+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-004-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b30490d4-00b8-41f5-bf1e-5898b15ecb05",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-045-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.339178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.437076+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-045-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b5c45b49-9ff8-4392-bdf2-79669cae230d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-068-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.398177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.517730+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-068-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b6dcded4-6cf0-447c-8a2d-3119b0328ba5",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-033-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.308178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.389176+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-033-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b895a5b6-ef53-4fe4-a2ab-2d724986d13f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "b9c69408-0642-46de-830f-6cfcbe4322de",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-089-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.453176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.595549+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-089-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "bc2ec14c-ff17-477d-999e-19f96a1408cd",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-029-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.296178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.377473+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-029-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "c1217faf-e118-4b44-942a-cd7fc4011aa4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-094-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.465176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.615689+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-094-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "c315f352-2d83-4d23-866d-879850b58890",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "missing-link-legacy",
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": "2026-10-22 03:37:16.259586+00:00",
+        "archive_metadata": {
+          "dirty": true,
+          "locations": [
+            "missing-link-legacy"
+          ],
+          "error_code": "ARCHIVE_MISSING",
+          "has_readme": false,
+          "has_manifest": false,
+          "has_environment": false,
+          "last_known_statistics": {
+            "file_count": 0,
+            "total_bytes": 0
+          }
+        }
+      },
+      {
+        "id": "c5c64cb2-13d6-4f3b-acd9-a38603231aef",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-076-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.420177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.546575+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-076-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "c7e448e2-aab8-4f89-8f8c-174ea5e2dbce",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-067-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.395177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.514887+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-067-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "c9a223ae-5139-44b5-9968-48b046c81ff0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-070-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.403177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.524151+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-070-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "d1d92469-660d-4198-bdcd-7eaffd2e8302",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-017-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.260178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.339473+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-017-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "d3f00abb-de39-4229-9df9-da200185c73b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-099-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.478176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.634755+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-099-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "d815a2b6-0483-4599-8dbe-f2bd46a0cb83",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-032-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.305178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.385844+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-032-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "HISTORICAL_CLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-already-claimed-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1935,
+        "archive_last_activity": "2026-10-22 02:07:58.209179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.244933+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-already-claimed-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "db38b76d-9abe-49fc-81a3-e52d0c483a9d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-072-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.408177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.531318+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-072-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "dce63656-ed2c-426f-b06d-60f8385a753d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-093-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.463176+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.612204+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-093-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "de5177a6-ebcf-463a-a159-78080cb1af30",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-071-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.406177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.527072+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-071-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "de7b6f44-6836-457d-871b-cc8ff6bf89d0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-060-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.377177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.489442+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-060-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "e376dc6b-2c40-45c3-8f54-5a1cfba918e4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-053-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.360177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.460378+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-053-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "eab7ad57-de43-435e-9c08-525ecc3e54bf",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-018-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.263178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.342390+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-018-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "ef162f1e-bc86-4e96-96f7-a7e4d2db2c56",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-052-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.357177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.457607+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-052-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "f10b03ae-e281-4e9c-a670-aeba2322f942",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-050-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.352177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.450909+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-050-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "f332cac6-600c-41a7-a110-8495bd83da98",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-007-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.234179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.308970+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-007-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "f5b2a0d1-bd75-4bc3-8527-4de8b17e0927",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-001-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13265,
+        "archive_last_activity": "2026-10-22 02:07:58.219179+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.283890+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-001-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "f7aed8fb-11d6-437e-9e36-a38f47b5ab26",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-014-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.252178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.330382+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-014-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "f93576be-85ac-4d1c-81c6-362bd103415b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-034-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.310178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.391909+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-034-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "fa09395f-d784-47ff-9f33-796587216965",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-058-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.372177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.481554+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-058-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "fc04caf1-cea8-4ce4-82bc-8202dbe98b33",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-046-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.342177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.440713+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-046-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "fffc091a-90e7-4336-8bcd-7a0e9fe645a7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-020-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.269178+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.347837+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-020-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "ffffe905-4cd1-4229-bd58-eaad9a1223bd",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "project_slug": "overview-benchmark",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-benchmark-042-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 99,
+        "archive_total_bytes": 13361,
+        "archive_last_activity": "2026-10-22 02:07:58.331177+00:00",
+        "archive_indexed_at": "2026-10-22 03:37:16.424304+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-benchmark-042-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      }
+    ]
+  },
+  "claim_audit": {
+    "sql": "SELECT id,user_id,method,path,status_code,detail,created_at FROM audit_logs\n WHERE resource_type='project_run_claim' ORDER BY created_at,id",
+    "rows": [
+      {
+        "id": "2414d867-6ae1-4871-b675-aa720e8fe646",
+        "user_id": null,
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 401,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.007416+00:00"
+      },
+      {
+        "id": "79da95c6-f116-43a5-ad85-72b1ff996e26",
+        "user_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-complete-20261022-020758",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.029085+00:00"
+      },
+      {
+        "id": "f95f79cd-4dd7-4f9b-987e-21ac027482ff",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..\\other-only/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "..\\other-only",
+          "code": "ARCHIVE_PATH_INVALID",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.041409+00:00"
+      },
+      {
+        "id": "f5ab72b7-8a30-4ea3-b26f-61950890aeba",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/../other-only/claim",
+        "status_code": 404,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.051976+00:00"
+      },
+      {
+        "id": "3f880a7d-cba6-4107-b626-91227230b00e",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 422,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.061290+00:00"
+      },
+      {
+        "id": "b081fff4-4541-43d0-a551-41c337a6b04a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-missing-manifest-20261022-020758/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-missing-manifest-20261022-020758",
+          "code": "ARCHIVE_INCOMPLETE",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.072607+00:00"
+      },
+      {
+        "id": "17d838d0-912d-411d-9f9d-81856c51f316",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.089483+00:00"
+      },
+      {
+        "id": "53b39b90-2048-4b82-88d4-0014cecb9de6",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.137504+00:00"
+      },
+      {
+        "id": "4a40c0cc-64d9-48d5-829a-4aedfc8c904b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "code": "CONFIRMATION_REQUIRED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.180785+00:00"
+      },
+      {
+        "id": "f861cd7c-101b-44eb-badd-4cbf273f7a53",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.192487+00:00"
+      },
+      {
+        "id": "13c2f686-5b86-4cf7-94df-3a9eeb5309a9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.258929+00:00"
+      },
+      {
+        "id": "a1e2c037-46c1-4bff-ba3b-6fed54dfe0ed",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.275637+00:00"
+      },
+      {
+        "id": "1396b481-cf98-48e1-901d-2a53dde352e0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-complete-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.291794+00:00"
+      },
+      {
+        "id": "88bb1291-94ed-4f74-b227-9f2429e3f565",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-complete-20261022-020758",
+          "code": "CONFIRMATION_REQUIRED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.332547+00:00"
+      },
+      {
+        "id": "9f60eca1-0cca-4118-b237-5476ba855853",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-complete-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.342722+00:00"
+      },
+      {
+        "id": "88f71ff1-4cbd-4bda-9ff8-d7618463b206",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-complete-20261022-020758",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.392828+00:00"
+      },
+      {
+        "id": "52c19d0f-26bb-4dba-954b-630a69a9fba7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-complete-20261022-020758",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.409052+00:00"
+      },
+      {
+        "id": "c7e29a40-07d2-4ea6-aa18-99c01e37d9d0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/renamed-historical-archive/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "renamed-historical-archive",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.717863+00:00"
+      },
+      {
+        "id": "e400f02d-1f3d-4ebf-b42c-446709a481ba",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:09:37.736547+00:00"
+      },
+      {
+        "id": "d7a5cc30-8fa6-4d70-b9ea-797eae141986",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:09:37.751431+00:00"
+      },
+      {
+        "id": "bce1c60a-e87f-441f-a697-702e69df07d1",
+        "user_id": null,
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 401,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.260852+00:00"
+      },
+      {
+        "id": "b2b0bd9d-13e8-46ec-8dec-629e0d5d8fd9",
+        "user_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.270578+00:00"
+      },
+      {
+        "id": "04031432-9f4e-463c-9f7e-316369c2fcf7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..\\other-only/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "..\\other-only",
+          "code": "ARCHIVE_PATH_INVALID",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.282917+00:00"
+      },
+      {
+        "id": "3ebafee2-59c9-49fc-92c8-7065e8303141",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/../other-only/claim",
+        "status_code": 404,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.293133+00:00"
+      },
+      {
+        "id": "8ff3ae6a-9745-4957-a4f8-04dc0d638a19",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 422,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.302553+00:00"
+      },
+      {
+        "id": "030b5317-8aa0-48b7-a068-2dc87e7ca5d7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-missing-manifest-20261022-020758/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-missing-manifest-20261022-020758",
+          "code": "ARCHIVE_INCOMPLETE",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.314443+00:00"
+      },
+      {
+        "id": "86980699-3b3b-4502-b1e6-46ca64b81c67",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.329209+00:00"
+      },
+      {
+        "id": "4523b5eb-9733-4a79-8d2e-1e93705358de",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-already-claimed-20261022-020758",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:11:23.373279+00:00"
+      },
+      {
+        "id": "1c2940f0-d7de-44a8-8c6b-5e0f680ff550",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:11:23.390598+00:00"
+      },
+      {
+        "id": "ab48d6c4-ff2f-4d71-b6b6-b9a870709711",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/renamed-historical-archive/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "renamed-historical-archive",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:11:23.688933+00:00"
+      },
+      {
+        "id": "65845092-379d-496a-bd41-de5c19cc3f7c",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:11:23.706315+00:00"
+      },
+      {
+        "id": "ef3867f0-ef82-47d4-a4d0-862f4b730e27",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "moved-historical-archive",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:11:23.721349+00:00"
+      },
+      {
+        "id": "d9392b71-2077-4160-83ad-a460c24a5d3a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "PREVIEW",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:46:14.306292+00:00"
+      },
+      {
+        "id": "a12e5a1e-19f8-423a-ae4c-03f3ca79de01",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:46:14.347992+00:00"
+      },
+      {
+        "id": "5e0eabe3-4b3d-45c3-9661-358b975fddd1",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "source": "claim_transaction",
+          "action": "commit",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+          "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148"
+        },
+        "created_at": "2026-10-22 02:46:14.356331+00:00"
+      },
+      {
+        "id": "99df5003-12f6-4ee8-adad-d97fea4c0fe7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:46:14.418316+00:00"
+      },
+      {
+        "id": "2151fe95-47ac-4ca5-9a8b-154aee130911",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.562080+00:00"
+      },
+      {
+        "id": "51f777e4-fb5a-4025-8e55-c92d95c2146b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.633002+00:00"
+      },
+      {
+        "id": "0e76ccd8-1cc1-4bca-8fb6-9665b0e8bac8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.699821+00:00"
+      },
+      {
+        "id": "31b0bc19-3077-41ef-b427-5fdf537c9ee1",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.773405+00:00"
+      },
+      {
+        "id": "2a76767c-8d0a-4cee-b1c6-1c2da7bc20a8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.820617+00:00"
+      },
+      {
+        "id": "49e02de3-8466-4cfa-bf81-3028e3aca042",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:46:14.837735+00:00"
+      },
+      {
+        "id": "747320d0-9071-4b23-8cea-a9a8a30c73f3",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:46:14.851905+00:00"
+      },
+      {
+        "id": "b9598318-831d-42f3-9a14-1388ac5e241f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:46:14.867735+00:00"
+      },
+      {
+        "id": "6e63da93-62ea-4fce-8a3f-c0df1824a9aa",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:50:14.220604+00:00"
+      },
+      {
+        "id": "4a2993b8-21dd-4431-adc8-a0bf425dc994",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.361279+00:00"
+      },
+      {
+        "id": "261629cc-6679-4512-b63c-dfce2f093540",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.429429+00:00"
+      },
+      {
+        "id": "d5e9bc95-0352-4a05-8279-0b5877e7bfb8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.493470+00:00"
+      },
+      {
+        "id": "815f81d6-7b99-4539-b916-7c0ca194eeb8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.564654+00:00"
+      },
+      {
+        "id": "0c617c43-2961-4298-870d-2b43f1dd2e20",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.609390+00:00"
+      },
+      {
+        "id": "3bf4597c-9bd1-4449-bc4c-5f78b36fdbcf",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:50:14.626337+00:00"
+      },
+      {
+        "id": "c2bea8f5-8a43-49f8-953f-04219e6bafc6",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:50:14.641480+00:00"
+      },
+      {
+        "id": "9c07457f-5139-4805-80af-f402b8a93da7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:50:14.657103+00:00"
+      },
+      {
+        "id": "5563d358-c4f8-4ce2-850f-de1ebbb9904f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:54:18.710630+00:00"
+      },
+      {
+        "id": "da5fefd5-d044-49b9-8203-7afeb234cb47",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:18.849546+00:00"
+      },
+      {
+        "id": "31bebad4-7218-448d-9871-8d0d57bffe58",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:18.919452+00:00"
+      },
+      {
+        "id": "015cb7bd-1eed-4a3c-9e3d-e7e3e5870a70",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:18.985185+00:00"
+      },
+      {
+        "id": "f7d6a2b8-bb9d-470f-8e1b-46e7ba91a0c0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:19.058881+00:00"
+      },
+      {
+        "id": "e5036bab-7188-4aca-9a8c-c43313abb55a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:19.104182+00:00"
+      },
+      {
+        "id": "d2069491-c151-4a18-9059-3558fb483edc",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:54:19.119759+00:00"
+      },
+      {
+        "id": "5b798f81-2b57-44ed-bae4-db4750529c0e",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:54:19.131956+00:00"
+      },
+      {
+        "id": "21c3105e-9217-421e-a180-46db75ff392b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:54:19.147694+00:00"
+      },
+      {
+        "id": "82538b16-7efd-4e75-8cf0-ff37ee3acc1b",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:59:22.069789+00:00"
+      },
+      {
+        "id": "76b6c51e-06da-40d2-83ba-e648119105af",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.211546+00:00"
+      },
+      {
+        "id": "bb9f3cc9-d26f-4585-a9a0-e60421206419",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.282516+00:00"
+      },
+      {
+        "id": "9bb478c2-912f-48dc-9d13-23ba9e99eb11",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.351751+00:00"
+      },
+      {
+        "id": "86d8261f-9a10-4182-9d34-c6d2a4adb2d2",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.425391+00:00"
+      },
+      {
+        "id": "b8a6589e-6e4f-43b8-b585-7e939030a197",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.472226+00:00"
+      },
+      {
+        "id": "61940f81-885a-48f6-b593-bb09862a9be2",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:59:22.488660+00:00"
+      },
+      {
+        "id": "5306f40b-3dac-47f6-bce5-4d8482cef8d4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 02:59:22.501214+00:00"
+      },
+      {
+        "id": "5f6079ec-4dab-4426-848f-d491a6502c63",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 02:59:22.516498+00:00"
+      },
+      {
+        "id": "5379c1f4-a420-43da-a646-776f09f64e31",
+        "user_id": null,
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 401,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.180232+00:00"
+      },
+      {
+        "id": "46277c9b-632b-4c74-b363-a31f21176c86",
+        "user_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.379408+00:00"
+      },
+      {
+        "id": "446c609c-29bb-4521-8385-89ea0674f07e",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..\\other-only/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "..\\other-only",
+          "code": "ARCHIVE_PATH_INVALID",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.391640+00:00"
+      },
+      {
+        "id": "fa499ce7-cb98-4a7b-b655-070c93d62f03",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/../other-only/claim",
+        "status_code": 404,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.401258+00:00"
+      },
+      {
+        "id": "29655eb7-6db7-4029-ac32-cc99afc8ceb5",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:00:57.458271+00:00"
+      },
+      {
+        "id": "7c2ba93d-7caf-4031-bf09-e4001f147bde",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.595675+00:00"
+      },
+      {
+        "id": "b77d7f03-c423-4394-a4cf-3ee46f1e70f3",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.664255+00:00"
+      },
+      {
+        "id": "5db5904b-843b-4446-83dc-edc986c27ecb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.734453+00:00"
+      },
+      {
+        "id": "948edd5a-06f5-418d-ac53-aab1dc30f6a3",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.812337+00:00"
+      },
+      {
+        "id": "6061e1de-6f17-42fe-80ea-1d848c3df085",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.857103+00:00"
+      },
+      {
+        "id": "4d79df98-aa58-4404-96ad-5c5983cfd2ca",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:00:57.875044+00:00"
+      },
+      {
+        "id": "2e0d4877-d782-4389-92c0-001446af9b55",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:00:57.889361+00:00"
+      },
+      {
+        "id": "2675952b-028f-4b7b-af99-37a014fd5322",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:00:57.906355+00:00"
+      },
+      {
+        "id": "94f440d7-22d3-4552-9341-009c31f8b28f",
+        "user_id": null,
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 401,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:31.650967+00:00"
+      },
+      {
+        "id": "409368b6-7bd8-4e6f-897e-1fc133aa6920",
+        "user_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:31.862858+00:00"
+      },
+      {
+        "id": "9c9953b9-532e-4f64-8e56-dd8eed2b0a74",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..\\other-only/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "..\\other-only",
+          "code": "ARCHIVE_PATH_INVALID",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:31.876551+00:00"
+      },
+      {
+        "id": "2585b826-1104-498a-a701-efd9f6646932",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/../other-only/claim",
+        "status_code": 404,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:31.886278+00:00"
+      },
+      {
+        "id": "caa5a1f8-dd90-4dd5-8ab5-850c0ce7c26c",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:36:31.948421+00:00"
+      },
+      {
+        "id": "588a7c3e-1ba9-432a-9d4b-40613f397178",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.088735+00:00"
+      },
+      {
+        "id": "a55ccf77-1519-40ee-b78f-9cd855e318ed",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.158598+00:00"
+      },
+      {
+        "id": "f90a65d7-eb45-4145-a0a9-43413727ca8c",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.226761+00:00"
+      },
+      {
+        "id": "06ba5355-933a-490b-8863-2d06dcf0b259",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.297654+00:00"
+      },
+      {
+        "id": "96f748fe-98e0-46af-a798-aafe4004f5c4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.343257+00:00"
+      },
+      {
+        "id": "da28e6c7-5d01-4d4a-a243-c69653ab0a26",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:36:32.359657+00:00"
+      },
+      {
+        "id": "ace27fba-5554-4323-a2d5-b28fcc04f8f9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:36:32.371022+00:00"
+      },
+      {
+        "id": "3545bbc8-e733-4cd9-992c-ff9b5e999fc9",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:36:32.384696+00:00"
+      },
+      {
+        "id": "7f1cf543-2aa6-4ae6-a536-b164d50a3a45",
+        "user_id": null,
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 401,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.286040+00:00"
+      },
+      {
+        "id": "8887fe10-7669-425b-8410-c9197a9eb2c5",
+        "user_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.503550+00:00"
+      },
+      {
+        "id": "8425e065-c5df-47c5-9c9a-ddb8e02f6e15",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..\\other-only/claim",
+        "status_code": 422,
+        "detail": {
+          "action": "preview",
+          "run_dir": "..\\other-only",
+          "code": "ARCHIVE_PATH_INVALID",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.517245+00:00"
+      },
+      {
+        "id": "a08e325f-3c4a-4982-9b45-119f03e1c86f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/../other-only/claim",
+        "status_code": 404,
+        "detail": {
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.528453+00:00"
+      },
+      {
+        "id": "23e931d7-ae7a-47d6-837c-891ec24517db",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "state": "HISTORICAL_CLAIMED",
+          "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+          "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+          "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:41:40.591495+00:00"
+      },
+      {
+        "id": "1ace5f42-3c12-4c0b-9d28-c616f9e26392",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.740625+00:00"
+      },
+      {
+        "id": "c50354d5-0c90-4160-a2e7-2681acd2c575",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.809625+00:00"
+      },
+      {
+        "id": "778f2ecf-47f4-4a1e-9ff3-a705b572d28d",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 403,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "FORBIDDEN",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.877896+00:00"
+      },
+      {
+        "id": "21d086b8-d575-4c4b-ac83-d4fbc0503dcc",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-final-source-20261022-024516",
+          "code": "RUN_ALREADY_LINKED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:40.952001+00:00"
+      },
+      {
+        "id": "7c8aec36-f2f3-438d-9fa0-3a3a5bf98bb5",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "FILE_REGISTRY_MISMATCH",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:41.000079+00:00"
+      },
+      {
+        "id": "35cd2c31-499c-402c-9b17-ca5ef34a6848",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 200,
+        "detail": {
+          "action": "preview",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "state": "PREVIEW",
+          "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:41:41.017418+00:00"
+      },
+      {
+        "id": "05abc8ac-61a4-4927-88f5-f32e947887e7",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+        "status_code": 200,
+        "detail": {
+          "action": "approve",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "outcome": "RECORDED"
+        },
+        "created_at": "2026-10-22 03:41:41.030416+00:00"
+      },
+      {
+        "id": "11460f69-df7d-4158-8da2-5b1c0d2a6acb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "method": "POST",
+        "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+        "status_code": 409,
+        "detail": {
+          "action": "commit",
+          "run_dir": "legacy-tampered-20261022-020758",
+          "code": "ARCHIVE_FILE_CHANGED",
+          "outcome": "REJECTED"
+        },
+        "created_at": "2026-10-22 03:41:41.045653+00:00"
+      }
+    ]
+  },
+  "counts": {
+    "datasets": 3,
+    "dataset_versions": 3,
+    "dataset_analysis_links": 3,
+    "platform_runs": 110,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "audit_logs": 155
+  }
+}

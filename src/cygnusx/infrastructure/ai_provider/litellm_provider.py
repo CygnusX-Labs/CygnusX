@@ -12,6 +12,7 @@ from loguru import logger
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_tracer
 from cygnusx.domain.ai_provider.entities import AIProviderConfig
+from cygnusx.domain.ai_provider.value_objects import ProviderType
 from cygnusx.infrastructure.ai_provider.base import StreamEvent
 from cygnusx.infrastructure.ai_provider.openai_compatible import (
     _dedupe_tools,
@@ -428,9 +429,43 @@ class LiteLLMProvider:
             return bool(self._settings.openai_api_key) and bool(self._settings.openai_model)
         return bool(self._settings.kimi_api_key) and bool(self._settings.kimi_model)
 
+    async def _get_embedding_config(self) -> AIProviderConfig | None:
+        """Resolve the embedding-only UUID without falling back to a chat Provider."""
+        provider_id = self._settings.agent_memory_embedding_provider_id.strip()
+        if not provider_id:
+            return await self._get_config()
+
+        from uuid import UUID
+
+        from cygnusx.infrastructure.database.repositories.ai_provider_repository import (
+            SqlAlchemyAIProviderConfigRepository,
+        )
+        from cygnusx.infrastructure.database.session import get_session_factory
+
+        try:
+            identity = UUID(provider_id)
+        except ValueError:
+            raise ValueError("Embedding Provider ID must be a database UUID") from None
+        config: AIProviderConfig | None
+        if self._config is not None:
+            # Maintenance CLI supplies a Provider from its explicit target database.
+            # Never switch that operation to the application's default database.
+            if self._config.id != identity:
+                raise ValueError("Explicit Provider conflicts with embedding Provider ID")
+            config = self._config
+        else:
+            factory = get_session_factory()
+            if factory is None:
+                raise ValueError("Embedding Provider database is unavailable")
+            async with factory() as session:
+                config = await SqlAlchemyAIProviderConfigRepository(session).get_by_id(identity)
+        if config is None or not config.is_active:
+            raise ValueError("Embedding Provider does not exist or is inactive")
+        return config
+
     async def embeddings(self, text: str, model: str = "") -> list[float]:
         """文本嵌入向量（可选能力）"""
-        config = await self._get_config()
+        config = await self._get_embedding_config()
         kwargs: dict[str, Any] = {"input": text}
         if model:
             kwargs["model"] = model
@@ -453,6 +488,21 @@ class LiteLLMProvider:
         kwargs["model"] = self._route_model(
             str(kwargs.get("model", "")), bool(kwargs.get("api_base"))
         )
+
+        if self._settings.agent_memory_embedding_provider_id.strip():
+            kwargs["dimensions"] = self._settings.agent_memory_embedding_dimensions
+            # Vendor model IDs contain '/', e.g. Qwen/Qwen3-Embedding-8B.
+            # That namespace is not a LiteLLM provider prefix.
+            if (
+                config is not None
+                and config.provider_type == ProviderType.OPENAI_COMPATIBLE
+                and config.base_url
+            ):
+                # LiteLLM otherwise rejects dimensions for non-text-embedding-3
+                # model IDs before reaching the compatible vendor endpoint.
+                kwargs["allowed_openai_params"] = ["dimensions"]
+                if not str(kwargs["model"]).startswith("openai/"):
+                    kwargs["model"] = "openai/" + str(kwargs["model"])
 
         tracer = get_tracer("cygnusx.ai")
         with tracer.start_as_current_span(

@@ -2,8 +2,9 @@
 
 ## 1. 职责边界
 
-- **Web 后端**：创建 `/data/cygnusx/users/<user_id>/enrichment/<task_id>/`，写
-  `gene_list.txt`，创建通用 Task 记录并投递 Celery；不执行容器。
+- **Web 后端**：通过路径工厂创建
+  `<storage_root>/users/<user_id>/projects/<project>/runs/enrichment-<timestamp>/`，写
+  `input/gene_list.txt`，创建通用 Task 记录并投递 Celery；不执行容器。
 - **Celery Worker**：消费 `analysis` 队列，执行容器，读取 `enrichment_result.csv`，将
   Plotly/表格结果和失败信息回写 Task。
 - **R 容器**：使用 `clusterProfiler` 完成 GO 和 KEGG 分析，写 CSV、PNG、PDF；所有已配置分析
@@ -13,19 +14,19 @@
 
 ## 2. 容器命令
 
-Celery Worker 生成的命令形态如下：
+Celery Worker 生成的命令形态如下（示例为 `STORAGE_PATH=/data/omichub` 的旧部署）：
 
 ```bash
 docker run --rm --name cygnusx-enrich-<task> \
-  -v /data/cygnusx:/data/cygnusx \
+  -v /data/omichub:/data/cygnusx \
   --memory 2g --cpus 2.0 \
   cygnusx-r-enrichment:v1 \
   Rscript /app/run_enrichment.R \
-  --input /data/cygnusx/users/<user>/enrichment/<task>/gene_list.txt \
-  --output /data/cygnusx/users/<user>/enrichment/<task>/enrichment_result.csv \
-  --go_obo /data/cygnusx/cygnusx_data/reference/ITAG4.1/go-basic.obo \
-  --go_annotation /data/cygnusx/cygnusx_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal \
-  --kegg_id_map /data/cygnusx/cygnusx_data/reference/ITAG4.1/ITAG4.1.kegg.id \
+  --input /data/cygnusx/users/<user>/projects/<project>/runs/<run>/input/gene_list.txt \
+  --output /data/cygnusx/users/<user>/projects/<project>/runs/<run>/output/enrichment_result.csv \
+  --go_obo /data/cygnusx/omichub_data/reference/ITAG4.1/go-basic.obo \
+  --go_annotation /data/cygnusx/omichub_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal \
+  --kegg_id_map /data/cygnusx/omichub_data/reference/ITAG4.1/ITAG4.1.kegg.id \
   --kegg_code sly --kegg_key_type kegg \
   --p_value_cutoff 0.05 --q_value_cutoff 0.1
 ```
@@ -34,7 +35,13 @@ docker run --rm --name cygnusx-enrich-<task> \
 通过 `ENRICHMENT_DOCKER_NETWORK=<network-name>` 显式加入自定义网络。
 
 GO 参数可单独存在；KEGG 参数 `kegg_id_map + kegg_code` 可单独存在；同时存在时容器合并两类
-结果。所有路径都必须位于 `/data/cygnusx`，并在宿主和容器内保持相同绝对路径。
+结果。容器内所有文件参数都必须位于 `/data/cygnusx`。Worker 将 `STORAGE_PATH` 或
+`ENRICHMENT_DATA_MOUNT` 下的绝对路径映射到此挂载点，不能直接把宿主路径传给 R。
+已使用 `/data/cygnusx` 的绝对路径保持兼容；不在共享数据挂载内的路径会明确报错。
+
+`species_config.yaml` 的 `go_obo`、`go_annotation`、`kegg_id_map` 相对路径以
+`REFERENCE_GENOMES_YAML` 所在目录为根。例如配置 `ITAG4.1/go-basic.obo`，在上述部署中
+解析为 `/data/omichub/omichub_data/reference/ITAG4.1/go-basic.obo`，再映射为容器路径。
 
 ## 3. R 实现
 

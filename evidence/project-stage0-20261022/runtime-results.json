@@ -1,0 +1,252 @@
+[
+  {
+    "name": "isolated_before_migration",
+    "evidence": {
+      "projects": 36,
+      "null_status": 36
+    }
+  },
+  {
+    "name": "isolated_after_migration",
+    "evidence": {
+      "projects": 36,
+      "null_status": 0,
+      "active": 36,
+      "is_nullable": "NO",
+      "column_default": "'active'::character varying"
+    }
+  },
+  {
+    "name": "null_rejected",
+    "evidence": "IntegrityError"
+  },
+  {
+    "name": "create_project",
+    "evidence": {
+      "status": 201,
+      "response": {
+        "id": "e20b7224-cd10-40d9-a9eb-a3a5e1a9da9c",
+        "name": "stage0-lifecycle",
+        "slug": "stage0-lifecycle",
+        "description": "before",
+        "customer": "",
+        "status": "active",
+        "settings": null,
+        "created_at": "2026-10-21T15:31:31.052770+00:00",
+        "updated_at": "2026-10-21T15:31:31.052770+00:00"
+      }
+    }
+  },
+  {
+    "name": "patch_project",
+    "evidence": {
+      "request": {
+        "settings": {
+          "unrelated": {
+            "keep": true
+          },
+          "research_mode": {
+            "enabled": true,
+            "render_mode": "message_flow"
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "e20b7224-cd10-40d9-a9eb-a3a5e1a9da9c",
+        "name": "stage0-lifecycle",
+        "slug": "stage0-lifecycle",
+        "description": "before",
+        "customer": "",
+        "status": "active",
+        "settings": {
+          "unrelated": {
+            "keep": true
+          },
+          "research_mode": {
+            "enabled": true,
+            "render_mode": "message_flow"
+          }
+        },
+        "created_at": "2026-10-21T15:31:31.052770+00:00",
+        "updated_at": "2026-10-21T15:31:31.076514+00:00"
+      }
+    }
+  },
+  {
+    "name": "patch_project",
+    "evidence": {
+      "request": {
+        "name": "new display name",
+        "description": "after",
+        "settings": {
+          "research_mode": {
+            "enabled": false
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "id": "e20b7224-cd10-40d9-a9eb-a3a5e1a9da9c",
+        "name": "new display name",
+        "slug": "stage0-lifecycle",
+        "description": "after",
+        "customer": "",
+        "status": "active",
+        "settings": {
+          "unrelated": {
+            "keep": true
+          },
+          "research_mode": {
+            "enabled": false,
+            "render_mode": "message_flow"
+          }
+        },
+        "created_at": "2026-10-21T15:31:31.052770+00:00",
+        "updated_at": "2026-10-21T15:31:31.091602+00:00"
+      }
+    }
+  },
+  {
+    "name": "overview",
+    "evidence": {
+      "project": {
+        "id": "e20b7224-cd10-40d9-a9eb-a3a5e1a9da9c",
+        "name": "new display name",
+        "slug": "stage0-lifecycle",
+        "description": "after",
+        "customer": "",
+        "status": "active",
+        "settings": {
+          "unrelated": {
+            "keep": true
+          },
+          "research_mode": {
+            "enabled": false,
+            "render_mode": "message_flow"
+          }
+        },
+        "created_at": "2026-10-21T15:31:31.052770+00:00",
+        "updated_at": "2026-10-21T15:31:31.091602+00:00"
+      },
+      "sessions": {
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+        "items": []
+      },
+      "runs": [
+        {
+          "name": "retained-run",
+          "timestamp": "2026-10-21T15:31:31.068288+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": false,
+          "file_count": 1,
+          "total_size_bytes": 21
+        }
+      ]
+    }
+  },
+  {
+    "name": "capability_anonymous",
+    "evidence": {
+      "status": 401,
+      "response": {
+        "detail": "未提供认证令牌"
+      }
+    }
+  },
+  {
+    "name": "capability_non_owner",
+    "evidence": {
+      "status": 403,
+      "response": {
+        "detail": "无权访问该项目"
+      }
+    }
+  },
+  {
+    "name": "capability_owner",
+    "evidence": {
+      "status": 200,
+      "response": {
+        "research_plan": {
+          "enabled": false,
+          "allowed": false,
+          "reason": "SERVICE_DISABLED"
+        },
+        "research_delivery_read": {
+          "enabled": false,
+          "allowed": false,
+          "reason": "SERVICE_DISABLED"
+        },
+        "project_export": {
+          "enabled": false,
+          "allowed": false,
+          "reason": "SERVICE_DISABLED"
+        }
+      }
+    }
+  },
+  {
+    "name": "deleted_refresh_0",
+    "evidence": {
+      "listed_count": 36,
+      "count": {
+        "count": 36
+      }
+    }
+  },
+  {
+    "name": "deleted_refresh_1",
+    "evidence": {
+      "listed_count": 36,
+      "count": {
+        "count": 36
+      }
+    }
+  },
+  {
+    "name": "deleted_refresh_2",
+    "evidence": {
+      "listed_count": 36,
+      "count": {
+        "count": 36
+      }
+    }
+  },
+  {
+    "name": "explicit_sync",
+    "evidence": {
+      "status": 200,
+      "response": {
+        "created": 1,
+        "skipped_deleted": 1
+      },
+      "retained_bytes": "unchanged"
+    }
+  },
+  {
+    "name": "effective_gates",
+    "evidence": {
+      "RESEARCH_PLAN_ENABLED": false,
+      "RESEARCH_DELIVERY_READ_ENABLED": false,
+      "RESEARCH_DELIVERY_WRITE_ENABLED": false,
+      "PROJECT_EXPORT_ENABLED": false,
+      "PROJECT_REPORT_WRITE_ENABLED": false,
+      "PROJECT_REPORT_PDF_ENABLED": false,
+      "TOOL_GATEWAY_READ_ENABLED": false,
+      "AGENT_ANALYSIS_WRITE_ENABLED": false,
+      "AGENT_DOWNLOAD_WRITE_ENABLED": false
+    }
+  },
+  {
+    "name": "closure",
+    "evidence": {
+      "api_stopped": true,
+      "test_containers_stopped": true,
+      "existing_deployment_modified": false
+    }
+  }
+]

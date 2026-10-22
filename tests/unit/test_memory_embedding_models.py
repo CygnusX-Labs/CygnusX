@@ -319,3 +319,75 @@ async def test_legacy_edit_without_embeddings_clears_stale_vector(embedding_sett
     memory = AgentMemoryModel(content="edited text", embedding=_VECTOR, embedding_model="old")
     await AgentMemoryService(SimpleNamespace())._populate_embedding(memory)
     assert memory.embedding is None and memory.embedding_model is None
+
+
+async def test_explicit_inactive_backfill_preserves_states_and_active_coverage(
+    embedding_database, embedding_settings
+):
+    session, db = embedding_database
+    active = await _fact(db, "current active", model="new-model")
+    archived = await _fact(db, "historic archived", vector=None)
+    superseded = await _fact(db, "historic superseded", vector=None)
+    session.get(MemoryFactModel, archived.id).status = "archived"
+    session.get(MemoryFactModel, superseded.id).status = "superseded"
+    session.commit()
+    client = SimpleNamespace(embeddings=AsyncMock(return_value=_OTHER_VECTOR))
+    service = MemoryEmbeddingService(db, embedding_client=client)
+    assert (await service.backfill())["pending"] == 0
+    statuses = ("archived", "superseded")
+    plan = await service.backfill(statuses=statuses)
+    assert plan["pending"] == 2 and plan["before"]["active"] == 1
+    client.embeddings.assert_not_awaited()
+    result = await service.backfill(statuses=statuses, dry_run=False)
+    session.commit()
+    session.expire_all()
+    assert result["updated"] == 2 and result["remaining_pending"] == 0
+    assert result["after"]["active"] == 1 and result["after"]["coverage"] == 1
+    for fact, status in [(archived, "archived"), (superseded, "superseded")]:
+        row = session.get(MemoryFactModel, fact.id)
+        assert row.status == status and row.content == fact.content
+        assert (row.user_id, row.agent_id, row.project_id) == ("owner", "a", "p")
+        assert row.embedding == _OTHER_VECTOR and row.embedding_model == "new-model"
+    assert session.get(MemoryFactModel, active.id).embedding == _VECTOR
+    assert (await service.backfill(statuses=statuses, dry_run=False))["updated"] == 0
+    assert client.embeddings.await_count == 2
+
+
+@pytest.mark.parametrize("mutation", ["activate", "failure"])
+async def test_inactive_backfill_skips_concurrent_status_change_and_failed_vectors(
+    embedding_database, embedding_settings, mutation
+):
+    session, db = embedding_database
+    fact = await _fact(db, "archived original", vector=None)
+    session.get(MemoryFactModel, fact.id).status = "archived"
+    session.commit()
+    service = MemoryEmbeddingService(db)
+
+    async def generate(*args, **kwargs):
+        if mutation == "failure":
+            return []
+        session.execute(
+            update(MemoryFactModel).where(MemoryFactModel.id == fact.id).values(status="active")
+        )
+        return _OTHER_VECTOR
+
+    service.embedding_service._embed = generate
+    result = await service.backfill(statuses=("archived",), dry_run=False)
+    session.commit()
+    session.expire_all()
+    assert result["updated"] == 0
+    assert result["skipped" if mutation == "activate" else "failed"] == 1
+    row = session.get(MemoryFactModel, fact.id)
+    assert row.status == ("active" if mutation == "activate" else "archived")
+    assert row.embedding is None and row.embedding_model is None
+
+
+@pytest.mark.parametrize("statuses", [(), ("deleted",)])
+async def test_invalid_backfill_statuses_fail_before_sql_or_provider(embedding_settings, statuses):
+    db = SimpleNamespace(execute=AsyncMock(), scalar=AsyncMock())
+    client = SimpleNamespace(embeddings=AsyncMock())
+    with pytest.raises(ValueError, match="statuses"):
+        await MemoryEmbeddingService(db, embedding_client=client).backfill(statuses=statuses)
+    db.execute.assert_not_awaited()
+    db.scalar.assert_not_awaited()
+    client.embeddings.assert_not_awaited()

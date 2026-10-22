@@ -1,0 +1,8 @@
+{
+  "status": "passed",
+  "files_scanned": 64,
+  "secret_values_disclosed": 0,
+  "credential_value_matches": 0,
+  "method": "Compare output artifacts to configured secret values in memory; only aggregate result retained",
+  "limitation": "Not a general DLP proof; report and verification scripts intentionally retain no real user text or vectors"
+}

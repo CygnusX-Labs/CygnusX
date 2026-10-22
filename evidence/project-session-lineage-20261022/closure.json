@@ -1,0 +1,25 @@
+{
+  "api_stopped": true,
+  "dedicated_containers_stopped": true,
+  "volumes_retained": true,
+  "existing_deployment_modified": false,
+  "container_states_verified": {
+    "postgres": "exited",
+    "redis": "exited"
+  },
+  "containers": {
+    "postgres": "cygnusx-lineage-pg-oxda70uj",
+    "redis": "cygnusx-lineage-redis-oxda70uj"
+  },
+  "final_api_pid": 3751311,
+  "preview_pids_stopped": [
+    3677251
+  ],
+  "worktree": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree",
+  "retained_private_context": "/tmp/cygnusx-session-lineage-runtime-oxda70uj",
+  "ports_closed_verified": {
+    "18012": true,
+    "18013": true,
+    "18014": true
+  }
+}

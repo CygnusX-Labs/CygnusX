@@ -1,0 +1,407 @@
+{
+  "lineage": {
+    "sql": "SELECT d.id AS dataset_id,d.user_id,d.project_id,d.assay_type,\n          v.id AS version_id,v.number,v.source_snapshot,v.handoff,\n          l.id AS link_id,l.state,l.task_id,l.confirmation_id,l.parameters_hash,l.handoff_hash,\n          l.normalized_request,l.execution_binding,\n          r.id AS run_id,r.request_key,r.status AS run_status,r.task_id AS run_task_id,r.plan_digest,r.plan_json\n          FROM datasets d JOIN dataset_versions v ON v.dataset_id=d.id\n          LEFT JOIN dataset_analysis_links l ON l.version_id=v.id\n          LEFT JOIN platform_runs r ON r.request_key='dataset:'||l.id::text\n          ORDER BY d.created_at",
+    "rows": [
+      {
+        "dataset_id": "c86197b1-b227-459f-a9a0-9bdaf2da026d",
+        "user_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "assay_type": "unknown",
+        "version_id": "e56be7ef-7589-42ac-bd27-58e0ae368669",
+        "number": 1,
+        "source_snapshot": {
+          "session_declaration": {
+            "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+            "invocation_id": "362e4b30-cc67-5c33-95b7-aafae5790bd3",
+            "input_type": "raw_fastq",
+            "declared_assay": "bulk_rnaseq"
+          }
+        },
+        "handoff": null,
+        "link_id": null,
+        "state": null,
+        "task_id": null,
+        "confirmation_id": null,
+        "parameters_hash": null,
+        "handoff_hash": null,
+        "normalized_request": null,
+        "execution_binding": null,
+        "run_id": null,
+        "request_key": null,
+        "run_status": null,
+        "run_task_id": null,
+        "plan_digest": null,
+        "plan_json": null
+      },
+      {
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "user_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "assay_type": "unknown",
+        "version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "number": 1,
+        "source_snapshot": {
+          "session_declaration": {
+            "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+            "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+            "input_type": "raw_fastq",
+            "declared_assay": "bulk_rnaseq"
+          }
+        },
+        "handoff": {
+          "handoff_schema_version": "1.0",
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "source": [],
+          "ingestion": [],
+          "assets": [
+            {
+              "asset_id": "de0bf726-69c9-4364-908b-db4c12caed8c",
+              "file_record_id": "44bf6f89-7a1d-432b-b88d-5f4a6af938e1",
+              "asset_role": "raw_reads",
+              "data_type": "RAW_FASTQ",
+              "format": "fastq",
+              "size": 29,
+              "sha256": "42f6fae1c1b5dc8492a8df855a4d612ed49d18b6a2e620ef835bf53aa89d204f",
+              "checksum_status": "VERIFIED",
+              "availability": "AVAILABLE"
+            },
+            {
+              "asset_id": "f7851ba9-8b9f-4e07-bc88-02658a42757a",
+              "file_record_id": "9b411aa7-6f87-4668-9d29-2126585efdea",
+              "asset_role": "raw_reads",
+              "data_type": "RAW_FASTQ",
+              "format": "fastq",
+              "size": 29,
+              "sha256": "42f6fae1c1b5dc8492a8df855a4d612ed49d18b6a2e620ef835bf53aa89d204f",
+              "checksum_status": "VERIFIED",
+              "availability": "AVAILABLE"
+            }
+          ],
+          "samples": [
+            {
+              "sample_id": "7078246a-ff0e-4783-abfa-4af279a631fc",
+              "sample_key": "sample1",
+              "source_accessions": [],
+              "file_record_ids": [
+                "9b411aa7-6f87-4668-9d29-2126585efdea",
+                "44bf6f89-7a1d-432b-b88d-5f4a6af938e1"
+              ],
+              "source_metadata": {
+                "name": "paired-pilot",
+                "species": "",
+                "tissue": "",
+                "metadata": {}
+              },
+              "user_annotation": {
+                "group": "control",
+                "group_confirmed": true,
+                "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+                "review_history": [
+                  {
+                    "previous_group": "control",
+                    "group": "control",
+                    "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+                    "reviewed_at": "2026-10-21T17:19:09.422869+00:00"
+                  }
+                ]
+              },
+              "mapping_status": "CONFIRMED"
+            }
+          ],
+          "validation": {
+            "dataset_ready": true,
+            "compatible_flow_ids": [
+              "rna_seq"
+            ],
+            "blocking_reasons": [],
+            "worker_paths_verified": false
+          },
+          "provenance": {
+            "initiated_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+            "review_annotations": {
+              "assay_type": "bulk_rnaseq",
+              "history": [
+                {
+                  "assay_type": "bulk_rnaseq",
+                  "reason": "Human JWT explicit FASTQ assay review for isolated PLAN_ONLY pilot",
+                  "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+                  "reviewed_at": "2026-10-21T17:19:09.407005+00:00"
+                }
+              ]
+            },
+            "tool_invocation_ids": [],
+            "agent_session_ids": [],
+            "output_state": "NOT_REQUESTED"
+          },
+          "manifest_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07"
+        },
+        "link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+        "state": "PREPARED",
+        "task_id": null,
+        "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+        "parameters_hash": "255e3ce8b7905786f8511d34c9ca0b20fc082e639933f22f6722a047516866e6",
+        "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+        "normalized_request": {
+          "owner_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+          "operation": "dataset.analysis.submit",
+          "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+          "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+          "public_preview": {
+            "parameters": {
+              "project_name": "Explicit FASTQ PLAN_ONLY",
+              "client": "Dataset import",
+              "Genome_Version": "hg38",
+              "species": "Homo sapiens",
+              "Library_Types": "fr-unstranded",
+              "deg": false,
+              "raw_data_path": "directory://raw_data"
+            },
+            "sample_sheet": [
+              {
+                "sample": "sample1",
+                "sample_name": "paired-pilot",
+                "group": "control"
+              }
+            ],
+            "comparisons": [],
+            "resource_hint": {
+              "cores": 8,
+              "memory": "32G",
+              "time": "4h"
+            }
+          },
+          "request": {
+            "flow_id": "rna_seq",
+            "name": "Explicit FASTQ PLAN_ONLY RNA-seq",
+            "parameters": {
+              "project_name": "Explicit FASTQ PLAN_ONLY",
+              "client": "Dataset import",
+              "execution_mode": "local",
+              "Genome_Version": "hg38",
+              "species": "Homo sapiens",
+              "Library_Types": "fr-unstranded",
+              "raw_data_path": "/tmp/cygnusx-session-lineage-runtime-oxda70uj/storage/users/c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251/raw_data",
+              "only_qc": false,
+              "fastq_screen": true,
+              "deg": false,
+              "report": true,
+              "rmats": true,
+              "call_variant": false,
+              "detect_novel_transcripts": false,
+              "gene_fusion": false
+            },
+            "sample_sheet": [
+              {
+                "sample": "sample1",
+                "sample_name": "paired-pilot",
+                "group": "control"
+              }
+            ],
+            "comparisons": [],
+            "execution_mode": "local",
+            "idempotency_key": "dataset:c075f3cf-920d-4142-91fe-c184646ee4aa"
+          }
+        },
+        "execution_binding": {
+          "schema_version": "cygnusx.execution_binding.v1",
+          "flow_id": "rna_seq",
+          "flow_version": "2.3.0",
+          "flow_config_sha256": "6134938efce5596e0cdd725e6b5ae9222ee4cc9b452a8bda9310698a55c35979",
+          "parameters_sha256": "c5bf86683ca7213f9febde548880e879d94d18bcc05c9d5964494e5df7e0993b",
+          "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+          "runtime_environment": "NOT_OBSERVED",
+          "workflow_release_digest": null
+        },
+        "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+        "request_key": "dataset:c075f3cf-920d-4142-91fe-c184646ee4aa",
+        "run_status": "plan_pending",
+        "run_task_id": null,
+        "plan_digest": "bd00fff92388f2b9a0a321d3e95341b52347a1c5407a48cbabd5f6a0cfdde0b8",
+        "plan_json": {
+          "name": "Explicit FASTQ PLAN_ONLY RNA-seq",
+          "flow_id": "rna_seq",
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "parameters": {
+            "deg": false,
+            "rmats": true,
+            "client": "Dataset import",
+            "report": true,
+            "only_qc": false,
+            "species": "Homo sapiens",
+            "gene_fusion": false,
+            "call_variant": false,
+            "fastq_screen": true,
+            "project_name": "Explicit FASTQ PLAN_ONLY",
+            "Library_Types": "fr-unstranded",
+            "raw_data_path": "/tmp/cygnusx-session-lineage-runtime-oxda70uj/storage/users/c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251/raw_data",
+            "Genome_Version": "hg38",
+            "execution_mode": "local",
+            "detect_novel_transcripts": false
+          },
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "comparisons": [],
+          "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+          "sample_sheet": [
+            {
+              "group": "control",
+              "sample": "sample1",
+              "sample_name": "paired-pilot"
+            }
+          ],
+          "execution_mode": "local",
+          "idempotency_key": "dataset:c075f3cf-920d-4142-91fe-c184646ee4aa",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "dataset_analysis_link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa"
+        }
+      }
+    ]
+  },
+  "invocations": {
+    "sql": "SELECT id,owner_id,project_id,conversation_id,capability_id,request_id,status,confirmation_id,preview FROM agent_tool_invocations",
+    "rows": [
+      {
+        "id": "362e4b30-cc67-5c33-95b7-aafae5790bd3",
+        "owner_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "conversation_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+        "capability_id": "analysis.prepare_from_session_files",
+        "request_id": "7508a1d3-86d0-43e8-a89c-58b1f41e7d52",
+        "status": "REVIEW_REQUIRED",
+        "confirmation_id": null,
+        "preview": {
+          "dataset_id": "c86197b1-b227-459f-a9a0-9bdaf2da026d",
+          "dataset_version_id": "e56be7ef-7589-42ac-bd27-58e0ae368669"
+        }
+      },
+      {
+        "id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+        "owner_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "conversation_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+        "capability_id": "analysis.prepare_from_session_files",
+        "request_id": "2ec5fb3d-46f3-42e6-95a0-0a63c55fb07f",
+        "status": "PREPARED",
+        "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+        "preview": {
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+          "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+          "state": "PREPARED"
+        }
+      }
+    ]
+  },
+  "samples": {
+    "sql": "SELECT version_id,sample_id,sample_key,file_record_ids,user_annotation,mapping_status FROM dataset_samples",
+    "rows": [
+      {
+        "version_id": "e56be7ef-7589-42ac-bd27-58e0ae368669",
+        "sample_id": "e8938c3e-0e1e-4b79-9d0c-f8cfa91e1c33",
+        "sample_key": "sample1",
+        "file_record_ids": [
+          "9b411aa7-6f87-4668-9d29-2126585efdea"
+        ],
+        "user_annotation": {
+          "group": "control",
+          "group_confirmed": true,
+          "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+          "review_history": [
+            {
+              "previous_group": "control",
+              "group": "control",
+              "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+              "reviewed_at": "2026-10-21T17:16:34.885320+00:00"
+            }
+          ]
+        },
+        "mapping_status": "CONFIRMED"
+      },
+      {
+        "version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "sample_id": "7078246a-ff0e-4783-abfa-4af279a631fc",
+        "sample_key": "sample1",
+        "file_record_ids": [
+          "9b411aa7-6f87-4668-9d29-2126585efdea",
+          "44bf6f89-7a1d-432b-b88d-5f4a6af938e1"
+        ],
+        "user_annotation": {
+          "group": "control",
+          "group_confirmed": true,
+          "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+          "review_history": [
+            {
+              "previous_group": "control",
+              "group": "control",
+              "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+              "reviewed_at": "2026-10-21T17:19:09.422869+00:00"
+            }
+          ]
+        },
+        "mapping_status": "CONFIRMED"
+      }
+    ]
+  },
+  "run_events": {
+    "sql": "SELECT run_id,task_id,status,sequence,payload FROM platform_run_events ORDER BY sequence",
+    "rows": [
+      {
+        "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+        "task_id": null,
+        "status": "plan_pending",
+        "sequence": 1,
+        "payload": {
+          "mode": "PLAN_ONLY",
+          "analysis_link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa"
+        }
+      }
+    ]
+  },
+  "users": {
+    "sql": "SELECT id,username,status,disabled_modules FROM users ORDER BY username",
+    "rows": [
+      {
+        "id": "eba382fc-c4fd-48ff-adb5-99fcd6dc5c0d",
+        "username": "lineage_admin",
+        "status": "active",
+        "disabled_modules": []
+      },
+      {
+        "id": "33d9cea5-735a-4574-ace1-94a5d948eee6",
+        "username": "lineage_denied",
+        "status": "active",
+        "disabled_modules": [
+          "reports"
+        ]
+      },
+      {
+        "id": "fac53db1-e65d-4c90-8ab8-3163cc63eb45",
+        "username": "lineage_other",
+        "status": "active",
+        "disabled_modules": []
+      },
+      {
+        "id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "username": "lineage_owner",
+        "status": "active",
+        "disabled_modules": []
+      }
+    ]
+  },
+  "counts": {
+    "datasets": 2,
+    "dataset_versions": 2,
+    "dataset_analysis_links": 1,
+    "platform_runs": 1,
+    "tasks": 0,
+    "reports": 0,
+    "research_plans": 0,
+    "project_export_jobs": 0
+  }
+}

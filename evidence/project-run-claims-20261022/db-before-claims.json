@@ -1,0 +1,210 @@
+{
+  "lineage": {
+    "sql": "SELECT d.id AS dataset_id,d.user_id,d.project_id,d.status AS dataset_status,\n v.id AS version_id,v.status AS version_status,v.source_snapshot,v.review_annotations,v.handoff,\n l.id AS link_id,l.state AS link_state,l.task_id,l.handoff_hash,l.normalized_request,\n r.id AS run_id,r.project_id AS run_project_id,r.status AS run_status,r.request_key,r.attempt_number,\n r.archive_directory,r.archive_identity,r.archive_manifest_sha256,r.archive_metadata,r.plan_json\n FROM datasets d JOIN dataset_versions v ON v.dataset_id=d.id\n JOIN dataset_analysis_links l ON l.version_id=v.id\n JOIN platform_runs r ON r.plan_json->>'dataset_analysis_link_id'=l.id::text ORDER BY d.created_at",
+    "rows": []
+  },
+  "run_index": {
+    "sql": "SELECT id,user_id,project_id,project_slug,status,task_id,archive_directory,archive_present,\n archive_file_count,archive_total_bytes,archive_last_activity,archive_indexed_at,archive_metadata\n FROM platform_runs ORDER BY id",
+    "rows": [
+      {
+        "id": "08d8cfcd-4874-432d-8d10-26c39f1cc7b8",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-missing-manifest-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1937,
+        "archive_last_activity": "2026-10-22 02:07:58.199179+00:00",
+        "archive_indexed_at": "2026-10-22 02:07:58.201951+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-missing-manifest-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-complete-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1921,
+        "archive_last_activity": "2026-10-22 02:07:58.178179+00:00",
+        "archive_indexed_at": "2026-10-22 02:07:58.194676+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-complete-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "55551ef5-1624-4286-aa48-23bdfd7970eb",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": null,
+        "project_slug": "unknown-slug",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "missing-directory-legacy",
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {
+          "dirty": true,
+          "locations": [
+            "missing-directory-legacy"
+          ]
+        }
+      },
+      {
+        "id": "9a0c906d-816e-4dfc-81af-b0e5663c6fe4",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": null,
+        "project_slug": "other-only",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-tampered-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1921,
+        "archive_last_activity": "2026-10-22 02:07:58.204179+00:00",
+        "archive_indexed_at": "2026-10-22 02:07:58.206974+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-tampered-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      },
+      {
+        "id": "b895a5b6-ef53-4fe4-a2ab-2d724986d13f",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "plan_pending",
+        "task_id": null,
+        "archive_directory": null,
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {}
+      },
+      {
+        "id": "c315f352-2d83-4d23-866d-879850b58890",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "missing-link-legacy",
+        "archive_present": false,
+        "archive_file_count": 0,
+        "archive_total_bytes": 0,
+        "archive_last_activity": null,
+        "archive_indexed_at": null,
+        "archive_metadata": {
+          "dirty": true,
+          "locations": [
+            "missing-link-legacy"
+          ]
+        }
+      },
+      {
+        "id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+        "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+        "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "project_slug": "claim-main",
+        "status": "ARCHIVED_UNCLAIMED",
+        "task_id": null,
+        "archive_directory": "legacy-already-claimed-20261022-020758",
+        "archive_present": true,
+        "archive_file_count": 4,
+        "archive_total_bytes": 1935,
+        "archive_last_activity": "2026-10-22 02:07:58.209179+00:00",
+        "archive_indexed_at": "2026-10-22 02:07:58.211924+00:00",
+        "archive_metadata": {
+          "dirty": false,
+          "locations": [
+            "legacy-already-claimed-20261022-020758"
+          ],
+          "truncated": false,
+          "has_readme": true,
+          "has_manifest": true,
+          "has_agents_md": false,
+          "has_environment": true
+        }
+      }
+    ]
+  },
+  "claim_audit": {
+    "sql": "SELECT id,user_id,method,path,status_code,detail,created_at FROM audit_logs\n WHERE resource_type='project_run_claim' ORDER BY created_at,id",
+    "rows": []
+  },
+  "counts": {
+    "datasets": 0,
+    "dataset_versions": 0,
+    "dataset_analysis_links": 0,
+    "platform_runs": 9,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "audit_logs": 3
+  }
+}

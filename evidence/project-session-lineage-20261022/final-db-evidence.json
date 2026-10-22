@@ -1,0 +1,200 @@
+{
+  "rows": [
+    {
+      "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+      "user_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+      "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+      "version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+      "review_annotations": {
+        "assay_type": "bulk_rnaseq",
+        "history": [
+          {
+            "assay_type": "bulk_rnaseq",
+            "reason": "Human JWT explicit FASTQ assay review for isolated PLAN_ONLY pilot",
+            "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+            "reviewed_at": "2026-10-21T17:19:09.407005+00:00"
+          }
+        ]
+      },
+      "source_snapshot": {
+        "session_declaration": {
+          "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+          "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+          "input_type": "raw_fastq",
+          "declared_assay": "bulk_rnaseq"
+        }
+      },
+      "handoff": {
+        "handoff_schema_version": "1.0",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "source": [],
+        "ingestion": [],
+        "assets": [
+          {
+            "asset_id": "de0bf726-69c9-4364-908b-db4c12caed8c",
+            "file_record_id": "44bf6f89-7a1d-432b-b88d-5f4a6af938e1",
+            "asset_role": "raw_reads",
+            "data_type": "RAW_FASTQ",
+            "format": "fastq",
+            "size": 29,
+            "sha256": "42f6fae1c1b5dc8492a8df855a4d612ed49d18b6a2e620ef835bf53aa89d204f",
+            "checksum_status": "VERIFIED",
+            "availability": "AVAILABLE"
+          },
+          {
+            "asset_id": "f7851ba9-8b9f-4e07-bc88-02658a42757a",
+            "file_record_id": "9b411aa7-6f87-4668-9d29-2126585efdea",
+            "asset_role": "raw_reads",
+            "data_type": "RAW_FASTQ",
+            "format": "fastq",
+            "size": 29,
+            "sha256": "42f6fae1c1b5dc8492a8df855a4d612ed49d18b6a2e620ef835bf53aa89d204f",
+            "checksum_status": "VERIFIED",
+            "availability": "AVAILABLE"
+          }
+        ],
+        "samples": [
+          {
+            "sample_id": "7078246a-ff0e-4783-abfa-4af279a631fc",
+            "sample_key": "sample1",
+            "source_accessions": [],
+            "file_record_ids": [
+              "9b411aa7-6f87-4668-9d29-2126585efdea",
+              "44bf6f89-7a1d-432b-b88d-5f4a6af938e1"
+            ],
+            "source_metadata": {
+              "name": "paired-pilot",
+              "species": "",
+              "tissue": "",
+              "metadata": {}
+            },
+            "user_annotation": {
+              "group": "control",
+              "group_confirmed": true,
+              "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+              "review_history": [
+                {
+                  "previous_group": "control",
+                  "group": "control",
+                  "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+                  "reviewed_at": "2026-10-21T17:19:09.422869+00:00"
+                }
+              ]
+            },
+            "mapping_status": "CONFIRMED"
+          }
+        ],
+        "validation": {
+          "dataset_ready": true,
+          "compatible_flow_ids": [
+            "rna_seq"
+          ],
+          "blocking_reasons": [],
+          "worker_paths_verified": false
+        },
+        "provenance": {
+          "initiated_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+          "review_annotations": {
+            "assay_type": "bulk_rnaseq",
+            "history": [
+              {
+                "assay_type": "bulk_rnaseq",
+                "reason": "Human JWT explicit FASTQ assay review for isolated PLAN_ONLY pilot",
+                "reviewed_by": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+                "reviewed_at": "2026-10-21T17:19:09.407005+00:00"
+              }
+            ]
+          },
+          "tool_invocation_ids": [],
+          "agent_session_ids": [],
+          "output_state": "NOT_REQUESTED"
+        },
+        "manifest_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07"
+      },
+      "analysis_link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+      "state": "PREPARED",
+      "task_id": null,
+      "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+      "normalized_request": {
+        "owner_id": "c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+        "operation": "dataset.analysis.submit",
+        "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+        "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+        "public_preview": {
+          "parameters": {
+            "project_name": "Explicit FASTQ PLAN_ONLY",
+            "client": "Dataset import",
+            "Genome_Version": "hg38",
+            "species": "Homo sapiens",
+            "Library_Types": "fr-unstranded",
+            "deg": false,
+            "raw_data_path": "directory://raw_data"
+          },
+          "sample_sheet": [
+            {
+              "sample": "sample1",
+              "sample_name": "paired-pilot",
+              "group": "control"
+            }
+          ],
+          "comparisons": [],
+          "resource_hint": {
+            "cores": 8,
+            "memory": "32G",
+            "time": "4h"
+          }
+        },
+        "request": {
+          "flow_id": "rna_seq",
+          "name": "Explicit FASTQ PLAN_ONLY RNA-seq",
+          "parameters": {
+            "project_name": "Explicit FASTQ PLAN_ONLY",
+            "client": "Dataset import",
+            "execution_mode": "local",
+            "Genome_Version": "hg38",
+            "species": "Homo sapiens",
+            "Library_Types": "fr-unstranded",
+            "raw_data_path": "/tmp/cygnusx-session-lineage-runtime-oxda70uj/storage/users/c0f01cfb-dfa6-4b4e-9ef5-e4e22fe2e251/raw_data",
+            "only_qc": false,
+            "fastq_screen": true,
+            "deg": false,
+            "report": true,
+            "rmats": true,
+            "call_variant": false,
+            "detect_novel_transcripts": false,
+            "gene_fusion": false
+          },
+          "sample_sheet": [
+            {
+              "sample": "sample1",
+              "sample_name": "paired-pilot",
+              "group": "control"
+            }
+          ],
+          "comparisons": [],
+          "execution_mode": "local",
+          "idempotency_key": "dataset:c075f3cf-920d-4142-91fe-c184646ee4aa"
+        }
+      },
+      "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+      "request_key": "dataset:c075f3cf-920d-4142-91fe-c184646ee4aa",
+      "run_task_id": null
+    }
+  ],
+  "counts": {
+    "datasets": 2,
+    "dataset_versions": 2,
+    "dataset_analysis_links": 1,
+    "platform_runs": 1,
+    "tasks": 0,
+    "reports": 0,
+    "research_plans": 0,
+    "project_export_jobs": 0
+  }
+}

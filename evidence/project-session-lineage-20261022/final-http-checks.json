@@ -1,0 +1,387 @@
+[
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "1.0",
+      "invocation_id": "3bbc2afa-ae29-5aa9-b16a-db272b2501c1",
+      "result": {
+        "mode": "PLAN_ONLY",
+        "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+        "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+        "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+        "write_enabled": false,
+        "gate": "WRITE_GATE_BLOCKED",
+        "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+        "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+        "state": "PREPARED",
+        "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+        "handoff_frozen": true
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "请求参数校验失败",
+      "errors": [
+        {
+          "type": "extra_forbidden",
+          "loc": [
+            "body",
+            "project_id"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "input": "2f5d0c04-541d-402c-a196-e11f478c0bcd"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "工具未获授权",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/capability-status",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "research_plan": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "research_delivery_read": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "project_export": {
+        "enabled": false,
+        "allowed": false,
+        "reason": "SERVICE_DISABLED"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-plans",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "数据管理模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-delivery",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "数据管理模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/delivery-inventory",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "数据管理模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/capability-status",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "research_plan": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "research_delivery_read": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "project_export": {
+        "enabled": false,
+        "allowed": false,
+        "reason": "SERVICE_DISABLED"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-plans",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-delivery",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/delivery-inventory",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/capability-status",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "research_plan": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "research_delivery_read": {
+        "enabled": true,
+        "allowed": false,
+        "reason": "NO_PERMISSION"
+      },
+      "project_export": {
+        "enabled": false,
+        "allowed": false,
+        "reason": "SERVICE_DISABLED"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-plans",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/research-delivery",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/delivery-inventory",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/capability-status",
+    "expected": 401,
+    "status": 401,
+    "response": {
+      "detail": "用户不存在或已被禁用"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/4854f3ac-2ccd-45c4-8739-754de33d0f89/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "当前项目不可准备新分析",
+      "code": "PROJECT_INACTIVE"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/tasks",
+    "expected": 409,
+    "status": 409,
+    "response": {
+      "detail": "Run 请求必须通过审批入口",
+      "code": "RUN_CONFIRM_REQUIRED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/analysis-proposals/c075f3cf-920d-4142-91fe-c184646ee4aa",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+      "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+      "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+      "expires_at": "2026-10-21T17:49:09.508277+00:00",
+      "parameters_hash": "255e3ce8b7905786f8511d34c9ca0b20fc082e639933f22f6722a047516866e6",
+      "state": "APPROVED",
+      "task_id": null,
+      "preview": {
+        "parameters": {
+          "project_name": "Explicit FASTQ PLAN_ONLY",
+          "client": "Dataset import",
+          "Genome_Version": "hg38",
+          "species": "Homo sapiens",
+          "Library_Types": "fr-unstranded",
+          "deg": false,
+          "raw_data_path": "directory://raw_data"
+        },
+        "sample_sheet": [
+          {
+            "sample": "sample1",
+            "sample_name": "paired-pilot",
+            "group": "control"
+          }
+        ],
+        "comparisons": [],
+        "resource_hint": {
+          "cores": 8,
+          "memory": "32G",
+          "time": "4h"
+        }
+      },
+      "write_enabled": false,
+      "gate": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/datasets/53e1f384-3f1f-470a-9a81-68bad70c9010/versions/ff45fe21-9b80-4009-ba14-58505a992b53/analysis-proposals/c075f3cf-920d-4142-91fe-c184646ee4aa/execute",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "Agent 写操作运行门禁未通过",
+      "code": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/runs/3994b334-77c9-42b7-998e-c011cf7a3790/confirm",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "Agent 写操作运行门禁未通过",
+      "code": "WRITE_GATE_BLOCKED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/966b1dcd-43bd-4dd0-8d7c-8d9290c86799/delivery-inventory",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+      "datasets": [
+        {
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+          "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+          "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+          "analyses": [
+            {
+              "analysis_link_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+              "task_id": null,
+              "compute_state": "PREPARED",
+              "delivery_state": "BLOCKED",
+              "gaps": [
+                "TASK_NOT_CREATED"
+              ]
+            }
+          ],
+          "gaps": []
+        },
+        {
+          "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+          "dataset_id": "c86197b1-b227-459f-a9a0-9bdaf2da026d",
+          "dataset_version_id": "e56be7ef-7589-42ac-bd27-58e0ae368669",
+          "handoff_hash": null,
+          "analyses": [],
+          "gaps": [
+            "HANDOFF_NOT_FROZEN"
+          ]
+        }
+      ],
+      "runtime_admission": "BLOCKED",
+      "truncated": false,
+      "association_status": "VERIFIED_ASSOCIATION",
+      "association_scope": "explicit_dataset_links_only",
+      "historical_tasks": {
+        "status": "NOT_RECORDED",
+        "reason": "NO_PROJECT_FK_NO_BACKFILL"
+      },
+      "export_enabled": false
+    }
+  },
+  {
+    "check": "real DB-backed worker input guard",
+    "code": "WORKER_PATHS_NOT_VERIFIED"
+  }
+]

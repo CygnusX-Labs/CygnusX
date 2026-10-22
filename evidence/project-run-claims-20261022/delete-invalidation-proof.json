@@ -1,0 +1,37 @@
+{
+  "before": {
+    "id": "47f26448-ead3-4389-9c1e-8c65fd092875",
+    "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+    "status": "ARCHIVED_UNCLAIMED",
+    "attempt_number": 0,
+    "archive_present": true,
+    "has_manifest": true,
+    "index_dirty": false,
+    "index_complete": true,
+    "name": "legacy-benchmark-000-20261022-020758",
+    "timestamp": "2026-10-22T02:07:58.215179+00:00",
+    "has_agents_md": false,
+    "has_readme": true,
+    "has_environment": true,
+    "file_count": 99,
+    "total_size_bytes": 13265
+  },
+  "after": {
+    "id": "47f26448-ead3-4389-9c1e-8c65fd092875",
+    "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+    "status": "ARCHIVED_UNCLAIMED",
+    "attempt_number": 0,
+    "archive_present": true,
+    "has_manifest": true,
+    "index_dirty": false,
+    "index_complete": true,
+    "name": "legacy-benchmark-000-20261022-020758",
+    "timestamp": "2026-10-22T02:50:14.715339+00:00",
+    "has_agents_md": false,
+    "has_readme": true,
+    "has_environment": true,
+    "file_count": 98,
+    "total_size_bytes": 13253
+  },
+  "same_run_id": true
+}

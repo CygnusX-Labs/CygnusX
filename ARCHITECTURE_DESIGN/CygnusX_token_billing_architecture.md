@@ -3,6 +3,8 @@
 > 文档类型：as-built + 对账规范  
 > 基线：2026-09-22  
 > 适用范围：普通 Chat、Studio/Agent 工具循环、AgentTeams 会诊、个人用量统计和工作台费用展示。
+>
+> **边界注记（2026-10-21）**：饼干账户、定价、任务冻结/结算/退款、余额 WebSocket 推送与管理端账本见 [CygnusX_cookie_economy_architecture.md](CygnusX_cookie_economy_architecture.md)；本文只负责 Provider usage → AI token 扣费这一段。
 
 ## 0. 这个计费模块如何发挥作用
 

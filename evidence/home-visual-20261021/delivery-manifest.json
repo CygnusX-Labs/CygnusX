@@ -1,0 +1,47 @@
+{
+  "files": [
+    {
+      "path": "frontend/src/views/HomeView.vue",
+      "gitBlob": "3d9d7f51670d54069e9ab0f65bbac91e5d81e595",
+      "sha256": "0b6e17e74330786694d19b4394b93402e50d7b2fc4d70b1d0ca2140764c0fcd7"
+    },
+    {
+      "path": "frontend/src/components/AnnouncementBanner.vue",
+      "gitBlob": "1704b77e23ee233d53f3df7b80800d44eb9703ac",
+      "sha256": "b099cd32f6a2448ce146db3ca62058f467c870141dffdc1ff5f35fbc973fc42c"
+    },
+    {
+      "path": "frontend/src/components/home/ResearchWorkbenchPanel.vue",
+      "gitBlob": "914d595799b290331c3dc2b6989dc309a75a3eca",
+      "sha256": "1baa772ba2f2c43f713e8cd852fc127d2c6904765e3b11361010da2da173b161"
+    },
+    {
+      "path": "frontend/src/components/CookieBalanceBadge.vue",
+      "gitBlob": "36bf9bd73be3655489ce1d00f5b37b6c57ba1632",
+      "sha256": "8454116f44a8799409f4f03588fd0ebab304f133205e7a8c1faa557e81dc1c7c"
+    },
+    {
+      "path": "frontend/src/layouts/DefaultLayout.vue",
+      "gitBlob": "a0b89dce591a2cbb74c60bc5a4115a8e615ae77a",
+      "sha256": "9db36280fc83bc7073338133b4352155d05a636e444a18b87122516ea19c10be"
+    },
+    {
+      "path": "frontend/src/components/__tests__/AnnouncementBanner.test.ts",
+      "gitBlob": "5ad508152bf87bba3f0a5ad81349b72210eaca53",
+      "sha256": "466fdc61668670ff969c10f06c47bfa527bbed70a56f7e749acf4232e01b1e73"
+    },
+    {
+      "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "gitBlob": "88c606129f194b11f6a8554a018f18b27fd69090",
+      "sha256": "c4f8bc96f59fc8ca9fa13c0d697e5d1f24ee8268069eb54e291888ee632123aa"
+    },
+    {
+      "path": "docs/info/26.10.21/CygnusX首页视觉优化验收记录.md",
+      "gitBlob": "e1f1f08de588e520715e3268d85a4e1cdc9daa59",
+      "sha256": "3438f1e7ece6ac41051a385b875eccdc912e28abe061f25c28069b7686411f4c"
+    }
+  ],
+  "phasePatchesApply": true,
+  "phasePatchesMatchWorktree": true,
+  "actualIndexChanged": false
+}

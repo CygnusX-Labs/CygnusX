@@ -1,0 +1,162 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/announcements/active",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/ai-token-rate",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/festival/today",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reports",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/overview",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/capability-status",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/research-plans",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/research-delivery",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/delivery-inventory",
+    "status": 200
+  }
+]

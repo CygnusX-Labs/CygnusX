@@ -1,0 +1,254 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/announcements/active",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/ai-token-rate",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks",
+    "query": "?status=running&limit=5",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks",
+    "query": "?status=queued&limit=5",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/festival/today",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reports",
+    "query": "?page=1&page_size=5",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/overview",
+    "query": "?session_limit=100&run_limit=10&run_offset=0&session_status=active",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/capability-status",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/research-delivery",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/delivery-inventory",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/overview",
+    "query": "?session_limit=100&session_status=active&run_limit=10&run_offset=10",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/overview",
+    "query": "?session_limit=100&run_limit=10&run_offset=0&session_status=active",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/capability-status",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/research-delivery",
+    "query": "",
+    "status": 200
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/delivery-inventory",
+    "query": "",
+    "status": 200
+  }
+]

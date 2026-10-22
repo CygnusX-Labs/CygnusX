@@ -1,0 +1,6 @@
+{
+  "approved_by_user": true,
+  "user_reply": "继续",
+  "scope": "Response to the pending gate-review confirmation: isolated DATASET_DISCOVERY_READONLY metadata pilot only; all execution/download/report/export write gates remain false",
+  "review_file": "gate-review.md"
+}

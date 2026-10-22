@@ -1,0 +1,251 @@
+{
+  "storage_path": "/data/omichub",
+  "deg_data_mount": "/data/omichub",
+  "enrichment_data_mount": "/data/omichub",
+  "command_audits": [
+    {
+      "tool": "DEG/deseq2",
+      "mounts": [
+        {
+          "source": "/data/omichub",
+          "destination": "/data/cygnusx"
+        }
+      ],
+      "files": [
+        {
+          "flag": "-c",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/counts.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-m",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/metadata.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-p",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/pairs.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-o",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/output",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-a",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/annotation.csv",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    },
+    {
+      "tool": "DEG/edger",
+      "mounts": [
+        {
+          "source": "/data/omichub",
+          "destination": "/data/cygnusx"
+        }
+      ],
+      "files": [
+        {
+          "flag": "-c",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/counts.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-m",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/metadata.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-p",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/pairs.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-o",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/output",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-a",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/annotation.csv",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    },
+    {
+      "tool": "GSEA",
+      "mounts": [
+        {
+          "source": "/data/omichub",
+          "destination": "/data/cygnusx"
+        }
+      ],
+      "files": [
+        {
+          "flag": "--input",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/ranking.tsv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "--output",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/output/gsea_result.csv",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "--go_annotation",
+          "value": "/data/cygnusx/omichub_data/reference/ITAG4.1/go.annot",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    },
+    {
+      "tool": "Synteny",
+      "mounts": [
+        {
+          "source": "/data/omichub",
+          "destination": "/data/cygnusx"
+        }
+      ],
+      "files": [
+        {
+          "flag": "--gff3",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/annotations.gff3",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "--blastp",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/blastp.outfmt6",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "--output",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/output/synteny.json",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    },
+    {
+      "tool": "GO/KEGG (worktree fix)",
+      "mounts": [
+        {
+          "source": "/data/omichub",
+          "destination": "/data/cygnusx"
+        }
+      ],
+      "files": [
+        {
+          "flag": "--input",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/input/gene_list.txt",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "--output",
+          "value": "/data/cygnusx/users/audit/projects/path-audit/runs/check/output/enrichment_result.csv",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    },
+    {
+      "tool": "BLAST search",
+      "mounts": [
+        {
+          "source": "/data/omichub/blast/db/example",
+          "destination": "/blast_db"
+        },
+        {
+          "source": "/data/omichub/users/audit/projects/path-audit/runs/check/input",
+          "destination": "/query"
+        },
+        {
+          "source": "/data/omichub/users/audit/projects/path-audit/runs/check/output",
+          "destination": "/results"
+        }
+      ],
+      "files": [
+        {
+          "flag": "-query",
+          "value": "/query/query.fa",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-db",
+          "value": "/blast_db/sequence",
+          "covered_by_mount": true
+        },
+        {
+          "flag": "-out",
+          "value": "/results/result.xml",
+          "covered_by_mount": true
+        }
+      ],
+      "all_file_arguments_covered": true
+    }
+  ],
+  "jbrowse": [
+    {
+      "assembly": "human_hg38",
+      "field": "fasta",
+      "configured": "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa",
+      "configured_exists": true,
+      "tracks_uri": "/tracks/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa",
+      "file_behind_tracks_uri_exists": true,
+      "legacy_counterpart": "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa",
+      "legacy_counterpart_exists": true
+    },
+    {
+      "assembly": "human_hg38",
+      "field": "fai",
+      "configured": "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai",
+      "configured_exists": true,
+      "tracks_uri": "/tracks/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai",
+      "file_behind_tracks_uri_exists": true,
+      "legacy_counterpart": "/data/omichub/omichub_data/jbrowse/ref/human_hg38/GRCh38.p14.genome.fa.fai",
+      "legacy_counterpart_exists": true
+    },
+    {
+      "assembly": "arabidopsis_tair10",
+      "field": "fasta",
+      "configured": "/data/omichub/omichub_data/reference/TAIR10/TAIR10_chr_all.fas",
+      "configured_exists": true,
+      "tracks_uri": "/tracks/omichub_data/reference/TAIR10/TAIR10_chr_all.fas",
+      "file_behind_tracks_uri_exists": true,
+      "legacy_counterpart": "/data/omichub/omichub_data/reference/TAIR10/TAIR10_chr_all.fas",
+      "legacy_counterpart_exists": true
+    },
+    {
+      "assembly": "arabidopsis_tair10",
+      "field": "fai",
+      "configured": "/data/omichub/omichub_data/reference/TAIR10/TAIR10_chr_all.fas.fai",
+      "configured_exists": true,
+      "tracks_uri": "/tracks/omichub_data/reference/TAIR10/TAIR10_chr_all.fas.fai",
+      "file_behind_tracks_uri_exists": true,
+      "legacy_counterpart": "/data/omichub/omichub_data/reference/TAIR10/TAIR10_chr_all.fas.fai",
+      "legacy_counterpart_exists": true
+    }
+  ],
+  "explicit_config_roots": {
+    "terminal_workspace_base": "/data/omichub/users",
+    "fastq_qc_root": "/data/omichub/qc/tasks",
+    "download_binaries": {
+      "ebi": "/data/omichub/bin/EBIDownload",
+      "ebi_config": "/data/omichub/bin/EBIDownload.yaml",
+      "aria2c": "/usr/bin/aria2c",
+      "ossutil": "/data/omichub/bin/ossutil",
+      "tosutil": "/data/omichub/bin/tosutil",
+      "obsutil": "/data/omichub/bin/obsutil"
+    },
+    "jbrowse_scan_paths": [
+      "/data/omichub/users/{user_id}"
+    ],
+    "jbrowse_upload_dir": "/data/omichub/users/{user_id}/uploads/"
+  },
+  "scope": "command construction and local config/filesystem inspection; no live execution"
+}

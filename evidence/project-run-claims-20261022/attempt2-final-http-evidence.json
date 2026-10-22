@@ -1,0 +1,357 @@
+[
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "PREVIEW",
+      "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+      "parameters_hash": "96967ae616c5bbabed7294b95e0c8bcc80ebb96bc23109d385cc522180c93e33",
+      "manifest_sha256": "83524249e93ea347c986410f231f0648b0ac5016c9245495ff9980b3f55c77bb",
+      "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+      "files": [
+        {
+          "path": "output/result.txt",
+          "file_record_id": "6d141fe2-a5be-4b76-af24-9faeea6d85bb",
+          "size": 41,
+          "sha256": "105a99cd48b3d4a9fd7ebafca3c027dc81810a2e3ce8bf0514e6b3e639a5c29d",
+          "integrity": "VERIFIED"
+        }
+      ],
+      "purpose": "Latest-source explicit historical claim; not computation.",
+      "integrity": "VERIFIED",
+      "will_create": [
+        "Dataset",
+        "DatasetVersion",
+        "frozen Handoff",
+        "historical AnalysisLink"
+      ],
+      "task_will_be_created": false,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim/approve",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "confirmation_id": "6a99d5ef-e3e6-4dff-a13a-ab46a2482148",
+      "state": "APPROVED",
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": false,
+      "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+      "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+      "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+      "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false,
+      "purpose": "Latest-source explicit historical claim; not computation.",
+      "handoff_hash": "641a5f4ae372d8ec0c5d377c55e2adc95a53346eb8a9c41393d0643d7495342c"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/reconciliation",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/reconciliation",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/reconciliation",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "该 Run 已有血缘或需要人工对账，不覆盖既有挂链",
+      "code": "RUN_ALREADY_LINKED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "FileRegistry SHA 不符",
+      "code": "FILE_REGISTRY_MISMATCH"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "PREVIEW",
+      "confirmation_id": "0b1741b2-e56f-485c-9b3d-37f549568bee",
+      "parameters_hash": "00f346d766c5e3d9e1d96c526dcc00024169e1653ba9b8740b2aa0359b1f7632",
+      "manifest_sha256": "5742153836c1e272342ca2d8cd6044535f6331a2b5b18fe6cf8f2263f6542015",
+      "run_id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+      "files": [
+        {
+          "path": "output/result.tsv",
+          "file_record_id": "b50ec503-6041-460b-932b-52a1038c29d9",
+          "size": 23,
+          "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+          "integrity": "VERIFIED"
+        }
+      ],
+      "purpose": "Latest-source explicit historical claim; not computation.",
+      "integrity": "VERIFIED",
+      "will_create": [
+        "Dataset",
+        "DatasetVersion",
+        "frozen Handoff",
+        "historical AnalysisLink"
+      ],
+      "task_will_be_created": false,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "confirmation_id": "0b1741b2-e56f-485c-9b3d-37f549568bee",
+      "state": "APPROVED",
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "归档文件大小或 SHA 不符：output/result.tsv",
+      "code": "ARCHIVE_FILE_CHANGED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/overview?run_limit=200",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "project": {
+        "id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+        "name": "Claim main",
+        "slug": "claim-main",
+        "description": "",
+        "customer": "",
+        "status": "active",
+        "settings": null,
+        "created_at": "2026-10-22T02:03:31.861570+00:00",
+        "updated_at": "2026-10-22T02:03:31.861570+00:00"
+      },
+      "sessions": {
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+        "items": []
+      },
+      "runs": [
+        {
+          "id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "HISTORICAL_CLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "index_complete": true,
+          "name": "legacy-final-source-20261022-024516",
+          "timestamp": "2026-10-22T02:45:16.596611+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 4,
+          "total_size_bytes": 1831
+        },
+        {
+          "id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "HISTORICAL_CLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "index_complete": true,
+          "name": "moved-historical-archive",
+          "timestamp": "2026-10-22T02:11:23.724923+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 4,
+          "total_size_bytes": 1921
+        },
+        {
+          "id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "HISTORICAL_CLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "index_complete": true,
+          "name": "legacy-already-claimed-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.209179+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 4,
+          "total_size_bytes": 1935
+        },
+        {
+          "id": "9bfa4c8c-8505-4359-8285-ce3229b7d31a",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "index_complete": true,
+          "name": "legacy-tampered-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.207179+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 4,
+          "total_size_bytes": 1921
+        },
+        {
+          "id": "08d8cfcd-4874-432d-8d10-26c39f1cc7b8",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": false,
+          "index_dirty": false,
+          "index_complete": true,
+          "name": "legacy-missing-manifest-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.202179+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 3,
+          "total_size_bytes": 1692
+        },
+        {
+          "id": "c315f352-2d83-4d23-866d-879850b58890",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": false,
+          "has_manifest": false,
+          "index_dirty": true,
+          "index_complete": true,
+          "name": "missing-link-legacy",
+          "timestamp": null,
+          "has_agents_md": false,
+          "has_readme": false,
+          "has_environment": false,
+          "file_count": 0,
+          "total_size_bytes": 0
+        },
+        {
+          "id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": false,
+          "has_manifest": false,
+          "index_dirty": true,
+          "index_complete": true,
+          "name": "missing-directory-legacy",
+          "timestamp": null,
+          "has_agents_md": false,
+          "has_readme": false,
+          "has_environment": false,
+          "file_count": 0,
+          "total_size_bytes": 0
+        }
+      ],
+      "runs_total": 7,
+      "run_limit": 200,
+      "run_offset": 0
+    }
+  },
+  {
+    "method": "DELETE",
+    "path": "/files/1ab9d3f2-26d8-432f-a1ea-8f45899f1488",
+    "status": 200,
+    "expected": 204,
+    "response": {
+      "deleted": true
+    }
+  }
+]

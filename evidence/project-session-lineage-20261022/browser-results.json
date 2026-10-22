@@ -1,0 +1,49 @@
+[
+  {
+    "name": "plan_empty_card",
+    "evidence": "科研计划与审阅\n仅规划与受控预案，尚未开放下载、计算或发布。审阅整份计划不会批准后续写动作。\n刷新计划\n暂无科研计划，可在项目 AI 助手或寻宝鼠中准备计划。\n选择用于只读查询的项目会话"
+  },
+  {
+    "name": "delivery_empty_card",
+    "evidence": "科研执行与交付链\n刷新交付记录\n运行准入：BLOCKED。分析、产物、证据及报告状态分别核验。\n尚无 Dataset 交付记录"
+  },
+  {
+    "name": "inventory_empty_card",
+    "evidence": "项目科研成果与可追溯导出\n刷新科研成果\n项目导出功能尚未启用；可查看已有关联与证据。\n仅按可信 Dataset 关联展示任务。历史无项目关联的 Task：未记录，不自动补录。不默认复制 FASTQ/BAM；文件完整性不表示科学复现成功。\n\n项目数据资产：0 个数据版本 · 分析任务：0 个\n\n没有可信关联的分析任务；仍可预览空范围及缺口\n\n未勾选任务或报告时，包含当前容量范围内所有可信关联任务或报告版本。\n\n证据包（默认）\n导出科研成果：预览范围\n\n离线核验：解出 verify_project_delivery.py，执行 python verify_project_delivery.py project-delivery.zip。缺失报告请进入既有报告流程；导出不会生成报告或启动分析。"
+  },
+  {
+    "name": "read_only_research_requests",
+    "evidence": [
+      {
+        "method": "GET",
+        "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/research-plans",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/research-delivery",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/projects/a365ef1a-9c11-4cff-859d-5e6db30f6392/delivery-inventory",
+        "status": 200
+      }
+    ]
+  },
+  {
+    "name": "no_automatic_plan_write",
+    "evidence": []
+  },
+  {
+    "name": "pageerrors",
+    "evidence": []
+  },
+  {
+    "name": "browser",
+    "evidence": {
+      "version": "131.0.6778.33",
+      "chromiumSandbox": true
+    }
+  }
+]

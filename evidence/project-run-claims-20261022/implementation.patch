@@ -1,0 +1,3168 @@
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+--- a/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+@@ -375,3 +375,12 @@
+ - 该命令不挂接 Web API、Celery Worker 或前端操作，管理员应在独立计算节点、登录终端或维护窗口手动运行，避免大文件解析和索引构建给平台服务造成压力。
+ - 平台侧只注册生成好的 `path`、`index_path`、`db_path` 和 `build_status=ready`，通过 `tool_configs/jbrowse/jbrowse_config.yaml` 读取现成资产；当前不在平台内执行 FA/GFF/KO/KEGG 转换。
+ - `scripts/README.md` 记录 cygnusxtools 的安装方式、目录结构、扩展规范；`docs/update_info/26.6/offline_reference_database_build.md` 记录输入格式、构建命令、SQLite 表结构、注册步骤和排查清单。
++
++
++## 项目 Run 身份与历史认领持久化增量
++
++此节记录隔离工作树实现，未部署、生产迁移时点待用户决定。扩展原 `platform_runs`，没有新增平行 Run 表，也不把 Task.id 当作 Run.id。`project_id` 为 nullable projects FK（SET NULL）；`project_run_identity01` 只按同时相同的 user_id/project_slug 回填，未匹配/他人同 slug 留 NULL。新预案入口填写稳定项目 ID；attempt_number 默认 0，仅保留重试语义位置，未启用执行重试。
++
++同表物化 archive_directory/identity/manifest_sha256、present、file_count/total_bytes、last_activity/indexed_at 与 JSONB archive_metadata；`ix_platform_runs_project_activity` 支持项目分页。元数据壳状态 ARCHIVED_UNCLAIMED，与历史转正 HISTORICAL_CLAIMED、真实计算状态分开。历史认领仍复用 Dataset/Version/冻结 Handoff/AnalysisLink；所有新增血缘和事务审计共同提交。原 TaskService 事务绑定与孤立 Task 对账冲突保持原语义。
++
++`project_run_identity01 → project_run_claim_audit02` 保护 audit_logs resource_type=project_run_claim：行级禁止改写/删除及改标；语句级禁止存在认领审计时 TRUNCATE。中间件为成功、拒绝和认证/参数失败单独落审计并返回回执 ID；同事务认领审计补充业务原子性。存在保留审计时两次 downgrade 均拒绝，不为回滚删除证据。空隔离库全量升级/降到 project_lifecycle01/重升，主隔离库保护降级与实际 schema drift 检查均有日志，详见 `evidence/project-run-claims-20261022/`。数据库高权限管理员仍能更改触发器，这不是密码学不可篡改存储。
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+--- a/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+@@ -109,3 +109,12 @@
+ 下载登记复用既有FileRegistry写FileRecord.task_id/source/SHA；不新增关系表、不从目录猜Task。存在显式Ingestion.task_ids关联时，登记前重查当前owner/Project；下载用户/模块撤权、旧路径身份或字节冲突拒绝。真实临时文件经生产登记与SQLite到原reconcile的测试成立，仍不证明网络传输或Worker挂载已认证。
+ 
+ DownloadRequest拒绝调用方task_id/owner/project/二进制等未声明字段；下载能力描述由REST/Gateway/Vue共用。外部CLI最终目的地与传输硬预算未认证，新增源码运输门禁保持false，与原WRITE_RUNTIME_ACCEPTED/worker_paths_verified共同保留，不开放真实导入或分析。
++
++
++## 历史归档显式转正
++
++隔离工作树新增 `HistoricalRunClaimService`，生产部署与计算准入未改变。owner JWT 对归档三件套、manifest 实际字节及 FileRegistry 完成存在性/大小/SHA 校验后，先预审、再用既有确认服务批准、最后 commit。可选样本/文件映射必须显式且属当前项目。它复用 DatasetService 创建 Dataset/Version、archive 角色资产与可选 Sample，HandoffService 真实校验并冻结，再写 HISTORICAL_CLAIMED AnalysisLink 和既有 Run；不创建或自动纳管 Task。
++
++source_snapshot.historical_claim 保留原目录、原始 manifest SHA、用途、actor/time、已消费批准回执与原 Run 引用。改名/同项目移动后只刷新索引位置，原冻结来源不变。版本状态是历史认领语义，科学准备度仍按实际校验：assay 未知和未经确认分组保留缺口，dataset_ready 不提升、worker_paths_verified 固定 false。历史 Link 没有可执行 TaskSubmitRequest/flow_execution_binding，后续即使其他执行门获准也明确拒绝历史 Link execute。
++
++ResearchProvenance 只读投影为 HISTORICAL_CLAIM / HISTORICAL_REFERENCE、compute=NOT_OBSERVED，界面明确“未观察计算执行，也未提交新任务”。Task、报告和导出计数不因认领增加。已被 DatasetAsset 引用的文件删除在物理删除前返回 FILE_LINEAGE_RETAINED，避免 FK 冲突后先丢失实体。历史目录完整、缺 manifest、SHA 篡改、重复/改名/复制移动及只读对账证据见 `evidence/project-run-claims-20261022/`；验收权仍属用户。
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md b/ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md
+--- a/ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md
+@@ -1,7 +1,7 @@
+ # CygnusX 项目空间与文件管理架构（Project Workspace & Files）
+ 
+ > **用途**：记录项目聚合、项目详情聚合、文件记录/目录/上传会话、聊天附件、文件解析引用、团队文件 ACL、项目归档与工作区归档的 as-built 实现。
+-> **类型**：as-built（2026-10-21 代码基线）。
++> **类型**：as-built（隔离工作树已实施；未部署，生产迁移时点由用户决定）。
+ > **适用范围**：`/api/v1/projects/*`、`/api/v1/files/*`、`/api/v1/teams`、`/api/v1/admin/workspace-archive/*`、`/api/v1/admin/storage/usage`、`projects`/`file_records`/`upload_sessions`/`user_directories`/`samples`/`workspace_archives` 表、`ProjectsView`/`ProjectDetailView`/`FilesView`/`AdminWorkspaceArchiveView`。
+ > **不适用范围**：存储根解析、目录协议、`StoragePathFactory`、sync 反向对账与目录树元数据——以 [CygnusX_storage_architecture.md](CygnusX_storage_architecture.md) 为唯一权威；科研交付/导出 ZIP 的完整流程见 [CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)；会话休眠/解包生命周期见 [CygnusX_research_loop_architecture.md](CygnusX_research_loop_architecture.md)。
+ 
+@@ -9,7 +9,7 @@
+ 
+ 项目是用户组织会话、运行与交付物的**单所有者聚合**：一个项目对应数据库一行与磁盘目录 `projects/{slug}`，没有项目成员表或项目级 RBAC。项目当前为刻意单所有者模型，无 project_members 表是设计决策而非缺陷。文件管理负责"平台内所有可见文件"的记录、配额、目录树、上传会话、下载/预览与引用解析；团队文件通过 `file_records.owner_scope/team_id` 共享，使用独立的 `owner/writer/reader` ACL，不经过平台角色系统。
+ 
+-项目详情页把三个数据源聚合为"项目工作台"：`chat_sessions.project_id`（会话）、AgentTeams 房间、磁盘 run 目录。项目归档负责在每个 run 目录写入确定性的 README/environment/manifest，并把分析记录追加到项目 `AGENTS.md`；会话工作区的休眠打包属于研究闭环，不在本文重复。
++项目详情页把三个数据源聚合为"项目工作台"：`chat_sessions.project_id`（会话）、AgentTeams 房间、既有 `platform_runs` 归档索引。项目归档负责在每个 run 目录写入确定性的 README/environment/manifest，并把分析记录追加到项目 `AGENTS.md`；会话工作区的休眠打包属于研究闭环，不在本文重复。
+ 
+ ## 1. 总体架构
+ 
+@@ -55,7 +55,7 @@
+     PS --> DB
+     PS --> DISK
+     POS --> DB
+-    POS --> DISK
++    PAS --> DB
+     WAS --> DB
+     WAS --> DISK
+     WAPI --> ST
+@@ -107,7 +107,11 @@
+ | GET | `/projects/count` | 数量 |
+ | POST | `/projects` | 创建（201） |
+ | GET | `/projects/{id}` | 详情 |
+-| GET | `/projects/{id}/overview` | 会话/房间/磁盘 run 聚合 |
++| GET | `/projects/{id}/overview` | 会话/房间/Run 物化元数据；`run_limit`/`run_offset` 数据库分页 |
++| POST | `/projects/{id}/runs/sync-from-disk` | owner JWT 显式重算归档索引；不认领 Dataset |
++| POST | `/projects/{id}/runs/{run_dir}/claim` | owner JWT 预审/提交历史认领，必填 purpose |
++| POST | `/projects/{id}/runs/{run_dir}/claim/approve` | owner JWT 批准绑定参数的确认凭证；尚不写血缘 |
++| GET | `/projects/{id}/reconciliation` | owner JWT 只读列出磁盘/Run/Link/Task 差异与下一步指引 |
+ | PATCH | `/projects/{id}` | 名称/描述/状态及 Merge Patch settings（空请求 422） |
+ | POST | `/projects/sync-from-disk` | JWT 显式同步本人目录，跳过删除身份和符号链接 |
+ | GET | `/projects/{id}/capability-status` | 当前用户的三项科研能力状态；不改变开关 |
+@@ -119,9 +123,11 @@
+ 
+ 1. **会话**：`chat_sessions.project_id == str(project_id)`，按状态过滤；内存分页。
+ 2. **房间**：AgentTeams 房间与状态映射。
+-3. **磁盘 run**：扫描项目目录下符合 run 命名规则（`AGENTS.md`、`README.md`、`environment.json` 等标记）的目录，统计文件数与字节数。
+-
+-run 扫描所有非隐藏一级子目录，不依赖数据库或归档标记；正则仅用于解析时间，失败回退 mtime，目录重命名不会使其被过滤。
++3. **历史运行与归档记录**：按当前 owner 与稳定 `project_id` 查询 `platform_runs`；按最近活动时间、Run.id 排序并在数据库分页，返回 `runs_total/run_limit/run_offset`。overview GET 不调用递归扫描或补写索引。前端表格采用远程分页、Run.id 行键与项目切换 generation guard。
++
++文件数、总字节、三件套完备性、最近活动时间和 indexed_at 在归档写入时计算；历史目录需显式同步或隔离回填。删除未引用文件、目录变更和认领会重算索引。缺失目录保留 Run 身份、原冻结证据与 last_known_statistics，但当前计数/三件套归零并标记 ARCHIVE_MISSING。超时扫描标记 truncated/统计未完成，不作为完整计数。大中间文件只做 stat，不因科研文件读取预算而漏计。
++
++`POST /runs/sync-from-disk` 只创建/更新既有 Run 元数据壳，不产生 Dataset、Task 或科研成功状态。`scripts/backfill_project_run_index.py --expected-database <隔离库名> --confirm-isolated --output <报告>` 按已登记项目逐事务执行并输出耗时、INDEXED/PARTIAL/FAILED；不猜测项目所有权或自动导入项目。
+ 
+ ## 3. 项目归档
+ 
+@@ -130,11 +136,27 @@
+ - `collect_environment()`：记录运行时、包版本、镜像等环境信息。
+ - `render_project_agents_md()`：生成项目级 `AGENTS.md`。
+ - `append_analysis_entry()`：以 `runs/{run_name}` 为幂等键追加分析记录。
+-- `archive_run()`：写 `README.md` + `environment.json` + `manifest.json`，并追加 `AGENTS.md`。
++- `archive_run()`：写 `README.md` + `environment.json` + `manifest.json`，追加 `AGENTS.md`，再调用统一 `index_written_archive()`。管线归档传已有 Run.id；Studio、聊天沙箱和协作室包装函数传当前 DB 会话。只接受准确登记的 owner/slug，无法确定项目时不猜测。
+ - `archive_studio_run()`：Studio 会话归档。
+ - `archive_overdrive_delivery()`：把协作室交付路径复制到 `create_project_run_dir()`；无 `project_id` 时静默返回 `None`。
+ 
+ 没有 HTTP 端点；由分析、交付、Studio 流程在服务层调用。修改归档结构时需同时核对寻宝鼠/交付文档中的 manifest 契约。
++
++### 3.1 历史认领与人类确认
++
++`HistoricalRunClaimService` 要求既有 Dataset 元数据门、项目 owner 和 files/tasks/reports 模块权限。目录名只能是项目实际 runs 根下单个叶目录，拒绝穿越、软/硬链接及特殊文件。缺 README/environment/manifest 命名返回缺件；逐 manifest 文件复核实际存在性、大小、SHA-256，再与当前 owner/project 的 FileRegistry 记录和登记源字节独立核对。可选显式文件 ID 和 Sample 引用也须属于该项目，不推测 assay 或分组真值。
++
++默认 action=preview 只保存既有确认凭证及请求审计，返回将写入的记录、已 VERIFIED 的文件与用途。owner JWT approve 绑定参数摘要；commit 再复验字节、锁定项目、单次消费凭证，复用 DatasetService/HandoffService/AnalysisLink，并写同事务 claim 审计。Run 状态为 HISTORICAL_CLAIMED，attempt_number=0。source_snapshot 固化目录、manifest SHA、用途、actor/time、批准消费回执及原 Run/Task 引用。冻结 Handoff 保留实际科学缺口，worker_paths_verified=false；不会产生 Task 或把历史状态解释为计算完成。
++
++同项目目录身份及原始 manifest SHA 查找既有 Run；改名、同项目移动或复制后删除旧目录均复用同一血缘。原来源快照不可改写，索引另保留位置别名；跨项目已有认领冲突需人工处理。已绑定的真实 Run/Task 可保留原引用；孤立 Task 或阶段 2 既有非历史 AnalysisLink 冲突不会被自动纳管或覆盖。
++
++所有 claim/approve HTTP 请求（包括匿名、撤权、校验拒绝）写独立持久审计，响应 X-Claim-Audit-Id 可定位 audit_logs 行；审计不可持久化时请求失败关闭。数据库触发器禁止认领审计 UPDATE/DELETE、改标及存在认领行时 TRUNCATE；接受认领还在血缘事务内追加审计。此保证不涵盖拥有停用触发器权限的数据库管理员。
++
++### 3.2 只读对账
++
++`ProjectReconciliationService.view()` 明确读取一级物理目录及受限 manifest、当前项目 Run/Link/Task；返回未认领目录、预期归档缺失、绑定缺口三组及 next_action。GET 不锁行、不更新索引、不自动修复。缺少归档定位信息的正常预案不误报为缺失目录。绑定冲突保留 RECONCILIATION_REQUIRED 人工处置语义。
++
++隔离 PG/Redis、真实 JWT HTTP、浏览器分页与三类差异的前后 SQL 证据见 `evidence/project-run-claims-20261022/`。本轮零新增开关；源码 WRITE_RUNTIME_ACCEPTED 与所有计算配置门保持关闭，既有部署未变。历史记录在 inventory 标为“历史认领（非计算完成）”，compute=NOT_OBSERVED，无 Task/报告成功推断。
+ 
+ ## 4. 文件管理
+ 
+@@ -224,12 +246,15 @@
+ | 表 | 作用 |
+ | --- | --- |
+ | `projects` | 项目聚合 |
++| `platform_runs` | 原有稳定 Run 身份、project_id 与归档物化字段；无并行 Run 表 |
+ | `file_records` | 文件记录（含生命周期/团队归属） |
+ | `upload_sessions` | 分片上传会话 |
+ | `user_directories` | 目录索引与系统目录标记 |
+ | `samples` | 样本 |
+ | `workspace_archives` | 工作区休眠包 |
+ | `project_export_jobs` / `project_export_requests` | 项目导出（见科研交付） |
++
++本轮迁移链为 `project_lifecycle01 → project_run_identity01 → project_run_claim_audit02`；空隔离库升降级/重升已演练，有认领审计时降级拒绝保留证据。生产迁移未执行。
+ 
+ 迁移以 `alembic/versions/` 中 `projects/files/uploads/user_directories/workspace_archives` 相关版本为准；改模型后必须 `make check-migrations && make check-alembic-heads`。
+ 
+diff --git a/alembic/versions/project_run_claim_audit02.py b/alembic/versions/project_run_claim_audit02.py
+new file mode 100644
+--- /dev/null
++++ b/alembic/versions/project_run_claim_audit02.py
+@@ -0,0 +1,55 @@
++"""Protect retained claim audits against relabeling and table truncation too."""
++
++import sqlalchemy as sa
++from alembic import op
++
++revision = "project_run_claim_audit02"
++down_revision = "project_run_identity01"
++branch_labels = None
++depends_on = None
++
++
++def upgrade() -> None:
++    op.execute("""CREATE OR REPLACE FUNCTION protect_project_run_claim_audit() RETURNS trigger AS $$
++      BEGIN
++        IF TG_OP='DELETE' THEN
++          IF OLD.resource_type='project_run_claim' THEN
++            RAISE EXCEPTION 'project run claim audit is append-only';
++          END IF;
++          RETURN OLD;
++        END IF;
++        IF OLD.resource_type='project_run_claim' OR NEW.resource_type='project_run_claim' THEN
++          RAISE EXCEPTION 'project run claim audit is append-only';
++        END IF;
++        RETURN NEW;
++      END; $$ LANGUAGE plpgsql""")
++    op.execute("""CREATE FUNCTION protect_claim_audit_truncate() RETURNS trigger AS $$
++      BEGIN
++        IF EXISTS(SELECT 1 FROM audit_logs WHERE resource_type='project_run_claim') THEN
++          RAISE EXCEPTION 'project run claim audit is append-only';
++        END IF;
++        RETURN NULL;
++      END; $$ LANGUAGE plpgsql""")
++    op.execute("""CREATE TRIGGER claim_audit_no_truncate BEFORE TRUNCATE ON audit_logs
++                  FOR EACH STATEMENT EXECUTE FUNCTION protect_claim_audit_truncate()""")
++
++
++def downgrade() -> None:
++    if (
++        op.get_bind()
++        .execute(
++            sa.text("SELECT 1 FROM audit_logs WHERE resource_type='project_run_claim' LIMIT 1")
++        )
++        .first()
++    ):
++        raise RuntimeError("Retained claim audits prevent audit downgrade")
++    op.execute("DROP TRIGGER claim_audit_no_truncate ON audit_logs")
++    op.execute("DROP FUNCTION protect_claim_audit_truncate()")
++    op.execute("""CREATE OR REPLACE FUNCTION protect_project_run_claim_audit() RETURNS trigger AS $$
++      BEGIN
++        IF OLD.resource_type='project_run_claim' THEN
++          RAISE EXCEPTION 'project run claim audit is append-only';
++        END IF;
++        IF TG_OP='DELETE' THEN RETURN OLD; END IF;
++        RETURN NEW;
++      END; $$ LANGUAGE plpgsql""")
+diff --git a/alembic/versions/project_run_identity01.py b/alembic/versions/project_run_identity01.py
+new file mode 100644
+--- /dev/null
++++ b/alembic/versions/project_run_identity01.py
+@@ -0,0 +1,81 @@
++"""Stable project Run identity, materialized archive metadata and claim audit protection."""
++
++import sqlalchemy as sa
++from alembic import op
++from sqlalchemy.dialects import postgresql
++
++revision = "project_run_identity01"
++down_revision = "project_lifecycle01"
++branch_labels = None
++depends_on = None
++
++
++def upgrade() -> None:
++    op.add_column("platform_runs", sa.Column("project_id", postgresql.UUID(as_uuid=True)))
++    op.create_foreign_key(
++        "fk_platform_runs_project",
++        "platform_runs",
++        "projects",
++        ["project_id"],
++        ["id"],
++        ondelete="SET NULL",
++    )
++    op.execute("""UPDATE platform_runs AS r SET project_id=p.id FROM projects AS p
++                  WHERE r.user_id=p.user_id AND r.project_slug=p.slug""")
++    columns = [
++        sa.Column("attempt_number", sa.Integer(), nullable=False, server_default="0"),
++        sa.Column("archive_directory", sa.String(255)),
++        sa.Column("archive_identity", sa.String(128)),
++        sa.Column("archive_manifest_sha256", sa.String(64)),
++        sa.Column("archive_present", sa.Boolean(), nullable=False, server_default=sa.false()),
++        sa.Column("archive_file_count", sa.Integer(), nullable=False, server_default="0"),
++        sa.Column("archive_total_bytes", sa.BigInteger(), nullable=False, server_default="0"),
++        sa.Column("archive_last_activity", sa.DateTime(timezone=True)),
++        sa.Column("archive_indexed_at", sa.DateTime(timezone=True)),
++        sa.Column("archive_metadata", postgresql.JSONB(), nullable=False, server_default="{}"),
++    ]
++    for column in columns:
++        op.add_column("platform_runs", column)
++    op.create_index(
++        "ix_platform_runs_project_activity",
++        "platform_runs",
++        ["project_id", "archive_last_activity", "id"],
++    )
++    # Existing request-key uniqueness remains authoritative for archive identity.
++    op.execute("""CREATE FUNCTION protect_project_run_claim_audit() RETURNS trigger AS $$
++      BEGIN
++        IF OLD.resource_type='project_run_claim' THEN
++          RAISE EXCEPTION 'project run claim audit is append-only';
++        END IF;
++        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
++        RETURN NEW;
++      END; $$ LANGUAGE plpgsql""")
++    op.execute("""CREATE TRIGGER project_run_claim_audit_append_only
++      BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW
++      EXECUTE FUNCTION protect_project_run_claim_audit()""")
++
++
++def downgrade() -> None:
++    bind = op.get_bind()
++    if bind.execute(
++        sa.text("SELECT 1 FROM audit_logs WHERE resource_type='project_run_claim' LIMIT 1")
++    ).first():
++        raise RuntimeError("Retained claim audits prevent identity downgrade")
++    op.execute("DROP TRIGGER project_run_claim_audit_append_only ON audit_logs")
++    op.execute("DROP FUNCTION protect_project_run_claim_audit()")
++    op.drop_index("ix_platform_runs_project_activity", table_name="platform_runs")
++    for name in [
++        "archive_metadata",
++        "archive_indexed_at",
++        "archive_last_activity",
++        "archive_total_bytes",
++        "archive_file_count",
++        "archive_present",
++        "archive_manifest_sha256",
++        "archive_identity",
++        "archive_directory",
++        "attempt_number",
++    ]:
++        op.drop_column("platform_runs", name)
++    op.drop_constraint("fk_platform_runs_project", "platform_runs", type_="foreignkey")
++    op.drop_column("platform_runs", "project_id")
+diff --git a/frontend/src/api/projects.ts b/frontend/src/api/projects.ts
+--- a/frontend/src/api/projects.ts
++++ b/frontend/src/api/projects.ts
+@@ -41,6 +41,14 @@
+ export type ProjectSessionStatus = 'active' | 'archived' | 'deleted'
+ 
+ export interface ProjectRunItem {
++  id?: string
++  project_id?: string
++  status?: string
++  has_manifest?: boolean
++  archive_present?: boolean
++  index_dirty?: boolean
++  index_complete?: boolean
++  attempt_number?: number
+   name: string
+   timestamp: string | null
+   has_agents_md: boolean
+@@ -59,6 +67,9 @@
+     items: ProjectSessionItem[]
+   }
+   runs: ProjectRunItem[]
++  runs_total?: number
++  run_limit?: number
++  run_offset?: number
+ }
+ 
+ export interface ProjectCapability {
+@@ -128,6 +139,8 @@
+   async getProjectOverview(
+     projectId: string,
+     params?: {
++      run_limit?: number
++      run_offset?: number
+       session_limit?: number
+       session_offset?: number
+       session_status?: ProjectSessionStatus
+diff --git a/frontend/src/api/researchDelivery.ts b/frontend/src/api/researchDelivery.ts
+--- a/frontend/src/api/researchDelivery.ts
++++ b/frontend/src/api/researchDelivery.ts
+@@ -14,7 +14,7 @@
+   evidence_state: Integrity; delivery_state: 'READY' | 'PARTIAL' | 'BLOCKED' | 'UNKNOWN'
+   artifacts: ResearchArtifact[]; reports: ResearchReport[]; gaps: string[]
+ }
+-export interface DatasetDelivery { dataset_id: string; dataset_version_id: string; handoff_hash: string | null; analyses: (ResearchProvenance | { task_id: null; state: string; gaps: string[] })[]; gaps: string[] }
++export interface DatasetDelivery { dataset_id: string; dataset_version_id: string; handoff_hash: string | null; analyses: (ResearchProvenance | { task_id: null; state: string; record_kind?: string; claim?: { purpose?: string }; gaps: string[] })[]; gaps: string[] }
+ export interface ProjectDelivery { project_id: string; datasets: DatasetDelivery[]; runtime_admission: 'BLOCKED'; truncated: boolean }
+ export const researchDeliveryApi = {
+   async downloadArtifact(fileId: string): Promise<Blob> {
+diff --git a/frontend/src/components/ProjectResearchDelivery.vue b/frontend/src/components/ProjectResearchDelivery.vue
+--- a/frontend/src/components/ProjectResearchDelivery.vue
++++ b/frontend/src/components/ProjectResearchDelivery.vue
+@@ -31,6 +31,7 @@
+   { label: '结果包（含已登记的小型结果）', value: 'results' },
+   { label: '复现材料包（原始输入仅保存引用）', value: 'reproduction_materials' },
+ ]
++const historicalClaims = computed(() => (inventory.value?.datasets ?? []).flatMap(d => d.analyses).filter(a => !a.task_id && 'record_kind' in a && a.record_kind === 'HISTORICAL_CLAIM'))
+ const analyses = computed(() => {
+   const rows = new Map<string, NonNullable<DeliveryInventory>['datasets'][number]['analyses'][number]>()
+   for (const dataset of inventory.value?.datasets ?? []) for (const a of dataset.analyses) if (a.task_id) rows.set(a.task_id, a)
+@@ -153,6 +154,7 @@
+       <template v-if="inventory">
+         <NAlert v-if="!inventory.export_enabled" type="info">项目导出功能尚未启用；可查看已有关联与证据。</NAlert>
+         <NAlert type="info">仅按可信 Dataset 关联展示任务。历史无项目关联的 Task：未记录，不自动补录。不默认复制 FASTQ/BAM；文件完整性不表示科学复现成功。</NAlert>
++        <p v-for="(claim, index) in historicalClaims" :key="index" data-test="historical-claim">历史归档已认领；未观察计算执行，也未提交新任务。</p>
+         <p>项目数据资产：{{ inventory.datasets.length }} 个数据版本 · 分析任务：{{ analyses.length }} 个</p>
+         <NEmpty v-if="!analyses.length" description="没有可信关联的分析任务；仍可预览空范围及缺口" />
+         <div v-for="a in analyses" :key="a.task_id!" class="task-entry">
+diff --git a/frontend/src/components/ResearchDeliveryChain.vue b/frontend/src/components/ResearchDeliveryChain.vue
+--- a/frontend/src/components/ResearchDeliveryChain.vue
++++ b/frontend/src/components/ResearchDeliveryChain.vue
+@@ -74,6 +74,7 @@
+               <p v-for="job in analysis.report_jobs" :key="String(job.job_id)">报告生成：{{ job.kind }} · {{ job.state }} · {{ job.error_code || '—' }}</p>
+               <p v-if="analysis.gaps.length">证据缺口：{{ analysis.gaps.join('、') }}</p>
+             </template>
++            <p v-else-if="analysis.record_kind === 'HISTORICAL_CLAIM'" data-test="historical-claim">历史归档已认领：{{ analysis.claim?.purpose }}。未观察计算执行，也未提交新任务。</p>
+             <p v-else>分析尚未提交：{{ analysis.state }}</p>
+           </div>
+         </NCard>
+diff --git a/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts b/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
+--- a/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
++++ b/frontend/src/components/__tests__/ProjectResearchDelivery.test.ts
+@@ -116,3 +116,16 @@
+   props.projectId = 'second'; await settle()
+   expect(host.querySelector('iframe')).toBeNull()
+ })
++
++it('keeps historical claims visible with zero analysis Tasks and export disabled', async () => {
++  vi.mocked(projectDeliveryApi.inventory).mockResolvedValueOnce({ ...inventory(), export_enabled: false,
++    datasets: [{ dataset_id: 'history', dataset_version_id: 'v', handoff_hash: 'a'.repeat(64), gaps: [],
++      analyses: [{ task_id: null, state: 'HISTORICAL_CLAIMED', record_kind: 'HISTORICAL_CLAIM', gaps: ['HISTORICAL_NOT_EXECUTED'] }],
++    }],
++  })
++  const card = mount()
++  await settle()
++  expect(card.host.querySelector('[data-test="historical-claim"]')?.textContent).toContain('未观察计算执行，也未提交新任务')
++  expect(card.host.textContent).toContain('分析任务：0 个')
++  expect(projectDeliveryApi.create).not.toHaveBeenCalled()
++})
+diff --git a/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts b/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
+--- a/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
++++ b/frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts
+@@ -66,3 +66,19 @@
+     expect(targets).toContain('/tasks/task'); expect(targets).toContain('reportId')
+   } finally {card.close()}
+ })
++
++it('shows historical claims separately from submitted or completed analysis', async () => {
++  vi.mocked(researchDeliveryApi.project).mockResolvedValueOnce({ ...response('first'), datasets: [{
++    dataset_id: 'historical', dataset_version_id: 'version', handoff_hash: 'a'.repeat(64), gaps: [],
++    analyses: [{ task_id: null, state: 'HISTORICAL_CLAIMED', record_kind: 'HISTORICAL_CLAIM', claim: { purpose: '历史资料归档' }, gaps: ['HISTORICAL_NOT_EXECUTED'] }],
++  }] })
++  const card = mount()
++  try {
++    await settle()
++    const claim = card.host.querySelector('[data-test="historical-claim"]')
++    expect(claim?.textContent).toContain('历史归档已认领')
++    expect(claim?.textContent).toContain('未观察计算执行，也未提交新任务')
++    expect(card.host.textContent).not.toContain('分析尚未提交')
++    expect(card.host.querySelector('a[data-target]')).toBeNull()
++  } finally { card.close() }
++})
+diff --git a/frontend/src/views/ProjectDetailView.vue b/frontend/src/views/ProjectDetailView.vue
+--- a/frontend/src/views/ProjectDetailView.vue
++++ b/frontend/src/views/ProjectDetailView.vue
+@@ -32,6 +32,10 @@
+ /** 首次加载整页骨架；切换会话状态分组只对会话表区域 NSpin 局部刷新（§5.4） */
+ const initialLoading = ref(true)
+ const sessionsLoading = ref(false)
++const runsLoading = ref(false)
++const runPage = ref(1)
++const RUN_PAGE_SIZE = 10
++let runsGeneration = 0
+ const overview = ref<ProjectOverview | null>(null)
+ const capabilities = ref<ProjectCapabilityStatus | null>(null)
+ const capabilityError = ref('')
+@@ -293,6 +297,7 @@
+ 
+ const runColumns: DataTableColumns<ProjectRunItem> = [
+   { title: '运行目录', key: 'name', width: 280, ellipsis: { tooltip: true } },
++  { title: '记录状态', key: 'status', width: 180, render: row => row.archive_present === false ? '归档目录缺失' : row.index_complete === false ? '统计未完成，需显式刷新' : row.status === 'HISTORICAL_CLAIMED' ? '历史认领（非计算完成）' : row.status === 'ARCHIVED_UNCLAIMED' ? '归档尚未认领' : (row.status || '未记录') },
+   {
+     title: '运行时间',
+     key: 'timestamp',
+@@ -306,9 +311,10 @@
+     width: 280,
+     render(row) {
+       const tags = [
+-        { label: 'AGENTS.md', ok: row.has_agents_md },
++        { label: 'AGENTS.md（可选）', ok: row.has_agents_md },
+         { label: 'README', ok: row.has_readme },
+         { label: '环境快照', ok: row.has_environment },
++        { label: 'manifest', ok: row.has_manifest },
+       ]
+       return tags.map((tag) =>
+         h(
+@@ -333,7 +339,7 @@
+     render: (row) => formatSize(row.total_size_bytes),
+   },
+ ]
+-const runScrollX = 280 + 180 + 280 + 90 + 110
++const runScrollX = 280 + 180 + 180 + 280 + 90 + 110
+ 
+ const sessionEmptyText: Record<ProjectSessionStatus, string> = {
+   active: '当前项目还没有活跃会话',
+@@ -354,6 +360,8 @@
+   try {
+     const data = await projectsApi.getProjectOverview(project, {
+       session_limit: 100,
++      run_limit: RUN_PAGE_SIZE,
++      run_offset: (runPage.value - 1) * RUN_PAGE_SIZE,
+       session_status: sessionStatus.value,
+     })
+     if (current === overviewGeneration && project === projectId.value && data.project.id === project) {
+@@ -385,6 +393,8 @@
+   try {
+     const data = await projectsApi.getProjectOverview(project, {
+       session_limit: 100,
++      run_limit: RUN_PAGE_SIZE,
++      run_offset: (runPage.value - 1) * RUN_PAGE_SIZE,
+       session_status: sessionStatus.value,
+     })
+     if (current === sessionsGeneration && project === projectId.value &&
+@@ -403,7 +413,28 @@
+   void loadSessions()
+ }
+ 
++async function loadRuns(page: number) {
++  const project = projectId.value, current = ++runsGeneration
++  if (!overview.value) return
++  runsLoading.value = true
++  try {
++    const data = await projectsApi.getProjectOverview(project, {
++      session_limit: 100, session_status: sessionStatus.value,
++      run_limit: RUN_PAGE_SIZE, run_offset: (page - 1) * RUN_PAGE_SIZE,
++    })
++    if (current === runsGeneration && project === projectId.value && overview.value?.project.id === project) {
++      runPage.value = page
++      overview.value.runs = data.runs
++      overview.value.runs_total = data.runs_total
++    }
++  } catch { if (current === runsGeneration) message.error('加载运行记录失败') }
++  finally { if (current === runsGeneration) runsLoading.value = false }
++}
++
+ watch(projectId, () => {
++  runsGeneration++
++  runsLoading.value = false
++  runPage.value = 1
+   sessionStatus.value = 'active'
+   sessionsLoading.value = false
+   renameTarget.value = null
+@@ -411,14 +442,14 @@
+   togglingProjectResearch.value = false
+   void loadOverview()
+ }, { immediate: true })
+-onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
++onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++; runsGeneration++ })
+ </script>
+ 
+ <template>
+   <div class="project-detail-view">
+     <PageHeader
+       :title="overview?.project.name || '项目详情'"
+-      subtitle="项目元信息、会话管理与历史分析运行"
++      subtitle="项目元信息、会话管理与历史运行与归档记录"
+       back-to="/projects"
+       back-label="返回项目列表"
+     >
+@@ -450,7 +481,7 @@
+           </div>
+           <div class="summary-stat">
+             <NIcon :size="17"><GitBranchOutline /></NIcon>
+-            <span><strong>{{ overview.runs.length }}</strong><small>次运行</small></span>
++            <span><strong>{{ overview.runs_total ?? overview.runs.length }}</strong><small>条运行记录</small></span>
+           </div>
+           <div class="summary-stat">
+             <NIcon :size="17"><TimeOutline /></NIcon>
+@@ -525,20 +556,23 @@
+ 
+       <NCard :bordered="false" class="detail-card">
+         <template #header>
+-          历史分析运行
+-          <span class="card-header-count">{{ overview.runs.length }}</span>
++          历史运行与归档记录
++          <span class="card-header-count">{{ overview.runs_total ?? overview.runs.length }}</span>
+         </template>
+         <NEmpty
+           v-if="!overview.runs.length"
+-          description="当前项目还没有历史分析运行记录"
++          description="当前项目还没有历史运行与归档记录记录"
+           class="table-empty"
+         />
+         <NDataTable
+           v-else
+           :columns="runColumns"
+           :data="overview.runs"
+-          :row-key="(row: ProjectRunItem) => row.name"
+-          :pagination="{ pageSize: 10 }"
++          :row-key="(row: ProjectRunItem) => row.id || row.name"
++          :remote="true"
++          :loading="runsLoading"
++          :pagination="{ page: runPage, pageSize: RUN_PAGE_SIZE, itemCount: overview.runs_total ?? overview.runs.length }"
++          @update:page="loadRuns"
+           :bordered="false"
+           :scroll-x="runScrollX"
+         />
+diff --git a/scripts/backfill_project_run_index.py b/scripts/backfill_project_run_index.py
+new file mode 100644
+--- /dev/null
++++ b/scripts/backfill_project_run_index.py
+@@ -0,0 +1,71 @@
++"""Explicit, isolated-only Run metadata backfill; no Dataset claim or Task adoption."""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import json
++from pathlib import Path
++from time import perf_counter
++
++from cygnusx.application.services.archive_run_index_service import ArchiveRunIndexService
++from cygnusx.core.config import get_settings
++from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.session import get_session_factory
++from sqlalchemy import select
++from sqlalchemy.engine import make_url
++
++
++async def backfill(expected_database: str) -> list[dict[str, object]]:
++    if make_url(get_settings().database_url).database != expected_database:
++        raise ValueError("Database does not match the explicit isolated database name")
++    factory = get_session_factory()
++    async with factory() as db:
++        projects = [
++            (row.id, row.user_id) for row in (await db.execute(select(ProjectModel))).scalars()
++        ]
++    result: list[dict[str, object]] = []
++    for project_id, owner in projects:
++        started = perf_counter()
++        async with factory() as db:
++            try:
++                project = await db.get(ProjectModel, project_id)
++                if project is None:
++                    continue
++                entry = await ArchiveRunIndexService(db).refresh(owner, project)
++                await db.commit()
++                result.append(
++                    {
++                        **entry,
++                        "owner_id": str(owner),
++                        "status": "PARTIAL" if entry["errors"] else "INDEXED",
++                    }
++                )
++            except Exception as exc:
++                await db.rollback()
++                result.append(
++                    {
++                        "project_id": str(project_id),
++                        "owner_id": str(owner),
++                        "status": "FAILED",
++                        "code": getattr(exc, "code", type(exc).__name__),
++                        "elapsed_ms": (perf_counter() - started) * 1000,
++                    }
++                )
++    return result
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--expected-database", required=True)
++    parser.add_argument("--confirm-isolated", action="store_true", required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    rows = asyncio.run(backfill(args.expected_database))
++    args.output.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n")
++    if any(row["status"] != "INDEXED" for row in rows):
++        raise SystemExit(1)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/cygnusx/api/v1/projects.py b/src/cygnusx/api/v1/projects.py
+--- a/src/cygnusx/api/v1/projects.py
++++ b/src/cygnusx/api/v1/projects.py
+@@ -1,12 +1,14 @@
+ """项目路由 —— 管理用户的分析项目。"""
+ 
+ from typing import Annotated, Any, Literal
+-
+-from fastapi import APIRouter, Depends, HTTPException, Query
++from uuid import UUID
++
++from fastapi import APIRouter, Depends, HTTPException, Query, Request
+ from pydantic import BaseModel, Field
+ 
+ from cygnusx.api.deps import CurrentJwtUserId, CurrentUserId, DbSession
+ from cygnusx.application.schemas.project import ProjectCapabilityStatus, ProjectOverviewResponse
++from cygnusx.application.schemas.run_claim import RunClaimApproval, RunClaimRequest
+ from cygnusx.application.services.project_overview_service import ProjectOverviewService
+ from cygnusx.application.services.project_service import ProjectService
+ 
+@@ -139,6 +141,8 @@
+     project_id: str,
+     session_limit: int = Query(50, ge=1, le=200, description="会话列表每页条数"),
+     session_offset: int = Query(0, ge=0, description="会话列表偏移"),
++    run_limit: int = Query(50, ge=1, le=200),
++    run_offset: int = Query(0, ge=0),
+     session_status: Literal["active", "archived", "deleted"] = Query(
+         "active", description="会话状态过滤：active/archived/deleted"
+     ),
+@@ -152,6 +156,8 @@
+             UUID(project_id),
+             session_limit=session_limit,
+             session_offset=session_offset,
++            run_limit=run_limit,
++            run_offset=run_offset,
+             session_status=session_status,
+         )
+     except ValueError as exc:
+@@ -210,3 +216,94 @@
+         if isinstance(exc, NotFoundError):
+             raise HTTPException(status_code=404, detail=str(exc)) from exc
+         raise
++
++
++# Explicit archive metadata operations; identity never comes from request JSON.
++
++
++@router.post("/{project_id}/runs/sync-from-disk")
++async def sync_project_runs(
++    project_id: UUID, user: CurrentJwtUserId, db: DbSession
++) -> dict[str, Any]:
++    from cygnusx.application.services.archive_run_index_service import ArchiveRunIndexService
++    from cygnusx.infrastructure.database.repositories.dataset_repository import DatasetRepository
++
++    project = await ProjectService(db).require_owner(UUID(user), project_id)
++    await DatasetRepository(db).require_module(UUID(user), "files")
++    return await ArchiveRunIndexService(db).refresh(UUID(user), project)
++
++
++@router.get("/{project_id}/reconciliation")
++async def project_reconciliation(
++    project_id: UUID, user: CurrentUserId, db: DbSession
++) -> dict[str, Any]:
++    from cygnusx.application.services.project_reconciliation_service import (
++        ProjectReconciliationService,
++    )
++
++    return await ProjectReconciliationService(db).view(UUID(user), project_id)
++
++
++@router.post("/{project_id}/runs/{run_dir}/claim")
++async def claim_historical_run(
++    project_id: UUID,
++    run_dir: str,
++    body: RunClaimRequest,
++    user: CurrentJwtUserId,
++    db: DbSession,
++    request: Request,
++) -> dict[str, Any]:
++    from cygnusx.application.services.historical_run_claim_service import HistoricalRunClaimService
++    from cygnusx.application.services.tool_confirmation_service import ConfirmationError
++    from cygnusx.core.exceptions import ConflictError, CygnusXError
++
++    request.state.claim_audit = {"action": body.action, "run_dir": run_dir}
++    try:
++        result = await HistoricalRunClaimService(db).claim(UUID(user), project_id, run_dir, body)
++        request.state.claim_audit.update(
++            {
++                key: result[key]
++                for key in (
++                    "state",
++                    "run_id",
++                    "dataset_id",
++                    "dataset_version_id",
++                    "analysis_link_id",
++                    "manifest_sha256",
++                )
++                if key in result
++            }
++        )
++        return result
++    except ConfirmationError as exc:
++        request.state.claim_audit["code"] = exc.code
++        raise ConflictError(exc.message, code=exc.code) from exc
++    except CygnusXError as exc:
++        request.state.claim_audit["code"] = exc.code
++        raise
++
++
++@router.post("/{project_id}/runs/{run_dir}/claim/approve")
++async def approve_historical_claim(
++    project_id: UUID,
++    run_dir: str,
++    body: RunClaimApproval,
++    user: CurrentJwtUserId,
++    db: DbSession,
++    request: Request,
++) -> dict[str, Any]:
++    from cygnusx.application.services.historical_run_claim_service import HistoricalRunClaimService
++    from cygnusx.application.services.tool_confirmation_service import ConfirmationError
++    from cygnusx.core.exceptions import ConflictError, CygnusXError
++
++    request.state.claim_audit = {"action": "approve", "run_dir": run_dir}
++    try:
++        return await HistoricalRunClaimService(db).approve(
++            UUID(user), project_id, run_dir, body.confirmation_id
++        )
++    except ConfirmationError as exc:
++        request.state.claim_audit["code"] = exc.code
++        raise ConflictError(exc.message, code=exc.code) from exc
++    except CygnusXError as exc:
++        request.state.claim_audit["code"] = exc.code
++        raise
+diff --git a/src/cygnusx/api/v1/runs.py b/src/cygnusx/api/v1/runs.py
+--- a/src/cygnusx/api/v1/runs.py
++++ b/src/cygnusx/api/v1/runs.py
+@@ -43,8 +43,11 @@
+     service: ServiceDep,
+     project_slug: str | None = Query(default=None),
+     status: str | None = Query(default=None),
++    project_id: Annotated[UUID | None, Query()] = None,
+ ) -> list[SnakemakePlanView]:
+-    return await service.list_runs(UUID(current_user_id), project_slug=project_slug, status=status)
++    return await service.list_runs(
++        UUID(current_user_id), project_slug=project_slug, status=status, project_id=project_id
++    )
+ 
+ 
+ @router.post("/{run_id}/confirm", response_model=SnakemakePlanView)
+diff --git a/src/cygnusx/application/schemas/project.py b/src/cygnusx/application/schemas/project.py
+--- a/src/cygnusx/application/schemas/project.py
++++ b/src/cygnusx/application/schemas/project.py
+@@ -52,6 +52,14 @@
+ class ProjectRunItemDTO(BaseModel):
+     """项目 runs 目录下的一个历史分析运行目录。"""
+ 
++    id: str | None = None
++    project_id: str | None = None
++    status: str | None = None
++    attempt_number: int = 0
++    archive_present: bool = False
++    has_manifest: bool = False
++    index_dirty: bool = False
++    index_complete: bool = True
+     name: str = Field(..., description="运行目录名（分析名-时间戳[-序号]）")
+     timestamp: str | None = Field(None, description="运行时间（优先解析目录名中的时间戳）")
+     has_agents_md: bool = False
+@@ -65,6 +73,9 @@
+     project: ProjectMetaDTO
+     sessions: ProjectSessionListDTO
+     runs: list[ProjectRunItemDTO] = Field(default_factory=list)
++    runs_total: int = 0
++    run_limit: int = 50
++    run_offset: int = 0
+ 
+ 
+ class ProjectCapability(BaseModel):
+diff --git a/src/cygnusx/application/schemas/run_claim.py b/src/cygnusx/application/schemas/run_claim.py
+new file mode 100644
+--- /dev/null
++++ b/src/cygnusx/application/schemas/run_claim.py
+@@ -0,0 +1,34 @@
++"""Owner declarations and explicit references; identity is always server-derived."""
++
++from typing import Literal
++from uuid import UUID
++
++from pydantic import BaseModel, ConfigDict, Field
++
++
++class ClaimInput(BaseModel):
++    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
++
++
++class ClaimFile(ClaimInput):
++    manifest_path: str = Field(min_length=1, max_length=1024)
++    file_record_id: UUID
++
++
++class ClaimSample(ClaimInput):
++    sample_id: UUID
++    sample_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
++    file_record_ids: list[UUID] = Field(min_length=1, max_length=200)
++    group: str | None = Field(default=None, max_length=100)
++
++
++class RunClaimRequest(ClaimInput):
++    purpose: str = Field(min_length=1, max_length=2000)
++    files: list[ClaimFile] = Field(default_factory=list, max_length=200)
++    samples: list[ClaimSample] = Field(default_factory=list, max_length=200)
++    action: Literal["preview", "commit"] = "preview"
++    confirmation_id: UUID | None = None
++
++
++class RunClaimApproval(ClaimInput):
++    confirmation_id: UUID
+diff --git a/src/cygnusx/application/schemas/run_plan.py b/src/cygnusx/application/schemas/run_plan.py
+--- a/src/cygnusx/application/schemas/run_plan.py
++++ b/src/cygnusx/application/schemas/run_plan.py
+@@ -4,7 +4,7 @@
+ from typing import Any, Literal
+ from uuid import UUID
+ 
+-from pydantic import Field, ConfigDict
++from pydantic import ConfigDict, Field
+ 
+ from cygnusx.application.schemas.base import CygnusXBaseSchema
+ 
+@@ -25,6 +25,8 @@
+ 
+ class SnakemakePlanView(CygnusXBaseSchema):
+     run_id: UUID
++    project_id: UUID | None = None
++    attempt_number: int = 0
+     project_slug: str
+     flow_id: str
+     release_id: str
+diff --git a/src/cygnusx/application/services/archive_run_index_service.py b/src/cygnusx/application/services/archive_run_index_service.py
+new file mode 100644
+--- /dev/null
++++ b/src/cygnusx/application/services/archive_run_index_service.py
+@@ -0,0 +1,403 @@
++"""Materialize archive metadata in the existing Run shell, only at explicit write/sync points."""
++
++from __future__ import annotations
++
++import asyncio
++import hashlib
++import json
++import os
++import time
++from datetime import UTC, datetime
++from pathlib import Path
++from stat import S_ISREG
++from typing import Any
++from uuid import UUID
++
++from sqlalchemy import and_, or_, select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from cygnusx.core.config import get_settings
++from cygnusx.core.exceptions import AuthorizationError, ConflictError, ValidationError
++from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.models.run import RunModel
++from cygnusx.infrastructure.storage import get_path_factory
++from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
++
++ARCHIVE_PARTS = ("README.md", "environment.json", "manifest.json")
++
++
++def archive_path(factory: StoragePathFactory, owner: UUID, slug: str, name: str) -> Path:
++    if (
++        not name
++        or len(name) > 255
++        or name.startswith(".")
++        or "/" in name
++        or "\\" in name
++        or any(ord(c) < 32 for c in name)
++    ):
++        raise ValidationError("只允许该项目内的单个 run 目录名", code="ARCHIVE_PATH_INVALID")
++    root = factory.user_root(str(owner))
++    path = factory.project_dir(str(owner), slug) / "runs" / name
++    try:
++        relative = path.relative_to(root)
++        current = root
++        if current.is_symlink():
++            raise ValueError("linked owner root")
++        for part in relative.parts:
++            current = current / part
++            if current.is_symlink():
++                raise ValueError("linked archive component")
++        path.resolve().relative_to(root.resolve())
++    except ValueError as exc:
++        raise AuthorizationError(
++            "归档目录不属于该项目物理空间", code="ARCHIVE_PATH_INVALID"
++        ) from exc
++    return path
++
++
++def read_archive_json(path: Path, owner_root: Path) -> tuple[dict[str, Any], str]:
++    from cygnusx.domain.dataset.validation import open_owned_file
++
++    limit = get_settings().research_manifest_max_bytes
++    with open_owned_file(path, owner_root) as stream:
++        before = os.fstat(stream.fileno())
++        payload = stream.read(limit + 1)
++        after = os.fstat(stream.fileno())
++    if len(payload) > limit:
++        raise ValidationError("归档清单超过校验预算", code="ARCHIVE_LIMIT")
++    if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
++        after.st_size,
++        after.st_mtime_ns,
++        after.st_ctime_ns,
++    ):
++        raise ConflictError("读取时归档发生变化", code="ARCHIVE_CHANGED")
++    try:
++        value = json.loads(payload)
++    except (ValueError, UnicodeError) as exc:
++        raise ValidationError("归档 JSON 无效", code="ARCHIVE_JSON_INVALID") from exc
++    if not isinstance(value, dict):
++        raise ValidationError("归档 JSON 必须是对象", code="ARCHIVE_JSON_INVALID")
++    return value, hashlib.sha256(payload).hexdigest()
++
++
++def inspect_archive(
++    factory: StoragePathFactory, owner: UUID, project: ProjectModel, name: str
++) -> dict[str, Any]:
++    path = archive_path(factory, owner, project.slug, name)
++    if not path.is_dir():
++        raise ValidationError("归档 run 目录不存在", code="ARCHIVE_MISSING")
++    stat = path.stat()
++    settings = get_settings()
++    count, size, activity = 0, 0, stat.st_mtime
++    truncated = False
++    deadline = time.monotonic() + settings.research_capture_timeout_seconds
++    for parent, dirs, files in os.walk(path, followlinks=False):
++        dirs[:] = [d for d in dirs if not (Path(parent) / d).is_symlink()]
++        activity = max(activity, Path(parent).stat().st_mtime)
++        for file in files:
++            candidate = Path(parent) / file
++            if candidate.is_symlink():
++                continue
++            item = candidate.stat()
++            if not S_ISREG(item.st_mode):
++                continue
++            count += 1
++            size += item.st_size
++            activity = max(activity, item.st_mtime)
++            if time.monotonic() > deadline:
++                truncated = True
++                break
++        if truncated:
++            break
++    metadata: dict[str, Any] = {
++        "has_readme": (path / "README.md").is_file() and not (path / "README.md").is_symlink(),
++        "has_environment": (path / "environment.json").is_file()
++        and not (path / "environment.json").is_symlink(),
++        "has_manifest": (path / "manifest.json").is_file()
++        and not (path / "manifest.json").is_symlink(),
++        "has_agents_md": (path / "AGENTS.md").is_file(),
++        "locations": [name],
++        "dirty": False,
++        "truncated": truncated,
++    }
++    manifest_hash = None
++    environment: dict[str, Any] = {}
++    for filename in ("environment.json", "manifest.json"):
++        if metadata["has_environment" if filename == "environment.json" else "has_manifest"]:
++            try:
++                value, sha = read_archive_json(path / filename, factory.user_root(str(owner)))
++                if filename == "manifest.json":
++                    manifest_hash = sha
++                else:
++                    environment = value
++            except ValidationError as exc:
++                metadata["error_code"] = exc.code
++    return {
++        "name": name,
++        "identity": f"{stat.st_dev}:{stat.st_ino}",
++        "manifest_hash": manifest_hash,
++        "file_count": count,
++        "total_bytes": size,
++        "last_activity": datetime.fromtimestamp(activity, UTC),
++        "metadata": metadata,
++        "environment": environment,
++    }
++
++
++class ArchiveRunIndexService:
++    def __init__(self, db: AsyncSession, factory: StoragePathFactory | None = None) -> None:
++        self.db = db
++        self.factory = factory or get_path_factory()
++
++    async def find(
++        self, owner: UUID, project_id: UUID, data: dict[str, Any], *, lock: bool = True
++    ) -> RunModel | None:
++        identities = [
++            RunModel.archive_identity == data["identity"],
++            and_(
++                RunModel.archive_directory == data["name"],
++                RunModel.archive_identity.is_(None),
++                RunModel.archive_manifest_sha256.is_(None),
++            ),
++        ]
++        if data.get("manifest_hash"):
++            identities.append(RunModel.archive_manifest_sha256 == data["manifest_hash"])
++        query = select(RunModel)
++        query = query.where(
++            RunModel.user_id == owner, RunModel.project_id == project_id, or_(*identities)
++        ).order_by(RunModel.created_at)
++        if lock:
++            query = query.with_for_update()
++        row = (await self.db.execute(query)).scalars().first()
++        if row is not None:
++            return row
++        # A pre-existing owned Task.work_dir is an explicit server reference.
++        # Use it only through an already bound Run; never adopt an orphan Task.
++        from cygnusx.infrastructure.database.models.task import TaskModel
++
++        project = await self.db.get(ProjectModel, project_id)
++        if project is None:
++            return None
++        expected = archive_path(self.factory, owner, project.slug, data["name"]).resolve()
++        candidates = (
++            await self.db.execute(
++                select(RunModel, TaskModel.work_dir)
++                .join(TaskModel, TaskModel.id == RunModel.task_id)
++                .where(
++                    RunModel.user_id == owner,
++                    RunModel.project_id == project_id,
++                    TaskModel.user_id == owner,
++                    RunModel.archive_directory.is_(None),
++                )
++            )
++        ).all()
++        matches: list[RunModel] = [
++            run
++            for run, work_dir in candidates
++            if isinstance(run, RunModel)
++            and work_dir
++            and Path(work_dir).parent.resolve() == expected
++        ]
++        if len(matches) > 1:
++            raise ConflictError("多个 Run 指向同一归档，请人工对账", code="RECONCILIATION_REQUIRED")
++        if not matches:
++            return None
++        if lock:
++            return (
++                await self.db.execute(
++                    select(RunModel)
++                    .where(RunModel.id == matches[0].id)
++                    .with_for_update()
++                    .execution_options(populate_existing=True)
++                )
++            ).scalar_one_or_none()
++        return matches[0]
++
++    async def put(
++        self,
++        owner: UUID,
++        project: ProjectModel,
++        data: dict[str, Any],
++        *,
++        run_id: UUID | None = None,
++    ) -> RunModel:
++        row = await self.find(owner, project.id, data)
++        if run_id is not None:
++            bound = await self.db.get(RunModel, run_id)
++            if (
++                bound is None
++                or bound.user_id != owner
++                or (bound.project_id is not None and bound.project_id != project.id)
++            ):
++                raise ConflictError("归档 Run 身份与项目不一致", code="RUN_PROJECT_MISMATCH")
++            if row is not None and row.id != bound.id:
++                raise ConflictError("归档已经绑定其他 Run", code="ARCHIVE_IDENTITY_CONFLICT")
++            row = bound
++        if row is None:
++            evidence = data.get("manifest_hash") or data["identity"]
++            run_environment = data["environment"].get("run")
++            flow = (
++                str(run_environment.get("analysis_type") or "historical_archive")[:100]
++                if isinstance(run_environment, dict)
++                else "historical_archive"
++            )
++            plan = {"name": data["name"], "operation": "archive.index", "execution_allowed": False}
++            row = RunModel(
++                user_id=owner,
++                project_id=project.id,
++                project_slug=project.slug,
++                flow_id=flow,
++                release_id="archive-v1",
++                request_key=f"archive:{project.id}:{evidence}",
++                plan_json=plan,
++                plan_digest=hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest(),
++                status="ARCHIVED_UNCLAIMED",
++            )
++            self.db.add(row)
++        if row.status == "HISTORICAL_CLAIMED" and row.archive_manifest_sha256 != data.get(
++            "manifest_hash"
++        ):
++            row.archive_present = True
++            row.archive_indexed_at = datetime.now(UTC)
++            row.archive_metadata = {
++                **row.archive_metadata,
++                "dirty": True,
++                "error_code": "CLAIMED_ARCHIVE_CHANGED",
++            }
++            await self.db.flush()
++            return row
++        locations = sorted(set((row.archive_metadata or {}).get("locations", []) + [data["name"]]))
++        row.project_id, row.project_slug = project.id, project.slug
++        row.archive_directory, row.archive_identity = data["name"], data["identity"]
++        row.archive_manifest_sha256, row.archive_present = data.get("manifest_hash"), True
++        row.archive_file_count, row.archive_total_bytes = data["file_count"], data["total_bytes"]
++        row.archive_last_activity, row.archive_indexed_at = data["last_activity"], datetime.now(UTC)
++        row.archive_metadata = {**data["metadata"], "locations": locations}
++        await self.db.flush()
++        return row
++
++    async def refresh(self, owner: UUID, project: ProjectModel) -> dict[str, Any]:
++        from time import perf_counter
++
++        started = perf_counter()
++        # Same lock order as claim: owned project, then its Run records.
++        await self.db.execute(
++            select(ProjectModel)
++            .where(ProjectModel.id == project.id, ProjectModel.user_id == owner)
++            .with_for_update()
++        )
++        rows = list(
++            (
++                await self.db.execute(
++                    select(RunModel).where(
++                        RunModel.user_id == owner,
++                        RunModel.project_id == project.id,
++                        RunModel.archive_directory.is_not(None),
++                    )
++                )
++            ).scalars()
++        )
++        for row in rows:
++            row.archive_present = False
++        runs = self.factory.project_dir(str(owner), project.slug) / "runs"
++        names = await asyncio.to_thread(
++            lambda: (
++                sorted(
++                    e.name
++                    for e in runs.iterdir()
++                    if e.is_dir() and not e.is_symlink() and not e.name.startswith(".")
++                )
++                if runs.is_dir() and not runs.is_symlink()
++                else []
++            )
++        )
++        errors = []
++        for name in names:
++            try:
++                data = await asyncio.to_thread(inspect_archive, self.factory, owner, project, name)
++                await self.put(owner, project, data)
++                if data["metadata"]["truncated"]:
++                    errors.append({"run_dir": name, "code": "ARCHIVE_INDEX_INCOMPLETE"})
++            except (OSError, ValidationError, AuthorizationError, ConflictError) as exc:
++                errors.append(
++                    {"run_dir": name, "code": getattr(exc, "code", "ARCHIVE_UNAVAILABLE")}
++                )
++        for row in rows:
++            if not row.archive_present:
++                row.archive_metadata = {
++                    **row.archive_metadata,
++                    "last_known_statistics": row.archive_metadata.get(
++                        "last_known_statistics",
++                        {
++                            "file_count": row.archive_file_count,
++                            "total_bytes": row.archive_total_bytes,
++                        },
++                    ),
++                    "has_readme": False,
++                    "has_environment": False,
++                    "has_manifest": False,
++                    "dirty": True,
++                    "error_code": "ARCHIVE_MISSING",
++                }
++                row.archive_file_count = 0
++                row.archive_total_bytes = 0
++                row.archive_indexed_at = datetime.now(UTC)
++        await self.db.flush()
++        return {
++            "project_id": str(project.id),
++            "directories": len(names),
++            "errors": errors,
++            "elapsed_ms": (perf_counter() - started) * 1000,
++        }
++
++
++async def index_written_archive(
++    owner: UUID,
++    slug: str,
++    run_dir: Path,
++    *,
++    db: AsyncSession | None = None,
++    run_id: UUID | None = None,
++    factory: StoragePathFactory | None = None,
++) -> None:
++    if db is None:
++        from cygnusx.infrastructure.database.session import get_session_factory
++
++        async with get_session_factory()() as session:
++            await index_written_archive(
++                owner, slug, run_dir, db=session, run_id=run_id, factory=factory
++            )
++            await session.commit()
++        return
++    project = (
++        await db.execute(
++            select(ProjectModel)
++            .where(ProjectModel.user_id == owner, ProjectModel.slug == slug)
++            .with_for_update()
++        )
++    ).scalar_one_or_none()
++    if project is None:
++        raise ConflictError("归档项目尚未登记，请显式同步", code="PROJECT_NOT_REGISTERED")
++    service = ArchiveRunIndexService(db, factory)
++    data = await asyncio.to_thread(inspect_archive, service.factory, owner, project, run_dir.name)
++    await service.put(owner, project, data, run_id=run_id)
++
++
++async def refresh_deleted_archive_path(db: AsyncSession, owner: UUID, path: str) -> None:
++    """Recompute existing project Run metadata after an authorized file/directory deletion."""
++    service = ArchiveRunIndexService(db)
++    owner_root = service.factory.user_root(str(owner))
++    candidate = Path(path)
++    if not candidate.is_absolute():
++        candidate = service.factory.data_root / candidate
++    try:
++        relative = candidate.relative_to(owner_root)
++    except ValueError:
++        return
++    projects = (
++        await db.execute(select(ProjectModel).where(ProjectModel.user_id == owner))
++    ).scalars()
++    for project in projects:
++        known = Path("projects") / project.slug / "runs"
++        if relative == known or relative in known.parents or known in relative.parents:
++            await service.refresh(owner, project)
+diff --git a/src/cygnusx/application/services/chat_archive_service.py b/src/cygnusx/application/services/chat_archive_service.py
+--- a/src/cygnusx/application/services/chat_archive_service.py
++++ b/src/cygnusx/application/services/chat_archive_service.py
+@@ -27,12 +27,11 @@
+     sha256_stream,
+ )
+ from cygnusx.core.config import get_settings
++from cygnusx.domain.file.value_objects import FileSource
+ from cygnusx.infrastructure.database.models.chat import ChatMessageModel, ChatSessionModel
+ from cygnusx.infrastructure.database.models.project import ProjectModel
+ from cygnusx.infrastructure.storage import get_path_factory
+ from cygnusx.infrastructure.storage.file_registry import FileRegistry
+-from cygnusx.domain.file.value_objects import FileSource
+-
+ 
+ CHAT_ARCHIVE_KEY = "analysis_archive"
+ CHAT_ARCHIVE_SCHEMA_VERSION = 1
+@@ -257,6 +256,7 @@
+         await archive_run(
+             user_id=str(context.session.user_id),
+             project=context.project,
++            db=db,
+             run_dir=context.run_dir,
+             analysis_type="AI助手聊天分析",
+             status="completed" if success else "failed",
+diff --git a/src/cygnusx/application/services/dataset_analysis_service.py b/src/cygnusx/application/services/dataset_analysis_service.py
+--- a/src/cygnusx/application/services/dataset_analysis_service.py
++++ b/src/cygnusx/application/services/dataset_analysis_service.py
+@@ -17,7 +17,7 @@
+ from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+ from cygnusx.application.services.analysis_flow_tool_service import AnalysisFlowToolService
+ from cygnusx.application.services.dataset_handoff_service import DatasetHandoffService
+-from cygnusx.application.services.dataset_import_service import require_dataset_read
++from cygnusx.application.services.dataset_import_service import digest, require_dataset_read
+ from cygnusx.application.services.task_service import TaskService
+ from cygnusx.application.services.tool_confirmation_service import get_tool_confirmation_service
+ from cygnusx.core.config import get_settings
+@@ -460,6 +460,41 @@
+             "write_enabled": False,
+         }
+ 
++    async def record_historical_claim(
++        self,
++        owner: uuid.UUID,
++        project_id: uuid.UUID,
++        dataset_id: uuid.UUID,
++        version: DatasetVersionModel,
++        run_id: uuid.UUID,
++        claim: dict[str, Any],
++    ) -> DatasetAnalysisLinkModel:
++        """Use the existing Link for historical references, without an executable request."""
++        await self.repo.version(owner, project_id, dataset_id, version.id)
++        if not version.handoff or version.handoff["validation"].get("worker_paths_verified"):
++            raise ConflictError("历史认领需要真实冻结且未授予 Worker 验证的 Handoff")
++        bound = {
++            "operation": "historical.claim",
++            "owner_id": str(owner),
++            "project_id": str(project_id),
++            "dataset_id": str(dataset_id),
++            "dataset_version_id": str(version.id),
++            "run_id": str(run_id),
++            "claim": claim,
++        }
++        row = DatasetAnalysisLinkModel(
++            version_id=version.id,
++            flow_id="historical_archive",
++            handoff_hash=version.handoff["manifest_hash"],
++            parameters_hash=digest(bound),
++            normalized_request=bound,
++            state="HISTORICAL_CLAIMED",
++            confirmation_id=claim["confirmation_id"],
++        )
++        self.db.add(row)
++        await self.db.flush()
++        return row
++
+     async def execute(
+         self,
+         owner: uuid.UUID,
+@@ -476,6 +511,13 @@
+         row = await self.owned_proposal(
+             owner, project_id, dataset_id, version_id, proposal_id, lock=True
+         )
++        if (
++            row.state == "HISTORICAL_CLAIMED"
++            or row.normalized_request.get("operation") == "historical.claim"
++        ):
++            raise AuthorizationError(
++                "历史认领仅登记来源，不可提交计算", code="HISTORICAL_NOT_EXECUTABLE"
++            )
+         if row.task_id:
+             task = await TaskService(self.db).get_task(row.task_id, str(owner))
+             return {
+diff --git a/src/cygnusx/application/services/directory_service.py b/src/cygnusx/application/services/directory_service.py
+--- a/src/cygnusx/application/services/directory_service.py
++++ b/src/cygnusx/application/services/directory_service.py
+@@ -168,9 +168,7 @@
+             )
+         return result
+ 
+-    async def create_directory(
+-        self, user_id: UUID, req: DirectoryCreateRequest
+-    ) -> DirectoryDTO:
++    async def create_directory(self, user_id: UUID, req: DirectoryCreateRequest) -> DirectoryDTO:
+         path = self._normalize_directory(req.path)
+         if not path:
+             raise ValidationError("目录名不能为空")
+@@ -227,5 +225,13 @@
+             f.directory = ""
+             await self._files.save(f)
+         ok = await self._dirs.delete(user_id, path)
++        from cygnusx.application.services.archive_run_index_service import (
++            refresh_deleted_archive_path,
++        )
++        from cygnusx.infrastructure.storage import get_path_factory
++
++        await refresh_deleted_archive_path(
++            self._session, user_id, str(get_path_factory().user_root(str(user_id)) / path)
++        )
+         await self._session.commit()
+         return ok
+diff --git a/src/cygnusx/application/services/file_service.py b/src/cygnusx/application/services/file_service.py
+--- a/src/cygnusx/application/services/file_service.py
++++ b/src/cygnusx/application/services/file_service.py
+@@ -63,11 +63,11 @@
+ # 匹配规则：相对用户根的第一段目录名命中即跳过。
+ _SYNC_SKIP_USER_TOP_DIRS: frozenset[str] = frozenset(
+     {
+-        "tasks",        # 任务产物（各工具/流程自行登记）
+-        "projects",     # 项目运行结果（由 pipeline/studio 服务登记）
+-        "temp",         # 临时文件
+-        "results",      # 旧版任务结果（legacy）
+-        "raw",          # 旧版上传目录（legacy，迁移后应清空）
++        "tasks",  # 任务产物（各工具/流程自行登记）
++        "projects",  # 项目运行结果（由 pipeline/studio 服务登记）
++        "temp",  # 临时文件
++        "results",  # 旧版任务结果（legacy）
++        "raw",  # 旧版上传目录（legacy，迁移后应清空）
+     }
+ )
+ # workspace/ 下需要跳过的子目录（workspace/ 根允许登记，但 chat-uploads/ 由聊天服务登记）
+@@ -396,7 +396,9 @@
+                     "id": str(f.id),
+                     "name": f.original_name,
+                     "size": f.size,
+-                    "file_type": f.file_type.value if hasattr(f.file_type, "value") else str(f.file_type),
++                    "file_type": f.file_type.value
++                    if hasattr(f.file_type, "value")
++                    else str(f.file_type),
+                     "directory": f.directory,
+                     "created_at": f.created_at.isoformat() if f.created_at else None,
+                 }
+@@ -591,9 +593,7 @@
+             "lines": lines[:max_lines],
+         }
+ 
+-    async def read_file_text(
+-        self, user_id: UUID, file_id: UUID, max_bytes: int
+-    ) -> str:
++    async def read_file_text(self, user_id: UUID, file_id: UUID, max_bytes: int) -> str:
+         """按 file_id 读取用户/团队文件文本内容，超出上限或解码失败时抛 ValidationError。"""
+         file = await self._files.get_visible(user_id, file_id)
+         if file is None:
+@@ -604,9 +604,7 @@
+             raise NotFoundError("文件已被移除")
+         size = info.get("size", 0) or 0
+         if size > max_bytes:
+-            raise ValidationError(
+-                f"文件超过 {max_bytes} 字节，无法直接作为文本输入"
+-            )
++            raise ValidationError(f"文件超过 {max_bytes} 字节，无法直接作为文本输入")
+         content = await self._backend.read(file.path, limit=max_bytes)
+         try:
+             return content.decode("utf-8")
+@@ -763,6 +761,16 @@
+         if file is None:
+             raise NotFoundError("文件不存在")
+         await self._require_delete_access(file, user_id)
++        from sqlalchemy import exists, select
++
++        from cygnusx.core.exceptions import ConflictError
++        from cygnusx.infrastructure.database.models.dataset import DatasetAssetModel
++
++        referenced = await self._session.scalar(
++            select(exists().where(DatasetAssetModel.file_record_id == file.id))
++        )
++        if referenced is True:
++            raise ConflictError("文件属于保留的数据血缘，不能删除", code="FILE_LINEAGE_RETAINED")
+         # 删盘 + 删记录
+         if await self._backend.exists(file.path):
+             await self._backend.delete(file.path)
+@@ -773,6 +781,12 @@
+             delta = -min(file.size, user.used_storage)
+             if delta != 0:
+                 await self._users.add_used_storage(file.user_id, delta)
++        from cygnusx.application.services.archive_run_index_service import (
++            refresh_deleted_archive_path,
++        )
++
++        if file.user_id is not None:
++            await refresh_deleted_archive_path(self._session, file.user_id, file.path)
+         await self._session.commit()
+         return True
+ 
+@@ -977,8 +991,12 @@
+             if self._should_skip_sync_path(rel_user_parts):
+                 continue
+             # workspace/ 根下的沙盒 shell 残留（zsh/omp 缓存）不登记
+-            if len(rel_user_parts) == 1 and rel_user_parts[0] == "workspace" and any(
+-                pattern.match(entry["name"]) for pattern in _SYNC_SKIP_WORKSPACE_FILE_PATTERNS
++            if (
++                len(rel_user_parts) == 1
++                and rel_user_parts[0] == "workspace"
++                and any(
++                    pattern.match(entry["name"]) for pattern in _SYNC_SKIP_WORKSPACE_FILE_PATTERNS
++                )
+             ):
+                 continue
+             rel = entry["path"]
+diff --git a/src/cygnusx/application/services/historical_run_claim_service.py b/src/cygnusx/application/services/historical_run_claim_service.py
+new file mode 100644
+--- /dev/null
++++ b/src/cygnusx/application/services/historical_run_claim_service.py
+@@ -0,0 +1,520 @@
++"""Human-confirmed historical archive references; never submits or adopts a Task."""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import re
++from datetime import UTC, datetime
++from pathlib import Path, PurePosixPath
++from typing import Any
++from uuid import UUID
++
++from sqlalchemy import or_, select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from cygnusx.application.schemas.dataset import AssetAttach, DatasetCreate, SampleAttach
++from cygnusx.application.schemas.run_claim import RunClaimRequest
++from cygnusx.application.services.archive_run_index_service import (
++    ArchiveRunIndexService,
++    archive_path,
++    inspect_archive,
++    read_archive_json,
++)
++from cygnusx.application.services.dataset_analysis_service import DatasetAnalysisService
++from cygnusx.application.services.dataset_handoff_service import DatasetHandoffService
++from cygnusx.application.services.dataset_import_service import require_dataset_read
++from cygnusx.application.services.dataset_service import DatasetService
++from cygnusx.application.services.project_service import ProjectService
++from cygnusx.application.services.tool_confirmation_service import get_tool_confirmation_service
++from cygnusx.core.config import get_settings
++from cygnusx.core.exceptions import AuthorizationError, ConflictError, ValidationError
++from cygnusx.domain.dataset.validation import ValidationLimits, checksum, open_owned_file
++from cygnusx.infrastructure.database.models.dataset import DatasetVersionModel
++from cygnusx.infrastructure.database.models.file import FileRecordModel
++from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.models.run import RunModel
++
++CLAIM_TOOL = "project.run.claim"
++HISTORICAL = "HISTORICAL_CLAIMED"
++
++
++def verify_bytes(path: Path, root: Path) -> tuple[str, int]:
++    with open_owned_file(path, root) as stream:
++        before = os.fstat(stream.fileno())
++        result = checksum(
++            stream, ValidationLimits(max_bytes=get_settings().research_artifact_max_bytes)
++        )
++        after = os.fstat(stream.fileno())
++    if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
++        after.st_size,
++        after.st_mtime_ns,
++        after.st_ctime_ns,
++    ):
++        raise ConflictError("校验过程中归档文件改变", code="ARCHIVE_CHANGED")
++    return result
++
++
++def manifest_file(archive: Path, relative: str) -> Path:
++    parts = PurePosixPath(relative)
++    if (
++        not relative
++        or parts.is_absolute()
++        or parts.as_posix() != relative
++        or any(p in {"..", "."} for p in parts.parts)
++        or "\\" in relative
++        or any(ord(c) < 32 for c in relative)
++    ):
++        raise ValidationError("manifest 含非法文件引用", code="ARCHIVE_PATH_INVALID")
++    path = archive
++    for part in parts.parts:
++        path = path / part
++        if path.is_symlink():
++            raise AuthorizationError("归档文件不允许符号链接", code="ARCHIVE_PATH_INVALID")
++    try:
++        path.resolve().relative_to(archive.resolve())
++    except ValueError as exc:
++        raise AuthorizationError("manifest 文件越出归档空间", code="ARCHIVE_PATH_INVALID") from exc
++    return path
++
++
++class HistoricalRunClaimService:
++    def __init__(self, db: AsyncSession) -> None:
++        self.db = db
++        self.index = ArchiveRunIndexService(db)
++        self.datasets = DatasetService(db)
++        self.confirmations = get_tool_confirmation_service()
++
++    async def authorize(self, owner: UUID, project_id: UUID) -> ProjectModel:
++        project = await ProjectService(self.db).require_owner(owner, project_id)
++        for module in ("files", "tasks", "reports"):
++            await self.datasets.repo.require_module(owner, module)
++        require_dataset_read()
++        if project.status not in {None, "active", "completed", "handed_over"}:
++            raise AuthorizationError("该项目不可认领归档", code="PROJECT_INACTIVE")
++        return project
++
++    async def inspect(
++        self, owner: UUID, project: ProjectModel, name: str, request: RunClaimRequest
++    ) -> tuple[dict[str, Any], dict[str, Any], RunModel | None]:
++        factory = self.index.factory
++        data = await asyncio.to_thread(inspect_archive, factory, owner, project, name)
++        missing = [
++            filename
++            for filename, key in [
++                ("README.md", "has_readme"),
++                ("environment.json", "has_environment"),
++                ("manifest.json", "has_manifest"),
++            ]
++            if not data["metadata"][key]
++        ]
++        if missing:
++            raise ValidationError(
++                "归档三件套缺失：" + ", ".join(missing), code="ARCHIVE_INCOMPLETE"
++            )
++        if data["metadata"].get("truncated"):
++            raise ValidationError("归档超过校验预算", code="ARCHIVE_LIMIT")
++        archive = archive_path(factory, owner, project.slug, name)
++        manifest, manifest_sha = await asyncio.to_thread(
++            read_archive_json, archive / "manifest.json", factory.user_root(str(owner))
++        )
++        await asyncio.to_thread(
++            read_archive_json, archive / "environment.json", factory.user_root(str(owner))
++        )
++        if manifest_sha != data["manifest_hash"]:
++            raise ConflictError("归档清单改变，请重新预审", code="ARCHIVE_CHANGED")
++        files = manifest.get("files")
++        if not isinstance(files, list) or len(files) > get_settings().research_artifact_max_files:
++            raise ValidationError(
++                "manifest.files 必须为预算内的文件列表", code="ARCHIVE_MANIFEST_INVALID"
++            )
++        candidates = list(
++            (
++                await self.db.execute(
++                    select(RunModel)
++                    .where(
++                        RunModel.user_id == owner,
++                        or_(
++                            RunModel.archive_identity == data["identity"],
++                            RunModel.archive_manifest_sha256 == manifest_sha,
++                        ),
++                    )
++                    .order_by((RunModel.status == HISTORICAL).desc(), RunModel.created_at)
++                )
++            ).scalars()
++        )
++        existing = candidates[0] if candidates else None
++        if existing is not None and existing.status == HISTORICAL:
++            if existing.project_id != project.id:
++                raise ConflictError("该归档已属于其他项目的稳定 Run", code="CLAIM_PROJECT_MISMATCH")
++            if existing.archive_manifest_sha256 != manifest_sha:
++                raise ConflictError("已认领归档清单被改变", code="ARCHIVE_CHANGED")
++        elif existing is not None and existing.project_id != project.id:
++            existing = None
++        if existing is None:
++            existing = await self.index.find(owner, project.id, data, lock=False)
++        if (
++            existing is not None
++            and existing.status != HISTORICAL
++            and existing.plan_json.get("dataset_analysis_link_id")
++        ):
++            from cygnusx.infrastructure.database.models.dataset import DatasetAnalysisLinkModel
++
++            link = await self.db.get(
++                DatasetAnalysisLinkModel, UUID(existing.plan_json["dataset_analysis_link_id"])
++            )
++            raise ConflictError(
++                "该 Run 已有血缘或需要人工对账，不覆盖既有挂链",
++                code="RUN_ALREADY_LINKED" if link else "RECONCILIATION_REQUIRED",
++            )
++        if existing is not None and existing.task_id:
++            from cygnusx.infrastructure.database.models.task import TaskModel
++
++            task = await self.db.get(TaskModel, existing.task_id)
++            if task is None or task.user_id != owner:
++                raise ConflictError(
++                    "该 Run 的 Task 挂链缺失，请人工对账", code="RECONCILIATION_REQUIRED"
++                )
++        saved = (
++            (existing.plan_json.get("historical_claim") or {}).get("files", []) if existing else []
++        )
++        saved_map = {item["path"]: item for item in saved}
++        explicit = {item.manifest_path: item.file_record_id for item in request.files}
++        if len(explicit) != len(request.files):
++            raise ValidationError("显式文件映射重复", code="ARCHIVE_MAPPING_INVALID")
++        mapped: list[dict[str, Any]] = []
++        paths: set[str] = set()
++        refs: set[UUID] = set()
++        total = 0
++        for item in files:
++            if not isinstance(item, dict):
++                raise ValidationError("manifest 文件项无效", code="ARCHIVE_MANIFEST_INVALID")
++            relative, size, sha = item.get("path"), item.get("size"), item.get("sha256")
++            if (
++                not isinstance(relative, str)
++                or relative in paths
++                or type(size) is not int
++                or size < 0
++                or not isinstance(sha, str)
++                or re.fullmatch(r"[0-9a-fA-F]{64}", sha) is None
++            ):
++                raise ValidationError(
++                    "manifest 文件需唯一路径、大小及 SHA-256", code="ARCHIVE_MANIFEST_INVALID"
++                )
++            paths.add(relative)
++            total += size
++            if total > get_settings().research_artifact_max_bytes:
++                raise ValidationError("归档产物超过校验预算", code="ARCHIVE_LIMIT")
++            path = manifest_file(archive, relative)
++            if not path.is_file():
++                raise ValidationError(
++                    "manifest 登记文件不存在：" + relative, code="ARCHIVE_FILE_MISSING"
++                )
++            try:
++                actual = await asyncio.to_thread(verify_bytes, path, factory.user_root(str(owner)))
++            except OSError as exc:
++                raise ValidationError(
++                    "manifest 登记文件不存在：" + relative, code="ARCHIVE_FILE_MISSING"
++                ) from exc
++            if actual != (sha.lower(), size):
++                raise ConflictError(
++                    "归档文件大小或 SHA 不符：" + relative, code="ARCHIVE_FILE_CHANGED"
++                )
++            file_id = explicit.get(relative)
++            if file_id is None and relative in saved_map:
++                file_id = UUID(saved_map[relative]["file_record_id"])
++            if file_id is None:
++                rows = list(
++                    (
++                        await self.db.execute(
++                            select(FileRecordModel)
++                            .where(
++                                FileRecordModel.user_id == owner,
++                                FileRecordModel.storage_path
++                                == path.relative_to(factory.data_root).as_posix(),
++                                FileRecordModel.status == "active",
++                                FileRecordModel.lifecycle_status == "active",
++                            )
++                            .limit(2)
++                        )
++                    ).scalars()
++                )
++                if len(rows) != 1:
++                    raise ValidationError(
++                        "文件未唯一登记，请提供显式 FileRecord 映射：" + relative,
++                        code="FILE_REGISTRY_REFERENCE_REQUIRED",
++                    )
++                file_id = rows[0].id
++            record = await self.datasets.repo.file(owner, project.id, file_id)
++            if file_id in refs:
++                raise ValidationError(
++                    "同一 FileRecord 不能映射多个归档文件", code="ARCHIVE_MAPPING_INVALID"
++                )
++            refs.add(file_id)
++            if record.size != size or record.storage_backend != "local":
++                raise ConflictError(
++                    "FileRegistry 大小或存储后端不符", code="FILE_REGISTRY_MISMATCH"
++                )
++            if (
++                record.checksum
++                and len(record.checksum) == 64
++                and record.checksum.lower() != sha.lower()
++            ):
++                raise ConflictError("FileRegistry SHA 不符", code="FILE_REGISTRY_MISMATCH")
++            registered = factory.data_root / record.storage_path
++            if registered.exists():
++                if (
++                    await asyncio.to_thread(verify_bytes, registered, factory.user_root(str(owner)))
++                    != actual
++                ):
++                    raise ConflictError("登记源文件与归档不一致", code="FILE_REGISTRY_MISMATCH")
++            elif not (
++                existing
++                and existing.status == HISTORICAL
++                and saved_map.get(relative, {}).get("sha256") == sha.lower()
++            ):
++                raise ValidationError("FileRegistry 源文件不存在", code="FILE_REGISTRY_MISSING")
++            mapped.append(
++                {
++                    "path": relative,
++                    "file_record_id": str(file_id),
++                    "size": size,
++                    "sha256": sha.lower(),
++                    "integrity": "VERIFIED",
++                }
++            )
++        if not set(explicit).issubset(paths):
++            raise ValidationError("显式映射含 manifest 之外的文件", code="ARCHIVE_MAPPING_INVALID")
++        sample_ids, sample_keys = set(), set()
++        for sample in request.samples:
++            registered_sample = await self.datasets.repo.sample(owner, sample.sample_id)
++            if (
++                sample.sample_id in sample_ids
++                or sample.sample_key in sample_keys
++                or set(map(str, sample.file_record_ids)) != set(registered_sample.file_ids)
++                or not set(sample.file_record_ids).issubset(refs)
++            ):
++                raise ValidationError(
++                    "样本与已核对的显式文件映射不一致", code="ARCHIVE_MAPPING_INVALID"
++                )
++            sample_ids.add(sample.sample_id)
++            sample_keys.add(sample.sample_key)
++        bound = {
++            "operation": CLAIM_TOOL,
++            "owner_id": str(owner),
++            "project_id": str(project.id),
++            "run_dir": name,
++            "manifest_sha256": manifest_sha,
++            "archive_identity": data["identity"],
++            "purpose": request.purpose,
++            "files": sorted(mapped, key=lambda x: x["path"]),
++            "samples": [s.model_dump(mode="json") for s in request.samples],
++        }
++        return data, bound, existing
++
++    @staticmethod
++    def existing_result(run: RunModel) -> dict[str, Any]:
++        claim = run.plan_json["historical_claim"]
++        return {
++            "state": HISTORICAL,
++            "reused": True,
++            "run_id": str(run.id),
++            "dataset_id": claim["dataset_id"],
++            "dataset_version_id": claim["dataset_version_id"],
++            "analysis_link_id": run.plan_json["dataset_analysis_link_id"],
++            "task_id": None,
++            "worker_paths_verified": False,
++            "execution_allowed": False,
++            "purpose": claim["purpose"],
++        }
++
++    async def claim(
++        self, owner: UUID, project_id: UUID, name: str, request: RunClaimRequest
++    ) -> dict[str, Any]:
++        project = await self.authorize(owner, project_id)
++        if request.action == "commit":
++            await self.db.execute(
++                select(ProjectModel)
++                .where(ProjectModel.id == project_id, ProjectModel.user_id == owner)
++                .with_for_update()
++            )
++        data, bound, existing = await self.inspect(owner, project, name, request)
++        if existing is not None and existing.status == HISTORICAL:
++            # Same immutable evidence, including after rename/copy/move: retain identity.
++            await self.index.put(owner, project, data)
++            return self.existing_result(existing)
++        if request.action == "preview":
++            confirmation = await self.confirmations.create_for_tool(str(owner), CLAIM_TOOL, bound)
++            return {
++                "state": "PREVIEW",
++                "confirmation_id": confirmation.confirmation_id,
++                "parameters_hash": confirmation.parameter_hash,
++                "manifest_sha256": bound["manifest_sha256"],
++                "run_id": str(existing.id) if existing else None,
++                "files": bound["files"],
++                "purpose": request.purpose,
++                "integrity": "VERIFIED" if bound["files"] else "METADATA_ONLY",
++                "will_create": (["platform_runs metadata"] if existing is None else [])
++                + ["Dataset", "DatasetVersion", "frozen Handoff", "historical AnalysisLink"],
++                "existing_task_reference": str(existing.task_id)
++                if existing is not None and existing.task_id
++                else None,
++                "task_will_be_created": False,
++                "worker_paths_verified": False,
++                "execution_allowed": False,
++            }
++        if request.confirmation_id is None:
++            raise ValidationError(
++                "写入前必须预审并由 owner JWT 确认", code="CLAIM_CONFIRMATION_REQUIRED"
++            )
++        receipt = await self.confirmations.consume_tool_confirmation(
++            str(owner), str(request.confirmation_id), CLAIM_TOOL, bound
++        )
++        run = await self.index.put(owner, project, data)
++        dataset = await self.datasets.create(
++            owner, project.id, DatasetCreate(name=name[:200], description=request.purpose)
++        )
++        version = (
++            await self.db.execute(
++                select(DatasetVersionModel).where(
++                    DatasetVersionModel.dataset_id == dataset.id, DatasetVersionModel.number == 1
++                )
++            )
++        ).scalar_one()
++        claim = {
++            **bound,
++            "run_id": str(run.id),
++            "claimed_by": str(owner),
++            "claimed_at": datetime.now(UTC).isoformat(),
++            "approval_receipt": {
++                "confirmation_id": receipt.confirmation_id,
++                "parameters_hash": receipt.parameter_hash,
++                "status": receipt.status,
++            },
++            "confirmation_id": str(request.confirmation_id),
++            "historical_only": True,
++            "previous_run": {
++                "status": run.status,
++                "plan_digest": run.plan_digest,
++                "task_id": str(run.task_id) if run.task_id else None,
++            },
++            "dataset_id": str(dataset.id),
++            "dataset_version_id": str(version.id),
++        }
++        version.source_snapshot = {"historical_claim": claim}
++        version.review_annotations = {
++            "historical_claim": {
++                "purpose": request.purpose,
++                "reviewed_by": str(owner),
++                "reviewed_at": claim["claimed_at"],
++            }
++        }
++        for file in bound["files"]:
++            await self.datasets.attach_asset(
++                owner,
++                project.id,
++                dataset.id,
++                version.id,
++                AssetAttach(file_record_id=UUID(file["file_record_id"]), role="archive"),
++            )
++        for sample in request.samples:
++            await self.datasets.attach_sample(
++                owner,
++                project.id,
++                dataset.id,
++                version.id,
++                SampleAttach(**sample.model_dump(), group_confirmed=False),
++            )
++        handoffs = DatasetHandoffService(self.db)
++        await handoffs.verify(owner, project.id, dataset.id, version.id)
++        frozen = await handoffs.manifest(owner, project.id, dataset.id, version.id, freeze=True)
++        expected = {
++            file["file_record_id"]: (file["sha256"], file["size"]) for file in bound["files"]
++        }
++        observed = {
++            file["file_record_id"]: (file["sha256"], file["size"]) for file in frozen["assets"]
++        }
++        if expected != observed:
++            raise ConflictError("冻结输入与人工确认的归档字节不一致", code="ARCHIVE_CHANGED")
++        _, final_bound, _ = await self.inspect(owner, project, name, request)
++        if final_bound != bound:
++            raise ConflictError("归档在认领事务内发生变化", code="ARCHIVE_CHANGED")
++        if frozen["validation"]["worker_paths_verified"] or frozen["validation"]["dataset_ready"]:
++            raise ConflictError("历史认领不能声明计算输入已准入")
++        dataset.status, version.status = HISTORICAL, HISTORICAL
++        link = await DatasetAnalysisService(self.db).record_historical_claim(
++            owner, project.id, dataset.id, version, run.id, claim
++        )
++        run.status = HISTORICAL
++        run.plan_json = {
++            **run.plan_json,
++            "historical_claim": claim,
++            "dataset_analysis_link_id": str(link.id),
++            "execution_allowed": False,
++        }
++        from cygnusx.application.services.agent_tool_gateway import digest
++        from cygnusx.application.services.run_event_service import RunEventService
++
++        run.plan_digest = digest(run.plan_json)
++        # Accepted claims and their audit record share the same SQL transaction.
++        # Middleware additionally records every HTTP outcome, including refusals.
++        from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
++
++        self.db.add(
++            AuditLogModel(
++                user_id=owner,
++                method="POST",
++                path=f"/api/v1/projects/{project.id}/runs/{name}/claim",
++                resource_type="project_run_claim",
++                resource_id=str(project.id),
++                status_code=200,
++                detail={
++                    "source": "claim_transaction",
++                    "action": "commit",
++                    "state": HISTORICAL,
++                    "run_id": str(run.id),
++                    "dataset_version_id": str(version.id),
++                    "manifest_sha256": bound["manifest_sha256"],
++                    "confirmation_id": str(request.confirmation_id),
++                },
++            )
++        )
++        await RunEventService(self.db).emit(
++            run.id,
++            status=HISTORICAL,
++            phase="historical_claim",
++            payload={
++                "analysis_link_id": str(link.id),
++                "execution_allowed": False,
++                "attempt_number": run.attempt_number,
++            },
++        )
++        await self.db.flush()
++        return {
++            **self.existing_result(run),
++            "reused": False,
++            "handoff_hash": frozen["manifest_hash"],
++        }
++
++    async def approve(
++        self, owner: UUID, project_id: UUID, name: str, confirmation_id: UUID
++    ) -> dict[str, Any]:
++        await self.authorize(owner, project_id)
++        record = await self.confirmations.get_status(str(owner), str(confirmation_id))
++        if (
++            record is None
++            or record.tool_name != CLAIM_TOOL
++            or record.normalized_request.get("project_id") != str(project_id)
++            or record.normalized_request.get("run_dir") != name
++        ):
++            raise AuthorizationError(
++                "认领确认与项目或归档不一致", code="CLAIM_CONFIRMATION_MISMATCH"
++            )
++        result = await self.confirmations.approve_by_human(
++            user_id=str(owner), confirmation_id=str(confirmation_id)
++        )
++        return {
++            "confirmation_id": result.confirmation_id,
++            "state": result.status,
++            "execution_allowed": False,
++        }
+diff --git a/src/cygnusx/application/services/project_archive_service.py b/src/cygnusx/application/services/project_archive_service.py
+--- a/src/cygnusx/application/services/project_archive_service.py
++++ b/src/cygnusx/application/services/project_archive_service.py
+@@ -246,10 +246,7 @@
+         f" | {_one_line(status, limit=20)} | {_one_line(summary)} |"
+     )
+     if ANALYSIS_LOG_HEADING not in content:
+-        content = (
+-            content.rstrip()
+-            + f"\n\n{ANALYSIS_LOG_HEADING}\n\n{_ANALYSIS_LOG_TABLE_HEADER}\n"
+-        )
++        content = content.rstrip() + f"\n\n{ANALYSIS_LOG_HEADING}\n\n{_ANALYSIS_LOG_TABLE_HEADER}\n"
+         return content + row + "\n", True
+     return content.rstrip() + "\n" + row + "\n", True
+ 
+@@ -366,6 +363,8 @@
+     code_files: list[ArchivedFile] | None = None,
+     factory: StoragePathFactory | None = None,
+     backend: Any = None,
++    db: AsyncSession | None = None,
++    run_id: UUID | None = None,
+ ) -> dict[str, Any]:
+     """为已存在的项目 run 目录补写 README.md / environment.json 并更新项目 AGENTS.md。
+ 
+@@ -419,9 +418,7 @@
+     await backend.write(f"{run_rel}/README.md", readme.encode("utf-8"))
+     await backend.write(
+         f"{run_rel}/environment.json",
+-        (json.dumps(environment, ensure_ascii=False, indent=2, default=str) + "\n").encode(
+-            "utf-8"
+-        ),
++        (json.dumps(environment, ensure_ascii=False, indent=2, default=str) + "\n").encode("utf-8"),
+     )
+     # 产物 manifest 旁落 README：逐文件 path/size/sha256 的实测对账记录，
+     # OpenAI4S compute/manifest 契约同款字段；sha256 缺省（None）即实测失败。
+@@ -457,12 +454,15 @@
+     )
+     if appended:
+         await backend.write(agents_rel, content.encode("utf-8"))
++    from cygnusx.application.services.archive_run_index_service import index_written_archive
++
++    await index_written_archive(
++        UUID(user_id), project.slug, run_dir, db=db, run_id=run_id, factory=factory
++    )
+     return environment
+ 
+ 
+-async def _resolve_project_by_slug(
+-    db: AsyncSession | None, user_id: str, name: str
+-) -> ProjectInfo:
++async def _resolve_project_by_slug(db: AsyncSession | None, user_id: str, name: str) -> ProjectInfo:
+     """按 (user_id, slug) 查项目记录补全元信息；查不到按名称兜底。"""
+     info = ProjectInfo(name=name)
+     if db is None:
+@@ -505,9 +505,7 @@
+     project_name = str(getattr(session, "title", "") or "").strip() or run_dir.parent.parent.name
+     project = await _resolve_project_by_slug(db, user_id, project_name)
+     image = str((getattr(session, "sandbox_meta", None) or {}).get("image") or "")
+-    environment = collect_environment(
+-        image=image or None, flow_id="studio", flow_name="OmicStudio"
+-    )
++    environment = collect_environment(image=image or None, flow_id="studio", flow_name="OmicStudio")
+     artifact_name = str(getattr(artifact, "name", "") or "")
+     local_file = run_dir / "output" / artifact_name
+     artifacts = [
+@@ -534,6 +532,7 @@
+         artifacts=artifacts,
+         factory=factory,
+         backend=backend,
++        db=db,
+     )
+ 
+ 
+@@ -582,7 +581,9 @@
+     plan = run.plan or {}
+     summary_info = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+     title = str(summary_info.get("title") or "超频协作")
+-    analysis_name = title if title != "超频协作" else ("overdrive-plan" if planning_only else "overdrive")
++    analysis_name = (
++        title if title != "超频协作" else ("overdrive-plan" if planning_only else "overdrive")
++    )
+     plan_version = int(plan.get("version") or 0)
+     plan_digest = str(plan.get("hash") or "")
+     flow_version = f"v{plan_version}" + (f" (hash {plan_digest[:8]})" if plan_digest else "")
+@@ -640,5 +641,6 @@
+         artifacts=artifacts,
+         factory=factory,
+         backend=backend,
++        db=db,
+     )
+     return run_dir
+diff --git a/src/cygnusx/application/services/project_overview_service.py b/src/cygnusx/application/services/project_overview_service.py
+--- a/src/cygnusx/application/services/project_overview_service.py
++++ b/src/cygnusx/application/services/project_overview_service.py
+@@ -3,18 +3,13 @@
+ 供「按项目浏览历史分析」页面使用：
+ - 项目元数据（customer 字段由并行开发提供，用 getattr 兜底）
+ - 该项目下的 chat sessions（按 ``chat_sessions.project_id`` 过滤，时间倒序 + 分页）
+-- 磁盘 ``projects/{slug}/runs/`` 下的历史分析运行目录扫描
+-  （AGENTS.md / README.md / environment.json 是否齐备、产物文件数与总大小）
++- 既有 platform_runs 的归档物化索引，数据库分页；GET 不扫描磁盘
+ 
+ 报告（Report）模型暂无 project_id 列，不做关联，避免硬 join。
+ """
+ 
+ from __future__ import annotations
+ 
+-import asyncio
+-import re
+-from datetime import UTC, datetime
+-from pathlib import Path
+ from typing import Any
+ from uuid import UUID
+ 
+@@ -24,10 +19,8 @@
+ from cygnusx.core.exceptions import NotFoundError
+ from cygnusx.infrastructure.database.models.chat import AgentTeamsRoomModel, ChatSessionModel
+ from cygnusx.infrastructure.database.models.project import ProjectModel
++from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.storage.path_factory import StoragePathFactory, get_path_factory
+-
+-# 运行目录名约定：{分析名}-{YYYYMMDD-HHMMSS}[-序号]（见 StoragePathFactory.create_project_run_dir）
+-_RUN_STAMP_RE = re.compile(r"(\d{8})-(\d{6})(?:-\d+)?$")
+ 
+ 
+ class ProjectOverviewService:
+@@ -45,6 +38,8 @@
+         session_limit: int = 50,
+         session_offset: int = 0,
+         session_status: str = "active",
++        run_limit: int = 50,
++        run_offset: int = 0,
+     ) -> dict[str, Any]:
+         project = await self._load_project(user_id, project_id)
+         sessions = await self._list_sessions(
+@@ -54,8 +49,15 @@
+             limit=session_limit,
+             offset=session_offset,
+         )
+-        runs = await asyncio.to_thread(self._scan_runs, str(user_id), project["slug"])
+-        return {"project": project, "sessions": sessions, "runs": runs}
++        runs, run_total = await self._list_runs(user_id, project_id, run_limit, run_offset)
++        return {
++            "project": project,
++            "sessions": sessions,
++            "runs": runs,
++            "runs_total": run_total,
++            "run_limit": run_limit,
++            "run_offset": run_offset,
++        }
+ 
+     # ------------------------------------------------------------------
+     # 项目元数据
+@@ -174,48 +176,55 @@
+             )
+         return items
+ 
+-    # ------------------------------------------------------------------
+-    # 磁盘 runs 目录扫描（同步，经 asyncio.to_thread 调用）
+-    # ------------------------------------------------------------------
+-    def _scan_runs(self, user_id: str, project_slug: str) -> list[dict[str, Any]]:
+-        runs_dir = self._factory.project_dir(user_id, project_slug) / "runs"
+-        if not runs_dir.is_dir():
+-            return []
+-        items: list[dict[str, Any]] = []
+-        for entry in runs_dir.iterdir():
+-            if not entry.is_dir() or entry.name.startswith("."):
+-                continue
+-            file_count = 0
+-            total_size = 0
+-            for file in entry.rglob("*"):
+-                if file.is_file():
+-                    file_count += 1
+-                    total_size += file.stat().st_size
+-            items.append(
+-                {
+-                    "name": entry.name,
+-                    "timestamp": self._run_timestamp(entry),
+-                    "has_agents_md": (entry / "AGENTS.md").is_file(),
+-                    "has_readme": (entry / "README.md").is_file(),
+-                    "has_environment": (entry / "environment.json").is_file(),
+-                    "file_count": file_count,
+-                    "total_size_bytes": total_size,
+-                }
+-            )
+-        # 目录名自带时间戳，按名称倒序即时间倒序
+-        items.sort(key=lambda item: item["name"], reverse=True)
+-        return items
+-
+-    @staticmethod
+-    def _run_timestamp(entry: Path) -> str:
+-        """优先解析目录名中的 ``YYYYMMDD-HHMMSS``，失败回退到目录 mtime。"""
+-        match = _RUN_STAMP_RE.search(entry.name)
+-        if match:
+-            try:
+-                stamp = datetime.strptime(
+-                    f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S"
+-                ).replace(tzinfo=UTC)
+-                return stamp.isoformat()
+-            except ValueError:
+-                pass
+-        return datetime.fromtimestamp(entry.stat().st_mtime, UTC).isoformat()
++    async def _list_runs(
++        self, owner: UUID, project_id: UUID, limit: int, offset: int
++    ) -> tuple[list[dict[str, Any]], int]:
++        if not 1 <= limit <= 200 or offset < 0:
++            from cygnusx.core.exceptions import ValidationError
++
++            raise ValidationError("运行分页参数无效")
++        condition = (
++            RunModel.user_id == owner,
++            RunModel.project_id == project_id,
++            RunModel.archive_directory.is_not(None),
++        )
++        total = (
++            await self._session.execute(
++                select(func.count()).select_from(RunModel).where(*condition)
++            )
++        ).scalar_one()
++        rows = (
++            (
++                await self._session.execute(
++                    select(RunModel)
++                    .where(*condition)
++                    .order_by(RunModel.archive_last_activity.desc().nullslast(), RunModel.id.desc())
++                    .limit(limit)
++                    .offset(offset)
++                )
++            )
++            .scalars()
++            .all()
++        )
++        return [
++            {
++                "id": str(row.id),
++                "project_id": str(row.project_id),
++                "name": row.archive_directory,
++                "timestamp": row.archive_last_activity.isoformat()
++                if row.archive_last_activity
++                else None,
++                "file_count": row.archive_file_count,
++                "total_size_bytes": row.archive_total_bytes,
++                "has_readme": row.archive_metadata.get("has_readme", False),
++                "has_environment": row.archive_metadata.get("has_environment", False),
++                "has_manifest": row.archive_metadata.get("has_manifest", False),
++                "has_agents_md": row.archive_metadata.get("has_agents_md", False),
++                "index_dirty": row.archive_metadata.get("dirty", False) or row.archive_metadata.get("truncated", False),
++                "index_complete": not row.archive_metadata.get("truncated", False),
++                "archive_present": row.archive_present,
++                "status": row.status,
++                "attempt_number": row.attempt_number,
++            }
++            for row in rows
++        ], total
+diff --git a/src/cygnusx/application/services/project_reconciliation_service.py b/src/cygnusx/application/services/project_reconciliation_service.py
+new file mode 100644
+--- /dev/null
++++ b/src/cygnusx/application/services/project_reconciliation_service.py
+@@ -0,0 +1,224 @@
++"""Explicit read-only disk/Run/Link comparison; never repairs or adopts historical Tasks."""
++
++from __future__ import annotations
++
++import asyncio
++from contextlib import suppress
++from typing import Any
++from urllib.parse import quote
++from uuid import UUID
++
++from sqlalchemy import select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from cygnusx.application.services.archive_run_index_service import (
++    ArchiveRunIndexService,
++    archive_path,
++    read_archive_json,
++)
++from cygnusx.application.services.dataset_service import DatasetService
++from cygnusx.application.services.project_service import ProjectService
++from cygnusx.core.exceptions import CygnusXError
++from cygnusx.infrastructure.database.models.dataset import (
++    DatasetAnalysisLinkModel,
++    DatasetModel,
++    DatasetVersionModel,
++)
++from cygnusx.infrastructure.database.models.run import RunModel
++from cygnusx.infrastructure.database.models.task import TaskModel
++
++
++class ProjectReconciliationService:
++    def __init__(self, db: AsyncSession) -> None:
++        self.db = db
++        self.index = ArchiveRunIndexService(db)
++
++    async def view(self, owner: UUID, project_id: UUID) -> dict[str, Any]:
++        project = await ProjectService(self.db).require_owner(owner, project_id)
++        for module in ("files", "tasks", "reports"):
++            await DatasetService(self.db).repo.require_module(owner, module)
++        factory = self.index.factory
++        probe = archive_path(factory, owner, project.slug, "reconciliation-probe")
++        root = probe.parent
++
++        def directories() -> list[dict[str, Any]]:
++            result: list[dict[str, Any]] = []
++            if not root.is_dir():
++                return result
++            for path in sorted(root.iterdir()):
++                if not path.is_dir() or path.is_symlink() or path.name.startswith("."):
++                    continue
++                stat = path.stat()
++                sha = None
++                with suppress(OSError, CygnusXError):
++                    _, sha = read_archive_json(
++                        path / "manifest.json", factory.user_root(str(owner))
++                    )
++                result.append(
++                    {
++                        "run_dir": path.name,
++                        "identity": f"{stat.st_dev}:{stat.st_ino}",
++                        "manifest_sha256": sha,
++                        "missing_parts": [
++                            name
++                            for name in ("README.md", "environment.json", "manifest.json")
++                            if not (path / name).is_file() or (path / name).is_symlink()
++                        ],
++                    }
++                )
++            return result
++
++        disk = await asyncio.to_thread(directories)
++        runs = list(
++            (
++                await self.db.execute(
++                    select(RunModel).where(
++                        RunModel.user_id == owner, RunModel.project_id == project_id
++                    )
++                )
++            ).scalars()
++        )
++        links = list(
++            (
++                await self.db.execute(
++                    select(DatasetAnalysisLinkModel)
++                    .join(
++                        DatasetVersionModel,
++                        DatasetVersionModel.id == DatasetAnalysisLinkModel.version_id,
++                    )
++                    .join(DatasetModel, DatasetModel.id == DatasetVersionModel.dataset_id)
++                    .where(DatasetModel.user_id == owner, DatasetModel.project_id == project_id)
++                )
++            ).scalars()
++        )
++        by_link = {str(link.id): link for link in links}
++        task_keys = {f"run:{run.id}" for run in runs} | {f"dataset:{link.id}" for link in links}
++        task_ids = {r.task_id for r in runs if r.task_id} | {
++            link.task_id for link in links if link.task_id
++        }
++        from sqlalchemy import or_
++
++        tasks = (
++            list(
++                (
++                    await self.db.execute(
++                        select(TaskModel).where(
++                            TaskModel.user_id == owner,
++                            or_(
++                                TaskModel.id.in_(task_ids), TaskModel.idempotency_key.in_(task_keys)
++                            ),
++                        )
++                    )
++                ).scalars()
++            )
++            if task_keys or task_ids
++            else []
++        )
++        by_task = {task.id: task for task in tasks}
++        by_key = {task.idempotency_key: task for task in tasks}
++        unclaimed = []
++        missing = []
++        bindings = []
++        physically_seen: set[UUID] = set()
++        for directory in disk:
++            matching = [
++                r
++                for r in runs
++                if r.archive_identity == directory["identity"]
++                or (
++                    directory["manifest_sha256"]
++                    and r.archive_manifest_sha256 == directory["manifest_sha256"]
++                )
++                or directory["run_dir"]
++                in (r.archive_metadata or {}).get("locations", [r.archive_directory])
++            ]
++            physically_seen.update(run.id for run in matching)
++            trusted = [
++                r for r in matching if str(r.plan_json.get("dataset_analysis_link_id")) in by_link
++            ]
++            if not trusted:
++                unclaimed.append(
++                    {
++                        "run_dir": directory["run_dir"],
++                        "missing_parts": directory["missing_parts"],
++                        "action": "REPAIR_ARCHIVE"
++                        if directory["missing_parts"]
++                        else "PREVIEW_CLAIM",
++                        "next_step": "补齐归档三件套后重新预审"
++                        if directory["missing_parts"]
++                        else "owner 提交用途声明与显式文件引用，预审并人工确认认领",
++                        "claim_endpoint": f"/projects/{project_id}/runs/{quote(directory['run_dir'], safe='')}/claim",
++                    }
++                )
++        for run in runs:
++            if run.archive_directory and run.id not in physically_seen:
++                missing.append(
++                    {
++                        "run_id": str(run.id),
++                        "run_dir": run.archive_directory,
++                        "action": "VERIFY_STORAGE_OR_RESTORE",
++                        "next_step": "核对挂载/备份及显式目录同步；不删除 Run 或重投 Task",
++                    }
++                )
++            lid = run.plan_json.get("dataset_analysis_link_id")
++            if lid and str(lid) not in by_link:
++                bindings.append(
++                    {
++                        "run_id": str(run.id),
++                        "analysis_link_id": str(lid),
++                        "reason": "RUN_LINK_MISSING",
++                    }
++                )
++            if run.task_id and run.task_id not in by_task:
++                bindings.append(
++                    {
++                        "run_id": str(run.id),
++                        "task_id": str(run.task_id),
++                        "reason": "RUN_TASK_MISSING",
++                    }
++                )
++            task = by_key.get(f"run:{run.id}")
++            if task and run.task_id != task.id:
++                bindings.append(
++                    {
++                        "run_id": str(run.id),
++                        "task_id": str(task.id),
++                        "reason": "RUN_TASK_BINDING_MISSING",
++                    }
++                )
++        for link in links:
++            owners = [
++                r for r in runs if r.plan_json.get("dataset_analysis_link_id") == str(link.id)
++            ]
++            if not owners:
++                bindings.append({"analysis_link_id": str(link.id), "reason": "LINK_RUN_MISSING"})
++            if link.state == "SUBMITTING" and link.task_id is None:
++                bindings.append(
++                    {"analysis_link_id": str(link.id), "reason": "SUBMITTING_UNRESOLVED"}
++                )
++            task = by_key.get(f"dataset:{link.id}")
++            if (
++                task and (link.task_id != task.id or any(r.task_id != task.id for r in owners))
++            ) or (
++                link.task_id
++                and (link.task_id not in by_task or any(r.task_id != link.task_id for r in owners))
++            ):
++                bindings.append(
++                    {"analysis_link_id": str(link.id), "reason": "LINK_TASK_BINDING_MISSING"}
++                )
++        for item in bindings:
++            item.update(
++                {
++                    "code": "RECONCILIATION_REQUIRED",
++                    "action": "MANUAL_RECONCILIATION",
++                    "next_step": "人工核对原确认、Run/Link/Task 事务与队列日志；不自动纳管或重试",
++                }
++            )
++        return {
++            "project_id": str(project_id),
++            "read_only": True,
++            "unclaimed_archives": unclaimed,
++            "missing_archives": missing,
++            "binding_conflicts": bindings,
++            "automatic_repairs": 0,
++        }
+diff --git a/src/cygnusx/application/services/research_provenance_service.py b/src/cygnusx/application/services/research_provenance_service.py
+--- a/src/cygnusx/application/services/research_provenance_service.py
++++ b/src/cygnusx/application/services/research_provenance_service.py
+@@ -169,16 +169,37 @@
+             "analyses": [
+                 await self._project_analysis(owner, link.task_id)
+                 if link.task_id
+-                else {
+-                    "analysis_link_id": str(link.id),
+-                    "task_id": None,
+-                    "compute_state": link.state,
+-                    "delivery_state": "BLOCKED",
+-                    "gaps": ["TASK_NOT_CREATED"],
+-                }
++                else self._unsubmitted_link(link)
+                 for link in selected_links
+             ],
+             "gaps": [] if row.handoff else ["HANDOFF_NOT_FROZEN"],
++        }
++
++    @staticmethod
++    def _unsubmitted_link(link: DatasetAnalysisLinkModel) -> dict[str, Any]:
++        if link.state == "HISTORICAL_CLAIMED":
++            claim = link.normalized_request.get("claim", {})
++            return {
++                "analysis_link_id": str(link.id),
++                "run_id": link.normalized_request.get("run_id"),
++                "task_id": None,
++                "state": "HISTORICAL_CLAIMED",
++                "record_kind": "HISTORICAL_CLAIM",
++                "compute_state": "NOT_OBSERVED",
++                "delivery_state": "HISTORICAL_REFERENCE",
++                "claim": {
++                    key: claim.get(key)
++                    for key in ("purpose", "claimed_by", "claimed_at", "manifest_sha256")
++                },
++                "gaps": ["HISTORICAL_NOT_EXECUTED"],
++            }
++        return {
++            "analysis_link_id": str(link.id),
++            "task_id": None,
++            "state": link.state,
++            "compute_state": link.state,
++            "delivery_state": "BLOCKED",
++            "gaps": ["TASK_NOT_CREATED"],
+         }
+ 
+     async def _project_analysis(self, owner: UUID, task_id: UUID) -> dict[str, Any]:
+diff --git a/src/cygnusx/application/services/run_plan_service.py b/src/cygnusx/application/services/run_plan_service.py
+--- a/src/cygnusx/application/services/run_plan_service.py
++++ b/src/cygnusx/application/services/run_plan_service.py
+@@ -61,6 +61,11 @@
+             status="plan_pending",
+         )
+         self._db.add(run)
++        run.project_id = await self._db.scalar(
++            select(ProjectModel.id).where(
++                ProjectModel.user_id == user_id, ProjectModel.slug == req.project_slug
++            )
++        )
+         await self._db.flush()
+         from cygnusx.application.services.run_event_service import RunEventService
+ 
+@@ -99,6 +104,7 @@
+             return existing
+         run = RunModel(
+             user_id=owner,
++            project_id=project.id,
+             project_slug=project.slug,
+             flow_id=link.flow_id,
+             release_id=self._flows.get_flow(link.flow_id).meta.version,
+@@ -141,9 +147,18 @@
+         return self._view(run)
+ 
+     async def list_runs(
+-        self, user_id: UUID, project_slug: str | None = None, status: str | None = None
++        self,
++        user_id: UUID,
++        project_slug: str | None = None,
++        status: str | None = None,
++        project_id: UUID | None = None,
+     ) -> list[SnakemakePlanView]:
+         query = select(RunModel).where(RunModel.user_id == user_id)
++        if project_id is not None:
++            from cygnusx.application.services.project_service import ProjectService
++
++            await ProjectService(self._db).require_owner(user_id, project_id)
++            query = query.where(RunModel.project_id == project_id)
+         if project_slug:
+             query = query.where(RunModel.project_slug == project_slug)
+         if status:
+@@ -263,6 +278,8 @@
+     def _view(run: RunModel) -> SnakemakePlanView:
+         return SnakemakePlanView(
+             run_id=run.id,
++            project_id=run.project_id,
++            attempt_number=run.attempt_number,
+             project_slug=run.project_slug,
+             flow_id=run.flow_id,
+             release_id=run.release_id,
+diff --git a/src/cygnusx/infrastructure/celery_app/tasks/analysis.py b/src/cygnusx/infrastructure/celery_app/tasks/analysis.py
+--- a/src/cygnusx/infrastructure/celery_app/tasks/analysis.py
++++ b/src/cygnusx/infrastructure/celery_app/tasks/analysis.py
+@@ -68,6 +68,8 @@
+     await archive_run(
+         user_id=str(task.user_id),
+         project=ProjectInfo(name=run.project_slug, slug=run.project_slug),
++        db=session,
++        run_id=run.id,
+         run_dir=run_dir,
+         analysis_type=task.flow_id,
+         status=status,
+diff --git a/src/cygnusx/infrastructure/database/models/run.py b/src/cygnusx/infrastructure/database/models/run.py
+--- a/src/cygnusx/infrastructure/database/models/run.py
++++ b/src/cygnusx/infrastructure/database/models/run.py
+@@ -4,7 +4,16 @@
+ from datetime import datetime
+ from typing import Any
+ 
+-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
++from sqlalchemy import (
++    BigInteger,
++    Boolean,
++    DateTime,
++    ForeignKey,
++    Index,
++    Integer,
++    String,
++    UniqueConstraint,
++)
+ from sqlalchemy.dialects.postgresql import JSONB, UUID
+ from sqlalchemy.orm import Mapped, mapped_column
+ 
+@@ -16,6 +25,7 @@
+     __table_args__ = (
+         UniqueConstraint("user_id", "request_key", name="uq_platform_runs_user_request"),
+         Index("ix_platform_runs_user_project_created", "user_id", "project_slug", "created_at"),
++        Index("ix_platform_runs_project_activity", "project_id", "archive_last_activity", "id"),
+     )
+ 
+     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+@@ -23,11 +33,29 @@
+         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+     )
+     project_slug: Mapped[str] = mapped_column(String(200), nullable=False)
++    project_id: Mapped[uuid.UUID | None] = mapped_column(
++        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
++    )
++    # Reserved attempt position; this does not enable retries or re-enqueue Tasks.
++    attempt_number: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
++    archive_directory: Mapped[str | None] = mapped_column(String(255))
++    archive_identity: Mapped[str | None] = mapped_column(String(128))
++    archive_manifest_sha256: Mapped[str | None] = mapped_column(String(64))
++    archive_present: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
++    archive_file_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
++    archive_total_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
++    archive_last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
++    archive_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
++    archive_metadata: Mapped[dict[str, Any]] = mapped_column(
++        JSONB, default=dict, server_default="{}"
++    )
+     flow_id: Mapped[str] = mapped_column(String(100), nullable=False)
+     release_id: Mapped[str] = mapped_column(String(64), nullable=False)
+     request_key: Mapped[str] = mapped_column(String(128), nullable=False)
+     plan_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+     plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", index=True)
+-    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
++    task_id: Mapped[uuid.UUID | None] = mapped_column(
++        UUID(as_uuid=True), nullable=True, unique=True
++    )
+     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+diff --git a/src/cygnusx/middleware/audit.py b/src/cygnusx/middleware/audit.py
+--- a/src/cygnusx/middleware/audit.py
++++ b/src/cygnusx/middleware/audit.py
+@@ -7,7 +7,7 @@
+ 
+ 设计要点：
+ - GET / 静态资源不记录，避免噪声
+-- 用独立 session 写入（get_session_factory），不耦合请求事务；DB 异常仅告警不影响主请求
++- 用独立 session 写入（get_session_factory）；认领请求审计失败关闭，其他写操作保持告警策略
+ - AuthMiddleware 已在外层（注册顺序），本中间件读取其注入的 request.state.user_id
+ """
+ 
+@@ -15,7 +15,7 @@
+ import uuid
+ 
+ from loguru import logger
+-from starlette.middleware.base import BaseHTTPMiddleware
++from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+ from starlette.requests import Request
+ from starlette.responses import Response
+ 
+@@ -24,6 +24,7 @@
+ # 路径 → (resource_type, resource_id) 启发式解析
+ # 匹配 /api/v1/{resource}/{id} 或 /api/v1/admin/{resource}/{id}
+ _RESOURCE_RE = re.compile(r"^/api/v1/(?:admin/)?(?P<type>[a-z_-]+)/(?P<id>[^/]+)")
++_CLAIM_RE = re.compile(r"^/api/v1/projects/[^/]+/runs/.+/claim(?:/approve)?$")
+ 
+ 
+ def _client_ip(request: Request) -> str | None:
+@@ -47,33 +48,56 @@
+ class AuditMiddleware(BaseHTTPMiddleware):
+     """写操作审计日志记录。"""
+ 
+-    async def dispatch(self, request: Request, call_next) -> Response:
++    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+         # 仅审计写操作；非写直接放行，不增加开销
+         if request.method not in _WRITE_METHODS:
+             return await call_next(request)
+ 
+-        response = await call_next(request)
++        try:
++            response = await call_next(request)
++        except Exception:
++            if _CLAIM_RE.match(request.url.path):
++                try:
++                    await self._record(request, Response(status_code=500))
++                except Exception as audit_error:  # noqa: BLE001
++                    logger.warning("认领异常请求审计写入失败: {}", audit_error)
++            raise
+ 
+-        # 异步落库，失败不阻断已生成的响应
++        # 认领须持久化审计后返回；其他写操作沿用原告警策略
+         try:
+-            await self._record(request, response)
++            audit_id = await self._record(request, response)
++            if audit_id is not None:
++                response.headers["X-Claim-Audit-Id"] = audit_id
+         except Exception as e:  # noqa: BLE001
+             logger.warning(f"审计日志写入失败: {e}")
++            if _CLAIM_RE.match(request.url.path):
++                from starlette.responses import JSONResponse
++
++                return JSONResponse(
++                    status_code=503,
++                    content={
++                        "code": "CLAIM_AUDIT_UNAVAILABLE",
++                        "detail": "认领审计暂不可用，请保留确认并人工对账",
++                    },
++                )
+         return response
+ 
+     @staticmethod
+-    async def _record(request: Request, response: Response) -> None:
++    async def _record(request: Request, response: Response) -> str | None:
+         from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
+         from cygnusx.infrastructure.database.session import get_session_factory
+ 
+         path = request.url.path
+         # 静态资源 / 文档 / 健康检查即便方法匹配也不记录（POST 一般也不会命中，保险起见）
+         if path.startswith(("/docs-static", "/assets", "/docs", "/redoc")) or path in ("/health",):
+-            return
++            return None
+ 
+         user_id_str = getattr(request.state, "user_id", None)
+         user_id = uuid.UUID(user_id_str) if user_id_str else None
+         resource_type, resource_id = _parse_resource(path)
++        claim = bool(_CLAIM_RE.match(path))
++        if claim:
++            resource_type = "project_run_claim"
+ 
+         entry = AuditLogModel(
+             user_id=user_id,
+@@ -85,7 +109,12 @@
+             status_code=response.status_code,
+             ip=_client_ip(request),
+             user_agent=request.headers.get("user-agent"),
+-            detail={},
++            detail={
++                **getattr(request.state, "claim_audit", {}),
++                "outcome": "RECORDED" if response.status_code < 400 else "REJECTED",
++            }
++            if claim
++            else {},
+         )
+ 
+         factory = get_session_factory()
+@@ -111,3 +140,4 @@
+             )
+         except Exception as e:  # noqa: BLE001
+             logger.warning(f"审计日志文本备份失败: {e}")
++        return str(entry.id) if claim else None
+diff --git a/tests/unit/test_historical_run_claim.py b/tests/unit/test_historical_run_claim.py
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/test_historical_run_claim.py
+@@ -0,0 +1,319 @@
++"""Real SQLite and local bytes; human confirmation store is an offline test double."""
++
++from __future__ import annotations
++
++import hashlib
++from types import SimpleNamespace
++from typing import Any
++from unittest.mock import AsyncMock
++from uuid import UUID
++
++import pytest
++from sqlalchemy import func, select
++
++from cygnusx.application.schemas.run_claim import RunClaimRequest
++from cygnusx.application.services import archive_run_index_service as index_module
++from cygnusx.application.services import dataset_analysis_service as analysis_module
++from cygnusx.application.services.archive_run_index_service import (
++    ArchiveRunIndexService,
++    refresh_deleted_archive_path,
++)
++from cygnusx.application.services.dataset_handoff_service import DatasetHandoffService
++from cygnusx.application.services.historical_run_claim_service import HistoricalRunClaimService
++from cygnusx.application.services.project_archive_service import (
++    ArchivedFile,
++    ProjectInfo,
++    archive_run,
++)
++from cygnusx.core.exceptions import AuthorizationError, ConflictError
++from cygnusx.infrastructure.config.storage_config import StorageConfig
++from cygnusx.infrastructure.database.models.audit_log import AuditLogModel
++from cygnusx.infrastructure.database.models.dataset import (
++    DatasetAnalysisLinkModel,
++    DatasetModel,
++    DatasetVersionModel,
++)
++from cygnusx.infrastructure.database.models.run import RunModel
++from cygnusx.infrastructure.database.models.run_event import RunEventModel
++from cygnusx.infrastructure.storage.path_factory import StoragePathFactory
++from tests.unit.test_dataset_import_handoff import imports as imports
++from tests.unit.test_dataset_phase3 import registry as registry
++
++pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
++
++
++@pytest.fixture
++async def historical(registry: Any, imports: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
++    db, _, owner, other, project, *_ = registry
++    for model in (RunModel, RunEventModel, AuditLogModel, DatasetAnalysisLinkModel):
++        model.__table__.create(db.sync.bind)
++
++    async def scalar(statement: Any) -> Any:
++        return db.sync.scalar(statement)
++
++    db.scalar = scalar
++    root = imports[2].data_root
++    factory = StoragePathFactory(StorageConfig(data_root=str(root), users_subdir="users"))
++    monkeypatch.setattr(index_module, "get_path_factory", lambda: factory)
++    from cygnusx.infrastructure.storage import LocalStorageBackend
++
++    backend = LocalStorageBackend(path_factory=factory)
++    directory = factory.create_project_run_dir(str(owner), "owned", "historical")
++    path = directory / "output/result.txt"
++    content = b"historical result\n"
++    path.write_bytes(content)
++    sha = hashlib.sha256(content).hexdigest()
++    file = registry[7][0]
++    file.storage_path = path.relative_to(factory.data_root).as_posix()
++    file.original_name = path.name
++    file.size = len(content)
++    file.checksum = sha
++    file.directory = "projects/owned/runs/" + directory.name
++    await db.commit()
++    await archive_run(
++        user_id=str(owner),
++        project=ProjectInfo(name="owned"),
++        run_dir=directory,
++        analysis_type="historical_archive",
++        status="legacy_recorded",
++        artifacts=[
++            ArchivedFile(
++                name=path.name,
++                relative_path="output/result.txt",
++                size=len(content),
++                md5="",
++                sha256=sha,
++            )
++        ],
++        db=db,
++        factory=factory,
++        backend=backend,
++    )
++    await db.commit()
++    return db, owner, other, project, directory, path, HistoricalRunClaimService(db), file
++
++
++async def test_historical_claim_has_no_executable_request_and_cannot_be_executed(
++    historical: Any, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    db, owner, _, project, directory, _, service, _ = historical
++    req = RunClaimRequest(purpose="Curate historical records")
++    preview = await service.claim(owner, project, directory.name, req)
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 0
++    await service.approve(owner, project, directory.name, UUID(preview["confirmation_id"]))
++    result = await service.claim(
++        owner,
++        project,
++        directory.name,
++        req.model_copy(
++            update={"action": "commit", "confirmation_id": UUID(preview["confirmation_id"])}
++        ),
++    )
++    await db.commit()
++    version = await db.get(DatasetVersionModel, UUID(result["dataset_version_id"]))
++    assert not version.handoff["validation"]["worker_paths_verified"]
++    assert not version.handoff["validation"]["dataset_ready"]
++    assert version.source_snapshot["historical_claim"]["approval_receipt"]["status"] == "CONSUMED"
++    monkeypatch.setattr(analysis_module, "require_agent_write_gate", lambda _: None)
++    settings = analysis_module.get_settings().model_copy(
++        update={"analysis_submit_from_dataset": True}
++    )
++    monkeypatch.setattr(analysis_module, "get_settings", lambda: settings)
++    with pytest.raises(AuthorizationError, match="历史认领"):
++        await analysis_module.DatasetAnalysisService(db).execute(
++            owner, project, UUID(result["dataset_id"]), version.id, UUID(result["analysis_link_id"])
++        )
++    assert db.sync.scalar(select(func.count()).select_from(AuditLogModel)) == 1
++
++
++async def test_changed_bytes_during_freeze_roll_back_claim(
++    historical: Any, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    db, owner, _, project, directory, path, service, _ = historical
++    req = RunClaimRequest(purpose="Historical references")
++    preview = await service.claim(owner, project, directory.name, req)
++    await service.approve(owner, project, directory.name, UUID(preview["confirmation_id"]))
++    original = DatasetHandoffService.manifest
++
++    async def mutate_after_freeze(*args: Any, **kwargs: Any) -> Any:
++        result = await original(*args, **kwargs)
++        path.write_bytes(b"changed after freeze\n")
++        return result
++
++    monkeypatch.setattr(DatasetHandoffService, "manifest", mutate_after_freeze)
++    with pytest.raises(ConflictError):
++        await service.claim(
++            owner,
++            project,
++            directory.name,
++            req.model_copy(
++                update={"action": "commit", "confirmation_id": UUID(preview["confirmation_id"])}
++            ),
++        )
++    await db.rollback()
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 0
++    assert db.sync.scalar(select(func.count()).select_from(AuditLogModel)) == 0
++
++
++async def test_unindexed_archive_preview_declares_run_creation_without_writing_it(
++    historical: Any,
++) -> None:
++    db, owner, _, project, directory, _, service, _ = historical
++    shell = db.sync.scalar(select(RunModel))
++    db.sync.delete(shell)
++    await db.commit()
++    preview = await service.claim(
++        owner, project, directory.name, RunClaimRequest(purpose="Explicit unindexed archive")
++    )
++    assert preview["run_id"] is None
++    assert "platform_runs metadata" in preview["will_create"]
++    assert db.sync.scalar(select(func.count()).select_from(RunModel)) == 0
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 0
++
++
++async def test_delete_refreshes_materialized_file_count(historical: Any) -> None:
++    db, owner, _, project, _, path, _, _ = historical
++    row = db.sync.scalar(select(RunModel))
++    before = row.archive_file_count
++    path.unlink()
++    await refresh_deleted_archive_path(db, owner, str(path))
++    assert row.archive_file_count == before - 1
++    assert row.archive_present and not row.archive_metadata["dirty"]
++
++
++async def test_metadata_totals_include_large_work_files_without_reading_them(
++    historical: Any,
++) -> None:
++    from cygnusx.core.config import get_settings
++
++    db, owner, _, project, directory, _, service, _ = historical
++    size = get_settings().research_artifact_max_bytes + 1
++    with (directory / "work/large-intermediate.bin").open("wb") as stream:
++        stream.truncate(size)
++    project_model = await service.datasets.repo.project(owner, project)
++    await ArchiveRunIndexService(db).refresh(owner, project_model)
++    row = db.sync.scalar(select(RunModel))
++    assert row.archive_total_bytes > size and row.archive_file_count == 5
++    assert not row.archive_metadata["truncated"]
++
++
++async def test_index_reuses_existing_explicit_run_task_reference(historical: Any) -> None:
++    from uuid import uuid4
++
++    from cygnusx.infrastructure.database.models.task import TaskModel
++
++    db, owner, _, project, directory, _, service, _ = historical
++    old = db.sync.scalar(select(RunModel))
++    # Remove the metadata shell to model a pre-migration archive with a known Task binding.
++    db.sync.delete(old)
++    await db.commit()
++    task = TaskModel(
++        id=uuid4(),
++        user_id=owner,
++        flow_id="rna_seq",
++        name="historical",
++        status="success",
++        parameters={},
++        work_dir=str(directory / "work"),
++    )
++    db.add(task)
++    await db.flush()
++    run = RunModel(
++        user_id=owner,
++        project_id=project,
++        project_slug="owned",
++        flow_id="rna_seq",
++        release_id="test",
++        request_key="old-explicit-run",
++        plan_json={"name": "historical"},
++        plan_digest="0" * 64,
++        status="success",
++        task_id=task.id,
++    )
++    db.add(run)
++    await db.commit()
++    project_model = await service.datasets.repo.project(owner, project)
++    await ArchiveRunIndexService(db).refresh(owner, project_model)
++    assert db.sync.scalar(select(func.count()).select_from(RunModel)) == 1
++    assert run.archive_directory == directory.name and run.task_id == task.id
++
++
++async def test_referenced_file_delete_is_rejected_before_storage_mutation(historical: Any) -> None:
++    from cygnusx.application.schemas.dataset import AssetAttach, DatasetCreate
++    from cygnusx.application.services.file_service import FileService
++
++    db, owner, _, project, _, path, service, file = historical
++    dataset = await service.datasets.create(owner, project, DatasetCreate(name="retained"))
++    version = db.sync.scalar(
++        select(DatasetVersionModel).where(DatasetVersionModel.dataset_id == dataset.id)
++    )
++    await service.datasets.attach_asset(
++        owner, project, dataset.id, version.id, AssetAttach(file_record_id=file.id, role="archive")
++    )
++    consumer = object.__new__(FileService)
++    consumer._session = db
++    consumer._files = SimpleNamespace(
++        get_visible=AsyncMock(return_value=SimpleNamespace(id=file.id))
++    )
++    consumer._require_delete_access = AsyncMock()
++    with pytest.raises(ConflictError, match="血缘"):
++        await consumer.delete_file(owner, file.id)
++    assert path.is_file()
++
++
++async def test_missing_directory_invalidates_totals_without_rewriting_frozen_evidence(
++    historical: Any,
++) -> None:
++    import shutil
++
++    db, owner, _, project, directory, _, service, _ = historical
++    request = RunClaimRequest(purpose="Retain historical evidence")
++    preview = await service.claim(owner, project, directory.name, request)
++    await service.approve(owner, project, directory.name, UUID(preview["confirmation_id"]))
++    result = await service.claim(
++        owner,
++        project,
++        directory.name,
++        request.model_copy(
++            update={"action": "commit", "confirmation_id": UUID(preview["confirmation_id"])}
++        ),
++    )
++    await db.commit()
++    version = await db.get(DatasetVersionModel, UUID(result["dataset_version_id"]))
++    frozen = version.handoff.copy()
++    row = db.sync.scalar(select(RunModel))
++    previous = row.archive_file_count
++    shutil.rmtree(directory)
++    project_model = await service.datasets.repo.project(owner, project)
++    await ArchiveRunIndexService(db).refresh(owner, project_model)
++    assert not row.archive_present
++    assert row.archive_file_count == row.archive_total_bytes == 0
++    assert not any(
++        row.archive_metadata[key] for key in ("has_readme", "has_environment", "has_manifest")
++    )
++    assert row.archive_metadata["last_known_statistics"]["file_count"] == previous
++    assert version.handoff == frozen
++    assert row.status == "HISTORICAL_CLAIMED"
++
++
++async def test_unexpected_claim_failure_still_records_rejected_request() -> None:
++    from starlette.requests import Request
++
++    from cygnusx.middleware.audit import AuditMiddleware
++
++    middleware = AuditMiddleware(app=AsyncMock())
++    middleware._record = AsyncMock(return_value="audit-id")
++    request = Request(
++        {
++            "type": "http",
++            "method": "POST",
++            "path": "/api/v1/projects/p/runs/old/claim",
++            "headers": [],
++        }
++    )
++    with pytest.raises(RuntimeError, match="unexpected claim failure"):
++        await middleware.dispatch(
++            request, AsyncMock(side_effect=RuntimeError("unexpected claim failure"))
++        )
++    middleware._record.assert_awaited_once()
++    assert middleware._record.await_args.args[1].status_code == 500
+diff --git a/tests/unit/test_project_archive_service.py b/tests/unit/test_project_archive_service.py
+--- a/tests/unit/test_project_archive_service.py
++++ b/tests/unit/test_project_archive_service.py
+@@ -8,6 +8,7 @@
+ from pathlib import Path
+ from types import SimpleNamespace
+ from typing import Any
++from unittest.mock import AsyncMock
+ 
+ import pytest
+ 
+@@ -31,7 +32,9 @@
+ 
+ 
+ @pytest.fixture
+-def storage_env(tmp_path: Path):
++def storage_env(tmp_path: Path, monkeypatch):
++    from cygnusx.application.services import archive_run_index_service
++    monkeypatch.setattr(archive_run_index_service, "index_written_archive", AsyncMock())
+     storage = tmp_path / "storage"
+     factory = StoragePathFactory(StorageConfig(data_root=str(storage), users_subdir="users"))
+     backend = LocalStorageBackend(path_factory=factory)
+diff --git a/tests/unit/test_project_overview.py b/tests/unit/test_project_overview.py
+--- a/tests/unit/test_project_overview.py
++++ b/tests/unit/test_project_overview.py
+@@ -85,7 +85,7 @@
+     )
+ 
+ 
+-def _make_service(project, sessions, runs_root: Path, rooms=()) -> ProjectOverviewService:  # noqa: ANN001
++def _make_service(project, sessions, runs_root: Path, rooms=(), indexed=()) -> ProjectOverviewService:  # noqa: ANN001
+     session = AsyncMock()
+     session.execute = AsyncMock(
+         side_effect=[
+@@ -93,6 +93,8 @@
+             _FakeResult(scalar_one=len(sessions)),  # chat sessions total
+             _FakeResult(scalars=sessions),  # chat sessions items
+             _FakeResult(scalars=rooms),  # agentteams rooms
++            _FakeResult(scalar_one=len(indexed)),  # materialized Run total
++            _FakeResult(scalars=indexed),  # materialized Run page
+         ]
+     )
+     return ProjectOverviewService(session, factory=_FakeFactory(runs_root))  # type: ignore[arg-type]
+@@ -114,8 +116,19 @@
+     legacy = runs_dir / "atac-20260801-000000"
+     legacy.mkdir()
+ 
+-    service = _make_service(project, [session_row], tmp_path)
+-    overview = await service.get_overview(user_id, project.id, session_limit=20, session_offset=0)
++    stamp = datetime(2026, 9, 1, 10, 15, 30, tzinfo=UTC)
++    indexed = [SimpleNamespace(id=uuid4(), project_id=project.id, archive_directory="rna-seq-20260901-101530",
++        archive_last_activity=stamp, archive_file_count=4, archive_total_bytes=17,
++        archive_metadata={"has_agents_md":True,"has_readme":True,"has_environment":True},
++        archive_present=True,status="ARCHIVED_UNCLAIMED",attempt_number=0),
++        SimpleNamespace(id=uuid4(),project_id=project.id,archive_directory="atac-20260801-000000",
++        archive_last_activity=stamp,archive_file_count=0,archive_total_bytes=0,archive_metadata={},
++        archive_present=True,status="ARCHIVED_UNCLAIMED",attempt_number=0)]
++    service = _make_service(project, [session_row], tmp_path, indexed=indexed)
++    from unittest.mock import patch
++    with patch.object(Path, "rglob", side_effect=AssertionError("overview must not walk disk")), patch.object(Path, "iterdir", side_effect=AssertionError("overview must not scan disk")):
++        overview = await service.get_overview(user_id, project.id, session_limit=20, session_offset=0)
++    assert overview["runs_total"] == 2
+ 
+     assert overview["project"]["id"] == str(project.id)
+     assert overview["project"]["slug"] == "cop1-hy5-demo"

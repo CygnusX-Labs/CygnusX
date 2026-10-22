@@ -94,6 +94,12 @@ services:
       - REDIS_HOST=cache                 # 经 cygnusx_net 解析主栈 Redis 服务名
       - SERVICE_NAME=worker
       - PYTHONPATH=/app/src
+      # worker-compose.sh 从根目录 .env 导出；变更后须 force-recreate。
+      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
+      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
+      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
       # Redis  broker/backend 必须携带密码；cache 服务已启用 --requirepass ${REDIS_PASSWORD}。
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@cache:6379/1
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@cache:6379/2

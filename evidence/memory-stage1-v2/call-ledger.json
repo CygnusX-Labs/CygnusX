@@ -1,0 +1,45 @@
+{
+  "limit": 150,
+  "embedding_calls": 0,
+  "extraction_calls": 0,
+  "estimated_tokens": 0,
+  "remaining": 150,
+  "subtasks": {
+    "A.1": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "A.2": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "B.1": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "B.2": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "B.3": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "B.4": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "C": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "D": {
+      "calls": 0,
+      "estimated_tokens": 0
+    },
+    "E": {
+      "calls": 0,
+      "estimated_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "synthetic_prompt_only": true,
+  "configured_model": "qwen3.7-plus",
+  "selected_provider": "deepseek-v4-flash",
+  "provider_model": "deepseek-v4-flash",
+  "production_config_modified": false,
+  "status": "request_succeeded",
+  "choice_present": true,
+  "actual_request_models_from_final_settle_http_ledger": [
+    "deepseek-v4-flash"
+  ],
+  "correction": "Configured model name difference is not a current request failure: existing _build_kwargs keeps the Provider model and does not apply chat(model=...) model overrides. No production model change is required for this acceptance."
+}

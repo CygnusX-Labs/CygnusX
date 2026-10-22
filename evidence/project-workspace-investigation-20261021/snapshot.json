@@ -1,0 +1,215 @@
+{
+  "collected_at": "2026-10-21T22:24:37.693679+08:00",
+  "git_head": "a07d01be34bf8e26878ade4f097abb7c45e44ab3",
+  "scope": "Existing deployment read-only inspection; no feature enable, migration, job or login",
+  "containers": {
+    "cygnusx-web": {
+      "running": true,
+      "started_at": "2026-10-21T08:42:05.71968417Z",
+      "image_id": "sha256:1c556f092d46be5f1d8c986219ca02909b974b539d6020cc3108a69a97d3ca0d",
+      "compose_files": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.yml,/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.pgvector.yml,/home/zj/zj_code_libarary/OmicHub/deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "probe": {
+        "settings_in_fresh_container_process": {
+          "research_plan_enabled": false,
+          "research_delivery_read_enabled": false,
+          "research_delivery_write_enabled": false,
+          "project_export_enabled": false,
+          "project_report_write_enabled": false,
+          "project_report_pdf_enabled": false,
+          "agent_analysis_write_enabled": false,
+          "agent_download_write_enabled": false,
+          "tool_gateway_read_enabled": false
+        },
+        "allowlisted_container_environment": {
+          "RESEARCH_PLAN_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_READ_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_WRITE_ENABLED": "<unset>",
+          "PROJECT_EXPORT_ENABLED": "<unset>",
+          "PROJECT_REPORT_WRITE_ENABLED": "<unset>",
+          "PROJECT_REPORT_PDF_ENABLED": "<unset>",
+          "AGENT_ANALYSIS_WRITE_ENABLED": "false",
+          "AGENT_DOWNLOAD_WRITE_ENABLED": "false",
+          "TOOL_GATEWAY_READ_ENABLED": "false"
+        },
+        "service_processes": [
+          {
+            "pid": 1,
+            "allowlisted_environment": {
+              "TOOL_GATEWAY_READ_ENABLED": "false",
+              "AGENT_DOWNLOAD_WRITE_ENABLED": "false",
+              "AGENT_ANALYSIS_WRITE_ENABLED": "false"
+            }
+          }
+        ],
+        "database_host": "db",
+        "database_name": "omichub"
+      }
+    },
+    "cygnusx-worker": {
+      "running": true,
+      "started_at": "2026-10-18T11:47:35.234857363Z",
+      "image_id": "sha256:8de2675972b9049c74e23515373e5357a33be2f0f946ebfc50b960abcf410b1f",
+      "compose_files": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.worker.yml",
+      "probe": {
+        "settings_in_fresh_container_process": {
+          "research_plan_enabled": false,
+          "research_delivery_read_enabled": false,
+          "research_delivery_write_enabled": false,
+          "project_export_enabled": false,
+          "project_report_write_enabled": false,
+          "project_report_pdf_enabled": false,
+          "agent_analysis_write_enabled": false,
+          "agent_download_write_enabled": false,
+          "tool_gateway_read_enabled": false
+        },
+        "allowlisted_container_environment": {
+          "RESEARCH_PLAN_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_READ_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_WRITE_ENABLED": "<unset>",
+          "PROJECT_EXPORT_ENABLED": "<unset>",
+          "PROJECT_REPORT_WRITE_ENABLED": "<unset>",
+          "PROJECT_REPORT_PDF_ENABLED": "<unset>",
+          "AGENT_ANALYSIS_WRITE_ENABLED": "<unset>",
+          "AGENT_DOWNLOAD_WRITE_ENABLED": "<unset>",
+          "TOOL_GATEWAY_READ_ENABLED": "<unset>"
+        },
+        "service_processes": [],
+        "database_host": "db",
+        "database_name": "omichub"
+      }
+    },
+    "cygnusx-beat": {
+      "running": true,
+      "started_at": "2026-10-21T08:41:55.957090068Z",
+      "image_id": "sha256:d27343c50d5c68860da20f5137d8b521692264f9612831ae163b8a0ed394c8a8",
+      "compose_files": "/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.yml,/home/zj/zj_code_libarary/OmicHub/deploy/docker/docker-compose.pgvector.yml,/home/zj/zj_code_libarary/OmicHub/deploy/agentteams/docker-compose.cygnusx-proxy.yml",
+      "probe": {
+        "settings_in_fresh_container_process": {
+          "research_plan_enabled": false,
+          "research_delivery_read_enabled": false,
+          "research_delivery_write_enabled": false,
+          "project_export_enabled": false,
+          "project_report_write_enabled": false,
+          "project_report_pdf_enabled": false,
+          "agent_analysis_write_enabled": false,
+          "agent_download_write_enabled": false,
+          "tool_gateway_read_enabled": false
+        },
+        "allowlisted_container_environment": {
+          "RESEARCH_PLAN_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_READ_ENABLED": "<unset>",
+          "RESEARCH_DELIVERY_WRITE_ENABLED": "<unset>",
+          "PROJECT_EXPORT_ENABLED": "<unset>",
+          "PROJECT_REPORT_WRITE_ENABLED": "<unset>",
+          "PROJECT_REPORT_PDF_ENABLED": "<unset>",
+          "AGENT_ANALYSIS_WRITE_ENABLED": "<unset>",
+          "AGENT_DOWNLOAD_WRITE_ENABLED": "<unset>",
+          "TOOL_GATEWAY_READ_ENABLED": "<unset>"
+        },
+        "service_processes": [
+          {
+            "pid": 1,
+            "allowlisted_environment": {}
+          }
+        ],
+        "database_host": "db",
+        "database_name": "omichub"
+      }
+    }
+  },
+  "gate_reproduction_in_web_container": {
+    "WRITE_RUNTIME_ACCEPTED": false,
+    "checks": [
+      {
+        "name": "require_plan_enabled",
+        "allowed": false,
+        "type": "AuthorizationError",
+        "message": "科研计划功能未启用",
+        "code": "FEATURE_DISABLED",
+        "status_code": 403
+      },
+      {
+        "name": "require_research_read",
+        "allowed": false,
+        "type": "AuthorizationError",
+        "message": "Research delivery is not enabled",
+        "code": "FEATURE_DISABLED",
+        "status_code": 403
+      },
+      {
+        "name": "export_enabled",
+        "allowed": false,
+        "type": "AuthorizationError",
+        "message": "Research delivery is not enabled",
+        "code": "FEATURE_DISABLED",
+        "status_code": 403
+      }
+    ]
+  },
+  "root_dotenv_allowlisted_flags": {
+    "RESEARCH_PLAN_ENABLED": "<unset>",
+    "RESEARCH_DELIVERY_READ_ENABLED": "<unset>",
+    "RESEARCH_DELIVERY_WRITE_ENABLED": "<unset>",
+    "PROJECT_EXPORT_ENABLED": "<unset>",
+    "PROJECT_REPORT_WRITE_ENABLED": "<unset>",
+    "PROJECT_REPORT_PDF_ENABLED": "<unset>",
+    "AGENT_ANALYSIS_WRITE_ENABLED": "<unset>",
+    "AGENT_DOWNLOAD_WRITE_ENABLED": "<unset>",
+    "TOOL_GATEWAY_READ_ENABLED": "<unset>"
+  },
+  "database_aggregate_read_only": {
+    "database": "omichub",
+    "role": "omichub",
+    "alembic_revision": "memory_settle_cursor01",
+    "projects": 36,
+    "research_plans": 0,
+    "datasets": 0,
+    "dataset_analysis_links": 0,
+    "project_export_jobs": 0,
+    "project_report_jobs": 0,
+    "tasks": 226,
+    "reports": 159,
+    "chat_sessions": 484,
+    "project_bound_sessions": 93,
+    "project_members_table": null
+  },
+  "anonymous_http_probes": [
+    {
+      "endpoint_kind": "research-plans",
+      "status": 401,
+      "body": "{\"detail\":\"未提供认证令牌\"}"
+    },
+    {
+      "endpoint_kind": "research-delivery",
+      "status": 401,
+      "body": "{\"detail\":\"未提供认证令牌\"}"
+    },
+    {
+      "endpoint_kind": "delivery-inventory",
+      "status": 401,
+      "body": "{\"detail\":\"未提供认证令牌\"}"
+    }
+  ],
+  "limitations": [
+    "Settings probe is a fresh process in each existing container, not direct inspection of the web process cache.",
+    "Anonymous HTTP probes stop at 401 authentication; no authenticated browser or HTTP feature-gate assertion.",
+    "Counts are a database-wide point-in-time snapshot, not identification of the screenshot user/project.",
+    "No scientific execution, export generation, worker task delivery or production enablement was tested."
+  ],
+  "source_sha256": {
+    "src/cygnusx/core/config.py": "04e1d496308ab735ef08de26a04397eac6c6b45bcee44e8b49b2559246fa1ad3",
+    "src/cygnusx/api/v1/projects.py": "7aae5249690684c4772c6222d3147f34a8b908f3b2efc7539adc6a801eb8d7e9",
+    "src/cygnusx/api/v1/research_plans.py": "f03a679852f9ca4264d0b201ab2290f5f6cdf45ee8cbcf811a64b1a859d2dc1a",
+    "src/cygnusx/api/v1/research_delivery.py": "12402e35b406b0f02ca19da1d4afc2352ba092be1ed0a11975da5f194eafd24e",
+    "src/cygnusx/application/services/project_service.py": "86c11d2b6b32dea69713b22e93e704c3fb37b85f6bcd73eb7acec85826f29ef5",
+    "src/cygnusx/application/services/project_overview_service.py": "68523ba6f8a7b271efc007aca7afaa76bd9126db8c198321e68295d07c2cee93",
+    "src/cygnusx/application/services/research_plan_service.py": "60bab943dda0dfb885fbc9b940e69c0a794c053b305a0d5fe4806db0a1f46fcf",
+    "src/cygnusx/application/services/research_provenance_service.py": "a1c55b2a52f2ac5a59b91958f4397cdc34fb142fc47221e11d185a3e9f216b7d",
+    "src/cygnusx/application/services/project_delivery_service.py": "cacabe1af5f6493b2bdeb707db8d5d660869e1d0d69b0aac1cf1b54eab0b1a1e",
+    "frontend/src/views/ProjectDetailView.vue": "df59c58d0ebca087bc4ad7231c40b943c14bdfed2dc771c2d016be88a92fa806",
+    "frontend/src/components/ResearchPlanWorkbench.vue": "c0119130fb860f6e5fdec8232151ac24708d812c7419ceeefc0ecc933d16333e",
+    "frontend/src/components/ResearchDeliveryChain.vue": "d79e45aad37bc8cfd2563d874d040c6060b1acd931fa4d293f04c4726ceb6470",
+    "frontend/src/components/ProjectResearchDelivery.vue": "a61930551a030cf003c1f84efe4f35d28b4e61ade56df7df9802f02bd9e598f7",
+    "ARCHITECTURE_DESIGN/CygnusX_Research_Feature_Runtime_Acceptance.md": "27b639cd7256a097b6450992ab3565b712bd5f79b5dfc8f3b5abf6da2aef30a9"
+  }
+}

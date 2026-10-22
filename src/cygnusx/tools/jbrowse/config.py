@@ -15,6 +15,7 @@ data_root（用于把绝对路径换算成 /tracks/ 下的相对 URI）取自 st
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cygnusx.core.config import get_settings
+from cygnusx.core.exceptions import ValidationError
 from cygnusx.infrastructure.config.storage_config import get_storage_config
 
 
@@ -95,8 +97,9 @@ class AutoScanConfig(BaseModel):
     def _derive_scan_paths(self) -> AutoScanConfig:
         if not self.scan_paths:
             base = f"{get_settings().storage_path}/users"
-            self.scan_paths = [f"{base}/{{user_id}}/bam/"]
+            self.scan_paths = [f"{base}/{{user_id}}"]
         return self
+
     extensions: list[str] = Field(
         default_factory=lambda: [".bam", ".bw", ".bigwig", ".vcf.gz", ".bed.gz"]
     )
@@ -118,6 +121,7 @@ class UploadConfig(BaseModel):
             base = f"{get_settings().storage_path}/users"
             self.upload_dir = f"{base}/{{user_id}}/uploads/"
         return self
+
     max_file_size: int = 10  # GB
     allowed_types: list[str] = Field(default_factory=lambda: [".bam", ".bw", ".vcf.gz", ".fasta"])
     auto_index_after_upload: bool = True
@@ -183,12 +187,37 @@ class ConfigManager:
             raw = self._load_yaml()
             try:
                 self._config = JBrowseConfig(**raw)
+                self._resolve_reference_paths(self._config)
             except Exception:
                 # 字段不合法时回退默认，避免拖垮整个 API
                 self._config = JBrowseConfig()
             self._mtime = current_mtime
 
         return self._config
+
+    @staticmethod
+    def _resolve_reference_paths(config: JBrowseConfig) -> None:
+        """共享参考资产相对 REFERENCE_GENOMES_YAML 的目录解析。"""
+        reference_dir = Path(get_settings().reference_genomes_yaml).absolute().parent
+
+        def resolve(value: str) -> str:
+            path = Path(value)
+            return str(path) if path.is_absolute() else os.path.abspath(reference_dir / path)
+
+        for assembly in config.assemblies:
+            assembly.fasta = resolve(assembly.fasta)
+            assembly.fai = resolve(assembly.fai)
+            for entry in assembly.data_files.values():
+                entry.path = resolve(entry.path)
+                if entry.index_path:
+                    entry.index_path = resolve(entry.index_path)
+                if entry.db_path:
+                    entry.db_path = resolve(entry.db_path)
+        for tracks in config.preset_tracks.values():
+            for track in tracks:
+                track.file = resolve(track.file)
+                if track.index:
+                    track.index = resolve(track.index)
 
     def reload(self) -> JBrowseConfig:
         """强制重载配置（管理员接口调用）。"""
@@ -235,13 +264,13 @@ def to_tracks_uri(abs_path: str) -> str:
     """把存储根下 ref/rice/x.fasta 换算成 /tracks/ref/rice/x.fasta。
 
     供 JBrowse 2 通过 nginx /tracks/ 路径流式读取。路径不在 data_root 下时，
-    退化为只保留文件名，避免泄漏目录结构。
+    明确报错，避免生成丢失目录信息的错误 URI。
     """
     try:
-        rel = Path(abs_path).relative_to(_data_root())
+        rel = Path(os.path.normpath(abs_path)).relative_to(_data_root())
         return "/tracks/" + rel.as_posix()
-    except ValueError:
-        return "/tracks/" + Path(abs_path).name
+    except ValueError as exc:
+        raise ValidationError("轨道文件不在共享数据目录内，请检查参考文件路径配置") from exc
 
 
 def get_jbrowse_config() -> JBrowseConfig:

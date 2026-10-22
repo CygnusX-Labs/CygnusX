@@ -1,0 +1,18 @@
+[
+  {
+    "path": "frontend/src/layouts/DefaultLayout.vue",
+    "sha256": "f05b5188e23e3a68b66e8e75728c7a1f071bde47b6f59a7091f45a36d9aff475"
+  },
+  {
+    "path": "frontend/index.html",
+    "sha256": "402e91a4f4946c524e5001a98852d081d232440dd8a1f41b788d16d0de09968a"
+  },
+  {
+    "path": "frontend/public/cygnusx-logo.png",
+    "sha256": "100ea59c9216abc12e1bc865f052209393ef54fc12d17ad84badee14e8a5b523"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+    "sha256": "9b576110e81bb2bb67e40952772b69c8a749f6de556eb46f495b992e20bb2111"
+  }
+]

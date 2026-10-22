@@ -14,6 +14,8 @@ export interface ProjectItem {
   description: string
   /** 客户名称（并行开发字段，可能缺省） */
   customer?: string | null
+  status?: 'active' | 'completed' | 'handed_over'
+  settings?: Record<string, unknown> | null
   created_at: string | null
   updated_at: string | null
 }
@@ -59,8 +61,19 @@ export interface ProjectOverview {
   runs: ProjectRunItem[]
 }
 
+export interface ProjectCapability {
+  enabled: boolean
+  allowed: boolean
+  reason: 'SERVICE_DISABLED' | 'NO_PERMISSION' | 'AVAILABLE'
+}
+export interface ProjectCapabilityStatus {
+  research_plan: ProjectCapability
+  research_delivery_read: ProjectCapability
+  project_export: ProjectCapability
+}
+
 export const projectsApi = {
-  /** 当前用户的项目列表（后端首次访问会从磁盘回填历史项目） */
+  /** 当前用户的项目列表；读取不会从磁盘隐式创建项目。 */
   async listProjects(): Promise<ProjectItem[]> {
     const res = await apiClient.get<ProjectItem[]>('/projects')
     return res.data || []
@@ -84,7 +97,7 @@ export const projectsApi = {
 
   /**
    * 项目级设置（WP3 任务 3 可选项）：如"项目内新会话默认开启科研模式"。
-   * 后端端点可能稍后到位，调用方必须容忍失败并回滚 UI。
+   * 按 JSON Merge Patch 合并，未提供的键保持不变。
    */
   async updateProjectSettings(
     projectId: string,
@@ -92,6 +105,23 @@ export const projectsApi = {
   ): Promise<Record<string, unknown>> {
     const res = await apiClient.patch<Record<string, unknown>>(`/projects/${projectId}`, { settings })
     return res.data
+  },
+
+  async getCapabilityStatus(projectId: string): Promise<ProjectCapabilityStatus> {
+    return (await apiClient.get<ProjectCapabilityStatus>(`/projects/${encodeURIComponent(projectId)}/capability-status`)).data
+  },
+
+  async updateProject(projectId: string, payload: {
+    name?: string
+    description?: string
+    status?: 'active' | 'completed' | 'handed_over'
+    settings?: Record<string, unknown> | null
+  }): Promise<ProjectItem> {
+    return (await apiClient.patch<ProjectItem>(`/projects/${encodeURIComponent(projectId)}`, payload)).data
+  },
+
+  async syncFromDisk(): Promise<{ created: number; skipped_deleted: number }> {
+    return (await apiClient.post('/projects/sync-from-disk')).data
   },
 
   /** 项目总览：元数据 + 历史会话（分页，可按状态过滤）+ 历史分析 run 目录 */

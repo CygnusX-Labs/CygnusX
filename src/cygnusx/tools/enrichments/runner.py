@@ -5,8 +5,8 @@
 - asyncio.create_subprocess_exec 执行，事件循环不阻塞；
 - 捕获 stdout / stderr，超时则 kill 容器进程。
 
-路径约定：宿主 enrichment_data_mount 与容器内 /data/cygnusx 挂载交换，故 input/output
-直接用宿主绝对路径即可，容器内所见一致。基因列表与结果 CSV 经此挂载交换。
+路径约定：宿主 enrichment_data_mount 挂载到容器内 /data/cygnusx。Worker 数据根
+storage_path 下的输入、输出和参考文件路径，必须转换为容器内路径后再传给 R。
 """
 
 from __future__ import annotations
@@ -15,10 +15,13 @@ import asyncio
 import contextlib
 import logging
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_tracer
+from cygnusx.tools.container_paths import ToolDataMount
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +38,10 @@ class EnrichmentRunResult:
 
 @dataclass
 class EnrichmentRunParams:
-    """单次富集分析的容器入参（已落到宿主磁盘的路径）。"""
+    """单次富集分析入参，文件路径来自 Worker 共享数据根或容器挂载点。"""
 
-    input_path: str  # gene_list.txt 宿主绝对路径（== 容器内路径）
-    output_path: str  # enrichment_result.csv 宿主绝对路径（== 容器内路径）
+    input_path: str
+    output_path: str
     kegg_code: str
     id_type: str
     go_obo: str | None = None
@@ -49,71 +52,20 @@ class EnrichmentRunParams:
     q_value_cutoff: float = 0.1
 
 
-class EnrichmentDockerRunner:
-    """R 富集分析容器执行器。"""
+RunParamsT = TypeVar("RunParamsT")
+
+
+class EnrichmentDockerRunnerBase(ABC, Generic[RunParamsT]):
+    """GO/KEGG 与 GSEA 共享进程执行和超时处理，保留各自的参数类型。"""
 
     def __init__(self) -> None:
         self._settings = get_settings()
 
-    def build_command(self, params: EnrichmentRunParams, container_name: str) -> list[str]:
-        """构造 `docker run` 命令行参数列表。"""
-        s = self._settings
-        command = [
-            "docker",
-            "run",
-            "--rm",
-            "--name",
-            container_name,
-        ]
-        if s.enrichment_docker_network:
-            command.extend(["--network", s.enrichment_docker_network])
-        if s.enrichment_proxy_url:
-            command.extend(
-                [
-                    "-e",
-                    f"http_proxy={s.enrichment_proxy_url}",
-                    "-e",
-                    f"https_proxy={s.enrichment_proxy_url}",
-                    "-e",
-                    "no_proxy=localhost,127.0.0.1",
-                ]
-            )
-        command.extend(
-            [
-            "-v",
-            f"{s.enrichment_data_mount}:/data/cygnusx",
-            "--memory",
-            s.enrichment_memory,
-            "--cpus",
-            str(s.enrichment_cpus),
-            s.enrichment_docker_image,
-            "Rscript",
-            "/app/run_enrichment.R",
-            "--input",
-            params.input_path,
-            "--output",
-            params.output_path,
-            "--kegg_code",
-            params.kegg_code,
-            "--id_type",
-            params.id_type,
-            "--kegg_key_type",
-            params.kegg_key_type,
-            "--p_value_cutoff",
-            str(params.p_value_cutoff),
-            "--q_value_cutoff",
-            str(params.q_value_cutoff),
-            ]
-        )
-        if params.go_obo:
-            command.extend(["--go_obo", params.go_obo])
-        if params.go_annotation:
-            command.extend(["--go_annotation", params.go_annotation])
-        if params.kegg_id_map:
-            command.extend(["--kegg_id_map", params.kegg_id_map])
-        return command
+    @abstractmethod
+    def build_command(self, params: RunParamsT, container_name: str) -> list[str]:
+        """由具体工具构造命令。"""
 
-    async def run(self, params: EnrichmentRunParams, container_name: str) -> EnrichmentRunResult:
+    async def run(self, params: RunParamsT, container_name: str) -> EnrichmentRunResult:
         """执行容器，返回 stdout/stderr/returncode；超时 kill。
 
         docker run --rm 退出后容器自动清理；kill 主进程会连带终止容器。
@@ -164,6 +116,69 @@ class EnrichmentDockerRunner:
                 duration_ms = (time.perf_counter() - start) * 1000
                 span.set_attribute("toolbox.duration_ms", round(duration_ms, 2))
                 logger.info("enrichment runner finished in %.2f ms", duration_ms)
+
+
+class EnrichmentDockerRunner(EnrichmentDockerRunnerBase[EnrichmentRunParams]):
+    """R 富集分析容器执行器。"""
+
+    def build_command(self, params: EnrichmentRunParams, container_name: str) -> list[str]:
+        """构造 `docker run` 命令行参数列表。"""
+        s = self._settings
+        mount = ToolDataMount(s.enrichment_data_mount, s.storage_path)
+        command = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+        ]
+        if s.enrichment_docker_network:
+            command.extend(["--network", s.enrichment_docker_network])
+        if s.enrichment_proxy_url:
+            command.extend(
+                [
+                    "-e",
+                    f"http_proxy={s.enrichment_proxy_url}",
+                    "-e",
+                    f"https_proxy={s.enrichment_proxy_url}",
+                    "-e",
+                    "no_proxy=localhost,127.0.0.1",
+                ]
+            )
+        command.extend(
+            [
+                "-v",
+                mount.volume,
+                "--memory",
+                s.enrichment_memory,
+                "--cpus",
+                str(s.enrichment_cpus),
+                s.enrichment_docker_image,
+                "Rscript",
+                "/app/run_enrichment.R",
+                "--input",
+                mount.container_path(params.input_path),
+                "--output",
+                mount.container_path(params.output_path),
+                "--kegg_code",
+                params.kegg_code,
+                "--id_type",
+                params.id_type,
+                "--kegg_key_type",
+                params.kegg_key_type,
+                "--p_value_cutoff",
+                str(params.p_value_cutoff),
+                "--q_value_cutoff",
+                str(params.q_value_cutoff),
+            ]
+        )
+        if params.go_obo:
+            command.extend(["--go_obo", mount.container_path(params.go_obo)])
+        if params.go_annotation:
+            command.extend(["--go_annotation", mount.container_path(params.go_annotation)])
+        if params.kegg_id_map:
+            command.extend(["--kegg_id_map", mount.container_path(params.kegg_id_map)])
+        return command
 
 
 # 模块级单例

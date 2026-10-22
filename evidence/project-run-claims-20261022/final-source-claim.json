@@ -1,0 +1,12 @@
+{
+  "state": "HISTORICAL_CLAIMED",
+  "reused": true,
+  "run_id": "728f9648-604b-4acd-8c87-5b57d05f29c2",
+  "dataset_id": "921b102c-a69d-4651-9167-710b8e337414",
+  "dataset_version_id": "e0b0aa37-9377-44db-9281-1a07779dbdb7",
+  "analysis_link_id": "1d00ff57-c227-469d-b9bc-ec72caae443d",
+  "task_id": null,
+  "worker_paths_verified": false,
+  "execution_allowed": false,
+  "purpose": "Latest-source explicit historical claim; not computation."
+}

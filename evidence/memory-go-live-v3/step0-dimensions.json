@@ -1,0 +1,28 @@
+{
+  "model": "Qwen/Qwen3-Embedding-8B",
+  "limit": 2,
+  "actual_requests": 2,
+  "extraction_calls": 0,
+  "source": "https://api-docs.siliconflow.cn/docs/api/embeddings-post",
+  "requests": [
+    {
+      "dimensions_parameter": null,
+      "request_sent": true,
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "returned_dimensions": 4096,
+      "error_present": false
+    },
+    {
+      "dimensions_parameter": 1024,
+      "request_sent": true,
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "returned_dimensions": 1024,
+      "error_present": false
+    }
+  ],
+  "status": "completed",
+  "probe_exit_code": 0,
+  "decision": "Use explicit dimensions=1024"
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "path": "frontend/src/views/HomeView.vue",
+    "sha256": "f4c2eec5146e377c05d7a4622ef6c8f4598033eb70d6c59b4fec95f1e68e5e98"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+    "sha256": "d24de1c6c15ecfb31f77ccef13ca5af30e9dd848b6811c999e94b01b823ed6be"
+  }
+]

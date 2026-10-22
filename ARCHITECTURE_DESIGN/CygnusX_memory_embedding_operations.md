@@ -1,6 +1,6 @@
 # CygnusX 记忆 embedding 模型切换与回填运行手册
 
-> 2026-10-20；对应当前工作区代码。默认过滤/采样开关关闭，真实 PG、Provider、快照演练与质量验收未完成。本文记录已编写工具的操作契约，不代表已获生产灰度准入。
+> 更新于 2026-10-22；默认过滤/采样开关关闭。目标库真实 Provider、1024 维写召与 11 条受控回填已完成；生产指标导出、完整快照恢复演练及质量验收仍需独立确认。本文记录维护工具契约，不代表全面生产准入。实测见 [报告 v3](../docs/info/26.10.22/CygnusX记忆接通真实验收报告-v3.md)。
 >
 > 数据契约见 [记忆架构](CygnusX_memory_architecture.md)，全部发布门禁见 [优化实施方案](../docs/info/26.10.20/CygnusX_AI_记忆系统优化实施方案.md)。
 
@@ -44,10 +44,20 @@ uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --m
 通过前置验证后，在隔离环境逐项启用过滤。此时旧向量不会参与当前模型比较，词面查询提供补位。先小批 apply：
 
 ```bash
-uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --mode mismatch --limit 100 --apply --output /tmp/memory-model-batch-01.json
+uv run --frozen python scripts/backfill_memory_embeddings.py --storage facts --mode mismatch --limit 100 --apply --confirm-database memory_acceptance_test --output /tmp/memory-model-batch-01.json
 ```
 
 每次最多 500 行；命令没有自动循环，不会自行扩大成本。`--mode missing` 只补空向量，兼容旧任务语义；切换模型必须显式使用 mismatch（包括缺失及模型不匹配行）。legacy 仅在确需维护旧分支时显式选择 `--storage legacy`。
+
+`--confirm-database` 是目标库名二次确认，上例名称须改为已授权的实际验收库名；
+必须与显式维护 DSN 的 database 精确相等。缺失或不符时，在创建数据库引擎和 Provider
+之前拒绝 apply；dry-run 不要求此参数。该保护不能替代回填前备份和 dry-run 计划审核。
+
+默认只选择 active。已授权的历史停用记录维护须显式指定
+`--statuses archived superseded`，先备份并以同一状态范围 dry-run，再 apply。
+该选项仅补向量及模型标签，保留状态；条件更新绑定读取时状态，状态被并发修改则跳过。
+报告的 `pending` / `remaining_pending` 对应所选状态，`before` / `after` 与 coverage gauge
+始终只统计 active，避免将停用记录的维护覆盖率当作在线召回覆盖率。
 
 检查 updated/failed/skipped 和 after：失败项保留原向量/模型，后续可重试；若正文、拥有者、分区、状态、旧模型或旧向量已被其他操作改变，则条件更新跳过，避免覆盖用户归档/编辑或其他回填。每行 Provider 调用绑定本批目标模型，向量与标签成对更新。CLI 整批事务提交成功后才发布更新指标；提交失败则回滚。
 

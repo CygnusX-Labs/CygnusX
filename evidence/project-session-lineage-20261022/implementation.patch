@@ -1,0 +1,1423 @@
+--- a/src/cygnusx/application/schemas/agent_tools.py
++++ b/src/cygnusx/application/schemas/agent_tools.py
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from typing import Any, Literal
++from typing import Annotated, Any, Literal
+ 
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+@@ -55,6 +55,29 @@
+ 
+ class DatasetAnalysisArgs(DatasetVersionArgs):
+     request: DatasetAnalysisPrepare
++
++
++class SessionFastqSample(ToolArgs):
++    sample_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
++    sample_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
++    file_record_ids: list[
++        Annotated[str, Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")]
++    ] = Field(min_length=1, max_length=2)
++    group: str = Field(min_length=1, max_length=100)
++
++
++class SessionRnaParameters(ToolArgs):
++    genome_version: str = Field(min_length=1, max_length=100)
++    species: str = Field(min_length=1, max_length=100)
++    library_types: Literal["fr-unstranded", "fr-firststrand", "fr-secondstrand"]
++    deg: Literal[False] = False
++
++
++class SessionFastqPrepareArgs(ToolArgs):
++    request_key: str = Field(pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
++    name: str = Field(min_length=1, max_length=100)
++    samples: list[SessionFastqSample] = Field(min_length=1, max_length=24)
++    parameters: SessionRnaParameters
+ 
+ 
+ class AgentToolCall(ToolArgs):
+@@ -174,6 +197,7 @@
+     "dataset.prepare_import": DatasetImportArgs,
+     "analysis.list_compatible_workflows": DatasetVersionArgs,
+     "analysis.prepare_from_dataset": DatasetAnalysisArgs,
++    "analysis.prepare_from_session_files": SessionFastqPrepareArgs,
+     "dataset.execute_import": ExecuteArgs,
+     "downloads.submit": ExecuteArgs,
+     "analysis.submit": ExecuteArgs,
+@@ -197,7 +221,12 @@
+             continue
+         if not include_dataset and (
+             name.startswith("dataset.")
+-            or name in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}
++            or name
++            in {
++                "analysis.list_compatible_workflows",
++                "analysis.prepare_from_dataset",
++                "analysis.prepare_from_session_files",
++            }
+         ):
+             continue
+         write = name.endswith(".submit") or name in {"tasks.cancel", "dataset.execute_import"}
+@@ -206,6 +235,7 @@
+         prepare = (name.endswith(".prepare") and not name.startswith("research.plan.")) or name in {
+             "dataset.prepare_import",
+             "analysis.prepare_from_dataset",
++            "analysis.prepare_from_session_files",
+         }
+         scope = (
+             "read:research"
+@@ -219,7 +249,12 @@
+             else "prepare:download"
+             if name in {"downloads.prepare", "dataset.prepare_import"}
+             else "prepare:analysis"
+-            if name in {"analysis.prepare", "analysis.prepare_from_dataset"}
++            if name
++            in {
++                "analysis.prepare",
++                "analysis.prepare_from_dataset",
++                "analysis.prepare_from_session_files",
++            }
+             else "read:datasets"
+             if name.startswith("dataset.") or name == "analysis.list_compatible_workflows"
+             else "read:tasks"
+--- a/src/cygnusx/application/services/agent_tool_gateway.py
++++ b/src/cygnusx/application/services/agent_tool_gateway.py
+@@ -167,7 +167,11 @@
+                 or not (
+                     c.capability_id.startswith("dataset.")
+                     or c.capability_id
+-                    in {"analysis.list_compatible_workflows", "analysis.prepare_from_dataset"}
++                    in {
++                        "analysis.list_compatible_workflows",
++                        "analysis.prepare_from_dataset",
++                        "analysis.prepare_from_session_files",
++                    }
+                 )
+             )
+         ]
+@@ -203,6 +207,15 @@
+         if capability_id not in allowed:
+             raise AuthorizationError("工具未获授权", code="FORBIDDEN")
+         args = CAPABILITY_MODELS[capability_id].model_validate(arguments).model_dump(mode="json")
++        if capability_id == "analysis.prepare_from_session_files":
++            from cygnusx.application.schemas.agent_tools import SessionFastqPrepareArgs
++            from cygnusx.application.services.session_dataset_preparation_service import (
++                SessionDatasetPreparationService,
++            )
++
++            return await SessionDatasetPreparationService(self.db).prepare(
++                context, SessionFastqPrepareArgs.model_validate(args)
++            )
+         invocation = AgentToolInvocationModel(
+             id=uuid.uuid4(),
+             owner_id=context.user_id,
+--- /dev/null
++++ b/src/cygnusx/application/services/session_dataset_preparation_service.py
+@@ -0,0 +1,253 @@
++"""One explicit FASTQ preparation path over the existing Dataset/Run records.
++
++This is metadata preparation only. Human JWT review of assay and groups remains
++separate, frozen worker_paths_verified stays false, and no Task is submitted here.
++"""
++
++from __future__ import annotations
++
++from typing import Any
++from uuid import NAMESPACE_URL, UUID, uuid5
++
++from sqlalchemy import select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from cygnusx.application.schemas.agent_tools import GatewayResult, SessionFastqPrepareArgs
++from cygnusx.application.schemas.dataset import (
++    AssetAttach,
++    DatasetAnalysisPrepare,
++    DatasetCreate,
++    SampleAttach,
++)
++from cygnusx.application.schemas.tool_invocation import ToolInvocationContext
++from cygnusx.application.services.agent_tool_gateway import digest
++from cygnusx.application.services.dataset_analysis_service import DatasetAnalysisService
++from cygnusx.application.services.dataset_handoff_service import DatasetHandoffService
++from cygnusx.application.services.dataset_import_service import require_dataset_read
++from cygnusx.application.services.dataset_service import DatasetService
++from cygnusx.application.services.research_execution_binding import check_inputs
++from cygnusx.application.services.run_plan_service import RunPlanService
++from cygnusx.core.exceptions import AuthorizationError, ConflictError, ValidationError
++from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
++from cygnusx.infrastructure.database.models.chat import ChatSessionModel
++from cygnusx.infrastructure.database.models.dataset import (
++    DatasetAnalysisLinkModel,
++    DatasetVersionModel,
++)
++
++CAPABILITY = "analysis.prepare_from_session_files"
++
++
++class SessionDatasetPreparationService:
++    def __init__(self, db: AsyncSession) -> None:
++        self.db = db
++        self.datasets = DatasetService(db)
++
++    async def prepare(
++        self, context: ToolInvocationContext, request: SessionFastqPrepareArgs
++    ) -> dict[str, Any]:
++        require_dataset_read()
++        owner = UUID(context.user_id)
++        if not context.extra.get("project_id"):
++            raise ValidationError("需要绑定项目的会话", code="PROJECT_REQUIRED")
++        # Serialize retries on an existing identity; never infer a project from files.
++        session = (
++            await self.db.execute(
++                select(ChatSessionModel)
++                .where(
++                    ChatSessionModel.session_id == context.session_id,
++                    ChatSessionModel.user_id == context.user_id,
++                    ChatSessionModel.status == "active",
++                )
++                .with_for_update()
++                .execution_options(populate_existing=True)
++            )
++        ).scalar_one_or_none()
++        if session is None or session.project_id != context.extra["project_id"]:
++            raise AuthorizationError("会话项目已改变或无权访问", code="FORBIDDEN")
++        project = UUID(session.project_id)
++        for module in ("files", "tasks", "reports", "flows"):
++            await self.datasets.repo.require_module(owner, module)
++        project_row = await self.datasets.repo.project(owner, project)
++        if project_row.status not in {None, "active"}:
++            raise AuthorizationError("当前项目不可准备新分析", code="PROJECT_INACTIVE")
++        keys = [sample.sample_key for sample in request.samples]
++        sample_ids = [sample.sample_id for sample in request.samples]
++        file_ids = [file for sample in request.samples for file in sample.file_record_ids]
++        if (
++            len(set(keys)) != len(keys)
++            or len(set(sample_ids)) != len(sample_ids)
++            or len(set(file_ids)) != len(file_ids)
++        ):
++            raise ValidationError("样本与文件映射必须唯一", code="SAMPLE_FILE_MISMATCH")
++        # Validate every declared reference before creating any lineage metadata.
++        for sample in request.samples:
++            registered = await self.datasets.repo.sample(owner, UUID(sample.sample_id))
++            if set(sample.file_record_ids) != set(registered.file_ids):
++                raise ValidationError("显式文件集合与已登记样本不一致", code="SAMPLE_FILE_MISMATCH")
++            for file in sample.file_record_ids:
++                await self.datasets.repo.file(owner, project, UUID(file))
++        request_digest = digest(request.model_dump(mode="json"))
++        invocation_id = uuid5(
++            NAMESPACE_URL,
++            f"cygnusx:session-fastq:{owner}:{session.session_id}:{request.request_key}",
++        )
++        invocation = await self.db.get(AgentToolInvocationModel, invocation_id)
++        if invocation is not None:
++            if (
++                invocation.project_id != str(project)
++                or invocation.parameters_hash != request_digest
++            ):
++                raise ConflictError("请求键已绑定其他输入或项目", code="REQUEST_KEY_REUSED")
++            dataset_id = UUID(invocation.preview["dataset_id"])
++            version_id = UUID(invocation.preview["dataset_version_id"])
++            version = await self.datasets.repo.version(owner, project, dataset_id, version_id)
++        else:
++            invocation = AgentToolInvocationModel(
++                id=invocation_id,
++                owner_id=str(owner),
++                project_id=str(project),
++                conversation_id=session.session_id,
++                agent_kind=context.extra["agent_kind"],
++                capability_id=CAPABILITY,
++                request_id=request.request_key,
++                parameters_hash=request_digest,
++                status="REVIEW_REQUIRED",
++                preview={},
++            )
++            self.db.add(invocation)
++            dataset = await self.datasets.create(owner, project, DatasetCreate(name=request.name))
++            version = (
++                await self.db.execute(
++                    select(DatasetVersionModel).where(
++                        DatasetVersionModel.dataset_id == dataset.id,
++                        DatasetVersionModel.number == 1,
++                    )
++                )
++            ).scalar_one()
++            dataset_id, version_id = dataset.id, version.id
++            version.source_snapshot = {
++                "session_declaration": {
++                    "session_id": session.session_id,
++                    "invocation_id": str(invocation_id),
++                    "input_type": "raw_fastq",
++                    "declared_assay": "bulk_rnaseq",
++                }
++            }
++            invocation.preview = {
++                "dataset_id": str(dataset_id),
++                "dataset_version_id": str(version_id),
++            }
++            for sample in request.samples:
++                for file in sample.file_record_ids:
++                    await self.datasets.attach_asset(
++                        owner,
++                        project,
++                        dataset_id,
++                        version_id,
++                        AssetAttach(file_record_id=UUID(file), role="raw_reads"),
++                    )
++                await self.datasets.attach_sample(
++                    owner,
++                    project,
++                    dataset_id,
++                    version_id,
++                    SampleAttach(
++                        sample_id=UUID(sample.sample_id),
++                        sample_key=sample.sample_key,
++                        file_record_ids=[UUID(file) for file in sample.file_record_ids],
++                        group=sample.group,
++                        group_confirmed=False,
++                    ),
++                )
++        base = {
++            "mode": "PLAN_ONLY",
++            "project_id": str(project),
++            "dataset_id": str(dataset_id),
++            "dataset_version_id": str(version_id),
++            "write_enabled": False,
++            "gate": "WRITE_GATE_BLOCKED",
++        }
++        if invocation.preview.get("analysis_proposal_id"):
++            link = await self.db.get(
++                DatasetAnalysisLinkModel, UUID(invocation.preview["analysis_proposal_id"])
++            )
++            if link is None or link.version_id != version_id:
++                raise ConflictError("会话预案关联不可用")
++            await check_inputs(self.db, owner, link, require_worker=False)
++            if version.handoff is None:
++                raise ConflictError("会话预案缺少冻结 Handoff")
++            result = {
++                **base,
++                **invocation.preview,
++                "handoff_hash": version.handoff["manifest_hash"],
++                "handoff_frozen": True,
++            }
++        else:
++            handoffs = DatasetHandoffService(self.db)
++            manifest = await handoffs.verify(owner, project, dataset_id, version_id)
++            if any(
++                asset["data_type"] != "RAW_FASTQ" or asset["checksum_status"] != "VERIFIED"
++                for asset in manifest["assets"]
++            ):
++                raise ValidationError(
++                    "试点只接受实测有效的已登记 FASTQ", code="FASTQ_INPUT_REQUIRED"
++                )
++            if not manifest["validation"]["dataset_ready"]:
++                result = {
++                    **base,
++                    "state": "REVIEW_REQUIRED",
++                    "gaps": manifest["validation"]["blocking_reasons"],
++                    "handoff_frozen": False,
++                }
++            else:
++                frozen = await handoffs.manifest(
++                    owner, project, dataset_id, version_id, freeze=True
++                )
++                prepared = await DatasetAnalysisService(
++                    self.db, session_id=session.session_id, invocation_id=invocation_id
++                ).prepare(
++                    owner,
++                    project,
++                    dataset_id,
++                    version_id,
++                    DatasetAnalysisPrepare(
++                        flow_id="rna_seq",
++                        options={
++                            "parameters": {
++                                "Genome_Version": request.parameters.genome_version,
++                                "species": request.parameters.species,
++                                "Library_Types": request.parameters.library_types,
++                                "deg": False,
++                            }
++                        },
++                    ),
++                )
++                if "analysis_proposal_id" not in prepared:
++                    raise ValidationError(
++                        "RNAFlow 预案参数未通过验证", code="ANALYSIS_PREPARE_INVALID"
++                    )
++                link = await self.db.get(
++                    DatasetAnalysisLinkModel, UUID(prepared["analysis_proposal_id"])
++                )
++                assert link is not None
++                run = await RunPlanService(self.db).register_dataset_proposal(
++                    owner, project_row, link
++                )
++                invocation.status = "PREPARED"
++                invocation.confirmation_id = link.confirmation_id
++                invocation.preview = {
++                    **invocation.preview,
++                    "analysis_proposal_id": str(link.id),
++                    "run_id": str(run.id),
++                    "state": "PREPARED",
++                }
++                result = {
++                    **base,
++                    **prepared,
++                    **invocation.preview,
++                    "handoff_hash": frozen["manifest_hash"],
++                    "handoff_frozen": True,
++                }
++        await self.db.flush()
++        return GatewayResult(invocation_id=str(invocation_id), result=result).model_dump()
+--- a/src/cygnusx/application/services/dataset_analysis_service.py
++++ b/src/cygnusx/application/services/dataset_analysis_service.py
+@@ -28,6 +28,7 @@
+     ValidationError,
+ )
+ from cygnusx.domain.dataset.validation import checksum, open_owned_file
++from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
+ from cygnusx.infrastructure.database.models.dataset import (
+     DatasetAnalysisLinkModel,
+     DatasetAssetModel,
+@@ -417,8 +418,12 @@
+         }
+ 
+     async def approve(
+-        self, owner: uuid.UUID, project_id: uuid.UUID, dataset_id: uuid.UUID,
+-        version_id: uuid.UUID, proposal_id: uuid.UUID,
++        self,
++        owner: uuid.UUID,
++        project_id: uuid.UUID,
++        dataset_id: uuid.UUID,
++        version_id: uuid.UUID,
++        proposal_id: uuid.UUID,
+     ) -> dict[str, Any]:
+         return await self.decide(owner, project_id, dataset_id, version_id, proposal_id, True)
+ 
+@@ -449,8 +454,11 @@
+             await self.confirmations.reject(
+                 user_id=str(owner), confirmation_id=record.confirmation_id
+             )
+-        return {"analysis_proposal_id": str(row.id),
+-                "state": "APPROVED" if approve else "REJECTED", "write_enabled": False}
++        return {
++            "analysis_proposal_id": str(row.id),
++            "state": "APPROVED" if approve else "REJECTED",
++            "write_enabled": False,
++        }
+ 
+     async def execute(
+         self,
+@@ -459,6 +467,8 @@
+         dataset_id: uuid.UUID,
+         version_id: uuid.UUID,
+         proposal_id: uuid.UUID,
++        *,
++        run_id: uuid.UUID | None = None,
+     ) -> dict[str, Any]:
+         require_agent_write_gate("analysis.submit")
+         if not get_settings().analysis_submit_from_dataset:
+@@ -515,9 +525,18 @@
+         row.state = "SUBMITTING"
+         await self.db.commit()
+         try:
+-            task = await TaskService(self.db).submit(
+-                str(owner), TaskSubmitRequest.model_validate(bound["request"])
+-            )
++            if run_id is None and bound.get("invocation_id"):
++                invocation = await self.db.get(
++                    AgentToolInvocationModel, uuid.UUID(bound["invocation_id"])
++                )
++                if invocation and invocation.preview.get("analysis_proposal_id") == str(row.id):
++                    alias = invocation.preview.get("run_id")
++                    run_id = uuid.UUID(alias) if alias else None
++            submission = TaskSubmitRequest.model_validate(bound["request"])
++            if run_id is None:
++                task = await TaskService(self.db).submit(str(owner), submission)
++            else:
++                task = await TaskService(self.db).submit(str(owner), submission, run_id=run_id)
+             row.task_id, row.state = task.id, "QUEUED"
+             await self.db.commit()
+         except Exception:
+--- a/src/cygnusx/application/services/run_plan_service.py
++++ b/src/cygnusx/application/services/run_plan_service.py
+@@ -2,7 +2,7 @@
+ 
+ import hashlib
+ import json
+-from datetime import datetime, timezone
++from typing import Any
+ from uuid import UUID
+ 
+ from sqlalchemy import select
+@@ -12,11 +12,18 @@
+ from cygnusx.application.schemas.task import TaskSubmitRequest
+ from cygnusx.application.services.flow_service import FlowService
+ from cygnusx.application.services.task_service import TaskService
+-from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
++from cygnusx.core.exceptions import (
++    AuthorizationError,
++    ConflictError,
++    NotFoundError,
++    ValidationError,
++)
+ from cygnusx.domain.task.value_objects import ExecutionMode
++from cygnusx.infrastructure.database.models.dataset import DatasetAnalysisLinkModel
++from cygnusx.infrastructure.database.models.file import FileRecordModel
++from cygnusx.infrastructure.database.models.project import ProjectModel
+ from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.models.run_event import RunEventModel
+-from cygnusx.infrastructure.database.models.file import FileRecordModel
+ 
+ 
+ class RunPlanService:
+@@ -60,6 +67,71 @@
+         await RunEventService(self._db).emit(run.id, status="plan_pending")
+         return self._view(run)
+ 
++    async def register_dataset_proposal(
++        self, owner: UUID, project: ProjectModel, link: DatasetAnalysisLinkModel
++    ) -> RunModel:
++        """Alias an existing Dataset proposal to the existing platform Run shell."""
++        bound = link.normalized_request
++        if (
++            project.user_id != owner
++            or bound.get("owner_id") != str(owner)
++            or bound.get("project_id") != str(project.id)
++        ):
++            raise AuthorizationError("Dataset Run 上下文不匹配")
++        key = f"dataset:{link.id}"
++        plan = {
++            **bound["request"],
++            "dataset_analysis_link_id": str(link.id),
++            "dataset_id": bound["dataset_id"],
++            "dataset_version_id": str(link.version_id),
++            "project_id": str(project.id),
++            "handoff_hash": link.handoff_hash,
++        }
++        digest = hashlib.sha256(
++            json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
++        ).hexdigest()
++        existing = await self._db.scalar(
++            select(RunModel).where(RunModel.user_id == owner, RunModel.request_key == key)
++        )
++        if existing is not None:
++            if existing.plan_digest != digest:
++                raise ConflictError("Dataset Run 冻结内容变化")
++            return existing
++        run = RunModel(
++            user_id=owner,
++            project_slug=project.slug,
++            flow_id=link.flow_id,
++            release_id=self._flows.get_flow(link.flow_id).meta.version,
++            request_key=key,
++            plan_json=plan,
++            plan_digest=digest,
++            status="plan_pending",
++        )
++        self._db.add(run)
++        await self._db.flush()
++        from cygnusx.application.services.run_event_service import RunEventService
++
++        await RunEventService(self._db).emit(
++            run.id,
++            status="plan_pending",
++            payload={"analysis_link_id": str(link.id), "mode": "PLAN_ONLY"},
++        )
++        return run
++
++    async def dataset_link(self, owner: UUID, run_id: UUID) -> DatasetAnalysisLinkModel | None:
++        run = await self._db.scalar(
++            select(RunModel).where(RunModel.id == run_id, RunModel.user_id == owner)
++        )
++        if run is None:
++            raise NotFoundError("Run 不存在")
++        link_id = run.plan_json.get("dataset_analysis_link_id")
++        if link_id is None:
++            return None
++        link = await self._db.get(DatasetAnalysisLinkModel, UUID(link_id))
++        if link is None or link.normalized_request.get("owner_id") != str(owner):
++            raise ConflictError("Dataset Run 关联不可用")
++        return link
++
+     async def get(self, user_id: UUID, run_id: UUID) -> SnakemakePlanView:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+@@ -68,7 +140,9 @@
+             raise NotFoundError("Run 不存在")
+         return self._view(run)
+ 
+-    async def list_runs(self, user_id: UUID, project_slug: str | None = None, status: str | None = None):
++    async def list_runs(
++        self, user_id: UUID, project_slug: str | None = None, status: str | None = None
++    ) -> list[SnakemakePlanView]:
+         query = select(RunModel).where(RunModel.user_id == user_id)
+         if project_slug:
+             query = query.where(RunModel.project_slug == project_slug)
+@@ -85,12 +159,37 @@
+             raise NotFoundError("Run 不存在")
+         if not user_confirmed:
+             raise ValidationError("必须明确提供真实用户确认")
++        link = await self.dataset_link(user_id, run_id)
++        if link is not None:
++            from cygnusx.application.services.dataset_analysis_service import DatasetAnalysisService
++
++            bound = link.normalized_request
++            await DatasetAnalysisService(self._db).execute(
++                user_id,
++                UUID(bound["project_id"]),
++                UUID(bound["dataset_id"]),
++                link.version_id,
++                link.id,
++                run_id=run.id,
++            )
++            await self._db.refresh(run)
++            return self._view(run)
++        # Dataset execution locks Link before Run in TaskService. Keep that same
++        # ordering for its alias; only standalone Run plans acquire this lock here.
++        run = await self._db.scalar(
++            select(RunModel)
++            .where(RunModel.id == run_id, RunModel.user_id == user_id)
++            .with_for_update()
++            .execution_options(populate_existing=True)
++        )
++        if run is None:
++            raise NotFoundError("Run 不存在")
+         if run.status == "queued":
+             return self._view(run)
+         if run.status != "plan_pending":
+             raise ConflictError(f"Run 当前状态 {run.status!r} 不允许确认")
+         payload = run.plan_json
+-        task = await TaskService(self._db).submit(
++        await TaskService(self._db).submit(
+             str(user_id),
+             TaskSubmitRequest(
+                 flow_id=run.flow_id,
+@@ -101,17 +200,13 @@
+                 execution_mode=ExecutionMode.LOCAL,
+                 idempotency_key=f"run:{run.id}",
+             ),
+-        )
+-        run.task_id = task.id
+-        run.status = "queued"
+-        run.confirmed_at = datetime.now(timezone.utc)
+-        from cygnusx.application.services.run_event_service import RunEventService
+-
+-        await RunEventService(self._db).emit(run.id, task_id=task.id, status="queued")
+-        await self._db.flush()
++            run_id=run.id,
++        )
++        # TaskService binds both identities before its commit/queue visibility.
++        await self._db.refresh(run)
+         return self._view(run)
+ 
+-    async def events(self, user_id: UUID, run_id: UUID, limit: int = 200) -> list[dict]:
++    async def events(self, user_id: UUID, run_id: UUID, limit: int = 200) -> list[dict[str, Any]]:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+         )
+@@ -139,7 +234,7 @@
+             for event in rows.all()
+         ]
+ 
+-    async def artifacts(self, user_id: UUID, run_id: UUID) -> list[dict]:
++    async def artifacts(self, user_id: UUID, run_id: UUID) -> list[dict[str, Any]]:
+         run = await self._db.scalar(
+             select(RunModel).where(RunModel.id == run_id, RunModel.user_id == user_id)
+         )
+--- a/src/cygnusx/application/services/task_service.py
++++ b/src/cygnusx/application/services/task_service.py
+@@ -3,11 +3,13 @@
+ from __future__ import annotations
+ 
+ import uuid
++from datetime import UTC, datetime
+ from decimal import Decimal
+ from pathlib import Path
+ from typing import Any
+ from uuid import UUID
+ 
++from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from cygnusx.application.schemas.task import (
+@@ -21,11 +23,12 @@
+ from cygnusx.application.services.managed_file_resolver import ManagedFileResolver
+ from cygnusx.application.services.mas_task_projection import MASTaskProjection
+ from cygnusx.core.config import get_settings
+-from cygnusx.core.exceptions import NotFoundError, ValidationError
++from cygnusx.core.exceptions import ConflictError, NotFoundError, ValidationError
+ from cygnusx.domain.flow.submission_validator import FlowSubmissionValidator
+ from cygnusx.domain.task.services import TaskDomainService
+ from cygnusx.domain.task.value_objects import TaskStatus
+ from cygnusx.infrastructure.celery_app.tasks.analysis import run_snakemake
++from cygnusx.infrastructure.database.models.run import RunModel
+ from cygnusx.infrastructure.database.repositories.mas_repository import MASRepository
+ from cygnusx.infrastructure.database.repositories.task_repository import (
+     TaskRepositoryImpl,
+@@ -53,7 +56,9 @@
+         self._flow_service = flow_service or FlowService()
+         self._settings = get_settings()
+ 
+-    async def submit(self, user_id: str, req: TaskSubmitRequest) -> TaskResponse:
++    async def submit(
++        self, user_id: str, req: TaskSubmitRequest, *, run_id: UUID | None = None
++    ) -> TaskResponse:
+         """提交分析任务。
+ 
+         流程：
+@@ -64,6 +69,8 @@
+         5. 保存执行证据及启用时的预扣参数，持久化 QUEUED；
+         6. 投递 Celery 异步任务，投递不明交由对账。
+         """
++        if req.idempotency_key and req.idempotency_key.startswith("run:") and run_id is None:
++            raise ConflictError("Run 请求必须通过审批入口", code="RUN_CONFIRM_REQUIRED")
+         if req.flow_id == "counts_deg":
+             from cygnusx.application.services.agent_tool_gateway import require_agent_write_gate
+ 
+@@ -80,12 +87,19 @@
+         )
+ 
+         dataset_link = await validate_dataset_submission(self._db, UUID(user_id), req)
++        run = await self._run_for_request(UUID(user_id), run_id, req) if run_id else None
+ 
+         if req.idempotency_key:
+             existing = await self._repo.get_by_idempotency_key(req.idempotency_key)
+             if existing is not None:
+                 if str(existing.user_id) != user_id:
+                     raise ValidationError("幂等键已被其他用户使用")
++                if run is not None and run.task_id != existing.id:
++                    # Older submissions may have crossed the former commit seam.
++                    # Never adopt historical Tasks automatically, even on retry.
++                    raise ConflictError(
++                        "Run 与 Task 挂链缺失，请人工对账", code="RECONCILIATION_REQUIRED"
++                    )
+                 return task_to_response(existing)
+ 
+         # Every entry point converges here. Re-run the authoritative Flow validator
+@@ -220,6 +234,8 @@
+ 
+         if dataset_link is not None:
+             dataset_link.task_id = task.id
++        if run is not None:
++            await self._bind_run(run, task.id)
+         task = await self._domain.transition_status(task, TaskStatus.QUEUED)
+         # Freeze evidence before queue visibility for both manual and Dataset submissions.
+         # Ambiguous queue delivery is reconciled; it is never an implicit execution retry.
+@@ -237,6 +253,47 @@
+         )
+ 
+         return task_to_response(task)
++
++    async def _run_for_request(
++        self, owner: UUID, run_id: UUID, request: TaskSubmitRequest
++    ) -> RunModel:
++        run = (
++            await self._db.execute(
++                select(RunModel)
++                .where(RunModel.id == run_id, RunModel.user_id == owner)
++                .with_for_update()
++                .execution_options(populate_existing=True)
++            )
++        ).scalar_one_or_none()
++        if run is None:
++            raise NotFoundError("Run 不存在")
++        link_id = run.plan_json.get("dataset_analysis_link_id")
++        expected_key = f"dataset:{link_id}" if link_id else f"run:{run.id}"
++        if request.idempotency_key != expected_key or request.flow_id != run.flow_id:
++            raise ConflictError("Run 与 Task 幂等身份不匹配")
++        for key in ("name", "parameters", "sample_sheet", "comparisons"):
++            expected = run.plan_json.get(
++                key,
++                {}
++                if key == "parameters"
++                else []
++                if key in {"sample_sheet", "comparisons"}
++                else None,
++            )
++            if request.model_dump(mode="json").get(key) != expected:
++                raise ConflictError("冻结 Run 请求已变化")
++        return run
++
++    async def _bind_run(self, run: RunModel, task_id: UUID) -> None:
++        if run.task_id is not None and run.task_id != task_id:
++            raise ConflictError("Run 已关联其他 Task")
++        if run.task_id == task_id and run.status == "queued":
++            return
++        run.task_id, run.status, run.confirmed_at = task_id, "queued", datetime.now(UTC)
++        from cygnusx.application.services.run_event_service import RunEventService
++
++        await RunEventService(self._db).emit(run.id, task_id=task_id, status="queued")
++        await self._db.flush()
+ 
+     async def get_task(self, task_id: UUID, user_id: str) -> TaskResponse:
+         """获取任务详情"""
+@@ -306,8 +363,12 @@
+ 
+             from cygnusx.infrastructure.database.models.task import TaskModel
+ 
+-            await self._db.execute(select(TaskModel).where(TaskModel.id == task_id)
+-                                   .with_for_update().execution_options(populate_existing=True))
++            await self._db.execute(
++                select(TaskModel)
++                .where(TaskModel.id == task_id)
++                .with_for_update()
++                .execution_options(populate_existing=True)
++            )
+             task = await self._repo.get_by_id(task_id)
+             if task is None or str(task.user_id) != user_id:
+                 raise NotFoundError("任务不存在")
+--- a/src/cygnusx/application/services/project_service.py
++++ b/src/cygnusx/application/services/project_service.py
+@@ -419,11 +419,7 @@
+             )
+ 
+     async def capability_status(self, user_id: UUID, project_id: UUID) -> ProjectCapabilityStatus:
+-        project = await self._session.get(ProjectModel, project_id)
+-        if project is None:
+-            raise NotFoundError("项目不存在")
+-        if project.user_id != user_id:
+-            raise AuthorizationError("无权访问该项目")
++        project = await self.require_owner(user_id, project_id)
+         user = await self._session.get(UserModel, user_id, populate_existing=True)
+         settings = get_settings()
+ 
+@@ -447,10 +443,19 @@
+         read = settings.research_delivery_read_enabled
+         return ProjectCapabilityStatus(
+             research_plan=capability(settings.research_plan_enabled, {"files", "tasks", "reports"}),
+-            research_delivery_read=capability(read, {"files", "reports"}),
++            research_delivery_read=capability(read, {"files", "tasks", "reports"}),
+             project_export=capability(
+                 read and settings.project_export_enabled,
+                 {"files", "tasks", "reports"},
+                 active=project.status in {None, "active", "completed", "handed_over"},
+             ),
+         )
++
++    async def require_owner(self, user_id: UUID, project_id: UUID) -> ProjectModel:
++        """Project read surfaces expose the documented owner/forbidden boundary."""
++        project = await self._session.get(ProjectModel, project_id, populate_existing=True)
++        if project is None:
++            raise NotFoundError("项目不存在")
++        if project.user_id != user_id:
++            raise AuthorizationError("无权访问该项目", code="FORBIDDEN")
++        return project
+--- a/src/cygnusx/api/v1/research_plans.py
++++ b/src/cygnusx/api/v1/research_plans.py
+@@ -19,8 +19,11 @@
+ )
+ 
+ 
+-async def enabled() -> None:
++async def enabled(project_id: UUID, user: CurrentUserId, db: DbSession) -> None:
+     require_plan_enabled()
++    from cygnusx.application.services.project_service import ProjectService
++
++    await ProjectService(db).require_owner(UUID(user), project_id)
+ 
+ 
+ router = APIRouter(prefix="/projects/{project_id}/research-plans", dependencies=[Depends(enabled)])
+--- a/src/cygnusx/api/v1/research_delivery.py
++++ b/src/cygnusx/api/v1/research_delivery.py
+@@ -57,15 +57,21 @@
+ 
+     job = await ProjectReportService(db).status(UUID(user), project_id, job_id)
+     return {
+-        "id": str(job.id), "project_id": str(job.project_id), "version": job.version,
+-        "status": job.status, "source_digest": job.source_digest,
++        "id": str(job.id),
++        "project_id": str(job.project_id),
++        "version": job.version,
++        "status": job.status,
++        "source_digest": job.source_digest,
+         "source_manifest_job_id": str(job.source_manifest_job_id),
+         "source_selection": job.source_snapshot["manifest"]["selection"],
+         "html_file_record_id": str(job.html_file_record_id) if job.html_file_record_id else None,
+-        "html_sha256": job.html_sha256, "html_size": job.html_size,
++        "html_sha256": job.html_sha256,
++        "html_size": job.html_size,
+         "pdf_file_record_id": str(job.pdf_file_record_id) if job.pdf_file_record_id else None,
+-        "pdf_sha256": job.pdf_sha256, "pdf_size": job.pdf_size,
+-        "pdf_status": job.pdf_status, "error_code": job.error_code,
++        "pdf_sha256": job.pdf_sha256,
++        "pdf_size": job.pdf_size,
++        "pdf_status": job.pdf_status,
++        "error_code": job.error_code,
+     }
+ 
+ 
+@@ -76,16 +82,24 @@
+     from cygnusx.application.services.project_report_service import ProjectReportService
+ 
+     content = await ProjectReportService(db).download(UUID(user), project_id, job_id)
+-    return Response(content, media_type="text/html", headers={
+-        "Cache-Control": "no-store", "X-Report-Status": "published",
+-        "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+-        "X-Content-Type-Options": "nosniff",
+-    })
++    return Response(
++        content,
++        media_type="text/html",
++        headers={
++            "Cache-Control": "no-store",
++            "X-Report-Status": "published",
++            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
++            "X-Content-Type-Options": "nosniff",
++        },
++    )
+ 
+ 
+ @router.get("/projects/{project_id}/scientific-summary/{job_id}/download")
+ async def download_project_scientific_summary(
+-    project_id: UUID, job_id: UUID, user: CurrentJwtUserId, db: DbSession,
++    project_id: UUID,
++    job_id: UUID,
++    user: CurrentJwtUserId,
++    db: DbSession,
+     format: Literal["html", "pdf"] = "html",
+ ) -> Response:
+     import hashlib
+@@ -93,11 +107,16 @@
+     from cygnusx.application.services.project_report_service import ProjectReportService
+ 
+     content = await ProjectReportService(db).download(UUID(user), project_id, job_id, format)
+-    return Response(content, media_type="text/html" if format == "html" else "application/pdf", headers={
+-        "Content-Disposition": f'attachment; filename="project-report.{format}"',
+-        "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
+-        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+-    })
++    return Response(
++        content,
++        media_type="text/html" if format == "html" else "application/pdf",
++        headers={
++            "Content-Disposition": f'attachment; filename="project-report.{format}"',
++            "X-Content-SHA256": hashlib.sha256(content).hexdigest(),
++            "Cache-Control": "no-store",
++            "X-Content-Type-Options": "nosniff",
++        },
++    )
+ 
+ 
+ @router.get("/projects/{project_id}/exports/{job_id}/summary-preview", response_class=HTMLResponse)
+@@ -132,13 +151,18 @@
+     project_id: UUID, user: CurrentUserId, db: DbSession
+ ) -> dict[str, Any]:
+     from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
+-
++    from cygnusx.application.services.project_service import ProjectService
++
++    await ProjectService(db).require_owner(UUID(user), project_id)
+     return await ProjectDeliveryService(db).inventory(UUID(user), project_id)
+ 
+ 
+ @router.post("/projects/{project_id}/exports/prepare")
+ async def prepare_project_export(
+-    project_id: UUID, selection: ExportSelectionV2 | ExportSelection, user: CurrentUserId, db: DbSession
++    project_id: UUID,
++    selection: ExportSelectionV2 | ExportSelection,
++    user: CurrentUserId,
++    db: DbSession,
+ ) -> dict[str, Any]:
+     from cygnusx.application.services.project_delivery_service import ProjectDeliveryService
+ 
+@@ -215,7 +239,12 @@
+ 
+ @router.get("/projects/{project_id}/research-delivery")
+ async def project_delivery(project_id: UUID, user: CurrentUserId, db: DbSession) -> dict[str, Any]:
+-    return await ResearchProvenanceService(db).project(UUID(user), project_id)
++    from cygnusx.application.services.project_service import ProjectService
++
++    await ProjectService(db).require_owner(UUID(user), project_id)
++    service = ResearchProvenanceService(db)
++    await service.repo.require_module(UUID(user), "tasks")
++    return await service.project(UUID(user), project_id)
+ 
+ 
+ @router.get("/tasks/{task_id}/provenance", response_model=ResearchProvenance)
+--- a/src/cygnusx/api/v1/runs.py
++++ b/src/cygnusx/api/v1/runs.py
+@@ -1,19 +1,19 @@
+ """Unified Run read/confirm endpoints (Snakemake MVP)."""
+ 
+-from typing import Annotated
++from typing import Annotated, Any
+ from uuid import UUID
+ 
+ from fastapi import APIRouter, Depends, Query
+ from pydantic import BaseModel
+ 
+-from cygnusx.api.deps import CurrentUserId, DbSession
++from cygnusx.api.deps import CurrentUserId, DbSession, get_current_jwt_user_id, oauth2_scheme
+ from cygnusx.application.schemas.run_plan import SnakemakePlanSubmit, SnakemakePlanView
++from cygnusx.application.services.run_plan_service import RunPlanService
+ from cygnusx.application.services.tool_confirmation_service import (
+     ConfirmationError,
+     get_tool_confirmation_service,
+ )
+ from cygnusx.core.exceptions import ValidationError
+-from cygnusx.application.services.run_plan_service import RunPlanService
+ 
+ router = APIRouter()
+ 
+@@ -53,9 +53,17 @@
+     req: RunConfirmRequest,
+     current_user_id: CurrentUserId,
+     service: ServiceDep,
++    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+ ) -> SnakemakePlanView:
+     if not req.confirmation_id:
+         raise ValidationError("确认 Run 必须携带服务端 confirmation_id")
++    link = await service.dataset_link(UUID(current_user_id), run_id)
++    if link is not None:
++        # An alias must use the same existing human-approved Dataset credential.
++        await get_current_jwt_user_id(token)
++        if req.confirmation_id != link.confirmation_id:
++            raise ValidationError("Run 与 Dataset 确认凭证不匹配")
++        return await service.confirm(UUID(current_user_id), run_id, True)
+     try:
+         await get_tool_confirmation_service().consume_tool_confirmation(
+             current_user_id,
+@@ -74,15 +82,25 @@
+     current_user_id: CurrentUserId,
+     service: ServiceDep,
+     limit: int = Query(default=200, ge=1, le=500),
+-) -> dict:
+-    return {"run_id": str(run_id), "events": await service.events(UUID(current_user_id), run_id, limit)}
++) -> dict[str, Any]:
++    return {
++        "run_id": str(run_id),
++        "events": await service.events(UUID(current_user_id), run_id, limit),
++    }
+ 
+ 
+ @router.get("/{run_id}/artifacts")
+-async def get_run_artifacts(run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep) -> dict:
+-    return {"run_id": str(run_id), "artifacts": await service.artifacts(UUID(current_user_id), run_id)}
++async def get_run_artifacts(
++    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
++) -> dict[str, Any]:
++    return {
++        "run_id": str(run_id),
++        "artifacts": await service.artifacts(UUID(current_user_id), run_id),
++    }
+ 
+ 
+ @router.get("/{run_id}", response_model=SnakemakePlanView)
+-async def get_run(run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep):
++async def get_run(
++    run_id: UUID, current_user_id: CurrentUserId, service: ServiceDep
++) -> SnakemakePlanView:
+     return await service.get(UUID(current_user_id), run_id)
+--- a/frontend/src/views/ProjectDetailView.vue
++++ b/frontend/src/views/ProjectDetailView.vue
+@@ -580,7 +580,7 @@
+     <ProjectCapabilityPanel title="科研执行与交付链" :capability="capabilities?.research_delivery_read" :error="capabilityError">
+       <ResearchDeliveryChain :project-id="projectId" />
+     </ProjectCapabilityPanel>
+-    <ProjectCapabilityPanel title="项目科研成果与可追溯导出" :capability="capabilities?.project_export" :error="capabilityError">
++    <ProjectCapabilityPanel title="项目科研成果与可追溯导出" :capability="capabilities?.research_delivery_read" :error="capabilityError">
+       <ProjectResearchDelivery :project-id="projectId" />
+     </ProjectCapabilityPanel>
+   </template>
+--- a/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
++++ b/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts
+@@ -14,6 +14,9 @@
+   setup: (props: { projectId: string; planId: string }) => () => h('div', { 'data-plan-context': true }, `${props.projectId}/${props.planId}`),
+ } }))
+ vi.mock('@/components/ResearchDeliveryChain.vue', () => ({ default: { render: () => null } }))
++vi.mock('@/components/ProjectResearchDelivery.vue', () => ({ default: {
++  render: () => h('div', { 'data-inventory-context': true }, '只读科研成果清单'),
++} }))
+ function overview(id: string): ProjectOverview {
+   return { project: { id, name: `Project ${id}`, slug: id, description: `Description ${id}`, created_at: null, updated_at: null }, sessions: { total: 0, limit: 100, offset: 0, items: [] }, runs: [] }
+ }
+@@ -82,6 +85,21 @@
+   } finally { card.close() }
+ })
+ 
++it('mounts the read inventory when delivery read is allowed and export writes are disabled', async () => {
++  vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(overview('first'))
++  const allowed = { enabled: true, allowed: true, reason: 'AVAILABLE' as const }
++  vi.mocked(projectsApi.getCapabilityStatus).mockResolvedValueOnce({
++    research_plan: allowed, research_delivery_read: allowed,
++    project_export: { enabled: false, allowed: false, reason: 'SERVICE_DISABLED' },
++  })
++  const card = mount()
++  try {
++    await settle()
++    expect(card.host.querySelector('[data-inventory-context]')).not.toBeNull()
++    expect(card.host.textContent).not.toContain('服务未启用')
++  } finally { card.close() }
++})
++
+ it('distinguishes denied capability from a failed capability request', async () => {
+   vi.mocked(projectsApi.getProjectOverview).mockResolvedValueOnce(overview('first')).mockResolvedValueOnce(overview('second'))
+   const denied = { enabled: true, allowed: false, reason: 'NO_PERMISSION' as const }
+--- a/tests/unit/test_research_plan_storage_phase5.py
++++ b/tests/unit/test_research_plan_storage_phase5.py
+@@ -169,7 +169,7 @@
+         transport=httpx.ASGITransport(app=app), base_url="http://test"
+     ) as client:
+         assert (await client.get(path)).status_code == 401
+-        assert (await client.get(path, headers=foreign)).status_code == 404
++        assert (await client.get(path, headers=foreign)).status_code == 403
+         assert (await client.get(path, headers=human)).status_code == 200
+         body = {"expected_digest": view.digest}
+         assert (
+--- /dev/null
++++ b/tests/unit/test_session_dataset_preparation.py
+@@ -0,0 +1,162 @@
++"""Isolated service regressions; real SQLite/files, no runtime admission claims."""
++
++from copy import deepcopy
++from typing import Any
++from uuid import UUID, uuid4
++
++import pytest
++from pydantic import ValidationError as SchemaError
++from sqlalchemy import func, select
++
++from cygnusx.application.schemas.agent_tools import SessionFastqPrepareArgs
++from cygnusx.application.services import agent_tool_gateway as gateway_module
++from cygnusx.application.services import dataset_analysis_service as analysis_module
++from cygnusx.application.services import research_execution_binding as binding_module
++from cygnusx.application.services.agent_tool_gateway import AgentToolGateway
++from cygnusx.application.services.dataset_service import DatasetService
++from cygnusx.application.services.session_dataset_preparation_service import (
++    SessionDatasetPreparationService,
++)
++from cygnusx.core.config import Settings
++from cygnusx.core.exceptions import AuthorizationError, ConflictError, ValidationError
++from cygnusx.domain.flow import submission_validator
++from cygnusx.infrastructure.database.models.agent_tool_invocation import AgentToolInvocationModel
++from cygnusx.infrastructure.database.models.chat import ChatSessionModel
++from cygnusx.infrastructure.database.models.dataset import (
++    DatasetAnalysisLinkModel,
++    DatasetModel,
++    DatasetVersionModel,
++)
++from cygnusx.infrastructure.database.models.run import RunModel
++from cygnusx.infrastructure.database.models.run_event import RunEventModel
++from cygnusx.infrastructure.database.models.user import UserModel
++from tests.unit.test_dataset_import_handoff import imports as imports
++from tests.unit.test_dataset_phase3 import registry as registry
++
++pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
++
++
++@pytest.fixture
++async def session_inputs(registry: Any, imports: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
++    db, _, owner, other, project, _, _, files, sample = registry
++    _, _, factory, _ = imports
++    for model in (
++        AgentToolInvocationModel,
++        ChatSessionModel,
++        DatasetAnalysisLinkModel,
++        RunModel,
++        RunEventModel,
++    ):
++        model.__table__.create(db.sync.bind)
++
++    async def scalar(statement: Any) -> Any:
++        return db.sync.scalar(statement)
++
++    db.scalar = scalar
++    settings = Settings(
++        _env_file=None, dataset_discovery_readonly=True, tool_gateway_read_enabled=True
++    )
++    for module in (gateway_module, analysis_module, binding_module):
++        monkeypatch.setattr(module, "get_settings", lambda: settings)
++    for module in (analysis_module, binding_module, submission_validator):
++        monkeypatch.setattr(module, "get_path_factory", lambda: factory)
++    path = factory.user_root(str(owner)) / "projects/owned/reads/sample1_R1.fastq"
++    path.parent.mkdir(parents=True)
++    path.write_bytes(b"@r\nACGT\n+\nIIII\n")
++    files[0].storage_path, files[0].original_name, files[0].size = (
++        path.relative_to(factory.data_root).as_posix(),
++        path.name,
++        path.stat().st_size,
++    )
++    sample.file_ids = [str(files[0].id)]
++    session = ChatSessionModel(
++        session_id="bound-session", user_id=str(owner), project_id=str(project), model_id=uuid4()
++    )
++    db.add(session)
++    await db.commit()
++    request = {
++        "request_key": str(uuid4()),
++        "name": "explicit FASTQ",
++        "samples": [
++            {
++                "sample_id": str(sample.id),
++                "sample_key": "sample1",
++                "file_record_ids": [str(files[0].id)],
++                "group": "control",
++            }
++        ],
++        "parameters": {
++            "genome_version": "hg38",
++            "species": "Homo sapiens",
++            "library_types": "fr-unstranded",
++        },
++    }
++    context = await AgentToolGateway(db).context(str(owner), session.session_id)
++    return db, owner, other, project, request, context, path
++
++
++async def test_session_registration_review_freeze_proposal_and_retry(session_inputs: Any) -> None:
++    db, owner, _, project, request, context, path = session_inputs
++    service = SessionDatasetPreparationService(db)
++    first = await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    assert first["result"]["state"] == "REVIEW_REQUIRED"
++    assert not first["result"]["handoff_frozen"]
++    dataset, version = (
++        UUID(first["result"]["dataset_id"]),
++        UUID(first["result"]["dataset_version_id"]),
++    )
++    await db.commit()
++    # Only trusted review services set confirmed metadata; the model cannot set it.
++    await DatasetService(db).review_version(
++        owner, project, dataset, version, "bulk_rnaseq", "human declared assay"
++    )
++    await DatasetService(db).review_sample(owner, project, dataset, version, "sample1", "control")
++    second = await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    await db.commit()
++    result = second["result"]
++    assert result["mode"] == "PLAN_ONLY" and result["handoff_frozen"]
++    link = await db.get(DatasetAnalysisLinkModel, UUID(result["analysis_proposal_id"]))
++    frozen = deepcopy((await db.get(DatasetVersionModel, version)).handoff)
++    assert not frozen["validation"]["worker_paths_verified"] and link.task_id is None
++    assert (await db.get(RunModel, UUID(result["run_id"]))).task_id is None
++    third = await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    assert third["result"]["analysis_proposal_id"] == result["analysis_proposal_id"]
++    assert db.sync.scalar(select(func.count()).select_from(DatasetAnalysisLinkModel)) == 1
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 1
++    path.write_bytes(b"@r\nTGCA\n+\nIIII\n")
++    with pytest.raises(ConflictError):
++        await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    assert (await db.get(DatasetVersionModel, version)).handoff == frozen
++
++
++async def test_unbound_denied_or_spoofed_request_never_creates_dataset(session_inputs: Any) -> None:
++    db, owner, _, _, request, context, _ = session_inputs
++    service = SessionDatasetPreparationService(db)
++    with pytest.raises(ValidationError, match="绑定"):
++        await service.prepare(
++            context.model_copy(update={"extra": {**context.extra, "project_id": None}}),
++            SessionFastqPrepareArgs.model_validate(request),
++        )
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 0
++    for extra in [{"project_id": str(uuid4())}, {"owner_id": str(uuid4())}, {"approved": True}]:
++        with pytest.raises(SchemaError):
++            SessionFastqPrepareArgs.model_validate({**request, **extra})
++    user = await db.get(UserModel, owner)
++    user.disabled_modules = ["tasks"]
++    await db.flush()
++    with pytest.raises(AuthorizationError):
++        await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 0
++
++
++async def test_idempotency_key_cannot_be_reused_with_changed_inputs(session_inputs: Any) -> None:
++    db, _, _, _, request, context, _ = session_inputs
++    service = SessionDatasetPreparationService(db)
++    first = await service.prepare(context, SessionFastqPrepareArgs.model_validate(request))
++    await db.commit()
++    with pytest.raises(ConflictError):
++        await service.prepare(
++            context, SessionFastqPrepareArgs.model_validate({**request, "name": "changed"})
++        )
++    assert db.sync.scalar(select(func.count()).select_from(DatasetModel)) == 1
++    assert first["result"]["state"] == "REVIEW_REQUIRED"
+--- /dev/null
++++ b/tests/unit/test_run_task_atomic_binding.py
+@@ -0,0 +1,120 @@
++"""Real Task/Run SQLite transaction; queue and Flow validation are offline doubles."""
++
++from __future__ import annotations
++
++from unittest.mock import AsyncMock
++from uuid import uuid4
++
++import pytest
++from sqlalchemy import event, func, select
++
++from cygnusx.application.schemas.task import TaskSubmitRequest
++from cygnusx.core.exceptions import ConflictError
++from cygnusx.domain.flow.submission_validator import FlowSubmissionValidator, ValidationResult
++from cygnusx.infrastructure.database.models.run import RunModel
++from cygnusx.infrastructure.database.models.run_event import RunEventModel
++from cygnusx.infrastructure.database.models.task import TaskModel
++from tests.unit.test_dataset_phase3 import registry as registry
++from tests.unit.test_execution_evidence_ri13 import execution_env as execution_env
++
++pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
++
++
++@pytest.mark.parametrize("fail_before_commit", [False, True])
++async def test_run_task_and_event_share_commit_before_queue(
++    execution_env, monkeypatch, fail_before_commit
++):
++    from cygnusx.application.services import file_service, task_service
++
++    env = execution_env
++    for model in (RunModel, RunEventModel):
++        model.__table__.create(env.db.sync.bind)
++    run_id = uuid4()
++    request = TaskSubmitRequest(
++        flow_id="rna_seq",
++        name="atomic",
++        parameters={"cores": 1},
++        comparisons=[],
++        idempotency_key=f"run:{run_id}",
++    )
++    run = RunModel(
++        id=run_id,
++        user_id=env.owner,
++        project_slug="owned",
++        flow_id="rna_seq",
++        release_id="test",
++        request_key="atomic-test",
++        plan_digest="0" * 64,
++        plan_json=request.model_dump(mode="json"),
++        status="plan_pending",
++    )
++    env.db.add(run)
++    await env.db.commit()
++    monkeypatch.setattr(
++        FlowSubmissionValidator,
++        "validate",
++        AsyncMock(
++            return_value=ValidationResult(
++                valid=True, errors=[], warnings=[], normalized_request=request
++            )
++        ),
++    )
++    monkeypatch.setattr(file_service, "ensure_directory_chain", AsyncMock())
++    settings = task_service.get_settings().model_copy(update={"enable_cookie_system": False})
++    monkeypatch.setattr(task_service, "get_settings", lambda: settings)
++    service = task_service.TaskService(env.db)
++    monkeypatch.setattr(service, "_make_work_dir", lambda *a: env.task.work_dir)
++    monkeypatch.setattr(service, "_write_monitor_config", lambda **k: None)
++    queued, commits = [], []
++
++    def before_commit(session):
++        session.flush()
++        persisted = session.get(RunModel, run_id)
++        assert persisted.task_id is not None
++        task = session.get(TaskModel, persisted.task_id)
++        assert task is not None and task.status == "queued"
++        assert session.scalar(select(func.count()).select_from(RunEventModel)) == 1
++        commits.append(str(task.id))
++        if fail_before_commit:
++            raise RuntimeError("controlled commit failure")
++
++    def enqueue(*args, **kwargs):
++        assert commits == [args[2]]
++        assert str(env.db.sync.get(RunModel, run_id).task_id) == args[2]
++        queued.append(args[2])
++
++    event.listen(env.db.sync, "before_commit", before_commit)
++    monkeypatch.setattr(task_service, "enqueue_task", enqueue)
++    try:
++        with pytest.raises(ConflictError, match="审批入口"):
++            await service.submit(str(env.owner), request)
++        assert env.db.sync.scalar(select(func.count()).select_from(TaskModel)) == 0
++        if fail_before_commit:
++            with pytest.raises(RuntimeError, match="controlled commit failure"):
++                await service.submit(str(env.owner), request, run_id=run_id)
++            await env.db.rollback()
++            assert env.db.sync.get(RunModel, run_id).task_id is None
++            assert env.db.sync.scalar(select(func.count()).select_from(TaskModel)) == 0
++            assert env.db.sync.scalar(select(func.count()).select_from(RunEventModel)) == 0
++            assert queued == []
++        else:
++            result = await service.submit(str(env.owner), request, run_id=run_id)
++            event.remove(env.db.sync, "before_commit", before_commit)
++            repeated = await service.submit(str(env.owner), request, run_id=run_id)
++            assert repeated.id == result.id and queued == [str(result.id)]
++            run = env.db.sync.get(RunModel, run_id)
++            run.task_id, run.status = None, "plan_pending"
++            await env.db.commit()
++            with pytest.raises(ConflictError, match="人工对账"):
++                await service.submit(str(env.owner), request, run_id=run_id)
++            assert env.db.sync.get(RunModel, run_id).task_id is None
++            assert queued == [str(result.id)]
++            with pytest.raises(ConflictError, match="幂等身份"):
++                await service.submit(
++                    str(env.owner),
++                    request.model_copy(update={"idempotency_key": f"run:{uuid4()}"}),
++                    run_id=run_id,
++                )
++    finally:
++        if event.contains(env.db.sync, "before_commit", before_commit):
++            event.remove(env.db.sync, "before_commit", before_commit)
+--- a/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md
+@@ -1,6 +1,35 @@
+ # Dataset 资产与 Flow 输入架构
+ 
+ 类型：as-built；基线：2026-10-15。当前代码已落地，运行准入仍 BLOCKED；本文件是该域活动架构入口。验收快照见 `docs/implementation/cygnusx-phase3-dataset-ingestion-handoff-implementation.md`，公共契约见 `docs/contracts/cygnusx-dataset-handoff-v1.md`。
++
++## 会话显式 FASTQ 元数据试点
++
++`analysis.prepare_from_session_files` 经 `AgentToolGateway.context()` 读取已验证的
++ChatSession owner/project，再由 `SessionDatasetPreparationService` 锁会话、复核 active
++项目、模块权限及显式 Sample/FileRecord 引用。调用契约拒绝 owner/project/approved 等
++身份或确认字段；不推测目录归属、不纳管历史 Task。该实现当前位于独立验收工作树，
++未部署现网；默认开关不变。
++
++该路径复用 DatasetService 创建 Dataset/Version、挂资产与样本，初始 assay 为 unknown、
++分组未经确认；owner 必须通过既有 JWT review API 审阅 assay 与分组，再用同一个
++request_key 重试，才复用 Handoff 的真实文件校验、冻结及 AnalysisLink prepare。
++冻结摘要内的 `worker_paths_verified` 保持 false。相同会话/request_key 复用已有记录，
++改变输入则拒绝；并发重试由实际会话行锁串行化。
++
++已有 `platform_runs` 仅作为 AnalysisLink 的预案入口，request_key 使用
++`dataset:{proposal_id}`。Run confirm 委托同一 Dataset execute 与同一人类确认凭证，
++不另建 `run:{id}` Task；TaskService 的服务端 run_id 参数在 Task 提交事务内绑定
++Run、AnalysisLink 和 RunEvent，再提交并入队。直接向 Task API 提供保留的 run: 身份
++会被拒绝。旧跨提交接缝留下的未绑定 Task 只返回人工对账冲突，不在重试时自动纳管。
++Dataset 入口遵循 Link→Run 的加锁顺序，避免与 Run confirm 反向加锁。
++
++只读界面使用 RESEARCH_PLAN_ENABLED、RESEARCH_DELIVERY_READ_ENABLED；Gateway 另需
++TOOL_GATEWAY_READ_ENABLED。元数据准备、review 与冻结使用已有
++DATASET_DISCOVERY_READONLY 门（该门含元数据写入，名称不代表纯 GET），本次仅经用户
++确认在隔离环境开启。源码 WRITE_RUNTIME_ACCEPTED、计算配置写门与 Worker 路径验证
++均未开放：人类批准只代表预案已审阅，不代表计算准入或已完成计算。隔离证据见
++`evidence/project-session-lineage-20261022/`；包含真实 HTTP/PG/Redis、并发复用、三卡片
++空状态及 execute 阻断，验收结论由用户决定。
+ 
+ ## 关系与边界
+ 
+--- a/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md
+@@ -1,6 +1,14 @@
+ # 受控研究计划架构
+ 
+ 本文为当前代码的 as-built 说明。研究计划功能默认关闭；启用后仍为 PLAN_ONLY。真实执行门禁、生产发布和科学 Benchmark 效果均未验收。科研交付事实继续以 [科研交付链](CygnusX_research_delivery_architecture.md) 为准。
++
++隔离只读验收补充：项目下计划、交付链与 inventory 的 GET 明确区分匿名 401、
++非 owner 403、owner 200，继续复核 active 用户及 files/tasks/reports 权限。
++ProjectDetail 的科研成果清单由 research_delivery_read 能力控制展示，导出写门仍由
++独立的 project_export 控制。空项目三卡片只读取空状态，不自动生成 ResearchPlan。
++会话显式 FASTQ 挂链试点复用既有 Dataset/Run 预案，不创建 ResearchPlan，详见
++[Dataset 架构](CygnusX_dataset_architecture.md)。这些变更仅在独立工作树与专用服务验收，
++现网部署、生产数据库和默认开关未变。
+ 
+ ## 模块作用与边界
+ 
+--- a/tests/unit/test_project_lifecycle.py
++++ b/tests/unit/test_project_lifecycle.py
+@@ -175,7 +175,8 @@
+     assert status.project_export.reason == "SERVICE_DISABLED"
+     settings.research_delivery_read_enabled = True
+     status = await service.capability_status(owner, project)
+-    assert status.research_delivery_read.allowed
++    assert not status.research_delivery_read.allowed
++    assert status.research_delivery_read.reason == "NO_PERMISSION"
+     assert status.project_export.reason == "NO_PERMISSION"
+ 
+ 

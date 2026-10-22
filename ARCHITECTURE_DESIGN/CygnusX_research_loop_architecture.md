@@ -6,6 +6,8 @@
 > 契约语义、零代码移植。验收状态以手册 W0-1 ~ W4-4 人工对照表为准。
 >
 > 适用范围：Studio / legacy 链路。LangGraph 路径除本文 §8.2 审批闸外不做科研形态扩展。
+>
+> **管理面注记（2026-10-21）**：工作区归档的管理端总览、强制休眠、删包与 `studio.yaml` 配置热更见 [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md) §4.6；项目/文件/团队模型见 [CygnusX_project_workspace_architecture.md](CygnusX_project_workspace_architecture.md)。
 
 ## 0. 这个科研闭环模块如何发挥作用
 

@@ -1,0 +1,4 @@
+{"case": "0-B3a", "exception": "RuntimeError", "message": "Project focus content must be exported/reviewed before downgrade", "before": 1, "after": 1}
+{"case": "0-B3b", "exception": "RuntimeError", "message": "Export/review consolidation audit history before schema downgrade", "before": 1, "after": 1}
+{"case": "0-B3c", "exception": "RuntimeError", "message": "Cannot downgrade while long memory facts exist; reviewed data conversion required", "before": 1, "after": 1}
+{"case": "0-B3d", "exception": "RuntimeError", "message": "Export/review consolidation rollback history before schema downgrade", "before": 1, "after": 1}

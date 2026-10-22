@@ -1,0 +1,21 @@
+{
+  "provider_id": "f32b6893-4136-43bb-bd0f-6e4abec7690f",
+  "is_active": true,
+  "is_default": false,
+  "root_env_uuid_written": true,
+  "recreate": [
+    {
+      "services": [
+        "web",
+        "beat"
+      ],
+      "exit_code": 0
+    },
+    {
+      "services": [
+        "worker"
+      ],
+      "exit_code": 0
+    }
+  ]
+}

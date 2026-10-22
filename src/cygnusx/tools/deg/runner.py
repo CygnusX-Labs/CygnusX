@@ -7,8 +7,8 @@
 - asyncio.create_subprocess_exec 执行，事件循环不阻塞；
 - 捕获 stdout / stderr，超时则 kill 容器进程。
 
-路径约定：宿主 deg_data_mount 与容器内 /data/cygnusx 挂载交换，故 input/output
-直接用宿主绝对路径即可，容器内所见一致。
+路径约定：宿主 deg_data_mount 挂载到容器内 /data/cygnusx，所有文件参数
+经共享 ToolDataMount 转换；Worker 仍按任务原目录读取结果。
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from cygnusx.core.config import get_settings
 from cygnusx.core.telemetry import get_tracer
+from cygnusx.tools.container_paths import ToolDataMount
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +44,16 @@ class DegRunResult:
 
 @dataclass
 class DegRunParams:
-    """单次 DEG 分析的容器入参（宿主绝对路径 == 容器内路径）。"""
+    """单次 DEG 分析入参，文件路径位于 Worker 共享数据根内。"""
 
-    engine: str                    # deseq2 | edger
+    engine: str  # deseq2 | edger
     counts_path: str
     metadata_path: str
     pairs_path: str
     output_dir: str
     lfc: float = 1.0
     pval: float = 0.05
-    bcv: float = 0.4               # 仅 edger 使用
+    bcv: float = 0.4  # 仅 edger 使用
     annotation_path: str | None = None
 
 
@@ -67,6 +68,7 @@ class DegDockerRunner:
         from cygnusx.tools.deg.config import config_manager
 
         s = self._settings
+        mount = ToolDataMount(s.deg_data_mount, s.storage_path)
         execution = config_manager.get_config().execution
         image = s.deg_docker_image or execution.docker_image
         command = [
@@ -78,7 +80,7 @@ class DegDockerRunner:
             "--network",
             s.deg_docker_network,
             "-v",
-            f"{s.deg_data_mount}:/data/cygnusx",
+            mount.volume,
             "--memory",
             execution.memory,
             "--cpus",
@@ -87,18 +89,18 @@ class DegDockerRunner:
             "Rscript",
             SCRIPT_PATHS[params.engine],
             "-c",
-            params.counts_path,
+            mount.container_path(params.counts_path),
             "-m",
-            params.metadata_path,
+            mount.container_path(params.metadata_path),
             "-p",
-            params.pairs_path,
+            mount.container_path(params.pairs_path),
             "-o",
-            params.output_dir,
+            mount.container_path(params.output_dir),
             f"--lfc={params.lfc}",
             f"--pval={params.pval}",
         ]
         if params.annotation_path:
-            command.extend(["-a", params.annotation_path])
+            command.extend(["-a", mount.container_path(params.annotation_path)])
         if params.engine == "edger":
             command.append(f"--bcv={params.bcv}")
         return command
@@ -127,8 +129,7 @@ class DegDockerRunner:
                 )
 
                 timeout = float(
-                    self._settings.deg_exec_timeout
-                    or config_manager.get_config().execution.timeout
+                    self._settings.deg_exec_timeout or config_manager.get_config().execution.timeout
                 )
                 try:
                     stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)

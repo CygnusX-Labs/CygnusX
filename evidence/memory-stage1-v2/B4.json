@@ -1,0 +1,8 @@
+{
+  "exit_code": 2,
+  "result": {
+    "status": "blocked",
+    "reason": "MEMORY_MAINTENANCE_DATABASE_URL not configured"
+  },
+  "database_connection_attempts": 0
+}

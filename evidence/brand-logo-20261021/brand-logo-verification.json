@@ -1,0 +1,27 @@
+{
+  "originalBytesPreserved": true,
+  "sourceSha256": "100ea59c9216abc12e1bc865f052209393ef54fc12d17ad84badee14e8a5b523",
+  "assetBytes": 600675,
+  "favicon": {
+    "href": "http://127.0.0.1:8888/cygnusx-logo.png",
+    "type": "image/png"
+  },
+  "faviconStatus": 200,
+  "header": {
+    "src": "http://127.0.0.1:8888/cygnusx-logo.png",
+    "naturalWidth": 1254,
+    "naturalHeight": 1254,
+    "width": 40,
+    "height": 40,
+    "fit": "contain",
+    "alt": "",
+    "background": "rgba(0, 0, 0, 0)"
+  },
+  "mobileDrawer": {
+    "src": "http://127.0.0.1:8888/cygnusx-logo.png",
+    "width": 40,
+    "height": 40,
+    "naturalWidth": 1254
+  },
+  "pageErrors": []
+}

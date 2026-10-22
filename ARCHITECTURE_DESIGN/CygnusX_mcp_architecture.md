@@ -7,6 +7,8 @@
 > **时点说明**：§1–§3、§6–§10 为 2026-07-29 时点的架构快照，所述现状已演进，部分引用（路径、行号）已失效（2026-10-18 已补登记 `cygnusx-biothings` 10 个与 `cygnusx-research-data` 26 个；2026-10-03 已实测刷新 §1.3 preset 清单与行号：cygnusx-platform 22 个在 `presets.py` `PLATFORM_PRESET_TOOLS`、cygnusx-pipelines 10 个在 `pipeline_preset.py`、seqout 26 个在 `presets.py` `SEQOUT_PRESET_TOOLS`；其余行号仍以代码为准）。§4 为历史注记（2026-09-18 精简），§5 为 2026-07-30 时点的 as-built 实现记录。mcp-server 外部通道的"整改后终态"以 `mcp-server/ARCHITECTURE.md` 为准。
 
 > **适用范围**：MCP 注册/发现/调用、沙箱隔离、AI 代码生成、实验性 MCP 生命周期管理。
+>
+> **接入面注记（2026-10-21）**：MCP 服务在管理端"AI 资源中心"的登记方式、与 Skill/助手/联网搜索/知识库的统一装配及用户级能力覆盖，见 [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；本文继续作为 MCP 通道、Preset 与构建师的唯一权威。
 
 > **外部通道当前安全契约**：`main.py` 与 `pipelines_main.py` 共用 `core/runtime.py`。
 > HTTP/SSE 仅允许回环监听且强制独立 `CYGNUSX_HTTP_TOKEN`（至少 32 字符）；旧的

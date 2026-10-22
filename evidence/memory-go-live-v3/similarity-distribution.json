@@ -1,0 +1,28 @@
+{
+  "status": "measured",
+  "returned_hit_similarity": {
+    "min": 0.7316175699234061,
+    "p05": 0.7316175699234061,
+    "p10": 0.7316175699234061,
+    "p50": 0.7493887693054231,
+    "p90": 0.8290394050455463,
+    "p95": 0.8290394050455463,
+    "max": 0.8290394050455463
+  },
+  "target_hit_similarity": {
+    "min": 0.7316175699234061,
+    "p05": 0.7316175699234061,
+    "p10": 0.7316175699234061,
+    "p50": 0.7493887693054231,
+    "p90": 0.8290394050455463,
+    "p95": 0.8290394050455463,
+    "max": 0.8290394050455463
+  },
+  "measurements": 50,
+  "independent_query_fact_pairs": 10,
+  "unique_active_facts": 1,
+  "production_default": null,
+  "candidate_for_next_labeled_evaluation": 0.68,
+  "basis": "Target-hit P05 minus 0.05 margin, capped at 0.8; proposal only, no settings changes",
+  "limitation": "Insufficient independent labeled negatives; this is a calibration candidate, not a validated production threshold."
+}

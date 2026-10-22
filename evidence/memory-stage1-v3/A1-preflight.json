@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "checked_at": "2026-10-21T09:49:19.341556+08:00",
+  "configuration_path": "/home/zj/zj_code_libarary/OmicHub/.env.test",
+  "file_exists": true,
+  "required_key_presence": {
+    "AGENT_MEMORY_EMBEDDING_MODEL": false,
+    "MEMORY_MAINTENANCE_DATABASE_URL": false
+  },
+  "required_keys_complete": false,
+  "provider_dimension_consistency": "unverified: required embedding model configuration missing",
+  "status": "blocked",
+  "reason": "Required AGENT_MEMORY_EMBEDDING_MODEL and/or explicit maintenance DSN not configured in authorized file",
+  "embedding_calls_this_run": 0,
+  "embedding_calls_cumulative": 0,
+  "embedding_call_limit": 150,
+  "extraction_calls": 0,
+  "other_credential_sources_accessed": false,
+  "evidence_command_exit_code": 0
+}

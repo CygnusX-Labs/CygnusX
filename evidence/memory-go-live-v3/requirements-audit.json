@@ -1,0 +1,247 @@
+{
+  "captured_at_utc": "2026-10-21T17:25:48.137761+00:00",
+  "status": "engineering_acceptance_completed_with_documented_followups",
+  "scope": "Attachment wiring repair + Part 10 Steps 0-7; manual UI checks and one-week observation remain user acceptance",
+  "requirements": [
+    {
+      "id": "diagnosis",
+      "status": "passed",
+      "evidence": [
+        "step1-diagnosis.json"
+      ],
+      "checks": [
+        "Compose env surfaces",
+        "YAML bind mount",
+        "env vs container creation time",
+        "Worker unregistered task root cause"
+      ]
+    },
+    {
+      "id": "wiring",
+      "status": "passed",
+      "evidence": [
+        "step2-wiring.json",
+        "wiring-validation.json"
+      ],
+      "checks": [
+        "five keys only in web/worker/beat",
+        "key present without disclosure",
+        "dedicated maintenance DSN without fallback"
+      ]
+    },
+    {
+      "id": "recreate-sync-uuid",
+      "status": "passed",
+      "evidence": [
+        "recreate-first.json",
+        "recreate-second.json",
+        "recreate-final-sdk-metrics.json",
+        "step3-effective-settings.json"
+      ],
+      "checks": [
+        "force-recreate, not restart",
+        "Provider active, non-default",
+        "real UUID in three services",
+        "healthy runtime with effective configuration"
+      ]
+    },
+    {
+      "id": "part10-step0",
+      "status": "passed",
+      "evidence": [
+        "preflight.json"
+      ],
+      "checks": [
+        "runtime configuration",
+        "Provider metadata",
+        "maintenance DSN",
+        "no startup embedding ERROR"
+      ]
+    },
+    {
+      "id": "part10-step1",
+      "status": "passed",
+      "evidence": [
+        "step0-dimensions.json"
+      ],
+      "checks": [
+        "two actual probes only",
+        "4096 default",
+        "1024 explicit parameter"
+      ]
+    },
+    {
+      "id": "part10-step2",
+      "status": "passed",
+      "evidence": [
+        "e2e-write-recall.json",
+        "runtime-embedding-smoke.json"
+      ],
+      "checks": [
+        "three scopes",
+        "paired vectors and model",
+        "new-session recall",
+        "cross-agent personal sharing",
+        "user/project isolation",
+        "real KB index and search",
+        "forget",
+        "synthetic cleanup"
+      ]
+    },
+    {
+      "id": "part10-step3",
+      "status": "passed",
+      "evidence": [
+        "backfill.json",
+        "backfill-plan.json",
+        "historical-backfill-plan.json",
+        "historical-backfill.json",
+        "final-database-state.json"
+      ],
+      "checks": [
+        "protected backups before batches",
+        "displayed dry-runs before apply",
+        "actual wrong-target CLI rejection",
+        "ten historical plus one active vectors correct",
+        "no failures",
+        "inactive states and non-vector columns unchanged"
+      ]
+    },
+    {
+      "id": "part10-step4",
+      "status": "passed_with_sample_limits",
+      "evidence": [
+        "recall-real.json",
+        "recall-real-plan.json",
+        "similarity-distribution.json",
+        "threshold-recommendation.md"
+      ],
+      "checks": [
+        "50 SQL recall protocol",
+        "P50/P95",
+        "real similarity quantiles",
+        "recommendation only, production threshold unchanged"
+      ],
+      "limits": [
+        "one active fact, ten queries; correlated measurements",
+        "inactive historical backfill does not enlarge active retrieval corpus",
+        "no production-scale performance/quality claim"
+      ]
+    },
+    {
+      "id": "part10-step5",
+      "status": "passed",
+      "evidence": [
+        "settle-e2e.json",
+        "production-extraction-route.json"
+      ],
+      "checks": [
+        "synthetic-only real extraction",
+        "fact/cursor/settlement success",
+        "one non-JSON fault after real response",
+        "no advancement on failure",
+        "native failure counter +1",
+        "same-interval recovery",
+        "cleanup",
+        "actual default Provider model reported"
+      ]
+    },
+    {
+      "id": "part10-step6",
+      "status": "measured_with_documented_production_export_gap",
+      "evidence": [
+        "metrics.json",
+        "worker-coverage-task.json"
+      ],
+      "checks": [
+        "native SDK coverage 1.0",
+        "real settle success/failure instruments",
+        "recall hit/miss counts",
+        "live worker receipt",
+        "authenticated Web scrape"
+      ],
+      "followup": "Part 10.2 row 8 explicitly allows missing production metrics to be listed as Phase 3 observability gap; no sampling flags or AuthMiddleware behavior changed"
+    },
+    {
+      "id": "part10-step7",
+      "status": "passed",
+      "evidence": [
+        "../../docs/info/26.10.22/CygnusX记忆接通真实验收报告-v3.md",
+        "call-ledger.json",
+        "requirements-audit.json"
+      ],
+      "checks": [
+        "environment snapshot",
+        "matrix",
+        "documented gaps",
+        "cost unknown instead of zero",
+        "commands",
+        "production/test flag diff",
+        "cumulative actual attempts"
+      ]
+    }
+  ],
+  "budgets": {
+    "actual": {
+      "embedding": 41,
+      "extraction": 7
+    },
+    "limits": {
+      "embedding": 150,
+      "extraction": 20
+    },
+    "remaining": {
+      "embedding": 109,
+      "extraction": 13
+    },
+    "in_flight": 0,
+    "resets": 0
+  },
+  "guards": {
+    "dedicated_dsn_only": true,
+    "backup_then_dry_run_then_apply": true,
+    "synthetic_settle_only": true,
+    "synthetic_cleanup_verified": true,
+    "production_threshold_and_ranking_unchanged": true,
+    "existing_provider_yaml_preserved_by_this_round": true,
+    "chat_behavior_unchanged_by_this_round": true,
+    "privacy": {
+      "status": "passed",
+      "files_scanned": 64,
+      "secret_values_disclosed": 0,
+      "credential_value_matches": 0,
+      "method": "Compare output artifacts to configured secret values in memory; only aggregate result retained",
+      "limitation": "Not a general DLP proof; report and verification scripts intentionally retain no real user text or vectors"
+    }
+  },
+  "validation": {
+    "related_unit_tests": 229,
+    "focused_ruff": "passed",
+    "focused_mypy_files": 4,
+    "provider_mypy": "two preexisting HEAD diagnostics, no new diagnostics",
+    "full_repository_gates": "not claimed green; no commit or push"
+  },
+  "followups": [
+    "Production Worker memory metric export/sampling; Phase 3 gap, local SDK is not exporter proof",
+    "Existing chat(model=...) override ignored; actual extraction uses default DeepSeek Provider, production extraction setting unchanged",
+    "Manual UI remember/recall/forget checks, independent 25-case quality evaluation and one-week daily observation"
+  ],
+  "deliverable_artifacts": [
+    "step1-diagnosis.json",
+    "step2-wiring.json",
+    "wiring-validation.json",
+    "step3-effective-settings.json",
+    "preflight.json",
+    "step0-dimensions.json",
+    "e2e-write-recall.json",
+    "backfill.json",
+    "historical-backfill-plan.json",
+    "historical-backfill.json",
+    "final-database-state.json",
+    "recall-real.json",
+    "similarity-distribution.json",
+    "settle-e2e.json",
+    "metrics.json",
+    "call-ledger.json"
+  ]
+}

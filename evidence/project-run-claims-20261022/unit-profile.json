@@ -1,0 +1,9 @@
+{
+  "production_env_copied": false,
+  "database": "run_claim_test_20261022",
+  "cache_port": 16393,
+  "cache_db": 5,
+  "storage_root": "/tmp/cygnusx-run-claims-runtime-9av54_1c/unit-storage",
+  "full_config_and_agent_registry_retained": true,
+  "config_bytes_restored": true
+}

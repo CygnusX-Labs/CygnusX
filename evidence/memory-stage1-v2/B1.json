@@ -1,0 +1,23 @@
+{
+  "result": {
+    "mode": "missing",
+    "storage": "facts",
+    "target_model": "synthetic-current",
+    "before": {
+      "status": "collected",
+      "storage": "facts",
+      "target_model": "synthetic-current",
+      "active": 10008,
+      "compatible": 5002,
+      "missing": 5,
+      "mismatched": 5006,
+      "pending": 5006,
+      "coverage": 0.4998001598721023
+    },
+    "status": "dry_run",
+    "pending": 5,
+    "updated": 0
+  },
+  "provider_constructions": 0,
+  "write_statements_during_dry_run": []
+}

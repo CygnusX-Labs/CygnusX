@@ -21,6 +21,8 @@
 #
 # 新增物种：在 species_list 下追加一项即可，无需改代码。
 # 注意：R 镜像须预装 clusterProfiler、enrichplot、ontologyIndex 和 optparse。
+# 参考文件相对路径以 REFERENCE_GENOMES_YAML 所在目录为根，随部署参考库迁移。
+# 也兼容共享数据根或 R 容器 /data/cygnusx 下的绝对路径。
 # --------------------------------------------
 
 species_list:
@@ -31,9 +33,9 @@ species_list:
     kegg_code: "sly"
     org_db: ""
     id_type: "ITAG4.1"
-    go_annotation: "/data/cygnusx/cygnusx_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal"
-    go_obo: "/data/cygnusx/cygnusx_data/reference/ITAG4.1/go-basic.obo"
-    kegg_id_map: "/data/cygnusx/cygnusx_data/reference/ITAG4.1/ITAG4.1.kegg.id"
+    go_annotation: "ITAG4.1/ITAG4.1_blast2go_annot.annot_deal"
+    go_obo: "ITAG4.1/go-basic.obo"
+    kegg_id_map: "ITAG4.1/ITAG4.1.kegg.id"
     kegg_key_type: "kegg"
     p_value_cutoff: 0.05
     q_value_cutoff: 0.1

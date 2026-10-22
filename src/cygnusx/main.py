@@ -78,6 +78,27 @@ async def _init_default_ai_provider() -> None:
         await session.commit()
 
 
+async def _validate_memory_embedding_provider() -> None:
+    """Report embedding-only selection errors after Provider YAML synchronization."""
+    from loguru import logger
+
+    from cygnusx.infrastructure.ai_provider.litellm_provider import LiteLLMProvider
+
+    settings = get_settings()
+    if not (
+        settings.agent_memory_embedding_model.strip()
+        and settings.agent_memory_embedding_provider_id.strip()
+    ):
+        return
+    try:
+        config = await LiteLLMProvider()._get_embedding_config()
+    except Exception as exc:  # configuration errors must not expose credentials
+        logger.error("memory.embedding_provider_invalid error_type={}", type(exc).__name__)
+        return
+    if config is not None and config.is_default:
+        logger.warning("memory.embedding_provider_is_chat_default: use a separate chat Provider")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期：启动与关闭
@@ -288,6 +309,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _repair_user_storage_directories(),
         _init_default_knowledge(),
     )
+    await _validate_memory_embedding_provider()
     await _init_builtin_agents()
 
     # 欢迎词补齐：须在 AI Provider 同步完成之后（依赖默认 provider），

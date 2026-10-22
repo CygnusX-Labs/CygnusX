@@ -1,0 +1,56 @@
+{
+  "mypy_new_diagnostics_on_changed_files": [],
+  "mypy_existing_diagnostics_removed": [
+    [
+      "src/cygnusx/middleware/audit.py",
+      "Function is missing a type annotation for one or more parameters  [no-untyped-def]"
+    ],
+    [
+      "src/cygnusx/middleware/audit.py",
+      "Returning Any from function declared to return \"Response\"  [no-any-return]"
+    ]
+  ],
+  "mypy_baseline_error_count": 28,
+  "mypy_final_error_count": 25,
+  "full_mypy_observed_errors": 1006,
+  "full_ruff_baseline_errors": 271,
+  "clean_scope_files": [
+    "src/cygnusx/api/v1/projects.py",
+    "src/cygnusx/api/v1/runs.py",
+    "src/cygnusx/application/schemas/project.py",
+    "src/cygnusx/application/schemas/run_claim.py",
+    "src/cygnusx/application/schemas/run_plan.py",
+    "src/cygnusx/application/services/archive_run_index_service.py",
+    "src/cygnusx/application/services/dataset_analysis_service.py",
+    "src/cygnusx/application/services/directory_service.py",
+    "src/cygnusx/application/services/historical_run_claim_service.py",
+    "src/cygnusx/application/services/project_overview_service.py",
+    "src/cygnusx/application/services/project_reconciliation_service.py",
+    "src/cygnusx/application/services/research_provenance_service.py",
+    "src/cygnusx/application/services/run_plan_service.py",
+    "src/cygnusx/infrastructure/database/models/run.py",
+    "src/cygnusx/middleware/audit.py"
+  ],
+  "clean_scope_exit_code": 0,
+  "full_ruff_final_exit_code": 1,
+  "full_ruff_final_errors": 269,
+  "unit_current_failures": [
+    "tests/unit/test_annotation_skill_packages.py::test_builtin_bioskills_keep_source_category_taxonomy",
+    "tests/unit/test_parallel_subagent_service.py::test_fanout_merges_token_usage_across_rounds_and_children",
+    "tests/unit/test_provider_retry_policy.py::test_litellm_embedding_routes_custom_openai_endpoint",
+    "tests/unit/test_research_tool_pack_binding.py::test_research_pack_binds_database_mcp_presets",
+    "tests/unit/test_studio_approval.py::test_approval_required_tools_cover_write_and_execute",
+    "tests/unit/test_studio_manager.py::test_container_mounts_match",
+    "tests/unit/tools/test_tool_error_codes.py::test_control_params_not_reported_as_ignored"
+  ],
+  "unit_accepted_baseline_failures": [
+    "tests/unit/test_annotation_skill_packages.py::test_builtin_bioskills_keep_source_category_taxonomy",
+    "tests/unit/test_parallel_subagent_service.py::test_fanout_merges_token_usage_across_rounds_and_children",
+    "tests/unit/test_provider_retry_policy.py::test_litellm_embedding_routes_custom_openai_endpoint",
+    "tests/unit/test_research_tool_pack_binding.py::test_research_pack_binds_database_mcp_presets",
+    "tests/unit/test_studio_approval.py::test_approval_required_tools_cover_write_and_execute",
+    "tests/unit/test_studio_manager.py::test_container_mounts_match",
+    "tests/unit/tools/test_tool_error_codes.py::test_control_params_not_reported_as_ignored"
+  ],
+  "unit_failure_sets_equal": true
+}

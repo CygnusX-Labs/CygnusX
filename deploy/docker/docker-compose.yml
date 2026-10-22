@@ -25,7 +25,7 @@ services:
       # 挂到独立路径 /var/www/jbrowse2，避免与只读的 dist(/usr/share/nginx/html) 子挂载冲突
       - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
       # 数据文件：经 /tracks/ 路径供 JBrowse 2 流式读取（只读）
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}:ro
+      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:/srv/tracks:ro
       # Nginx 访问/错误日志持久化到宿主机，避免容器重建丢失
       - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/nginx:/var/log/nginx
     depends_on:
@@ -58,6 +58,12 @@ services:
       - REDIS_HOST=cache
       - SERVICE_NAME=web
       - PYTHONPATH=/app/src
+      # 记忆接通：通过根目录 --env-file .env 插值；变更后须 force-recreate。
+      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
+      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
+      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败
@@ -187,6 +193,12 @@ services:
       - REDIS_HOST=cache
       - SERVICE_NAME=beat
       - PYTHONPATH=/app/src
+      # 与 Web/Worker 一致，保留 Settings 的空模型/空 Provider/1024 维默认值。
+      - AGENT_MEMORY_EMBEDDING_MODEL=${AGENT_MEMORY_EMBEDDING_MODEL:-}
+      - AGENT_MEMORY_EMBEDDING_PROVIDER_ID=${AGENT_MEMORY_EMBEDDING_PROVIDER_ID:-}
+      - AGENT_MEMORY_EMBEDDING_DIMENSIONS=${AGENT_MEMORY_EMBEDDING_DIMENSIONS:-1024}
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - MEMORY_MAINTENANCE_DATABASE_URL=${MEMORY_MAINTENANCE_DATABASE_URL:-}
       - AL_API_KEY=${AL_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - HOME=/tmp                          # uid 1000 无 passwd 条目，显式 HOME 防 expanduser 失败

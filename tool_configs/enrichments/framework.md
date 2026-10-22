@@ -54,8 +54,10 @@ deploy/docker/
 | `go_obo`、`go_annotation`、`kegg_id_map` | 否 | 宿主本地参考文件路径，只传给 R 容器 |
 | `kegg_key_type`、`p_value_cutoff`、`q_value_cutoff` | 默认值是 | p/q 默认值返回页面，可由用户在合法范围内覆盖；参考路径仍不公开 |
 
-新增物种时必须同步验证：GO OBO、GO 注释和 KEGG 映射均位于
-`ENRICHMENT_DATA_MOUNT` 下，且容器内路径与宿主绝对路径一致。
+新增物种时必须同步验证：GO OBO、GO 注释和 KEGG 映射均位于共享数据卷下。
+参考文件相对路径以 `REFERENCE_GENOMES_YAML` 所在目录为根解析；绝对路径保持兼容。
+Runner 将 Worker 数据根或宿主挂载源下的路径转换为容器内 `/data/cygnusx/...`，
+也兼容已配置的容器绝对路径；结果仍按原任务 `work_dir` 读取。
 
 ### 3.2 环境配置
 

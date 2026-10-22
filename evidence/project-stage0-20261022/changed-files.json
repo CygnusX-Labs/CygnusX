@@ -1,0 +1,23 @@
+{
+  "alembic/versions/project_lifecycle01.py": "62f6c0e482809e74221cd5bcd4591e6d7269326e460474c09ff123ceaf14ccc0",
+  "src/cygnusx/infrastructure/database/models/project.py": "7106cd7220c7eb60dba12a66dabbf38ab71f6a4a15c5d042ac4622cbc23a8804",
+  "src/cygnusx/application/services/project_service.py": "8ad489fa20695e79f4eebd927192569cae9a523bebad05e0930465241298729a",
+  "src/cygnusx/application/services/project_overview_service.py": "4880585f29e509bbe831684c923ffa82170a68afad0979d2713bad9b47be9de9",
+  "src/cygnusx/application/schemas/project.py": "4551fe07bd3e59988b748221a37efbb6504c25aa709f993a98f3d18ecce74f5e",
+  "src/cygnusx/api/v1/projects.py": "583a33a76ccada73259783d20f202be4f982819a22214f7930ef5dedff8b7f87",
+  "frontend/src/api/projects.ts": "cd0a5f918354147159aaaeda22f3a6c2cec20c6271e04f3ef9c3086aa17e1431",
+  "frontend/src/api/projectErrors.ts": "a34fa503b22ae5b6e8ff2151718742b91a6e29621ec72bd01b0c062c4b1fc4c4",
+  "frontend/src/components/ProjectCapabilityPanel.vue": "a6a4d1f24aedd12a517cba3c116c4d529a987ddc4a0a084f1d9f4622c138c9fe",
+  "frontend/src/views/ProjectDetailView.vue": "e538b2765fda7fedd84ad2a2ce0a8bdd7f00bbd4ae6a14e5cf21ba6796c99b2b",
+  "frontend/src/components/ResearchPlanWorkbench.vue": "1cfd40caff3ac8594c761c23a7148240419dcb87ae94c05139b9603cb381b5b8",
+  "frontend/src/components/ResearchDeliveryChain.vue": "0fc9fad59a2571a71399f6d1c6799c58fb04942a13354621cc87a2992197349d",
+  "frontend/src/components/ProjectResearchDelivery.vue": "01595580bddd4d72e34d60f37c38a6959f8b2fc58bc617ce5e9187fae26ee019",
+  "tests/unit/test_project_lifecycle.py": "29518063c4a977ea570c2db856b7abd52c7a62425271ba22d0412eb372342763",
+  "tests/unit/test_project_delivery_stabilization.py": "0edd85cb21b46fd485d78986540b302375d26904fb0dd98b0988daf4883a8d95",
+  "tests/integration/test_project_lifecycle_http.py": "7f5500519c647af458310d93ca5aa3980f190eee0f032873fc08f37e251a5fd3",
+  "frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts": "e2c29d8c17231e46172ae4617e35a2058fd6773696bc6d40982648d9c5c68f09",
+  "frontend/src/components/research/__tests__/ResearchPlanWorkbench.test.ts": "50fe0cc25397f6c35975577c0f09ff83dad1203f9e29c4e16cbf89e267851b2a",
+  "frontend/src/components/research/__tests__/ResearchDeliveryChain.test.ts": "4701808de90a61fb95480805e4cbbc074cbb789966f03eff38b2834e9c3fa9a8",
+  "frontend/src/components/__tests__/ProjectResearchDelivery.test.ts": "c8b7cf6174716ac920c9d47aa428fab25293759ca1148b08cd218253da7a4f27",
+  "ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md": "44eb13594915bace0250c7fe3b693f7ac1ede7ba01141e48142bf703bbdfe5c3"
+}

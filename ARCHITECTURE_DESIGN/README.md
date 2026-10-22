@@ -12,6 +12,8 @@
 
 > 三项科研功能运行验收：[CygnusX_Research_Feature_Runtime_Acceptance.md](CygnusX_Research_Feature_Runtime_Acceptance.md)（2026-10-20；真实隔离 Docker/PG、计划审阅及浏览器预览部分通过；真实科研记录/ZIP 因 corpus 门禁 BLOCKED，生产未准入）。
 
+> **平台经营面入口（2026-10-21 补齐）**：用户与权限 → [CygnusX_identity_access_architecture.md](CygnusX_identity_access_architecture.md)；管理控制台 → [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md)；饼干经济 → [CygnusX_cookie_economy_architecture.md](CygnusX_cookie_economy_architecture.md)；节日彩蛋 → [CygnusX_festival_architecture.md](CygnusX_festival_architecture.md)；通知/公告/提醒/站点内容 → [CygnusX_notification_engagement_architecture.md](CygnusX_notification_engagement_architecture.md)；项目/文件/团队 → [CygnusX_project_workspace_architecture.md](CygnusX_project_workspace_architecture.md)；目标运行时 → [CygnusX_goal_architecture.md](CygnusX_goal_architecture.md)；Skill/MCP 接入面 → [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；调度与分析运维 → [CygnusX_analysis_operations_architecture.md](CygnusX_analysis_operations_architecture.md)。覆盖对账与残余缺口见 [CygnusX_architecture_coverage_audit.md](CygnusX_architecture_coverage_audit.md)。
+
 ## 0. 这个架构文档目录如何发挥作用
 
 `ARCHITECTURE_DESIGN` 是代码现状、修改规范和历史方案的文档索引层。开发者先依据本 README 按领域定位文档，再阅读对应的 as-built 基线或规范；修改代码时以代码、配置和迁移为事实来源，用架构文档解释模块边界、数据流、权限和验证门禁。`as-built` 文档描述当前实现，规范文档约束应该如何修改，提案/快照记录目标态或某一时点，`deprecated/` 只保留历史参考，不能覆盖活动基线。
@@ -74,6 +76,9 @@ sequenceDiagram
 > 2. `CygnusX_skill_first_sandbox_execution_proposal.md` 补登记（提案 v2，非 as-built）；
 > 3. 外部独立文档统一进架构库：`mcp-server/ARCHITECTURE.md`（独立权威文档，保留原位，登记于"相关文档"）、`tool_configs/tools_design.md`（工具页面专项规范，保留原位，登记于"相关文档"）；`pipelines/Flow_framework.md`（v1，已被 `Protocol/FlowFrame/flow-framework` v2.0 取代）与 `tool_configs/tools_update.md`（提案已全部落地，现状见 `CygnusX_mcp_architecture.md`）移入 `deprecated/`（见"废弃归档"与"合并记录"）；
 > 4. `CygnusX_memory_architecture.md` 补 mem0 遗留现状更正（引擎代码 2026-08-19 已删除，`mem0_memories` 遗留表 + `MEM0_*` 配置段为受保护迁移残留，见其 §1）。
+>
+> **2026-10-21 覆盖补齐说明**：对 `api/v1`（49 个路由模块）、`application/services`（196 个服务文件）与前端入口做全覆盖对账后，新增 9 份 as-built 文档，补齐此前只有代码、没有架构汇总的平台经营面：`CygnusX_identity_access_architecture.md`（认证/用户/RBAC/模块门禁）、`CygnusX_admin_console_architecture.md`（系统管理 12 菜单与 18 个 admin 路由模块）、`CygnusX_cookie_economy_architecture.md`（账户/账本/定价/任务结算/AI 扣费）、`CygnusX_festival_architecture.md`（节日彩蛋）、`CygnusX_notification_engagement_architecture.md`（通知/公告/提醒/站点内容）、`CygnusX_project_workspace_architecture.md`（项目/文件/团队/归档）、`CygnusX_goal_architecture.md`（目标运行时）、`CygnusX_skill_mcp_integration_architecture.md`（Skill 路由与 MCP 资源接入面）、`CygnusX_analysis_operations_architecture.md`（调度/工作流监控/运行记录/统计）。覆盖矩阵、本轮纠正的事实与残余缺口（legacy AI 对话、MAS 房间骨架、research claims API 等）见 `CygnusX_architecture_coverage_audit.md`。
+> **2026-10-21 异步队列补充说明**：新增 `CygnusX_async_task_queue_architecture.md`，补齐 Celery 应用配置、6 个逻辑队列、25 条 `task_routes`、34 条 Beat 注册表、Worker/Beat/Flower 部署矩阵、任务级超时/重试、RocketMQ 可选传输与可靠性缺口。`CygnusX_analysis_operations_architecture.md` 只保留调度业务面；worker、queue、`schedules` 消费缺口与 RocketMQ 细节以新文档为准。
 
 
 **文档类型口径**：
@@ -144,6 +149,9 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `CygnusX_skill_first_sandbox_execution_proposal.md` — Skill-First 沙箱执行架构提案（提案 v2，2026-09-30/v2 2026-10-01，未实施）
 "将平台全部 Skill 暴露给全部 Agent、以 Skill 引导沙箱代码生成"的目标架构与实施路径。§1 记录三个已核实的问题（Skill 库与 Agent"两个平行宇宙"、`.agents/skills/` 561 个 bio-* 与平台业务 Skill 互不可见、沙箱执行缺乏 Skill 引导）；§2+ 目标态设计与开放问题的 2026-10-01 评审决策。**落地完成前不得作为现状依据**；关联现状文档为 `CygnusX_agent_execution_framework.md` 与沙箱基线文档。
 
+### `CygnusX_skill_mcp_integration_architecture.md` — Skill/MCP 接入面与资源装配（as-built，2026-10-21）
+补齐 `CygnusX_skill_architecture.md`（Skill 生命周期）与 `CygnusX_mcp_architecture.md`（MCP 通道）之间的"接入面"：`skill_route` 内置工具的分词/打分/20 候选截断/前 5 正文 6000 字预算、scout 子 Agent、五入口导入（JSON/ZIP/Markdown/GitHub/阿里云）与预览确认、管理端 skills/assistants/agents 三套表面、`user_agent_capabilities` 用户级覆盖、Agent 装配时的工具与资源合并、资源中心六 Tab 与 MCP/Skill 目录。附"对旧文档的校正"表（10 技能上限、YAML 覆盖、`UserAgentCapabilityModel`、`features` ORM/迁移漂移、legacy assistants 等），修改 Skill/MCP 接入前先读本文再回看两份领域基线。
+
 ---
 
 ## 3. 多智能体编排与记忆
@@ -157,13 +165,13 @@ Chat Runtime 重构的实施记录：HTTP → ChatService/AgentRuntimeGateway �
 ### `CygnusX_domain_prompt_sedimentation.md` — 领域知识渐进沉淀设计（提案草案 v1，2026-08-06，未实施）
 注意：主题是"提示词/领域资产沉淀"而非 agent 并行。四环闭环：感知层 `DomainMissEvent`（`domain_miss_events` 表、脱敏）→ 候选聚合（指纹聚类、`domain_candidates`、浮现阈值）→ 沉淀层（轻=知识库条目/中=skill/重=Domain Pack，LLM 起草+人审+回放测试）→ 生效层（`data/ai/domains/<domain>.yaml` 热重载、灰度、回滚）。依赖 Domain Pack 设计，V0–V3 分阶段，附四条反模式红线。
 
-### `CygnusX_memory_architecture.md` — AI 记忆系统（as-built 工作区代码基线，2026-10-20；未部署，运行验收待完成）
+### `CygnusX_memory_architecture.md` — AI 记忆系统（as-built，2026-10-22；核心接通已验，质量与观测仍待验）
 
-[当前记忆架构](CygnusX_memory_architecture.md)：记录数据库长期记忆、Studio 文件记忆与知识库证据检索的职责边界；覆盖 user/agent/project 分区、同模型过滤与 RRF 混合召回、预算注入、显式写入、SQL 游标 settle/尾批、周度整理与按 run 回滚、遗忘残留提示、TTL 回执、管理 API/UI 和迁移回退。默认 v2 及新增检索/尾批开关关闭；真实 PostgreSQL/pgvector、Provider/Worker/Beat、质量基线、看板和告警仍待验收，不能将工作区代码等同生产启用。
+[当前记忆架构](CygnusX_memory_architecture.md)：记录数据库长期记忆、Studio 文件记忆与知识库证据检索的职责边界；覆盖 user/agent/project 分区、同模型过滤与 RRF 混合召回、预算注入、显式写入、SQL 游标 settle/尾批、周度整理与按 run 回滚、遗忘残留提示、TTL 回执、管理 API/UI 和迁移回退。v2 代码默认关闭，当前目标环境已启用并完成真实写召、合成 settle 与 11 条受控回填；25 案例质量、生产指标导出与人工体验仍待验。知识与记忆共用 Qwen/1024 维 Provider，分表维护；不以记忆接通替代知识库入库验收。
 
-### `CygnusX_memory_embedding_operations.md` — 记忆模型切换运行手册（as-built 工具契约，运行验收待完成）
+### `CygnusX_memory_embedding_operations.md` — 记忆模型切换运行手册（as-built，2026-10-22；受控回填已验）
 
-[运行手册](CygnusX_memory_embedding_operations.md)：同模型向量过滤的默认关闭开关、旧模型词面补位、显式 DSN 的 dry-run/分批重嵌入、同库 Provider 选择、覆盖率/样本新鲜度指标、真实 EXPLAIN 与质量门禁、向量重建的回退边界。当前未部署，不代表生产准入或真实模型验证通过。
+[运行手册](CygnusX_memory_embedding_operations.md)：同模型向量过滤的默认关闭开关、旧模型词面补位、显式 DSN 与目标库二次确认、dry-run/分批重嵌入、显式历史状态范围、同库 Provider 选择、覆盖率/样本新鲜度指标及回退边界。目标库已完成 11 条备份后受控回填；完整恢复演练、质量基线与生产观测仍需独立确认。此手册的安全维护契约不能直接套作知识库重建脚本已有能力。
 
 ### `CygnusX_memory_optimization_audit.md` — 记忆系统现状审计与优化路线（审计+路线，2026-10-20；非 as-built）
 对 v2 记忆链路的代码、配置、运行数据与前端投影做三方对账：配置矩阵（`MEMORY_V2_ENABLED` / embedding / 抽取模型 / 站点开关 / 工具包授权）、读取-工具写入-settle-管理端-Studio-L4 全链路图、`memory_blocks`/`memory_facts`/`memory_settlements` 数据模型与分区语义、本机运行证据（0 blocks / 10 条事实且全无向量 / 82 次 settlement）；按 P0–P2 列出 4 个 P0（召回恒空、v2 遗忘工具失效、项目隔离缺失、抽取失败永久跳区间）与共享分区、block 生命周期、管理端 gate、embedding 模型耦合、Studio 跨会话等 P1/P2；给出 Phase 0–4 修复顺序、验收清单与需人工决策项（D1–D7）。**现状基线仍以 `CygnusX_memory_architecture.md` 为准，本文用于优化排期与回归验收。**
@@ -193,8 +201,8 @@ P0–P3 全阶段建设记录：sandbox-agent 端点协议（/exec NDJSON、文�
 
 ### `CygnusX_mcp_architecture.md` — MCP 子系统（as-built + 已吸收 MCP 构建师 as-built）MCP 三层体系（内置 Preset / 外部 Server / 管线专属）：`presets.py` 工具清单（cygnusx-platform 22 个、pipelines 10 个、seqout 公共数据库检索 26 个、BioThings 10 个、research-data 28 个）、注册发现流程（`ensure_presets` → `mcp_servers` 表 → Agent YAML `mcp_ids`）、`MCPClient` 三层安全校验、`/api/v1/mcp/*` 端点与 `mcp_servers`/`mcp_logs` schema；MCP 外部通道与内置 preset 共享 provider service 的边界、17项科研数据库覆盖、隔离身份下的部分正向验收及剩余provider/Agent限制见 2026-10-19 补充；双沙箱体系与 Egress 白名单；AI 模型接入（ProviderManager）。§4 为 Agent 自生成 MCP 提案的历史注记；§5 为已并入的 **MCP 构建师 `agent-mcp-builder` as-built**：六阶段生成流水线、`POST /api/v1/mcp-builder/builds` → `MCPBuilderService`、AST StaticSafetyChecker 12 条规则、sandbox_agent `/mcp/start|call|stop|list` STDIO 执行层、`mcp_builds`/`mcp_versions`/`mcp_visibility`/`mcp_reviews` 数据模型与状态机、15 条 Builder API、TTL/审核运维；§6–§10 独立 mcp-server、管线 MCP、约束红线；§11 为 **MCP 工具固定化**目标接入架构（固定 4 能力 + 动态 Flow 目录，工具清单不随 Flow 数增长；阶段 0/1 已完成：冻结政策、旧四件套与 per-flow 自动生成工具 `[DEPRECATED]` 软弃用标注、固定 `cygnusx_prepare`/`cygnusx_submit` 内外双端落地并复用同一 `AnalysisFlowToolService` + 确认凭证链；阶段 2–4 路线与红线：校验对等矩阵、兼容包装下线、插件机制）；§12 为 **2026-10-16 架构审查响应**（实验池 invoke 门禁 + 输出限额、目录分页与 llm_payload 预算已落地并测试；版本治理差距清单——契约指纹/依赖锁定/generation 原子激活/回退制品语义——诚实记录为后续 P1/P2 路线）。mcp-server 外部通道的"整改后终态"（确认门状态机、核心不变式、双端一致防线）以 `mcp-server/ARCHITECTURE.md` 为准（见"相关文档"，§9 含 Flow 工具冻结政策）。
 
-### `CygnusX_database_architecture.md` — 数据库基础设施基线（as-built + 规范，2026-09-11）
-`session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 116 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。
+### `CygnusX_database_architecture.md` — 数据库基础设施基线（as-built + 规范；2026-10-22 补充 pgvector 部署核验）
+`session.py` 按进程分流引擎（Web AsyncAdaptedQueuePool / Worker NullPool）、只读副本回退、连接池 OTel 指标；ORM 契约（`models/__init__.py` 全量注册 116 表、模型↔schema 对齐规则、pgvector 自实现 `vector.py`、relationship 懒加载纪律）；仓储两级分层（核心域 Protocol+实现、轻量域直连模型的升格判据）；迁移治理（Alembic 唯一事实来源、`check_migrations.py`/`check_schema_drift.py` 零漂移、外部表清单）；管理端 `/admin/database` 健康页；§11 参考基因组模块（SQLite/FTS5、CDS/UTR、GO Slim、JBrowse/BLAST）；新附录：Terminal 与参考基因组模块更新记录（自 LOG_ARCHITECTURE §9.2–9.6 迁入）。§4.4.1 记录当前 `omichub` 实例、知识/记忆向量表、宿主机 `/data/omichub/omichub_data/_pgdata` 持久化挂载，以及数据库与原始附件分别备份的边界。
 
 ### `CygnusX_token_billing_architecture.md` — Token 与饼干消耗架构（as-built + 对账规范，2026-09-22）
 记录模型 Provider `usage` 到消息、会话、饼干流水、统计 API 和前端元估算的完整数据流；统一字段映射与多轮合并规则；输入/输出缓存 token 的识别、子集约束和分项价格公式；`ai_token_cookie_rate` 的逐消息舍入、幂等扣费、余额封顶与折扣语义；平台饼干和供应商元账单的边界；token/金额不一致时的逐步对账流程与修改验证清单。该文档是 token、缓存、费用、余额相关改动的唯一架构基线。
@@ -211,11 +219,42 @@ L1 生信工具箱（`/tools`）的后端框架与跨链路全景：`src/cygnusx
 ### `CygnusX_worker_images_plan.md` — Worker 轻量镜像计划（提案）
 `Dockerfile.worker` 边界：python:3.11-slim + Celery + Snakemake + Micromamba，不打包流程/参考基因组/Conda 环境；运行时挂载约定（`/opt/cygnusx/pipelines:ro`、`.conda_envs` 按内容哈希复用）；六步实施（依赖盘点、compose 挂载、`SNAKEMAKE_CONDA_PREFIX`、PUID/PGID 与并发预热、构建验证）；验收标准、风险与 Rule 级容器化/Slurm/K8s 演进方向。
 
-### `CygnusX_knowledge_architecture.md` — 知识库架构（as-built，2026-10-20；真实运行验收待完成）
-“一份内容、页面与 AI 两个消费方”：`knowledge_bases` 展示/AI/启停开关，`kb_documents` + `doc_revisions` 双指针审核，`kb_chunks` Markdown 章节索引与 1024 维 pgvector/HNSW；发布/编辑后重建 chunk，启动时通过互斥任务增量对齐已发布索引；AI function tool `knowledge_search` 复用项目/库可见性过滤、向量召回、关键词回退/候选重排和引用 ID，Chat 前端将有效 citation marker 展示为来源。检索不是向量与关键词双路 RRF；与个人记忆的边界、索引更新、管理 API 和限制见本文。真实 pgvector/Provider/P95 验收仍待完成。
+### `CygnusX_knowledge_architecture.md` — 知识库架构（as-built，2026-10-22；Qwen 隔离小样本通过，正式库未批量向量化）
+“一份内容、页面与 AI 两个消费方”：`docs/knowledge` 原始资料、修订正文与 `kb_chunks` 向量的分层存储；Qwen/Qwen3-Embedding-8B + 1024 维 pgvector/HNSW；发布索引、当前关闭的 Web 启动异步对齐及手动重建入口。记录知识/记忆共享 Provider 但分表、分权限和分预算的现状，以及模型标签过滤、私有附件、工具结果截断等边界。§9 包含正式库 367 篇/2778 个无向量 chunk 的时点快照，以及三篇正文/6 个块/3 次向量召回的隔离验证与清理证据；未宣告全库入库、可靠后台任务或生产规模性能通过。物理数据目录见数据库架构 §4.4.1。
 
 ### `CygnusX_network_architecture.md` — 平台网络配置架构（as-built 快照，2026-09-21）
 梳理平台所有出站/入站网络路径、白名单与 SSRF 校验标准：五条独立网络路径（chat 工具出站、Studio 沙盒每会话内网 + CONNECT 代理、终端沙盒 `cygnusx-sandbox-net`、web_search 后端 SearchProvider、宿主机翻墙客户端 fake-ip DNS）；各沙盒 network 白名单与 Egress Proxy 域名清单；fake-ip（198.18.0.0/15）误判问题的根因与修复记录。涉及沙盒网络、出站白名单或代理配置的修改前必读。
+
+### 平台经营与用户域（2026-10-21 新增）
+
+> 以下 8 份文档补齐此前没有架构汇总的平台经营面；路由/服务/前端入口与文档的逐项对应见 [CygnusX_architecture_coverage_audit.md](CygnusX_architecture_coverage_audit.md)。
+
+### `CygnusX_identity_access_architecture.md` — 身份、认证与用户管理（as-built，2026-10-21）
+登录/注册/审批、JWT（access 30m + refresh 7d）、bcrypt、TOTP（±1 步）、API Key（`omh_...` + SHA-256）、`token_version` 吊销、登录限流与锁定、实时查库 RBAC、`data/MODULE_LOCKED.yaml` 模块门禁（19 模块 / 17 可锁定）、管理端用户 CRUD/角色/额度/模块/状态/删除，以及前端登录态与路由守卫。记录中间件实际入站顺序（`CookieRequired` 在 Auth 之前、实际空转；`ModuleGate` fail-open）与 JWT 类型、`rejected` 枚举、bcrypt 72 字节等已知缺口。
+
+### `CygnusX_admin_console_architecture.md` — 管理控制台（as-built，2026-10-21）
+"系统管理"12 菜单 → 17 个 `/admin/*` 视图 → 19 个 `api/v1/admin/*` 路由模块的完整映射；五套 `AdminRequired` 实现与 TOTP 实际覆盖面（仅删用户、站点设置、平台敏感字段三处）；用户/饼干/AI 配置与资源/可观测（会话日志、AI 指标、数据库健康、统计、存储、终端）/公告节日/工作区归档/BLAST 各管理面；配置写入与热生效方式、`AuditMiddleware` 审计、前端实现要点与 12 项已知偏差。改管理端菜单、权限或敏感操作前必读。
+
+### `CygnusX_cookie_economy_architecture.md` — 饼干经济（as-built，2026-10-21）
+账户余额/冻结/状态、交易类型（EARN/SPEND/ADJUST/REFUND/FREEZE/UNFREEZE）、定价与折扣、任务冻结-结算-退款、AI token 扣费（按 `message_id` 幂等）、Redis PubSub + WebSocket 余额推送、日账本与异常监控（02:30）。明确与 `CygnusX_token_billing_architecture.md` 的分界（平台饼干 vs 供应商元账单），并记录 `cookie_consumption_logs` 休眠、`cookie_sandbox_base_cost` 未消费、`TaskCookieConsumer` 未接线、任务级扣费无幂等键等缺口。
+
+### `CygnusX_festival_architecture.md` — 节日彩蛋（as-built，2026-10-21）
+`data/festival_config.yaml` 37 个节日定义、SOLAR/LUNAR/SOLAR_TERM 三类日历、2025–2035 节气预计算、按 `(priority, name)` 只激活一个节日、`festival_claims` 唯一 `(user, festival, year)`、领取走饼干 EARN（`source=festival`）；`/festival/today|claim` 与 `/admin/festivals` 管理端；首页弹窗/背景/动效/主题与 `localStorage` 去重。记录容器 `/app/data` 只读、UTC 时区、孤儿领取等风险。
+
+### `CygnusX_notification_engagement_architecture.md` — 通知、公告与站点运营（as-built，2026-10-21）
+站内通知（`read_by` JSON 数组、全局/定向 OR 语义、60s 轮询无 SSE）、公告（时间窗 + 本地去重）、提醒调度（RRULE → occurrences → deliveries → notifications）、注册欢迎通知、站点设置单例与站点内容 YAML、首页快捷入口。记录可见性校验缺口、生产 worker 未消费 `schedules` 队列、快捷入口 label/route 被忽略等问题。
+
+### `CygnusX_project_workspace_architecture.md` — 项目、文件与团队协作（as-built，2026-10-21）
+单属主项目（slug + 磁盘目录、无成员表）、项目概览聚合、归档导出边界；文件记录/目录/上传会话/样本、分块上传（MD5 秒传/去重/配额）、受管引用 `upload://`/`file://`/`directory://`/`sample_sheet_ref://`（5 MB 上限）、团队 ACL（owner/writer/reader）、工作区归档打包/解包。存储路径与目录协议细节回指 `CygnusX_storage_architecture.md`，科研会话归档回指 `CygnusX_research_loop_architecture.md`。
+
+### `CygnusX_goal_architecture.md` — 目标运行时（as-built，2026-10-21）
+默认关闭（`goal_runtime_enabled=false`）的显式目标执行链：`agent_goals`/work units/events 数据模型、生命周期与状态机、单步 Chat 执行器、评估器解析 `goal_result` 围栏 JSON、`goal_complete`/`goal_blocked` 终态工具（仅 manager）、Sub-Agent Fan-out 适配、Redis 租约 + DB 租约 + Celery 续跑/恢复、API/SSE 与前端。记录 Redis/DB 租约不一致、死状态、前端恢复口径与 SSE 未关闭等风险。
+
+### `CygnusX_analysis_operations_architecture.md` — 调度、工作流监控与分析运维（as-built，2026-10-21）
+定时任务（RRULE）与提醒调度、工作流监控 ingest（token + 可选 HMAC）、WebSocket + 5s 轮询、平台运行记录 plan/confirm/events/artifacts、任务/流程/绘图统计缓存与 AI 指标告警。记录生产 worker 缺 `schedules` 队列、ingest HMAC 可选等缺口；AI 指标告警实际由 Beat `ai-metrics-alert-check` 每 5 分钟触发。与 `CygnusX_flow_architecture.md`（Flow 接入）和 `CygnusX_log_architecture.md`（日志）互补，队列拓扑与 Worker 细节回指 `CygnusX_async_task_queue_architecture.md`。
+
+### `CygnusX_async_task_queue_architecture.md` — 异步任务队列与 Celery 调度（as-built，2026-10-21）
+平台异步执行主干的完整架构：`Celery("cygnusx")` 应用配置（Redis DB1 broker / DB2 result backend、JSON、Asia/Shanghai、全局 6h/5h 超时、prefetch=1、max tasks/child=10、默认队列 `analysis`）、27 个 include 模块与 26 条 `task_routes`、6 个逻辑队列（`analysis`/`blast_search`/`blast_db_build`/`phylo_tree`/`mas_apptainer`/`schedules`）及消费方、34 条 Beat 注册表、主栈 Beat/Flower 与独立 Worker 栈/phylo/MAS systemd/跨机/验收部署矩阵、`run_snakemake` 幂等领取与 early ack/late ack 语义、日程扫描状态机、RocketMQ 信封/主题/重试/状态镜像与 at-least-once 边界、`LoggedTask` 每任务日志与 OTel 传播。记录 `schedules` 无消费者、GSEA 注册修复的 Worker 重启验收、RocketMQ 不覆盖直接派发与忽略 `task_routes`、Beat 单实例、无队列积压告警等风险。改队列/Worker/Beat/`TASK_QUEUE_BACKEND` 前必读。
 
 ---
 
@@ -230,6 +269,9 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 
 ### `ARCHITECTURE_DISCOVERY_REPORT.md` — 单文件架构审计与批量测试计划（审计快照，2026-10-18，进行中）
 首轮只读架构调查：架构全景、三条纵向切片、架构核验、分层测试策略与批量测试计划；批量测试全部未执行，结论均为静态证据，不得当作运行验收。证据根目录见文档内 `evidence/architecture-audit/arch-audit-20261018T1940+0800-e78fd1ef/`。
+
+### `CygnusX_architecture_coverage_audit.md` — 架构文档覆盖审计（审计快照 + 索引，2026-10-21）
+将 49 个路由模块、196 个服务文件与前端入口逐项映射到架构文档：平台经营面 9 个领域的深度覆盖矩阵、既有 AI/执行链/科研链文档对照、本轮新增 9 份文档清单、核实并纠正的 10 项事实（中间件顺序、五套管理员依赖、前端无 admin 守卫、TOTP 覆盖面、节日 YAML 驱动等），以及 7 项残余缺口与建议（legacy AI 对话/浮动助手、MAS 房间骨架、research claims API 面等）。新增模块或发现文档过期时先更新本文。
 
 ### `CygnusX_skill_architecture.md` — CygnusX Skill 体系全生命周期（as-built，2026-09-18）
 由代码实勘得出的 Skill 子系统权威文档：两套 Skill 体系辨析（Kimi CLI Agent Skills vs 平台 Skill）；双层存储（`data/ai/skills/` 磁盘真相源 + skills/skill_versions/skill_invocations DB 三表索引）；SKILL.md 解析规范与 skill_store 读写；Agent `skill_ids` 声明式绑定与三层渐进披露发现；运行时工具路由、事件流与审计；五入口"预览→确认"导入管线、管理端创建、Studio 提炼、阿里云官方源同步（`ALIYUN_SKILLS_ENABLED` 默认关闭）；双轨版本管理；管理端 API 清单、数据表与迁移、前端组件；对旧文档的修正记录。

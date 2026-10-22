@@ -2,7 +2,7 @@
 
 > **用途**：记录 database 基础设施模块的最终接受架构——连接管理、ORM 模型注册契约、仓储分层策略、迁移与 schema 治理、可观测性与管理端健康页。新增表、模型、仓储或迁移前必须阅读本文。
 >
-> **最后更新**：2026-09-18
+> **最后更新**：2026-10-22（本次补充 pgvector 持久化位置与知识库小样本验证；其他章节保留原领域基线）
 > **适用范围**：`src/cygnusx/infrastructure/database/`、`src/cygnusx/domain/*/repositories.py`、`alembic/`、`scripts/check_migrations.py`、`scripts/check_schema_drift.py`、管理端「数据库健康」页。
 
 > **合并说明（2026-09-18）**：本文档新增文末附录《Terminal 与参考基因组模块更新记录》，内容自 `CygnusX_log_architecture.md` 原 §9.2–§9.6（terminal 资源配置、参考基因组前端/路由、JBrowse 配置模型、cygnusxtools 参考库离线构建）整段迁入（该几节与日志主题无关），并与 §11 参考基因组章节互为交叉引用；日志本体架构仍以 `CygnusX_log_architecture.md` 为准。
@@ -161,7 +161,29 @@ scripts/check_schema_drift.py   metadata ↔ 真实库对账（entrypoint fail-f
 
 `vector.py` 自带 `Vector(dimensions)` UserDefinedType（cosine_distance 走 `<=>`），刻意不引入 `pgvector` Python 包依赖。绑定侧校验维度与有限值，结果侧解析 `[]` 字符串。
 
-`cosine_distance` 的表达式结果类型显式为 Float，右侧查询参数仍按 Vector(dimensions) 绑定；距离不是向量，不能交给向量字符串解析器处理。`test_vector_type.py` 固化浮点结果与向量参数的双侧契约，知识/记忆查询回归共用该适配器；真实 asyncpg/pgvector 验证仍需对应集成环境。
+`cosine_distance` 的表达式结果类型显式为 Float，右侧查询参数仍按 Vector(dimensions) 绑定；距离不是向量，不能交给向量字符串解析器处理。`test_vector_type.py` 固化浮点结果与向量参数的双侧契约，知识/记忆查询共用该适配器。2026-10-22 已在隔离 PostgreSQL 中验证三篇真实知识正文的 Qwen 向量提交与 `<=>` 召回，见[知识库架构 §9](CygnusX_knowledge_architecture.md)；这不替代生产规模查询计划、性能与质量验收。
+
+### 4.4.1 当前部署的向量持久化位置
+
+2026-10-22 通过 `docker inspect cygnusx-db` 及只读 SQL `SHOW data_directory` 核验：当前向量使用与业务数据相同的 PostgreSQL 实例，没有独立向量数据库容器或单独的向量文件目录。
+
+| 项目 | 当前部署实例 |
+| --- | --- |
+| PostgreSQL 容器 | `cygnusx-db`，镜像 `pgvector/pgvector:pg14`；只记录现状，不作为新增镜像 tag 规范 |
+| 数据库 | `omichub` |
+| pgvector 扩展 | 0.8.6（运行库只读查询） |
+| 数据目录 | 容器内 `/var/lib/postgresql/data` |
+| 持久化挂载 | bind mount：宿主机 `/data/omichub/omichub_data/_pgdata` → 容器 `/var/lib/postgresql/data` |
+| 知识库向量 | `public.kb_chunks.embedding vector(1024)`，同表保留 `embedding_model` |
+| 用户记忆向量 | `public.memory_facts.embedding vector(1024)` |
+| legacy 记忆向量 | `public.agent_memories.embedding vector(1024)` |
+| 原始知识文件 | 仓库 `docs/knowledge/`；不是数据库数据目录 |
+
+上述物理目录保存 PostgreSQL 表、索引等数据库文件，不应按文档名直接访问、复制单个关系文件或人工修改向量。普通容器重启/重建在保留同一 bind mount 且不执行清库、恢复等操作时保留已提交数据；未提交事务会回滚。删除/清空宿主机数据目录会破坏数据库，重建容器不是备份。
+
+数据库逻辑备份入口为 `scripts/backup_polardb_postgres.sh`，恢复入口为 `scripts/restore_polardb_postgres.sh`；原始 Markdown、附件及压缩归档仍需文件系统备份，不能由数据库 dump 替代。不同部署机器的挂载路径以实际 Compose 渲染和 `docker inspect` 为准，本文路径是当前实例快照，不应硬编码到业务服务。
+
+知识库采用 `Qwen/Qwen3-Embedding-8B` 生成向量，pgvector 负责保存/检索；模型服务与存储引擎不是同一组件。知识和记忆共享 Provider/维度配置，但数据表、可见性和维护生命周期独立，详见[知识库架构](CygnusX_knowledge_architecture.md)与[记忆架构](CygnusX_memory_architecture.md)。隔离验收库 `cygnusx_maint` 不属于上述正式数据目录；三篇 Qwen 试验使用的临时 schema 已清理，不代表正式库已经批量入库。
 
 ### 4.5 relationship 与懒加载纪律
 
@@ -182,6 +204,16 @@ domain 层定义 Protocol/ABC（`domain/*/repositories.py`），infrastructure �
 **租户隔离纪律**：文件域等接口所有方法首参 `user_id`，查询统一 `WHERE user_id = ?`，在数据访问层杜绝跨租户水平越权（见 `domain/file/repositories.py` 模块 docstring）。
 
 **第三类：有实现无接口**：24 个仓储实现类中有 5 个（`MASRepository`、`TeamRepositoryImpl`、`ReportRepositoryImpl`、`SqlAlchemyNotificationRepository`、`SqlAlchemyAnnouncementRepository`）在 infrastructure 提供实现但未建对应 domain 接口。按 §5.2 的升格判据处理：出现复用或接口替换需求时再补接口，此前维持现状。（flow 域的 `FileSystemFlowRepository` 虽不显式继承，但结构上满足 `IFlowRepository` Protocol，不属于此类。）
+
+### AI Provider 默认切换的事务约束
+
+`SqlAlchemyAIProviderConfigRepository.set_default()` 在调用方同一事务中先执行
+UPDATE 清除旧默认，再执行 UPDATE 设置目标默认，最后 flush。迁移
+`dynamicrouting01` 的 `uq_ai_provider_configs_default` 部分唯一索引即时校验，
+不能依赖 ORM 按主键批量 flush 时恰好先清除旧标记；否则启动 YAML 同步可能整体回滚，
+新声明的 Provider 也不会落库。目标仍由既有 YAML/管理服务选择，仓储不改变 active 状态或
+模型路由规则。带唯一索引的 SQLite 回归及隔离 PostgreSQL 的修前失败/修后成功、重复切换
+已验证；运行栈重新同步结果仍须另行验收。
 
 ### 5.2 轻量域：服务层直连模型（显式接受）
 

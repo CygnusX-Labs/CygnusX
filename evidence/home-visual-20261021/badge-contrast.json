@@ -1,0 +1,122 @@
+[
+  {
+    "theme": "dark",
+    "badges": [
+      {
+        "text": "运行中",
+        "foreground": "rgb(127, 176, 255)",
+        "background": "rgba(76, 141, 255, 0.12)",
+        "parentBackground": [
+          18,
+          24,
+          36
+        ],
+        "contrast": 6.879331794330023
+      },
+      {
+        "text": "排队中",
+        "foreground": "rgb(252, 211, 123)",
+        "background": "rgba(245, 158, 11, 0.12)",
+        "parentBackground": [
+          18,
+          24,
+          36
+        ],
+        "contrast": 10.243558112451817
+      },
+      {
+        "text": "已完成",
+        "foreground": "rgb(52, 211, 153)",
+        "background": "rgba(52, 211, 153, 0.12)",
+        "parentBackground": [
+          18,
+          24,
+          36
+        ],
+        "contrast": 7.39020541978756
+      },
+      {
+        "text": "已过期",
+        "foreground": "rgb(184, 194, 209)",
+        "background": "rgba(148, 163, 184, 0.12)",
+        "parentBackground": [
+          18,
+          24,
+          36
+        ],
+        "contrast": 8.15184462107483
+      },
+      {
+        "text": "生成中",
+        "foreground": "rgb(127, 176, 255)",
+        "background": "rgba(76, 141, 255, 0.12)",
+        "parentBackground": [
+          18,
+          24,
+          36
+        ],
+        "contrast": 6.879331794330023
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "badges": [
+      {
+        "text": "运行中",
+        "foreground": "rgb(36, 89, 173)",
+        "background": "rgba(76, 141, 255, 0.12)",
+        "parentBackground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.968447522567134
+      },
+      {
+        "text": "排队中",
+        "foreground": "rgb(135, 84, 7)",
+        "background": "rgba(245, 158, 11, 0.12)",
+        "parentBackground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.805190908254121
+      },
+      {
+        "text": "已完成",
+        "foreground": "rgb(18, 115, 79)",
+        "background": "rgba(52, 211, 153, 0.12)",
+        "parentBackground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.3792949936476555
+      },
+      {
+        "text": "已过期",
+        "foreground": "rgb(82, 96, 116)",
+        "background": "rgba(148, 163, 184, 0.12)",
+        "parentBackground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.80165067190274
+      },
+      {
+        "text": "生成中",
+        "foreground": "rgb(36, 89, 173)",
+        "background": "rgba(76, 141, 255, 0.12)",
+        "parentBackground": [
+          255,
+          255,
+          255
+        ],
+        "contrast": 5.968447522567134
+      }
+    ]
+  }
+]

@@ -39,11 +39,11 @@ const analyses = computed(() => {
 function failure(exc: unknown) {
   const response = (exc as { response?: { status?: number; data?: { code?: string; error?: { code?: string } } } })?.response
   const code = response?.data?.code ?? response?.data?.error?.code
-  if (code === 'FEATURE_DISABLED') return '项目科研交付功能尚未启用。'
-  if (response?.status === 403) return '没有权限访问项目科研成果。'
-  if (response?.status === 404) return '项目或导出记录不可用，请核对当前权限。'
-  if (response?.status === 409) return '导出内容已变化，请重新预览并确认范围。'
-  return '请求失败，请重试；已有任务不会因此重新分析或下载。'
+  if (code === 'FEATURE_DISABLED') return '服务未启用：项目科研交付功能尚未启用。'
+  if (response?.status === 401 || response?.status === 403) return '当前用户无权限：无法访问项目科研成果。'
+  if (response?.status === 404) return '请求失败：项目或导出记录不存在，请刷新核对。'
+  if (response?.status === 409) return '请求失败：导出内容已变化，请重新预览并确认范围。'
+  return '请求失败：请重试；已有任务不会因此重新分析或下载。'
 }
 function remember() {
   if (job.value) sessionStorage.setItem(`project-export:${props.projectId}`, job.value.id)

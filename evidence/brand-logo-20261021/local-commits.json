@@ -1,0 +1,69 @@
+[
+  {
+    "commit": "653375922ff7c9de4de95f5633c51ff955c64d6e",
+    "message": "fix(frontend): 优化首页首屏并持久记忆公告关闭",
+    "paths": [
+      "docs/info/26.10.21/CygnusX首页视觉优化实现计划.md",
+      "frontend/src/components/AnnouncementBanner.vue",
+      "frontend/src/components/__tests__/AnnouncementBanner.test.ts",
+      "frontend/src/views/HomeView.vue"
+    ]
+  },
+  {
+    "commit": "93ce24af87d7dbdef1daf15d4e9cf314d810a180",
+    "message": "style(frontend): 统一科研工作台布局与状态标签",
+    "paths": [
+      "frontend/src/components/home/ResearchWorkbenchPanel.vue"
+    ]
+  },
+  {
+    "commit": "2c1541cf695d9d4a2ca5019d0dfe77626d4cb584",
+    "message": "style(frontend): 完善首页卡片反馈与品牌配色",
+    "paths": [
+      "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "docs/info/26.10.21/CygnusX首页视觉优化验收记录.md",
+      "frontend/src/components/AnnouncementBanner.vue",
+      "frontend/src/components/CookieBalanceBadge.vue",
+      "frontend/src/components/home/ResearchWorkbenchPanel.vue",
+      "frontend/src/layouts/DefaultLayout.vue",
+      "frontend/src/views/HomeView.vue"
+    ]
+  },
+  {
+    "commit": "1c0571b687b942a013f45fc2510244fd4e05e3aa",
+    "message": "style(frontend): 提升首页字号与文字可读性",
+    "paths": [
+      "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "docs/info/26.10.21/CygnusX首页字号可读性优化记录.md",
+      "frontend/src/components/home/ResearchWorkbenchPanel.vue",
+      "frontend/src/views/HomeView.vue"
+    ]
+  },
+  {
+    "commit": "f23048fbdcc80f7214979a7f534ce9d94baa7ecf",
+    "message": "style(frontend): 放大科研生命周期卡片并调整规划入口",
+    "paths": [
+      "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "docs/info/26.10.21/CygnusX首页字号可读性优化记录.md",
+      "frontend/src/views/HomeView.vue"
+    ]
+  },
+  {
+    "commit": "d8cb7b5c27059041d5c2ddcbebc6685d7962fbda",
+    "message": "feat(frontend): 使用天鹅徽标统一浏览器与平台品牌图标",
+    "paths": [
+      "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+      "frontend/index.html",
+      "frontend/public/cygnusx-logo.png",
+      "frontend/src/layouts/DefaultLayout.vue"
+    ]
+  },
+  {
+    "commit": "a07d01be34bf8e26878ade4f097abb7c45e44ab3",
+    "message": "docs(frontend): 完善首页验收与服务恢复记录",
+    "paths": [
+      "docs/info/26.10.21/CygnusX首页工作台加载失败排查记录.md",
+      "docs/info/26.10.21/CygnusX首页视觉优化验收记录.md"
+    ]
+  }
+]

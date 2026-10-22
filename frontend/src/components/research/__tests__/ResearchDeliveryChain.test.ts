@@ -5,6 +5,17 @@ import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
 import { researchDeliveryApi, type ResearchProvenance, type ProjectDelivery } from '@/api/researchDelivery'
 vi.mock('@/api/researchDelivery', () => ({ researchDeliveryApi: { project: vi.fn() } }))
 const response = (id: string): ProjectDelivery => ({ project_id: id, datasets: [], runtime_admission: 'BLOCKED', truncated: false })
+
+it.each([
+  [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '服务未启用'],
+  [{ response: { status: 403 } }, '当前用户无权限'],
+  [new Error('private'), '请求失败'],
+])('classifies delivery loading failure (%s)', async (error, text) => {
+  vi.mocked(researchDeliveryApi.project).mockRejectedValueOnce(error)
+  const card = mount()
+  try { await settle(); expect(card.host.textContent).toContain(text) }
+  finally { card.close() }
+})
 async function settle() { for (let i=0;i<8;i++) { await Promise.resolve(); await nextTick() } }
 function mount() {
   const project=ref('first'), host=document.createElement('div')

@@ -1,0 +1,24 @@
+{
+  "pid": 3751311,
+  "port": 18014,
+  "flags": {
+    "RATE_LIMIT_ENABLED": "false",
+    "RESEARCH_PLAN_ENABLED": "true",
+    "RESEARCH_DELIVERY_READ_ENABLED": "true",
+    "TOOL_GATEWAY_READ_ENABLED": "true",
+    "DATASET_DISCOVERY_READONLY": "true",
+    "RESEARCH_DELIVERY_WRITE_ENABLED": "false",
+    "PROJECT_EXPORT_ENABLED": "false",
+    "PROJECT_REPORT_WRITE_ENABLED": "false",
+    "PROJECT_REPORT_PDF_ENABLED": "false",
+    "AGENT_ANALYSIS_WRITE_ENABLED": "false",
+    "AGENT_DOWNLOAD_WRITE_ENABLED": "false",
+    "ANALYSIS_SUBMIT_FROM_DATASET": "false",
+    "DATASET_IMPORT_WRITE": "false",
+    "COUNTS_DEG_FLOW_ENABLED": "false",
+    "TREASURE_NATIVE_UI_ENABLED": "false",
+    "TREASURE_AGENT_WRITE_TOOLS_ENABLED": "false",
+    "AGENT_TASK_CANCEL_ENABLED": "false"
+  },
+  "previous_pid": 3739819
+}

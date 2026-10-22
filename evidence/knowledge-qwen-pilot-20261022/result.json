@@ -1,0 +1,89 @@
+{
+  "status": "passed",
+  "model": "Qwen/Qwen3-Embedding-8B",
+  "dimensions": 1024,
+  "source_snapshot_before": {
+    "documents": 367,
+    "revisions": 475,
+    "chunks": 2778,
+    "vectors": 0
+  },
+  "target_database": "cygnusx_maint",
+  "schema": "kb_qwen_pilot_da0f68a061b4",
+  "documents": [
+    {
+      "label": "FAST5",
+      "chunks": 3,
+      "source_doc_id": "qc-20f99f087681"
+    },
+    {
+      "label": "TOML",
+      "chunks": 1,
+      "source_doc_id": "qc-34bc4b0f06ac"
+    },
+    {
+      "label": "bwtool",
+      "chunks": 2,
+      "source_doc_id": "qc-f876cff3d623"
+    }
+  ],
+  "calls_limit": 12,
+  "scope": "three existing published document bodies copied to disposable isolated schema; no source attachments",
+  "production_rows_written": 0,
+  "cleanup": "verified pilot schema absent",
+  "target_pgvector_version": "0.8.7",
+  "committed_vector_verification": [
+    {
+      "embedding_model": "Qwen/Qwen3-Embedding-8B",
+      "dimensions": 1024,
+      "rows": 6,
+      "documents": 3
+    }
+  ],
+  "recall": [
+    {
+      "label": "FAST5",
+      "top1_matches_expected": true,
+      "top1_doc_id": "pilot-fast5",
+      "top1_cosine_similarity": 0.737385,
+      "result_count": 3,
+      "query_and_sql_duration_ms": 219.14
+    },
+    {
+      "label": "TOML",
+      "top1_matches_expected": true,
+      "top1_doc_id": "pilot-toml",
+      "top1_cosine_similarity": 0.746265,
+      "result_count": 3,
+      "query_and_sql_duration_ms": 162.86
+    },
+    {
+      "label": "bwtool",
+      "top1_matches_expected": true,
+      "top1_doc_id": "pilot-bwtool",
+      "top1_cosine_similarity": 0.806552,
+      "result_count": 3,
+      "query_and_sql_duration_ms": 154.11
+    }
+  ],
+  "sql_paths": {
+    "vector_queries": 3,
+    "keyword_queries": 0
+  },
+  "unchanged_replay": {
+    "documents_skipped": 3,
+    "extra_embedding_calls": 0
+  },
+  "source_snapshot_after": {
+    "documents": 367,
+    "revisions": 475,
+    "chunks": 2778,
+    "vectors": 0
+  },
+  "source_snapshot_unchanged": true,
+  "real_embedding_http_attempts": 9,
+  "cumulative_calls": {
+    "embedding": 50,
+    "extraction": 7
+  }
+}

@@ -1,0 +1,128 @@
+[
+  {
+    "path": "src/cygnusx/application/schemas/agent_tools.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/schemas/agent_tools.py",
+    "root_sha256": "91ac0435cb1136ed6349fdbc21742e7830ba57c96cf6103a1bd47e375506a7bc",
+    "implementation_sha256": "1fbe714064b476d904f713407164c704f2ad97c2e6be3bb4194f771e15c82b84",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/application/services/agent_tool_gateway.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/agent_tool_gateway.py",
+    "root_sha256": "c03a99093af265ae28623e1b668ac38f3befc7be23b7353ad00666888b0c714a",
+    "implementation_sha256": "0824009aa3b8585591901fb00e50a3c2e56ddee855a94b20ec32460d6802862a",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/application/services/session_dataset_preparation_service.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/session_dataset_preparation_service.py",
+    "root_sha256": null,
+    "implementation_sha256": "cc36b9cbfa6ed3f225de095b46840c0fcf80869ed69e95281af4e7a413c6857d",
+    "new_file": true
+  },
+  {
+    "path": "src/cygnusx/application/services/dataset_analysis_service.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/dataset_analysis_service.py",
+    "root_sha256": "8f0fc8f08e7581bef9ec33609dd0c72bf0647d66ac686900d2af542af49478ef",
+    "implementation_sha256": "bf72ce01ca5c60fba679ec0010e18d6f69feff27c471fec71b3b7ac3cebb0423",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/application/services/run_plan_service.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/run_plan_service.py",
+    "root_sha256": "f7c177f4bbe33408f3a3dc30c959bf9606f77982112dfdd7d03bc146d73c5e0d",
+    "implementation_sha256": "e833330ce9fef715b19217d89b6309a1e8b794e767b07f3082e3ebc09626a3b6",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/application/services/task_service.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/task_service.py",
+    "root_sha256": "aded49b5a4cff02755a231ebd9d0eebfc1bf3c6312ce39aa6d3d07ee0b17530a",
+    "implementation_sha256": "2a085f3fb10dccefe1bb3e8199ee8beaf7e7ad777f8b66a0a4a7665062c22251",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/application/services/project_service.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/application/services/project_service.py",
+    "root_sha256": "8ad489fa20695e79f4eebd927192569cae9a523bebad05e0930465241298729a",
+    "implementation_sha256": "659fe71f84e2b39fb54a30f55d0df64bb31bee2c326b42cebb6c2cf4c2469d9a",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/api/v1/research_plans.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/api/v1/research_plans.py",
+    "root_sha256": "f03a679852f9ca4264d0b201ab2290f5f6cdf45ee8cbcf811a64b1a859d2dc1a",
+    "implementation_sha256": "a8fc98bd1fa9a6aeaa73ef1b353fcce7a6ba9203b41b6df9167506d4c9586df4",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/api/v1/research_delivery.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/api/v1/research_delivery.py",
+    "root_sha256": "12402e35b406b0f02ca19da1d4afc2352ba092be1ed0a11975da5f194eafd24e",
+    "implementation_sha256": "9a585081ad7e7999e950faf0b6ff07e91cc69f0cffc46c0c8ae56bbba007462a",
+    "new_file": false
+  },
+  {
+    "path": "src/cygnusx/api/v1/runs.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/src/cygnusx/api/v1/runs.py",
+    "root_sha256": "4511075a4bb80de80ea63f588c001b4c0b45cd261ee6146b583535016b3b6c25",
+    "implementation_sha256": "4aae058f67036fd9637faeb578a89f43877308c2300a7070773be15be0398553",
+    "new_file": false
+  },
+  {
+    "path": "frontend/src/views/ProjectDetailView.vue",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/frontend/src/views/ProjectDetailView.vue",
+    "root_sha256": "e538b2765fda7fedd84ad2a2ce0a8bdd7f00bbd4ae6a14e5cf21ba6796c99b2b",
+    "implementation_sha256": "554dbf8806b07b437f61224ce752abd24166642bc093e305b79a081d9ba7d6ea",
+    "new_file": false
+  },
+  {
+    "path": "frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/frontend/src/views/__tests__/ProjectDetailResearchContext.test.ts",
+    "root_sha256": "e2c29d8c17231e46172ae4617e35a2058fd6773696bc6d40982648d9c5c68f09",
+    "implementation_sha256": "ee3c02dd3a34c76d09c256dae3c20b7780726e71a3466e1c371a6d6e0705b43b",
+    "new_file": false
+  },
+  {
+    "path": "tests/unit/test_research_plan_storage_phase5.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/tests/unit/test_research_plan_storage_phase5.py",
+    "root_sha256": "3106d84d28cdd0426c26097d43a2cc74b8adc0e9d907cb0eeef90158601b958b",
+    "implementation_sha256": "ba3103c165e0533eb0e4ae32ec763be014cab4cf721ab389eca1bf0ac557c8eb",
+    "new_file": false
+  },
+  {
+    "path": "tests/unit/test_session_dataset_preparation.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/tests/unit/test_session_dataset_preparation.py",
+    "root_sha256": null,
+    "implementation_sha256": "c0c679d27cddf6e2c56b3f4c4d025aedec644907f227e0557d70a61fbe8ea7b0",
+    "new_file": true
+  },
+  {
+    "path": "tests/unit/test_run_task_atomic_binding.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/tests/unit/test_run_task_atomic_binding.py",
+    "root_sha256": null,
+    "implementation_sha256": "783fe8a6f912c7815a7abeb7e1681e2c7037cc09a6256b2672dda76ac70ee7c8",
+    "new_file": true
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/ARCHITECTURE_DESIGN/CygnusX_dataset_architecture.md",
+    "root_sha256": "86d08a38f910b802401b5d46bbfe5d5551d2be2e2e475b6c558a12728ae7bfc8",
+    "implementation_sha256": "c300b56b1ae2f4e61004236585a2d19b292936e6b50c5bd0e32cbbd1f1610f72",
+    "new_file": false
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/ARCHITECTURE_DESIGN/CygnusX_research_plan_architecture.md",
+    "root_sha256": "5c961d41d6dd7c48941b28561f0475f62f6f6b7b547bbc994a215ce178c7a7a4",
+    "implementation_sha256": "67653e07f8cde3600d5a8684b9157f5652e22125e7c63bc03e6610f4144bf886",
+    "new_file": false
+  },
+  {
+    "path": "tests/unit/test_project_lifecycle.py",
+    "implementation": "/tmp/cygnusx-session-lineage-q2usvvh7/worktree/tests/unit/test_project_lifecycle.py",
+    "root_sha256": "29518063c4a977ea570c2db856b7abd52c7a62425271ba22d0412eb372342763",
+    "implementation_sha256": "bb307c924a9940cabdd43ed55eacc4d9c262b9b6186f7ea200d113689ead2cc0",
+    "new_file": false
+  }
+]

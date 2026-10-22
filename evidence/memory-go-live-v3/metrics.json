@@ -1,0 +1,97 @@
+{
+  "status": "measured",
+  "coverage": {
+    "status": "collected",
+    "storage": "facts",
+    "target_model": "Qwen/Qwen3-Embedding-8B",
+    "active": 1,
+    "compatible": 1,
+    "missing": 0,
+    "mismatched": 0,
+    "pending": 0,
+    "coverage": 1.0
+  },
+  "acceptance_process_otel_gauge": [
+    {
+      "name": "memory.embedding_model_mismatch_rows",
+      "value": 0,
+      "attributes": {
+        "storage": "facts"
+      }
+    },
+    {
+      "name": "memory.embedding_model_coverage",
+      "value": 1.0,
+      "attributes": {
+        "storage": "facts"
+      }
+    },
+    {
+      "name": "memory.embedding_coverage_sample_timestamp_seconds",
+      "value": 1792598738.272826,
+      "attributes": {
+        "storage": "facts"
+      }
+    }
+  ],
+  "settle_metrics_from_real_extraction_and_fault_injection": [
+    {
+      "name": "memory.embedding_outcomes",
+      "value": 2,
+      "attributes": {
+        "result": "success"
+      }
+    },
+    {
+      "name": "memory.settle_succeeded",
+      "value": 2,
+      "attributes": {}
+    },
+    {
+      "name": "memory.settle_failed",
+      "value": 1,
+      "attributes": {
+        "stage": "extraction"
+      }
+    },
+    {
+      "name": "memory.settle_extract_failed",
+      "value": 1,
+      "attributes": {}
+    },
+    {
+      "name": "memory.focus_operations",
+      "value": 1,
+      "attributes": {
+        "operation": "write",
+        "mode": "general"
+      }
+    }
+  ],
+  "recall_protocol_counts": {
+    "hit": 50,
+    "miss": 1,
+    "samples": 51
+  },
+  "production_flags": {
+    "memory_embedding_coverage_enabled": false
+  },
+  "scope": "Coverage and settle values collected from actual OTel SDK instruments in real acceptance processes; recall hit/miss are verifier counts, not a newly claimed production metric",
+  "production_exporter_verification": "gap: worker coverage sampling disabled; authenticated Web /metrics reachable but has no memory series from these separate acceptance processes. Do not treat local OTel instruments as production collection proof.",
+  "live_worker_coverage_task": {
+    "task_id": "89ce7167-e409-435b-83e9-abe1ecbff8da",
+    "result": {
+      "status": "disabled"
+    }
+  },
+  "live_web_metrics_scrape": {
+    "telemetry_enabled": true,
+    "metrics_enabled": true,
+    "http_status": 401
+  },
+  "live_web_authenticated_metrics_scrape": {
+    "http_status": 200,
+    "memory_metric_names": [],
+    "authentication": "short-lived synthetic-principal JWT issued through existing token helper; token not retained"
+  }
+}

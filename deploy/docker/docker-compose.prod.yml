@@ -12,7 +12,7 @@ services:
       - /etc/ssl/certs:/etc/ssl/certs:ro  # SSL 证书
       # JBrowse 2 静态产物 + 数据文件（/tracks/ 路径，只读）
       - ../../pipelines/jbrowse2:/var/www/jbrowse2:ro
-      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:${STORAGE_PATH:-/data/cygnusx}:ro
+      - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}:/srv/tracks:ro
       # Nginx 访问/错误日志持久化到宿主机
       - ${CYGNUSX_DATA_ROOT:-/data/cygnusx}/logs/nginx:/var/log/nginx
 

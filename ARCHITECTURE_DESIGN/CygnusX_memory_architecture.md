@@ -1,10 +1,12 @@
 # CygnusX AI 记忆系统当前架构
 
-> 更新日期：2026-10-20。本文是当前工作区代码的 as-built 基线，包含本轮尚未提交、部署的实现。
+> 更新日期：2026-10-22。本文是当前工作区代码的 as-built 基线，包含尚未提交的实现及本次运行验收增量。
 >
-> **审核口径：代码已实现 ≠ 生产已启用 ≠ 真实模型质量已验收。** v2 默认关闭；本轮新增迁移尚未在真实 PostgreSQL 执行，Worker/Provider 联调与 25 案例体验验收待完成。
+> **审核口径：代码已实现 ≠ 生产已启用 ≠ 真实模型质量已验收。** v2 代码默认关闭；本次目标环境已启用 v2、执行迁移并接通真实 embedding。合成写召、settle 与历史回填已验证；生产指标导出及 25 案例体验验收仍有缺口，见 §11 增量与报告。
 >
 > 路线与历史问题见 [记忆优化审计](CygnusX_memory_optimization_audit.md)；本文按当前代码组织，不以提案或历史运行数据证明现状。
+>
+> **管理面注记（2026-10-21）**：管理端"记忆审计"页、`/admin/users/{id}/memories` 与整理回滚端点的权限与页面入口见 [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md)；记忆的 user/agent/project 分区与项目隔离契约以本文为准。
 
 审核导航：[总体与时序](#2-当前拓扑与请求时序) · [数据隔离](#4-数据分层与隔离契约) · [读取与排序](#5-记忆读取链路) · [写入与整理](#6-记忆写入与整理) · [配置与迁移](#9-配置迁移与回退) · [验证依据](#10-观测与验证依据) · [审核重点](#11-审核重点与当前能力边界)
 
@@ -34,6 +36,10 @@
 | 写入方式 | 文档导入/编辑/审核发布后重建 chunk 索引 | 用户显式工具、会话 settle、整理或人工管理 |
 
 知识检索以证据与引用回答“平台维护的资料怎么说”；长期记忆用于个性化和接续“当前用户此前提供的上下文”。文档检索结果不自动保存成用户事实，个人记忆也不能伪装成知识库引用。两套向量都使用 `AGENT_MEMORY_EMBEDDING_MODEL` 与 1024 维向量契约，但分别存于 `kb_chunks` 和 `memory_facts`，有不同索引重建、可见性过滤、排序和验收流程。知识库完整基线见[知识库架构](CygnusX_knowledge_architecture.md)。
+
+2026-10-22 当前模型为 `Qwen/Qwen3-Embedding-8B`，知识库和记忆共用 LiteLLMProvider 的 embedding Provider UUID 与维度设置。正式向量均由 `cygnusx-db/omichub` 的 pgvector 列持久化，物理 bind mount 见[数据库架构 §4.4.1](CygnusX_database_architecture.md#441-当前部署的向量持久化位置)。记忆的 11 条向量回填与知识库入库是独立验收：知识库三篇正文仅在隔离库试验成功并已清理，正式知识库快照仍为 2778 个无向量 chunk。
+
+知识库启动索引由独立的 `KNOWLEDGE_AUTO_REINDEX_ENABLED` 控制，当前 Web 环境为 false；记忆 settle、回填等 Celery 任务的存在不表示知识库会随 Worker/Beat 后台入库。知识库与记忆也没有共同的上下文预算：本节记忆的 `<user_memory>` 字节配额不覆盖知识工具 JSON，详见[知识库架构 §4.3、§6.5、§9](CygnusX_knowledge_architecture.md)。
 
 自动化链路统一受 v2 配置和站点管理开关控制。模型通过受控工具或结构化抽取提出写入，服务端执行分区、来源、敏感凭据、候选 ID、版本和事务检查；模型没有直接写库权限。长期记忆是可过时的不可信参考，不能成为执行指令或权限来源。
 
@@ -491,6 +497,7 @@ CLI `scripts/backfill_memory_embeddings.py` 默认 dry-run、默认 facts，要�
 | memory.embedding_backfill_rows | 提交完成批次中的 updated/failed/skipped 行数 |
 | memory.embedding_outcomes | not_configured / dimension_mismatch / non_finite / empty / provider_error / success |
 | memory.settle_failed | extraction / input_budget / cursor_missing 等失败阶段 |
+| memory.settle_extract_failed | 抽取失败独立计数，与 settle_failed 的 extraction 阶段同时增加 |
 | memory.settle_succeeded | 成功处理的消息区间，作为 settle 失败率分母 |
 | memory.settle_skipped | 合成会话排除 |
 | memory.settle_tail_enqueued | 空闲会话尾批投递数 |
@@ -552,6 +559,28 @@ CLI `scripts/backfill_memory_embeddings.py` 默认 dry-run、默认 facts，要�
 本轮未提交、未部署，不应由局部测试结果推导生产已启用或“记忆感”已经达标。
 
 ## 11. 审核重点与当前能力边界
+
+### 2026-10-22 接通验收增量
+
+当前运行栈已用根目录 `.env` 重建 Web/Worker/Beat，独立 SiliconFlow Provider UUID
+已同步并进入进程环境。实测 Qwen/Qwen3-Embedding-8B 默认返回 4096 维，显式
+`dimensions=1024` 返回 1024 维；LiteLLM 的 OpenAI 兼容路由须同时通过
+`allowed_openai_params=["dimensions"]` 放行第三方模型维度参数，否则请求发出前即被拒绝。
+此放行仅用于显式选中的 embedding Provider，不修改聊天参数。
+
+真实保存/跨会话/跨 Agent 共享/隔离/遗忘与 KB 成对索引已通过合成数据验证；生产原配置下的
+合成 settle 成功、非 JSON 故障不结算及同区间恢复通过，数据已清理。当前聊天 Provider
+会采用其自身 model，`chat(model=...)` 的 model 覆盖参数尚未被 `_build_kwargs` 消费；
+因此本次实际抽取使用 DeepSeek，不能将配置字段中的 Qwen 名称当作实测模型。
+
+当前库中历史 10 条为 9 archived + 1 superseded，另有 1 条 active；全部完成备份、
+dry-run 后受控回填，模型标签与 1024 维均正确，活跃覆盖率为 1/1。
+维护入口默认 active，显式 `--statuses archived superseded` 才选择停用历史；
+这 10 条的状态及所有非向量字段保持，未重新激活。并发状态变化会使条件更新跳过。
+50 次真实 SQL 召回来自 10 个查询和 1 条活跃事实，不能支持生产规模性能或稳健阈值结论。
+验收进程 OTel SDK 已记录覆盖率和 settle 指标；Worker 真实采样任务按生产关闭开关返回
+disabled，不能据本地 SDK 数据推导生产导出链路已验收。详见
+[真实验收报告 v3](../docs/info/26.10.22/CygnusX记忆接通真实验收报告-v3.md)。
 
 | 建议审核的问题 | 当前代码答案 |
 | --- | --- |

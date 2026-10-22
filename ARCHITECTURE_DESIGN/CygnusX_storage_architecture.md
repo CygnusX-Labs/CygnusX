@@ -14,7 +14,7 @@
 
 ```
 get_storage_config().data_root
-  1) data/CygnusX.yaml storage.data_root     ← 优先
+  1) data/CygnusX.yaml storage.data_root     ← 显式配置优先；仓库默认留空
   2) settings.storage_path                     ← .env STORAGE_PATH
   3) 内置兜底 /data/cygnusx                     ← 仅缺省安装
 ```
@@ -25,7 +25,7 @@ get_storage_config().data_root
 - 显式 env / YAML 配置优先生效，派生只在空值时兜底；
 - **容器内路径不受此约束**：R 工具容器挂载目标 `:/data/cygnusx`、Studio 平台只读挂载点 `/data/platform`、nginx 挂载约定是容器内规范路径，与宿主根无关。
 
-**工具配置同样派生化**：`tools/{terminal,fastq_qc,jbrowse,download}/config.py` 的 Pydantic 配置类默认值空值派生 `storage_path`（YAML 显式配置优先）。换根部署只改 `.env` 的 `STORAGE_PATH` 一处。
+**工具配置同样派生化**：`tools/{terminal,fastq_qc,jbrowse,download}/config.py` 的 Pydantic 配置类默认值空值派生 `storage_path`（YAML 显式配置优先）；仓库 YAML 的工作区、扫描/上传目录、下载二进制等默认值同步留空，避免覆盖派生值。`.env.example` 的下载二进制配置也留空；部署方已有显式 env 路径仍优先，迁移时须检查这些覆盖值。参考资产相对路径以 `REFERENCE_GENOMES_YAML` 所在目录解析，因此旧部署的 `omichub_data` 与新部署的内部目录名不必写进工具配置。
 
 **worker 栈一致性门禁**（Gap 2）：`scripts/render_worker_config.py` 渲染时校验 `data/worker_config.yaml` 的 `paths.shared_data_dir` 必须与仓库根 `.env` 的 `STORAGE_PATH` 一致，不一致 exit 1。`.env` 缺失（CI 环境）时跳过。
 
@@ -60,11 +60,13 @@ get_storage_config().data_root
 
 ### 2.3 Nginx `/tracks/` 直链（JBrowse）
 
-`deploy/docker/nginx/nginx.conf`（及 prod 变体）的 `location ^~ /tracks/ { alias /data/omichub/; }`——alias 目标是**容器内**路径，与 compose 数据挂载目标（`${STORAGE_PATH}`）一致；换根时改 `.env` + alias 两处。安全边界：仅 RFC1918 内网可达（公网需改鉴权代理，见 conf 内注释）。URL 策略不变：`origin/tracks/{file.path}`。
+`deploy/docker/nginx/nginx.conf`（及 prod 变体）的 `location ^~ /tracks/ { alias /srv/tracks/; }` 使用固定容器路径；开发与生产 Compose 将 `${CYGNUSX_DATA_ROOT}` 只读挂载到 `/srv/tracks`，宿主数据根改名不再要求修改 alias。首次切换需重建 nginx 容器以更新挂载，单纯 reload 不会更改已有挂载。安全边界：仅 RFC1918 内网可达（公网需改鉴权代理，见 conf 内注释）。URL 策略不变：`origin/tracks/{file.path}`。`to_tracks_uri()` 保留完整相对目录，卷外路径明确报错，禁止退化成仅文件名的错误地址。
 
 ## 3. 路径构造纪律
 
 **唯一构造入口**：`StoragePathFactory`（`infrastructure/storage/path_factory.py`，含全部调用点清单 docstring）。业务代码构造数据路径必须走 `get_path_factory()`，禁止手工拼接。
+
+**分析容器路径转换**：`tools/container_paths.py::ToolDataMount` 供 GO/KEGG、DEG、GSEA、共线性共用。挂载源取对应 Settings 字段，容器目标固定 `/data/cygnusx`；所有输入、输出、注释文件须转换后传入容器。支持 Worker/daemon 根不同与已有容器路径配置；相对路径、卷外路径和归一化后逃逸的 `..` 路径被拒绝。转换不改变 Task 保存的原运行目录及结果回读路径。
 
 **新增目录的正确姿势**：走 `create_project_run_dir(uid, project, analysis)`（projects/runs 布局，含 input/output/work/logs 四子目录 + `ensure_directory_chain` 登记）——工具/流程/Studio 产物登记均此路径。禁止在用户根直接 mkdir 新顶层目录（26.7.9 富集模块 `enrichment/{task_id}` 的教训）。
 
@@ -89,12 +91,13 @@ get_storage_config().data_root
 - `aggregated=true`：子树折叠为单个只读聚合节点（D1——`workspace/chat-output` 升格为「AI 会话产物」，29 个会话 UUID 子目录不再逐个展开；会话产物仍经消息卡片 / 文件列表下载）；
 - `DirectoryDTO` 新增 `visible_in_tree` / `aggregated` 字段。
 
-## 6. 防复发门禁（三项，CI 强制）
+## 6. 防复发门禁（静态守卫与运行契约，CI 强制）
 
 | 门禁 | 位置 | 规则 |
 | --- | --- | --- |
 | `/data/` 字面量守卫 | `scripts/check_storage_paths.py`（CI backend job） | `src/cygnusx/**/*.py` 禁止 `/data/...` 字面量；白名单：`core/config.py` 与 `storage_config.py`（存储根锚点/兜底）、行级容器端点（`:/data/cygnusx`、`/data/platform`）与"容器内/兜底"注释 |
 | worker 配置 fail-fast | `scripts/render_worker_config.py`（CI backend job） | `shared_data_dir` ↔ `STORAGE_PATH` 不一致拒绝渲染 |
+| 工具挂载与配置契约 | `tests/unit/tools/test_container_paths.py`、`test_storage_config_contract.py`、`test_jbrowse_paths.py`（CI pytest） | 换根时检查全部文件 argv、输出回写、参考文件解析、nginx alias ↔ 只读数据卷；补足字面量守卫无法识别变量路径错配的盲区 |
 | 路径工厂登记 | `path_factory.py` docstring | 业务目录唯一构造入口 + 调用点清单，新增调用方同步维护 |
 
 本地验证：`uv run python scripts/check_storage_paths.py && uv run python scripts/render_worker_config.py --check`。

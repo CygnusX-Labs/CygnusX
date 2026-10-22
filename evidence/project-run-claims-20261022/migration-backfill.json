@@ -1,0 +1,23 @@
+[
+  {
+    "id": "b895a5b6-ef53-4fe4-a2ab-2d724986d13f",
+    "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+    "project_slug": "claim-main",
+    "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+    "attempt_number": 0
+  },
+  {
+    "id": "55551ef5-1624-4286-aa48-23bdfd7970eb",
+    "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+    "project_slug": "unknown-slug",
+    "project_id": null,
+    "attempt_number": 0
+  },
+  {
+    "id": "9a0c906d-816e-4dfc-81af-b0e5663c6fe4",
+    "user_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+    "project_slug": "other-only",
+    "project_id": null,
+    "attempt_number": 0
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "checkedAt": "2026-10-21T08:04:35.639930+00:00",
+  "apiChecks": [
+    {
+      "path": "/health",
+      "status": 200,
+      "itemCount": null
+    },
+    {
+      "path": "/api/v1/projects",
+      "status": 200,
+      "itemCount": 30
+    },
+    {
+      "path": "/api/v1/tasks?status=running&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/tasks?status=queued&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/reports?page=1&page_size=5",
+      "status": 200,
+      "itemCount": 5
+    }
+  ],
+  "browserResponses": [
+    {
+      "path": "/tasks?status=queued&limit=5",
+      "status": 200
+    },
+    {
+      "path": "/reports?page=1&page_size=5",
+      "status": 200
+    },
+    {
+      "path": "/projects",
+      "status": 200
+    },
+    {
+      "path": "/tasks?status=running&limit=5",
+      "status": 200
+    },
+    {
+      "path": "/projects",
+      "status": 200
+    },
+    {
+      "path": "/reports?page=1&page_size=5",
+      "status": 200
+    },
+    {
+      "path": "/tasks?status=running&limit=5",
+      "status": 200
+    },
+    {
+      "path": "/tasks?status=queued&limit=5",
+      "status": 200
+    }
+  ],
+  "workbenchCards": [
+    {
+      "title": "最近项目",
+      "items": 3,
+      "empty": false
+    },
+    {
+      "title": "运行任务",
+      "items": 5,
+      "empty": false
+    },
+    {
+      "title": "最近报告",
+      "items": 3,
+      "empty": false
+    }
+  ],
+  "refreshPassed": true,
+  "unavailableCards": 0,
+  "pageErrors": [],
+  "mockedDataAPIs": false,
+  "welcomeLLMRequestBlocked": true
+}

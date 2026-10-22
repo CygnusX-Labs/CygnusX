@@ -368,3 +368,4 @@ flowchart TB
 - MCP、Skill、记忆、知识：`CygnusX_mcp_architecture.md`、`CygnusX_skill_architecture.md`、`CygnusX_memory_architecture.md`、`CygnusX_knowledge_architecture.md`
 - 数据、日志、计费：`CygnusX_database_architecture.md`、`CygnusX_log_architecture.md`、`CygnusX_token_billing_architecture.md`
 - 多 Agent 与流程：`CygnusX_mas_a2a_plan.md`、`CygnusX_multi_agent_fanout.md`、`Protocol/FlowFrame/README.md`
+- 异步执行与运维：`CygnusX_async_task_queue_architecture.md`、`CygnusX_analysis_operations_architecture.md`、`CygnusX_flow_architecture.md`、`CygnusX_toolbox_architecture.md`

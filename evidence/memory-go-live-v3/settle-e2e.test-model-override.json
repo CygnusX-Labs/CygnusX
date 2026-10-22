@@ -1,0 +1,79 @@
+{
+  "status": "passed",
+  "synthetic_only": true,
+  "session_marker": "MEMORY_GO_LIVE_V3_SYNTHETIC",
+  "production_defaults_modified": false,
+  "test_flag_diff": {
+    "memory_extraction_model": {
+      "production": "qwen3.7-plus",
+      "test_process": "deepseek-v4-flash"
+    },
+    "model_routing_reason": "Production extraction model name differs from selected Provider model; separate operator decision requested"
+  },
+  "first_success": {
+    "result": {
+      "status": "settled",
+      "facts": 1,
+      "processed_messages": 4
+    },
+    "cursor_advanced": true,
+    "settlement_persisted": true,
+    "facts_persisted": 1,
+    "fact_vectors_valid": true
+  },
+  "injected_failure": {
+    "real_extraction_response_received_before_corruption": true,
+    "injection_count": 1,
+    "result_status": "error",
+    "cursor_unchanged": true,
+    "no_new_settlement": true,
+    "no_new_facts": true,
+    "memory.settle_extract_failed_delta": 1
+  },
+  "recovery": {
+    "result": {
+      "status": "settled",
+      "facts": 1,
+      "processed_messages": 4
+    },
+    "same_interval_reprocessed": true,
+    "cursor_advanced": true,
+    "settlements": 2,
+    "all_fact_vectors_valid": true
+  },
+  "metrics": [
+    {
+      "name": "memory.embedding_outcomes",
+      "value": 2,
+      "attributes": {
+        "result": "success"
+      }
+    },
+    {
+      "name": "memory.settle_succeeded",
+      "value": 2,
+      "attributes": {}
+    },
+    {
+      "name": "memory.settle_failed",
+      "value": 1,
+      "attributes": {
+        "stage": "extraction"
+      }
+    },
+    {
+      "name": "memory.settle_extract_failed",
+      "value": 1,
+      "attributes": {}
+    },
+    {
+      "name": "memory.focus_operations",
+      "value": 1,
+      "attributes": {
+        "operation": "write",
+        "mode": "general"
+      }
+    }
+  ],
+  "cleanup": "synthetic chat, messages, settlements, facts, blocks and recall receipts removed; session absence verified"
+}

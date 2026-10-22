@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "documents": 3,
+  "committed_chunks": 6,
+  "dimensions": 1024,
+  "real_http_attempts": 9,
+  "http_200_responses": 9,
+  "vector_only_recall_top1_hits": 3,
+  "keyword_fallback_queries": 0,
+  "unchanged_replay_extra_calls": 0,
+  "source_business_database_unchanged": true,
+  "temporary_schema_cleanup_verified": true,
+  "credential_scan": "passed",
+  "usage": {
+    "prompt_tokens": 653,
+    "completion_tokens": 0,
+    "total_tokens": 653
+  },
+  "billing_amount": null,
+  "target_pgvector_version": "0.8.7",
+  "scope_limits": [
+    "dedicated acceptance PostgreSQL database",
+    "document bodies only; no attachment extraction",
+    "three-document availability pilot, not full-corpus quality or production-scale performance acceptance"
+  ],
+  "evidence": [
+    "plan.json",
+    "result.json",
+    "call-ledger.json"
+  ]
+}

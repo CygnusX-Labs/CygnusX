@@ -1,0 +1,116 @@
+{
+  "render_diff_validation": [
+    {
+      "file": "deploy/docker/docker-compose.yml",
+      "status": "passed",
+      "explicit_keys": [
+        "AGENT_MEMORY_EMBEDDING_MODEL",
+        "AGENT_MEMORY_EMBEDDING_PROVIDER_ID",
+        "AGENT_MEMORY_EMBEDDING_DIMENSIONS",
+        "SILICONFLOW_API_KEY",
+        "MEMORY_MAINTENANCE_DATABASE_URL"
+      ],
+      "allowed_services": [
+        "web",
+        "beat"
+      ],
+      "actually_changed_services": [
+        "beat",
+        "web"
+      ],
+      "unrelated_service_or_environment_changes": false
+    },
+    {
+      "file": "deploy/docker/docker-compose.worker.yml",
+      "status": "passed",
+      "explicit_keys": [
+        "AGENT_MEMORY_EMBEDDING_MODEL",
+        "AGENT_MEMORY_EMBEDDING_PROVIDER_ID",
+        "AGENT_MEMORY_EMBEDDING_DIMENSIONS",
+        "SILICONFLOW_API_KEY",
+        "MEMORY_MAINTENANCE_DATABASE_URL"
+      ],
+      "allowed_services": [
+        "worker"
+      ],
+      "actually_changed_services": [
+        "worker"
+      ],
+      "unrelated_service_or_environment_changes": false
+    }
+  ],
+  "root_env_after_preparation": [
+    {
+      "service": "web",
+      "all_five_keys_in_rendered_environment": true,
+      "model_matches_yaml": true,
+      "dimensions": 1024,
+      "maintenance_dsn_present": true,
+      "provider_uuid_state": "awaiting startup sync",
+      "siliconflow_key_present": false
+    },
+    {
+      "service": "beat",
+      "all_five_keys_in_rendered_environment": true,
+      "model_matches_yaml": true,
+      "dimensions": 1024,
+      "maintenance_dsn_present": true,
+      "provider_uuid_state": "awaiting startup sync",
+      "siliconflow_key_present": false
+    },
+    {
+      "service": "worker",
+      "all_five_keys_in_rendered_environment": true,
+      "model_matches_yaml": true,
+      "dimensions": 1024,
+      "maintenance_dsn_present": true,
+      "provider_uuid_state": "awaiting startup sync",
+      "siliconflow_key_present": false
+    }
+  ],
+  "image_mapping_validation": "passed, 17 images and 19 agents",
+  "agent_loader_validation": "passed, load_agent_configs returned 19",
+  "provider_yaml_tests": "22 passed, 3 deselected, exit 0; existing OTel closed-stream export logs after pytest exit",
+  "container_recreation": "force-recreated Web/Worker/Beat; healthy and effective settings verified",
+  "provider_default_regression": "Old code fails and new code passes on isolated PostgreSQL; temporary schema removed",
+  "maintenance_guard_regression": "40 passed; includes CLI, embedding models, provider default and provider selection",
+  "changed_python_ruff": "passed",
+  "changed_python_mypy": "passed, 2 source files",
+  "migration_chain": "passed, single head",
+  "preparation_snapshot": {
+    "root_env_after_preparation": [
+      {
+        "service": "web",
+        "all_five_keys_in_rendered_environment": true,
+        "model_matches_yaml": true,
+        "dimensions": 1024,
+        "maintenance_dsn_present": true,
+        "provider_uuid_state": "awaiting startup sync",
+        "siliconflow_key_present": false
+      },
+      {
+        "service": "beat",
+        "all_five_keys_in_rendered_environment": true,
+        "model_matches_yaml": true,
+        "dimensions": 1024,
+        "maintenance_dsn_present": true,
+        "provider_uuid_state": "awaiting startup sync",
+        "siliconflow_key_present": false
+      },
+      {
+        "service": "worker",
+        "all_five_keys_in_rendered_environment": true,
+        "model_matches_yaml": true,
+        "dimensions": 1024,
+        "maintenance_dsn_present": true,
+        "provider_uuid_state": "awaiting startup sync",
+        "siliconflow_key_present": false
+      }
+    ],
+    "container_recreation": "not performed; awaiting nonempty SILICONFLOW_API_KEY"
+  },
+  "effective_runtime_evidence": "step3-effective-settings.json",
+  "final_related_tests": "229 passed",
+  "final_focused_mypy": "4 source files passed; Provider file has two HEAD baseline diagnostics documented separately",
+  "status": "passed"
+}

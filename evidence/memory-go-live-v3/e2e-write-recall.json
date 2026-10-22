@@ -1,0 +1,37 @@
+{
+  "synthetic_only": true,
+  "database": "omichub",
+  "status": "passed",
+  "checks": {
+    "write": {
+      "rows": 3,
+      "vector_dimensions": 1024,
+      "model_labels_match": true,
+      "shared_profile_preference": true
+    },
+    "cross_session": [
+      {
+        "scope": "profile",
+        "target_hit": true
+      },
+      {
+        "scope": "preference",
+        "target_hit": true
+      },
+      {
+        "scope": "project",
+        "target_hit": true
+      }
+    ],
+    "cross_agent_profile_preference": true,
+    "cross_user_and_project_isolation": true,
+    "knowledge": {
+      "chunks": 1,
+      "paired_vector_and_model": true,
+      "search_hit": true
+    },
+    "forget_not_recalled": true
+  },
+  "real_embedding_source": "configured SiliconFlow Provider via LiteLLMProvider",
+  "cleanup": "synthetic facts, blocks, KB and recall receipts removed; owner facts absence verified"
+}

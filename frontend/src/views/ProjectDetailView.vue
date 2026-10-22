@@ -10,6 +10,9 @@ import { ChatbubblesOutline, FolderOpenOutline, GitBranchOutline, TimeOutline } 
 import ResearchDeliveryChain from '@/components/ResearchDeliveryChain.vue'
 import ProjectResearchDelivery from '@/components/ProjectResearchDelivery.vue'
 import ResearchPlanWorkbench from '@/components/ResearchPlanWorkbench.vue'
+import ProjectCapabilityPanel from '@/components/ProjectCapabilityPanel.vue'
+import type { ProjectCapabilityStatus } from '@/api/projects'
+import { projectRequestFailure } from '@/api/projectErrors'
 import PageHeader from '@/components/PageHeader.vue'
 import { chatApi } from '@/api/chat'
 import {
@@ -30,24 +33,26 @@ const requestedPlanId = computed(() => typeof route.query.planId === 'string' ? 
 const initialLoading = ref(true)
 const sessionsLoading = ref(false)
 const overview = ref<ProjectOverview | null>(null)
+const capabilities = ref<ProjectCapabilityStatus | null>(null)
+const capabilityError = ref('')
 const sessionStatus = ref<ProjectSessionStatus>('active')
 
 const renameTarget = ref<ProjectSessionItem | null>(null)
 const renameTitle = ref('')
 const renameSaving = ref(false)
 
-/** 项目级科研模式默认值（WP3 任务 3 可选项）：项目内新会话默认开启科研模式。
- *  后端项目设置端点可能稍后到位：PATCH 失败时回滚开关并提示，不阻塞页面。 */
+/** 项目内新会话的科研模式默认值，按当前项目保存的 settings 回填。 */
 const projectResearchDefault = ref(false)
 const togglingProjectResearch = ref(false)
 
 async function handleProjectResearchToggle(value: boolean) {
   if (togglingProjectResearch.value) return
   const previous = projectResearchDefault.value
+  const project = projectId.value, current = overviewGeneration
   projectResearchDefault.value = value
   togglingProjectResearch.value = true
   try {
-    await projectsApi.updateProjectSettings(projectId.value, {
+    await projectsApi.updateProjectSettings(project, {
       research_mode: {
         enabled: value,
         render_mode: 'message_flow',
@@ -55,12 +60,14 @@ async function handleProjectResearchToggle(value: boolean) {
         ptc_llm_query: false,
       },
     })
+    if (current !== overviewGeneration || project !== projectId.value) return
     message.success(value ? '已开启：项目内新会话将默认开启科研模式' : '已关闭项目级科研模式默认开关')
   } catch (e: any) {
+    if (current !== overviewGeneration || project !== projectId.value) return
     projectResearchDefault.value = previous
-    message.error(e?.response?.data?.detail || '项目设置保存失败（后端端点可能尚未上线），已恢复开关状态')
+    message.error('项目设置保存失败，已恢复开关状态')
   } finally {
-    togglingProjectResearch.value = false
+    if (current === overviewGeneration) togglingProjectResearch.value = false
   }
 }
 
@@ -340,6 +347,8 @@ async function loadOverview() {
   const project = projectId.value, current = ++overviewGeneration
   sessionsGeneration++
   overview.value = null
+  capabilities.value = null
+  capabilityError.value = ''
   if (!project) { initialLoading.value = false; return }
   initialLoading.value = true
   try {
@@ -349,6 +358,17 @@ async function loadOverview() {
     })
     if (current === overviewGeneration && project === projectId.value && data.project.id === project) {
       overview.value = data
+      const mode = data.project.settings?.research_mode
+      projectResearchDefault.value = !!mode && typeof mode === 'object' &&
+        (mode as { enabled?: unknown }).enabled === true
+      try {
+        const status = await projectsApi.getCapabilityStatus(project)
+        if (current === overviewGeneration && project === projectId.value) capabilities.value = status
+      } catch (exc) {
+        if (current === overviewGeneration && project === projectId.value) {
+          capabilityError.value = projectRequestFailure(exc, '项目能力状态')
+        }
+      }
     }
   } catch {
     if (current === overviewGeneration && project === projectId.value) message.error('加载项目总览失败')
@@ -388,6 +408,7 @@ watch(projectId, () => {
   sessionsLoading.value = false
   renameTarget.value = null
   projectResearchDefault.value = false
+  togglingProjectResearch.value = false
   void loadOverview()
 }, { immediate: true })
 onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
@@ -552,9 +573,17 @@ onBeforeUnmount(() => { overviewGeneration++; sessionsGeneration++ })
       </template>
     </n-modal>
   </div>
-  <ResearchPlanWorkbench v-if="overview" :project-id="projectId" :plan-id="requestedPlanId" :sessions="overview.sessions.items" />
-  <ResearchDeliveryChain v-if="overview" :project-id="projectId" />
-  <ProjectResearchDelivery v-if="overview" :project-id="projectId" />
+  <template v-if="overview">
+    <ProjectCapabilityPanel title="科研计划与审阅" :capability="capabilities?.research_plan" :error="capabilityError">
+      <ResearchPlanWorkbench :project-id="projectId" :plan-id="requestedPlanId" :sessions="overview.sessions.items" />
+    </ProjectCapabilityPanel>
+    <ProjectCapabilityPanel title="科研执行与交付链" :capability="capabilities?.research_delivery_read" :error="capabilityError">
+      <ResearchDeliveryChain :project-id="projectId" />
+    </ProjectCapabilityPanel>
+    <ProjectCapabilityPanel title="项目科研成果与可追溯导出" :capability="capabilities?.project_export" :error="capabilityError">
+      <ProjectResearchDelivery :project-id="projectId" />
+    </ProjectCapabilityPanel>
+  </template>
 </template>
 
 <style scoped>

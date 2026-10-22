@@ -1,0 +1,23 @@
+{
+  "before_counts": {
+    "datasets": 2,
+    "dataset_versions": 2,
+    "dataset_analysis_links": 2,
+    "platform_runs": 109,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "audit_logs": 37
+  },
+  "after_counts": {
+    "datasets": 2,
+    "dataset_versions": 2,
+    "dataset_analysis_links": 2,
+    "platform_runs": 109,
+    "tasks": 0,
+    "reports": 0,
+    "project_export_jobs": 0,
+    "audit_logs": 37
+  },
+  "full_query_results_unchanged": true
+}

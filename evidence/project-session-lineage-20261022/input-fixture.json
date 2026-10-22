@@ -1,0 +1,10 @@
+{
+  "file_id": "9b411aa7-6f87-4668-9d29-2126585efdea",
+  "sample_id": "e8938c3e-0e1e-4b79-9d0c-f8cfa91e1c33",
+  "unbound_session": "d38c3881-93b4-45fd-b22a-a4c722dba38f",
+  "denied_session": "9def0a07-cf78-466d-90e0-38e37867ef01",
+  "project_slug": "explicit-session-lineage-pilot",
+  "bytes": 29,
+  "sha256": "42f6fae1c1b5dc8492a8df855a4d612ed49d18b6a2e620ef835bf53aa89d204f",
+  "fixture": "owned preregistered FileRecord + Sample; no historical Task attribution"
+}

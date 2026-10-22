@@ -1,0 +1,90 @@
+[
+  {
+    "method": "POST",
+    "path": "/chat/sessions",
+    "expected": 200,
+    "status": 200,
+    "response": {
+      "session_id": "f6d93431-5c65-4ec1-964b-51a21571f5fe",
+      "title": "Explicit FASTQ pilot",
+      "title_locked": false,
+      "assistant_id": null,
+      "agent_id": null,
+      "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+      "model_id": "ff74140c-9827-4037-8266-208674daac96",
+      "message_count": 0,
+      "status": "active",
+      "mode": "chat",
+      "created_at": "2026-10-21T17:16:12.523747Z",
+      "updated_at": "2026-10-21T17:16:12.523747Z",
+      "last_message_at": null,
+      "mcp_mode": "auto",
+      "extra_mcp_servers": [],
+      "multi_agent": false,
+      "overdrive": false,
+      "agentteams_upgrade": null,
+      "workspace_archive": null,
+      "analysis_archive": null,
+      "research_mode": null
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/d38c3881-93b4-45fd-b22a-a4c722dba38f/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "需要绑定项目的会话",
+      "code": "PROJECT_REQUIRED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/9def0a07-cf78-466d-90e0-38e37867ef01/invoke",
+    "expected": 403,
+    "status": 403,
+    "response": {
+      "detail": "模块无权限",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/f6d93431-5c65-4ec1-964b-51a21571f5fe/invoke",
+    "expected": 404,
+    "status": 404,
+    "response": {
+      "detail": "会话不存在或无权访问"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/f6d93431-5c65-4ec1-964b-51a21571f5fe/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/f6d93431-5c65-4ec1-964b-51a21571f5fe/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/agent-tools/sessions/f6d93431-5c65-4ec1-964b-51a21571f5fe/invoke",
+    "expected": 422,
+    "status": 422,
+    "response": {
+      "detail": "参数不符合工具契约",
+      "code": "VALIDATION_ERROR"
+    }
+  }
+]

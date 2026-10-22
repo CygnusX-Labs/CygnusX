@@ -1,0 +1,61 @@
+{
+  "session_id": "4854f3ac-2ccd-45c4-8739-754de33d0f89",
+  "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+  "result": {
+    "mode": "PLAN_ONLY",
+    "project_id": "966b1dcd-43bd-4dd0-8d7c-8d9290c86799",
+    "dataset_id": "53e1f384-3f1f-470a-9a81-68bad70c9010",
+    "dataset_version_id": "ff45fe21-9b80-4009-ba14-58505a992b53",
+    "write_enabled": false,
+    "gate": "WRITE_GATE_BLOCKED",
+    "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+    "flow_id": "rna_seq",
+    "parameters": {
+      "project_name": "Explicit FASTQ PLAN_ONLY",
+      "client": "Dataset import",
+      "Genome_Version": "hg38",
+      "species": "Homo sapiens",
+      "Library_Types": "fr-unstranded",
+      "deg": false,
+      "raw_data_path": "directory://raw_data"
+    },
+    "sample_sheet": [
+      {
+        "sample": "sample1",
+        "sample_name": "paired-pilot",
+        "group": "control"
+      }
+    ],
+    "comparisons": [],
+    "parameters_hash": "255e3ce8b7905786f8511d34c9ca0b20fc082e639933f22f6722a047516866e6",
+    "confirmation_id": "623f77d0-1f72-455c-ac0f-982eaf45c325",
+    "expires_at": "2026-10-21T17:49:09.508277+00:00",
+    "resource_hint": {
+      "cores": 8,
+      "memory": "32G",
+      "time": "4h"
+    },
+    "worker_paths_verified": false,
+    "run_id": "3994b334-77c9-42b7-998e-c011cf7a3790",
+    "state": "PREPARED",
+    "handoff_hash": "81cca2d14ca0362e8e0647bbfde649e531d8e3c6dcda6d2f625959189e341d07",
+    "handoff_frozen": true
+  },
+  "approval": {
+    "analysis_proposal_id": "c075f3cf-920d-4142-91fe-c184646ee4aa",
+    "state": "APPROVED",
+    "write_enabled": false
+  },
+  "counts": {
+    "datasets": 2,
+    "dataset_versions": 2,
+    "dataset_analysis_links": 1,
+    "platform_runs": 1,
+    "tasks": 0,
+    "reports": 0,
+    "research_plans": 0,
+    "project_export_jobs": 0
+  },
+  "compute_executed": false,
+  "acceptance_by": "user"
+}

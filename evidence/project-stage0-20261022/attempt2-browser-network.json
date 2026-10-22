@@ -1,0 +1,102 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/announcements/active"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/ai-token-rate"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/tasks"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-content"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/site-settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/festival/today"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/setup-required"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/modules/registry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/c381225d-562b-4ef6-a728-01e78b07a330/overview"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/cookies/account"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/projects/c381225d-562b-4ef6-a728-01e78b07a330/capability-status"
+  }
+]

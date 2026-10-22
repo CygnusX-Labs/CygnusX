@@ -1,0 +1,29 @@
+{
+  "archives": {
+    "complete": {
+      "run_dir": "legacy-complete-20261022-020758",
+      "file_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2",
+      "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5"
+    },
+    "missing-manifest": {
+      "run_dir": "legacy-missing-manifest-20261022-020758",
+      "file_id": "1ab9d3f2-26d8-432f-a1ea-8f45899f1488",
+      "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5"
+    },
+    "tampered": {
+      "run_dir": "legacy-tampered-20261022-020758",
+      "file_id": "b50ec503-6041-460b-932b-52a1038c29d9",
+      "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5"
+    },
+    "already-claimed": {
+      "run_dir": "legacy-already-claimed-20261022-020758",
+      "file_id": "f60020ea-691b-464a-b991-bd67c89084c9",
+      "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5"
+    }
+  },
+  "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+  "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+  "benchmark_project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+  "missing-directory_run_id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+  "missing-link_run_id": "c315f352-2d83-4d23-866d-879850b58890"
+}

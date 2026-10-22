@@ -1,0 +1,360 @@
+diff --git a/ARCHITECTURE_DESIGN/CygnusX_frontend.md b/ARCHITECTURE_DESIGN/CygnusX_frontend.md
+index b3d43783..88c60612 100644
+--- a/ARCHITECTURE_DESIGN/CygnusX_frontend.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_frontend.md
+@@ -1352,9 +1352,11 @@ Hero 横幅（`HomeView.vue` 的 `<section class="hero">`）背景不是位图
+ 
+ Canvas 层必须遵守 §31 的装饰覆盖层契约：`position:absolute; inset:0; pointer-events:none; z-index:0`，并 `aria-hidden`，置于 `.hero-inner` 之下、渐变底色之上；**严禁**被父级 `.hero > *` 之类通配选择器命中（否则 `absolute` 被拉成 `relative`，撑高 hero 并顶坏布局，见 §31.2 / §31.4）。内容层只允许按**类名**显式抬升 `z-index`。
+ 
+-**使用方局部压暗（不改引擎）**：首页 Hero 在 `.hero :deep(.omic-canvas)` 上将画布整体压暗到 `opacity: 0.4`（`≤768px` 时 `0.25`），保证双栏文字区（见下）的对比度优先；登录页无此处理。这是接入方的使用方式调整，引擎 `CONFIG` 档位不变。
++**使用方局部压暗（不改引擎）**：首页在 `.hero :deep(.omic-canvas)` 使用 `opacity: 0.4`（`≤640px` 为 `0.24`）；另以 `.hero::after` 的 `rgba(8,11,18,0.48)` 遮罩位于画布与内容之间，保证玻璃卡副文字的对比度。遮罩 `pointer-events:none; z-index:1`，`.hero-inner` 为 `z-index:2`。登录页与动画引擎档位不变。
+ 
+-**文案与布局（首页 Hero）**：卡片内容由 `/api/v1/site-content` 的 `hero` 段驱动（`title` 平台名 / `slogan` 核心标语 / `description` 平台介绍 / `tags` 能力标签 / `vision` 右侧愿景区），前端 `DEFAULT_CONTENT` 逐层合并兜底——接口失败或旧配置缺新增字段时仍能完整渲染。桌面端 `.hero-inner` 为 `65fr / 35fr` 双栏：左栏 `.hero-main` 依次放问候语、语义 H1（仅一个）、标语、介绍（`max-width: 58ch` 防碎行）、轻量半透明标签（`flex-wrap` 自然换行）与 §5.7 两档按钮（主"开始分析"，次"问问星尘AI / 了解平台"）；右栏 `.hero-vision` 放英文标语 + 中文愿景 + 小字标注，`1px` 半透明左边线留白分隔。`≤1024px` 收为上下布局（愿景横排精简），`≤768px` 更紧凑且 DOM 顺序保证"介绍 + 按钮在前、精简愿景在后"。能力标签是 `12px` 半透明圆角小标签，禁止做成抢眼大按钮；愿景文案是长期方向表达，不得写成"已全面实现"的能力承诺。
++**文案与布局（首页 Hero）**：`/api/v1/site-content` 的 `hero` 段驱动平台名、标语、介绍、标签与愿景，`DEFAULT_CONTENT` 逐层兜底。桌面端 `.hero-inner` 为 `minmax(0,1.3fr) / minmax(280px,0.85fr)` 双栏；左栏依次展示平台名、问候语、唯一 H1、英文定位、介绍、能力标签、两档按钮与愿景。H1 在首个中文逗号后分行，以 `clamp(24px,2.5vw,38px)`、`text-wrap:balance`、`word-break:keep-all` 控制默认标语两行内排完；后台自定义长文案用 `overflow-wrap:anywhere` 兜底。Hero `min-height:380px; padding:40px 32px`，与公告间隔 `16px`；内容多时允许自然增高。右栏 `.hero-lifecycle` 展示科研生命周期，使用 `rgba(255,255,255,0.10)`、`blur(16px)`、白色主文字与 `rgba(255,255,255,0.85)` 副文字；减少透明度时退回实色。`≤1100px` 收为上下布局，`≤640px` 精简生命周期后续步骤并以说明文字保留语义。
++
++**首页工作台与交互层级**：`ResearchWorkbenchPanel.vue` 仍通过既有项目、运行/排队任务、报告 API 聚合；三张卡片为 `repeat(3,minmax(0,1fr))`，视口 `<1280px` 时单列。长标题单行省略，保留原文 `title`；任务和报告共用 `NTag.status-badge`，蓝/绿/灰区分运行/完成/过期，排队与失败另有黄/红状态。工作台和快捷入口 hover 上移 `2px`，阴影伪元素通过透明度过渡，时长 `200ms`；支柱和生态无悬停位移。`prefers-reduced-motion` 下关闭位移、入场和过渡。首页管理按钮使用 `--brand-gradient`。首页公告传 `remember-dismissal`，按公告 ID 和可见内容版本持久关闭；不传时继续遵守后台 daily/forever/none 策略。顶部积分 `NTag` 使用 `padding:4px 12px`，右侧控件间距 `12px`。
+ 
+ 引擎对外契约不变：组件 `onMounted` 动态 `import('@/utils/animationLibrary')`，按 `context` 取 `window.initHeroAnimation(canvas)`，返回的 cleanup 在 `onUnmounted` 调用；引擎内部监听 `resize` 与 `visibilitychange`（切后台停 rAF、回前台续），cleanup 一并解绑，杜绝句柄/内存泄漏。Hero 档位 `opacity:0.82 / density:5000 / speed:0.8 / glow:true`，登录页档位更淡更慢（`0.3 / 10000 / 0.6`）。渐变太抢眼，动画既要"压得住被看见"，又必须**克制、舒缓**——`speed` 取慢档、`opacity` 留余量，避免频率过高或过亮而喧宾夺主、抢标题与按钮（见 §32.3 频率克制原则）。整体转速另由主循环 **60fps 封顶**兜底（见 §32.3 原则 5），与 `speed` 解耦——保证高刷屏不会比 60Hz 转得更快。
+ 
+diff --git "a/docs/info/26.10.21/CygnusX\351\246\226\351\241\265\350\247\206\350\247\211\344\274\230\345\214\226\351\252\214\346\224\266\350\256\260\345\275\225.md" "b/docs/info/26.10.21/CygnusX\351\246\226\351\241\265\350\247\206\350\247\211\344\274\230\345\214\226\351\252\214\346\224\266\350\256\260\345\275\225.md"
+new file mode 100644
+index 00000000..e1f1f08d
+--- /dev/null
++++ "b/docs/info/26.10.21/CygnusX\351\246\226\351\241\265\350\247\206\350\247\211\344\274\230\345\214\226\351\252\214\346\224\266\350\256\260\345\275\225.md"
+@@ -0,0 +1,58 @@
++# CygnusX 首页视觉优化验收记录
++
++实施范围：原页面 P0～P2；P3 导航与信息架构调整未实施。无新增项目依赖，无路由、请求或任务执行逻辑改动。以下为自动化验证与代码核查结果，最终视觉验收仍由用户确认。
++
++## 改动对照
++
++| 提示词条目 | 文件 | 实现与证据 |
++| --- | --- | --- |
++| 1 标题断行 | `frontend/src/views/HomeView.vue` | 首个中文逗号后分行；`clamp(24px, 2.5vw, 38px)`、`text-wrap: balance`、`word-break: keep-all`；保留后台文案和窄屏兜底。1280/1440/2560px 实测均为两行。 |
++| 2 首屏高度 | 同上 | `min-height: 380px`、桌面 `padding: 40px 32px`；压缩介绍、标签、按钮与愿景间距。1440×1440 视口实测 Hero 高约 427px，工作台标题 top≈655px。内容超出最小高度时自然展开。 |
++| 3 玻璃卡对比度 | 同上 | 白色 10% 背景、18% 边框、16px 模糊，白色主文字/85% 白副文字；Hero 加局部压暗遮罩，减少透明度时回退实色。对 1280/1440/2560px 下各文字区域逐一采样，按 85% 白文字计算的对比度最低 5.15:1。 |
++| 4 公告关闭记忆 | `HomeView.vue`、`components/AnnouncementBanner.vue` | 首页显式启用 `remember-dismissal`，localStorage key 包含公告 ID 与标题、描述、图标、链接、按钮的内容版本；关闭后跨刷新/跨日隐藏，内容或 ID 更新后重现。其他使用方保留 daily/forever/none。存储不可用仍可关闭当前横幅。Hero 与公告间距 16px。 |
++| 5 工作台网格 | `components/home/ResearchWorkbenchPanel.vue` | 保留 `repeat(3, minmax(0, 1fr))`，删除“两列＋末列跨列”，视口 `<1280px` 改单列；长标题省略且带完整 title。1440px 三列均为 364px。 |
++| 6 状态 badge | 同上 | 任务和报告共用 `NTag.status-badge`，24px 高、统一圆角/字重/内边距；运行蓝、完成绿、过期灰，排队黄、失败红，提供明暗主题色。保留所有原状态文案。 |
++| 7 管理按钮 | `HomeView.vue` | 按钮与左缘装饰改用 `--brand-gradient`，hover 上移 1px。管理入口仍跳 `/admin/users`。 |
++| 8 卡片层级 | `HomeView.vue`、`ResearchWorkbenchPanel.vue` | 工作台和快捷卡 hover 上移 2px；伪元素阴影 `0 8px 24px rgba(0,0,0,.35)`，200ms transform/opacity 过渡；技术支柱与生态卡静态。首页入场缩至 400ms，公告离场去掉高度、margin、padding 动画。减少动态时关闭位移/过渡与入场。 |
++| 9 积分胶囊 | `components/CookieBalanceBadge.vue`、`layouts/DefaultLayout.vue` | tag `padding: 4px 12px`、不收缩、tabular-nums；胶囊明确叠层，顶栏右侧 gap=12px。实测 `26732.3` 完整显示，scrollWidth=clientWidth=85px，与相邻控件间距 12px。 |
++| 10 历史运行任务核查 | 只读 DB 查询与代码，见下 | 当前 38 条 running 全部为演示种子数据，并非真实执行中，也没有证据表明这些记录来自状态回写丢失。未修改任务数据。 |
++
++计划中额外要求的三个“全部”已核实分别为 `/projects`、`/tasks`、`/reports`，无需修正。
++
++## 浏览器与交互验证
++
++证据目录：`evidence/home-visual-20261021/`（本地运行证据，不纳入提交）。使用真实 Vue 首页、DefaultLayout、Naive UI 和路由，API 响应由浏览器测试拦截提供固定样本；这些结论不替代后端业务 E2E 或用户人工验收。
++
++- `browser-verified.json`：1280/1440/2560px 三列等宽、标题两行且页面无横向溢出；1279/1024/390px 单列且无横向溢出；1280/1440px 长报告名实际省略。
++- `home-1280.png` / `home-1440.png` / `home-2560.png`：对应截图；另有移动端与断点截图。
++- 关闭公告并刷新、更新内容后刷新：分别隐藏、重新出现。
++- 刷新工作台会重新请求 running/queued 任务；项目/任务/报告原有请求保留。
++- 主按钮、AI 按钮、六张快捷卡、管理按钮的点击目标全部与原实现一致；浏览器守卫捕获目标并取消导航，以免触发无关模块的实际业务操作。
++- 工作台/快捷卡普通偏好 hover 上移 2px；减少动态时无位移；技术支柱/生态卡两种偏好均不位移。
++- 浏览器无 pageerror。
++- 补充主题切换核验：运行/完成/过期三类 badge 的文字对比度在深色模式最低 6.88:1、浅色模式最低 5.38:1，均超过 4.5:1；原始计算见 `badge-contrast.json`。
++
++## 第 10 条核查结论
++
++**演示种子数据遗留，非真实任务持续运行。**
++
++对当前部署的 `cygnusx-db` 执行只读事务查询：38 条 `status='running'` 记录全部同时满足 `idempotency_key LIKE 'seed-demo-%'`、`parameters.seed='demo-v1'`、`work_dir=''`、`finished_at IS NULL`。最新一条 `66356324-1ee9-42e9-8061-f89fdafdc2c5`，名称「RNA-seq 差异表达 - 运行中 #36」，创建时间转上海时区为 2026-10-03 00:01:26。
++
++`scripts/seed_demo_data.py` 的 `_make_task()` 及“1a. 运行中任务”分支，直接构造上述种子标记和 `status='running'` 写库；没有向执行器投递任务。`TaskService.list_tasks()` 从数据库查询并返回状态，首页也只展示返回值。实际 Snakemake 执行路径在 `infrastructure/celery_app/tasks/analysis.py` 根据执行结果转换 SUCCESS/FAILED 并提交事务，种子记录不经过该路径，因此不会自动收敛成终态。该证据足以解释本次截图中的长期 running；不据此断言其他真实任务不存在状态同步问题。
++
++原始查询与输出见 `task-state-query.sql`、`task-state-query.txt`。本轮按“只查不改”要求保留数据与后端逻辑。
++
++## 验证命令与门禁
++
++| 检查 | 结果 |
++| --- | --- |
++| `cd frontend && npm run type-check` | 通过 |
++| `cd frontend && npm test` | 92 个文件、619 项测试通过（包含 4 项新增公告回归测试）；现有 jsdom 警告见日志 |
++| `cd frontend && npm run build` | 通过，包含 prebuild 和 `vue-tsc -b` |
++| `uv run python scripts/check_migrations.py` | 通过，单一 head |
++| `cd integrations/agentteams/bridge && uv run pytest -q` | 190 passed，2 skipped |
++| `uv run ruff check src/ tests/` | 失败：274 项现有后端/测试问题；本轮未修改任何 Python 文件 |
++| `uv run mypy src/cygnusx/` | 失败：216 个文件共 1028 项错误；本轮未修改任何 Python 文件 |
++| `uv run pytest tests/unit tests/e2e -q -m 'not quarantine'` | 3963 passed，15 failed，22 skipped，63 deselected；失败集中于现有 Agent/Provider/Studio/Tool 后端用例 |
++
++完整输出保存在证据目录 `cygnusx-home-*.log`。由于 AGENTS.md 要求“提交前必须全绿”，全量后端门禁尚未满足；本次首页改动暂留工作区，尚未创建计划要求的三个阶段提交。不得将本次前端验证描述为仓库全量门禁通过。
+diff --git a/frontend/src/components/AnnouncementBanner.vue b/frontend/src/components/AnnouncementBanner.vue
+index 6af72b6f..1704b77e 100644
+--- a/frontend/src/components/AnnouncementBanner.vue
++++ b/frontend/src/components/AnnouncementBanner.vue
+@@ -198,7 +198,6 @@ onMounted(async () => {
+   overflow: hidden;
+   background: var(--brand-gradient);
+   box-shadow: 0 4px 12px rgba(76, 111, 255, 0.18);
+-  transition: filter 0.2s ease;
+ }
+ .announcement-banner:hover {
+   filter: brightness(1.05);
+@@ -257,7 +256,7 @@ onMounted(async () => {
+   font-weight: 700;
+   letter-spacing: 0.3px;
+   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4), 0 2px 12px rgba(0, 0, 0, 0.15);
+-  transition: all 0.2s ease;
++  transition: transform 0.2s ease;
+ }
+ .n-button.banner-btn:hover,
+ .n-button.banner-btn:focus {
+@@ -282,7 +281,7 @@ onMounted(async () => {
+   align-items: center;
+   justify-content: center;
+   cursor: pointer;
+-  transition: transform 0.2s ease, background 0.2s ease;
++  transition: transform 0.2s ease;
+ }
+ .banner-close:hover {
+   background: rgba(255, 255, 255, 0.3);
+@@ -298,18 +297,13 @@ onMounted(async () => {
+   opacity: 0;
+ }
+ 
+-/* 离场：高度 + 透明度收起 */
++/* 离场只过渡位移与透明度，不逐帧触发布局。 */
+ .banner-slide-leave-active {
+-  transition: transform 0.3s ease-out, opacity 0.3s ease-out,
+-    max-height 0.3s ease-out, margin 0.3s ease-out, padding 0.3s ease-out;
+-  max-height: 80px;
++  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+ }
+ .banner-slide-leave-to {
+   transform: translateY(-10px);
+   opacity: 0;
+-  max-height: 0;
+-  margin: 0;
+-  padding: 0;
+ }
+ 
+ /* 移动端：文字换行，避免按钮/关闭溢出 */
+@@ -328,4 +322,14 @@ onMounted(async () => {
+     white-space: normal;
+   }
+ }
++
++@media (prefers-reduced-motion: reduce) {
++  .banner-slide-enter-active,
++  .banner-slide-leave-active,
++  .n-button.banner-btn,
++  .banner-close { transition: none; }
++  .n-button.banner-btn:hover,
++  .n-button.banner-btn:focus,
++  .banner-close:hover { transform: none; }
++}
+ </style>
+diff --git a/frontend/src/components/CookieBalanceBadge.vue b/frontend/src/components/CookieBalanceBadge.vue
+index d4f4fe12..36bf9bd7 100644
+--- a/frontend/src/components/CookieBalanceBadge.vue
++++ b/frontend/src/components/CookieBalanceBadge.vue
+@@ -34,8 +34,18 @@ onMounted(async () => {
+ 
+ <style scoped>
+ .cookie-badge {
++  position: relative;
++  z-index: 1;
+   display: inline-flex;
++  flex-shrink: 0;
+   align-items: center;
+-  margin-right: 12px;
++}
++
++.cookie-badge :deep(.n-tag) {
++  height: auto;
++  min-height: 28px;
++  padding: 4px 12px;
++  white-space: nowrap;
++  font-variant-numeric: tabular-nums;
+ }
+ </style>
+diff --git a/frontend/src/components/home/ResearchWorkbenchPanel.vue b/frontend/src/components/home/ResearchWorkbenchPanel.vue
+index 7695d9f7..914d5957 100644
+--- a/frontend/src/components/home/ResearchWorkbenchPanel.vue
++++ b/frontend/src/components/home/ResearchWorkbenchPanel.vue
+@@ -302,6 +302,7 @@ onMounted(() => void loadData())
+ }
+ 
+ .workbench-card {
++  position: relative;
+   min-width: 0;
+   min-height: 244px;
+   padding: 17px 18px 12px;
+@@ -309,8 +310,25 @@ onMounted(() => void loadData())
+   border-radius: var(--radius-card);
+   background: var(--neutral-card);
+   box-shadow: var(--shadow-card);
++  transition: transform 200ms ease;
+ }
+ 
++.workbench-card::after {
++  content: '';
++  position: absolute;
++  inset: 0;
++  border-radius: inherit;
++  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
++  opacity: 0;
++  transition: opacity 200ms ease;
++  pointer-events: none;
++}
++
++.workbench-card:hover,
++.workbench-card:focus-within { transform: translateY(-2px); }
++.workbench-card:hover::after,
++.workbench-card:focus-within::after { opacity: 1; }
++
+ .workbench-card__header,
+ .workbench-card__heading {
+   display: flex;
+@@ -534,6 +552,10 @@ onMounted(() => void loadData())
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
++  .workbench-card,
++  .workbench-card::after { transition: none; }
++  .workbench-card:hover,
++  .workbench-card:focus-within { transform: none; }
+   .workbench-skeleton span {
+     animation: none;
+   }
+diff --git a/frontend/src/layouts/DefaultLayout.vue b/frontend/src/layouts/DefaultLayout.vue
+index f3c09b32..a0b89dce 100644
+--- a/frontend/src/layouts/DefaultLayout.vue
++++ b/frontend/src/layouts/DefaultLayout.vue
+@@ -1119,7 +1119,7 @@ const UserAvatar = () => {
+ .top-nav-right {
+   display: flex;
+   align-items: center;
+-  gap: 8px;
++  gap: 12px;
+ }
+ 
+ .user-refresh-trigger {
+diff --git a/frontend/src/views/HomeView.vue b/frontend/src/views/HomeView.vue
+index dc65c09e..3d9d7f51 100644
+--- a/frontend/src/views/HomeView.vue
++++ b/frontend/src/views/HomeView.vue
+@@ -267,7 +267,7 @@ onMounted(async () => {
+         </div>
+       </div>
+       <div class="entry-grid">
+-        <button v-for="entry in quickEntries" :key="entry.key" type="button" class="entry-card arco-card arco-card-hover" @click="goTo(entry.to)">
++        <button v-for="entry in quickEntries" :key="entry.key" type="button" class="entry-card arco-card" @click="goTo(entry.to)">
+           <span class="entry-icon" :style="{ background: quickEntryBgColors[entry.icon_bg], color: quickEntryIconColors[entry.icon_bg] }">
+             <NIcon :size="22"><component :is="entry.iconComponent" /></NIcon>
+           </span>
+@@ -366,6 +366,8 @@ onMounted(async () => {
+   background: var(--neutral-bg);
+ }
+ 
++.home-page .animate-fade-in-up { animation-duration: 400ms; }
++
+ .hero {
+   position: relative;
+   overflow: hidden;
+@@ -466,7 +468,7 @@ onMounted(async () => {
+   border-radius: 10px;
+   font-size: 13px;
+   font-weight: 650;
+-  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
++  transition: transform 0.2s ease;
+ }
+ .n-button.hero-btn-primary {
+   border: 0;
+@@ -537,6 +539,7 @@ onMounted(async () => {
+ 
+ .entry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+ .entry-card {
++  position: relative;
+   display: flex;
+   width: 100%;
+   min-width: 0;
+@@ -547,13 +550,28 @@ onMounted(async () => {
+   text-align: left;
+   cursor: pointer;
+   font: inherit;
++  transition: transform 200ms ease;
++}
++.entry-card::after {
++  content: '';
++  position: absolute;
++  inset: 0;
++  border-radius: inherit;
++  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
++  opacity: 0;
++  transition: opacity 200ms ease;
++  pointer-events: none;
+ }
++.entry-card:hover,
++.entry-card:focus-visible { transform: translateY(-2px); }
++.entry-card:hover::after,
++.entry-card:focus-visible::after { opacity: 1; }
+ .entry-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 11px; transition: transform 0.2s ease; }
+ .entry-card:hover .entry-icon { transform: scale(1.05); }
+ .entry-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+ .entry-title { overflow: hidden; color: var(--neutral-text-1); font-size: 14px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+ .entry-desc { overflow: hidden; color: var(--neutral-text-3); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+-.entry-arrow { flex: 0 0 auto; color: var(--neutral-text-4); transition: color 0.2s ease, transform 0.2s ease; }
++.entry-arrow { flex: 0 0 auto; color: var(--neutral-text-4); transition: transform 0.2s ease; }
+ .entry-card:hover .entry-arrow { color: var(--brand-primary); transform: translateX(2px); }
+ 
+ .mechanism-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 0.8fr); gap: 14px; }
+@@ -592,8 +610,7 @@ onMounted(async () => {
+ .maturity-badge { align-self: flex-start; padding: 3px 8px; border: 1px solid var(--neutral-border); border-radius: 999px; color: var(--neutral-text-3); font-size: 10px; line-height: 1.3; }
+ 
+ .ecosystem-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+-.ecosystem-card { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--radius-card); color: inherit; text-decoration: none; transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+-.ecosystem-card:hover { border-color: color-mix(in srgb, var(--brand-primary) 35%, var(--neutral-border)); box-shadow: var(--shadow-card-hover); transform: translateY(-1px); }
++.ecosystem-card { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 14px; border-radius: var(--radius-card); color: inherit; text-decoration: none; }
+ .ecosystem-card__mark { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--brand-primary-light); color: var(--brand-primary); }
+ .ecosystem-card__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+ .ecosystem-card__copy strong { overflow: hidden; color: var(--neutral-text-1); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+@@ -614,14 +631,16 @@ onMounted(async () => {
+ .capability-item--preview .legend-dot { background: #8059d8; }
+ .capability-item--roadmap .legend-dot { background: var(--neutral-text-4); }
+ 
+-.admin-banner { position: relative; display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 20px; border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+-.admin-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--admin-hero-gradient); }
++.admin-banner { position: relative; display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 20px; border-radius: var(--radius-card); background: var(--neutral-card); box-shadow: var(--shadow-card); cursor: pointer; transition: transform 0.2s ease; }
++.admin-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--brand-gradient); }
+ .admin-banner:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+ .admin-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--arco-primary-light); color: var(--arco-primary); }
+ .admin-text { min-width: 0; flex: 1; }
+ .admin-title { margin: 0 0 4px; color: var(--neutral-text-1); font-size: 15px; font-weight: 600; }
+ .admin-desc { margin: 0; color: var(--neutral-text-3); font-size: 13px; line-height: 1.5; }
+-.n-button.admin-cta { flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 10px; background: var(--admin-hero-gradient); color: #fff; font-size: 13px; font-weight: 650; }
++.n-button.admin-cta { flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 10px; background: var(--brand-gradient); color: #fff; font-size: 13px; font-weight: 650; transition: transform 200ms ease; }
++.n-button.admin-cta:hover,
++.n-button.admin-cta:focus-visible { transform: translateY(-1px); }
+ .n-button.admin-cta :deep(.n-button__border),
+ .n-button.admin-cta :deep(.n-button__state-border) { display: none; }
+ 
+@@ -672,11 +691,26 @@ onMounted(async () => {
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
++  .home-page .animate-fade-in-up { animation: none; }
++  .entry-card,
++  .entry-card::after,
+   .entry-icon,
+   .entry-arrow,
+   .ecosystem-card,
+   .admin-banner,
++  .n-button.admin-cta,
+   .n-button.hero-btn-primary,
+   .n-button.hero-btn-secondary { transition: none; }
++  .entry-card:hover,
++  .entry-card:focus-visible,
++  .entry-card:hover .entry-icon,
++  .entry-card:hover .entry-arrow,
++  .admin-banner:hover,
++  .n-button.admin-cta:hover,
++  .n-button.admin-cta:focus-visible,
++  .n-button.hero-btn-primary:hover,
++  .n-button.hero-btn-primary:focus-visible,
++  .n-button.hero-btn-secondary:hover,
++  .n-button.hero-btn-secondary:focus-visible { transform: none; }
+ }
+ </style>

@@ -1,0 +1,514 @@
+{
+  "layouts": [
+    {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "homeScrollWidth": 1012,
+      "homeWidth": 1012,
+      "heroHeight": 417.421875,
+      "workbenchTop": 645.421875,
+      "columns": "310.656px 310.672px 310.656px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 40,
+          "lineHeight": 40,
+          "width": 524.828125
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 40,
+          "lineHeight": 40,
+          "width": 524.828125
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 210,
+          "scroll": 357,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 210,
+          "scroll": 337,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 210,
+          "scroll": 361,
+          "overflow": "ellipsis"
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "homeScrollWidth": 1172,
+      "homeWidth": 1172,
+      "heroHeight": 427.421875,
+      "workbenchTop": 655.421875,
+      "columns": "364px 364px 364px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 45,
+          "lineHeight": 45,
+          "width": 621.578125
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 45,
+          "lineHeight": 45,
+          "width": 621.578125
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 263,
+          "scroll": 357,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 263,
+          "scroll": 337,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 263,
+          "scroll": 361,
+          "overflow": "ellipsis"
+        }
+      ]
+    },
+    {
+      "width": 2560,
+      "scrollWidth": 2560,
+      "homeScrollWidth": 2292,
+      "homeWidth": 2292,
+      "heroHeight": 432.421875,
+      "workbenchTop": 660.421875,
+      "columns": "737.328px 737.328px 737.328px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 47.5,
+          "lineHeight": 47.5,
+          "width": 1298.78125
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 47.5,
+          "lineHeight": 47.5,
+          "width": 1298.78125
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 636,
+          "scroll": 636,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 636,
+          "scroll": 636,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 636,
+          "scroll": 636,
+          "overflow": "ellipsis"
+        }
+      ]
+    },
+    {
+      "width": 1279,
+      "scrollWidth": 1279,
+      "homeScrollWidth": 1011,
+      "homeWidth": 1011,
+      "heroHeight": 417.328125,
+      "workbenchTop": 645.328125,
+      "columns": "963px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 39.953125,
+          "lineHeight": 39.9688,
+          "width": 524.21875
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 39.953125,
+          "lineHeight": 39.9688,
+          "width": 524.21875
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 862,
+          "scroll": 862,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 862,
+          "scroll": 862,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 862,
+          "scroll": 862,
+          "overflow": "ellipsis"
+        }
+      ]
+    },
+    {
+      "width": 1024,
+      "scrollWidth": 1024,
+      "homeScrollWidth": 756,
+      "homeWidth": 756,
+      "heroHeight": 703.484375,
+      "workbenchTop": 931.484375,
+      "columns": "708px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 31.984375,
+          "lineHeight": 32,
+          "width": 644
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 31.984375,
+          "lineHeight": 32,
+          "width": 644
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 607,
+          "scroll": 607,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 607,
+          "scroll": 607,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 607,
+          "scroll": 607,
+          "overflow": "ellipsis"
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "homeScrollWidth": 342,
+      "homeWidth": 342,
+      "heroHeight": 844.09375,
+      "workbenchTop": 1112.09375,
+      "columns": "310px",
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 26.8125,
+          "lineHeight": 26.8125,
+          "width": 270
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 26.8125,
+          "lineHeight": 26.8125,
+          "width": 270
+        }
+      ],
+      "badgeColors": [
+        {
+          "text": "运行中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        },
+        {
+          "text": "排队中",
+          "color": "rgb(252, 211, 123)",
+          "bg": "rgba(245, 158, 11, 0.12)"
+        },
+        {
+          "text": "已完成",
+          "color": "rgb(52, 211, 153)",
+          "bg": "rgba(52, 211, 153, 0.12)"
+        },
+        {
+          "text": "已过期",
+          "color": "rgb(184, 194, 209)",
+          "bg": "rgba(148, 163, 184, 0.12)"
+        },
+        {
+          "text": "生成中",
+          "color": "rgb(127, 176, 255)",
+          "bg": "rgba(76, 141, 255, 0.12)"
+        }
+      ],
+      "capsule": {
+        "text": "🥫 26732.3",
+        "width": 84.640625
+      },
+      "reportEllipsis": [
+        {
+          "client": 215,
+          "scroll": 357,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 215,
+          "scroll": 337,
+          "overflow": "ellipsis"
+        },
+        {
+          "client": 215,
+          "scroll": 361,
+          "overflow": "ellipsis"
+        }
+      ]
+    }
+  ],
+  "dismissRefresh": true,
+  "contentUpdate": true,
+  "refreshRequests": true,
+  "destinations": [
+    "/flows",
+    "/ai",
+    "/treasure-mouse",
+    "/files",
+    "/flows",
+    "/ai",
+    "/tasks",
+    "/reports",
+    "/admin/users"
+  ],
+  "moreLinks": [
+    "/projects",
+    "/tasks",
+    "/reports"
+  ],
+  "hover": [
+    {
+      "mode": "no-preference",
+      "selector": ".entry-card",
+      "transform": "matrix(1, 0, 0, 1, 0, -2)"
+    },
+    {
+      "mode": "no-preference",
+      "selector": ".workbench-card",
+      "transform": "matrix(1, 0, 0, 1, 0, -2)"
+    },
+    {
+      "mode": "no-preference",
+      "selector": ".pillar-card",
+      "transform": "none"
+    },
+    {
+      "mode": "no-preference",
+      "selector": ".ecosystem-card",
+      "transform": "none"
+    },
+    {
+      "mode": "reduce",
+      "selector": ".entry-card",
+      "transform": "none"
+    },
+    {
+      "mode": "reduce",
+      "selector": ".workbench-card",
+      "transform": "none"
+    },
+    {
+      "mode": "reduce",
+      "selector": ".pillar-card",
+      "transform": "none"
+    },
+    {
+      "mode": "reduce",
+      "selector": ".ecosystem-card",
+      "transform": "none"
+    }
+  ],
+  "lifecycleContrastMin": 5.423406808030029,
+  "lifecycleAllTextChecks": [
+    {
+      "width": 1280,
+      "minContrast": 5.151789846114202
+    },
+    {
+      "width": 1440,
+      "minContrast": 5.151789846114202
+    },
+    {
+      "width": 2560,
+      "minContrast": 5.228055484768424
+    }
+  ],
+  "capsule": {
+    "padding": "4px 12px",
+    "gap": 12,
+    "text": "🥫 26732.3",
+    "width": 85,
+    "scroll": 85
+  },
+  "errors": []
+}

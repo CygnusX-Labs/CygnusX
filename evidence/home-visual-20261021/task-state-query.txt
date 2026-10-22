@@ -1,0 +1,16 @@
+BEGIN
+                                  json_build_object                                  
+-------------------------------------------------------------------------------------
+ {"running" : 38, "seed_demo_running" : 38, "empty_workdir" : 38, "unfinished" : 38}
+(1 row)
+
+                  id                  |             name              | status  |    created_at_shanghai     | idempotency_key |     parameters      | work_dir 
+--------------------------------------+-------------------------------+---------+----------------------------+-----------------+---------------------+----------
+ 66356324-1ee9-42e9-8061-f89fdafdc2c5 | RNA-seq 差异表达 - 运行中 #36 | running | 2026-10-03 00:01:26.157848 | seed-demo-00035 | {"seed": "demo-v1"} | 
+ d2812b9b-2c25-4704-ac2f-2b2d8bf4e530 | GO/KEGG 富集分析 - 运行中 #39 | running | 2026-10-02 23:55:26.157848 | seed-demo-00038 | {"seed": "demo-v1"} | 
+ babd4971-cd4b-4d74-8f60-c71572ff21c9 | RNA-seq 差异表达 - 运行中 #01 | running | 2026-10-02 23:17:26.157848 | seed-demo-00000 | {"seed": "demo-v1"} | 
+ f911dc61-2aa9-4d67-93d7-c568818d520b | GO/KEGG 富集分析 - 运行中 #09 | running | 2026-10-02 22:55:26.157848 | seed-demo-00008 | {"seed": "demo-v1"} | 
+ 8aebcb54-3d97-4657-a721-021a3e7f367b | GO/KEGG 富集分析 - 运行中 #34 | running | 2026-10-02 22:36:26.157848 | seed-demo-00033 | {"seed": "demo-v1"} | 
+(5 rows)
+
+COMMIT

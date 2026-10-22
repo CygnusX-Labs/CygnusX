@@ -74,8 +74,8 @@ network:
 # 存储配置
 # --------------------------------------------
 storage:
-  # 用户目录宿主机基路径；须与 .env STORAGE_PATH 一致（运行时拼接 /{user_id}/）
-  workspace_base: "/data/omichub/users"
+  # 留空由 STORAGE_PATH 派生 users 子目录；显式值仍可用于自定义部署。
+  workspace_base: ""
 
 # --------------------------------------------
 # 端口分配范围（ttyd 映射到宿主机的高位端口）

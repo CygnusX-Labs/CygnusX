@@ -1,0 +1,8 @@
+{
+  "private_root": "/tmp/cygnusx-run-claims-runtime-9av54_1c",
+  "worktree": "/tmp/cygnusx-run-claims-_vwxmf1u/worktree",
+  "api_pid": 1229822,
+  "baseline_pid": 1230283,
+  "postgres": "cygnusx-claims-pg-9av54_1c",
+  "redis": "cygnusx-claims-redis-9av54_1c"
+}

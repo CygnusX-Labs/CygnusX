@@ -1,0 +1,17 @@
+[
+  {
+    "name": "browser_launched",
+    "evidence": "131.0.6778.33"
+  },
+  {
+    "name": "real_ui_login",
+    "evidence": {
+      "browser": "131.0.6778.33",
+      "chromiumSandbox": true
+    }
+  },
+  {
+    "name": "failure",
+    "evidence": "page.goto: Navigation to \"http://127.0.0.1:18003/projects/c381225d-562b-4ef6-a728-01e78b07a330\" is interrupted by another navigation to \"http://127.0.0.1:18003/\"\nCall log:\n  - navigating to \"http://127.0.0.1:18003/projects/c381225d-562b-4ef6-a728-01e78b07a330\", waiting until \"networkidle\"\n"
+  }
+]

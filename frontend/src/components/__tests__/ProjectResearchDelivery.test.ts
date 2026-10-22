@@ -75,7 +75,7 @@ it('drops a late inventory from the old project and clears old preview and job',
 
 it.each([
   [{ response: { status: 403, data: { code: 'FEATURE_DISABLED' } } }, '尚未启用'],
-  [{ response: { status: 403 } }, '没有权限'],
+  [{ response: { status: 403 } }, '当前用户无权限'],
   [new Error('/private/secret'), '请求失败'],
 ])('distinguishes disabled, denied and failed requests without exposing raw errors (%s)', async (error, text) => {
   vi.mocked(projectDeliveryApi.inventory).mockRejectedValueOnce(error)

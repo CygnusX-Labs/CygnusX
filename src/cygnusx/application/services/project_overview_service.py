@@ -15,6 +15,7 @@ import asyncio
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -44,7 +45,7 @@ class ProjectOverviewService:
         session_limit: int = 50,
         session_offset: int = 0,
         session_status: str = "active",
-    ) -> dict:
+    ) -> dict[str, Any]:
         project = await self._load_project(user_id, project_id)
         sessions = await self._list_sessions(
             user_id,
@@ -59,7 +60,7 @@ class ProjectOverviewService:
     # ------------------------------------------------------------------
     # 项目元数据
     # ------------------------------------------------------------------
-    async def _load_project(self, user_id: UUID, project_id: UUID) -> dict:
+    async def _load_project(self, user_id: UUID, project_id: UUID) -> dict[str, Any]:
         stmt = select(ProjectModel).where(
             ProjectModel.id == project_id, ProjectModel.user_id == user_id
         )
@@ -74,6 +75,9 @@ class ProjectOverviewService:
             "description": model.description,
             # customer 列由并行开发加入，模型尚未带该字段时兜底为 None
             "customer": getattr(model, "customer", None),
+            # NULL compatibility through lifecycle01; remove in lifecycle02.
+            "status": getattr(model, "status", None) or "active",
+            "settings": getattr(model, "settings", None),
             "created_at": model.created_at.isoformat() if model.created_at else None,
             "updated_at": model.updated_at.isoformat() if model.updated_at else None,
         }
@@ -93,7 +97,7 @@ class ProjectOverviewService:
 
     async def _list_sessions(
         self, user_id: UUID, project_id: UUID, *, status: str, limit: int, offset: int
-    ) -> dict:
+    ) -> dict[str, Any]:
         condition = (
             ChatSessionModel.user_id == str(user_id),
             ChatSessionModel.project_id == str(project_id),
@@ -106,9 +110,7 @@ class ProjectOverviewService:
             )
         ).scalar_one()
         result = await self._session.execute(
-            select(ChatSessionModel)
-            .where(*condition)
-            .order_by(ChatSessionModel.updated_at.desc())
+            select(ChatSessionModel).where(*condition).order_by(ChatSessionModel.updated_at.desc())
         )
         items = [
             {
@@ -118,9 +120,7 @@ class ProjectOverviewService:
                 "status": s.status,
                 "mode": s.mode,
                 "message_count": s.message_count,
-                "last_message_at": s.last_message_at.isoformat()
-                if s.last_message_at
-                else None,
+                "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
                 "updated_at": s.updated_at.isoformat() if s.updated_at else None,
                 "room_id": None,
@@ -142,7 +142,7 @@ class ProjectOverviewService:
 
     async def _list_room_items(
         self, user_id: UUID, project_id: UUID, *, status: str
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """项目下的 agentteams 房间条目（owner 维度），按映射后的 status 参与过滤。"""
         result = await self._session.execute(
             select(AgentTeamsRoomModel)
@@ -152,7 +152,7 @@ class ProjectOverviewService:
             )
             .order_by(AgentTeamsRoomModel.updated_at.desc())
         )
-        items = []
+        items: list[dict[str, Any]] = []
         for room in result.scalars().all():
             mapped_status = self._map_room_status(room.status)
             if mapped_status != status:
@@ -165,9 +165,7 @@ class ProjectOverviewService:
                     "status": mapped_status,
                     "mode": "agentteams",
                     "message_count": 0,
-                    "last_message_at": room.updated_at.isoformat()
-                    if room.updated_at
-                    else None,
+                    "last_message_at": room.updated_at.isoformat() if room.updated_at else None,
                     "created_at": room.created_at.isoformat() if room.created_at else None,
                     "updated_at": room.updated_at.isoformat() if room.updated_at else None,
                     "room_id": room.room_id,
@@ -179,11 +177,11 @@ class ProjectOverviewService:
     # ------------------------------------------------------------------
     # 磁盘 runs 目录扫描（同步，经 asyncio.to_thread 调用）
     # ------------------------------------------------------------------
-    def _scan_runs(self, user_id: str, project_slug: str) -> list[dict]:
+    def _scan_runs(self, user_id: str, project_slug: str) -> list[dict[str, Any]]:
         runs_dir = self._factory.project_dir(user_id, project_slug) / "runs"
         if not runs_dir.is_dir():
             return []
-        items = []
+        items: list[dict[str, Any]] = []
         for entry in runs_dir.iterdir():
             if not entry.is_dir() or entry.name.startswith("."):
                 continue

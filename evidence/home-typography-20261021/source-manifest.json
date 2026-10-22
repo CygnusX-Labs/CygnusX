@@ -1,0 +1,14 @@
+[
+  {
+    "path": "frontend/src/views/HomeView.vue",
+    "sha256": "5675898584c56c70930a8f7be64b2a54a09bbad561fe109c69742c7a9f574927"
+  },
+  {
+    "path": "frontend/src/components/home/ResearchWorkbenchPanel.vue",
+    "sha256": "7313e9f4940d7e09d2583e6e37021811e1e36da7f8895dd4ff240633fef29378"
+  },
+  {
+    "path": "ARCHITECTURE_DESIGN/CygnusX_frontend.md",
+    "sha256": "a1508c79905af5bf68d5fdb2869df2e7eb37d899826160df425f61c819cffb06"
+  }
+]

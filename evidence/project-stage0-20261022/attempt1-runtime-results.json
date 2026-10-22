@@ -1,0 +1,10 @@
+[
+  {
+    "name": "closure",
+    "evidence": {
+      "api_stopped": true,
+      "test_containers_stopped": true,
+      "existing_deployment_modified": false
+    }
+  }
+]

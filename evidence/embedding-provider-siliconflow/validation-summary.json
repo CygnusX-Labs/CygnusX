@@ -1,0 +1,36 @@
+{
+  "implementation": "completed",
+  "real_dimension_probe": "blocked_missing_credential",
+  "real_requests": 0,
+  "request_limit": 2,
+  "focused_tests": {
+    "passed": 37,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "expanded_tests": {
+    "passed": 53,
+    "failed": 1,
+    "failure": "test_deepseek_v4_explicitly_disables_thinking",
+    "exit_code": 1
+  },
+  "ruff_all": {
+    "errors": 274,
+    "exit_code": 1
+  },
+  "ruff_changed_files": {
+    "errors": 0,
+    "exit_code": 0
+  },
+  "mypy": {
+    "errors": 1028,
+    "baseline_errors": 1028,
+    "new_diagnostics": 0,
+    "exit_code": 1
+  },
+  "env_example_drift": {
+    "exit_code": 0
+  },
+  "container_rebuild": false,
+  "real_backfill": false
+}

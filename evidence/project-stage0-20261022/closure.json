@@ -1,0 +1,12 @@
+{
+  "api_stopped": true,
+  "test_container_running": {
+    "cygnusx-project-stage0-pg-20261022-attempt2": false,
+    "cygnusx-project-stage0-redis-20261022-attempt2": false
+  },
+  "preview_pids_stopped": [
+    3289214
+  ],
+  "production_services_untouched": true,
+  "postgres_volumes_retained": true
+}

@@ -8,14 +8,15 @@ from types import SimpleNamespace
 import pytest
 
 from cygnusx.core.exceptions import ValidationError
-from cygnusx.tools.deg.config import DegConfig, DegConfigManager
 from cygnusx.tools.deg import service as deg_service_module
+from cygnusx.tools.deg.config import DegConfig, DegConfigManager
 from cygnusx.tools.deg.runner import DegDockerRunner, DegRunParams
 from cygnusx.tools.deg.service import DegService
 from cygnusx.tools.deg.tasks import _parse_results
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEG_CONFIG_YAML = REPO_ROOT / "tool_configs" / "deg" / "deg_config.yaml"
+pytestmark = pytest.mark.unit
 
 
 def _service() -> DegService:
@@ -28,6 +29,7 @@ def _runner() -> DegDockerRunner:
         deg_docker_image="cygnusx-r-deg:v1",
         deg_docker_network="cygnusx_app_net",
         deg_data_mount="/data/cygnusx",
+        storage_path="/data/cygnusx",
         deg_exec_timeout=7200,
     )
     return runner
@@ -36,6 +38,7 @@ def _runner() -> DegDockerRunner:
 # ----------------------------------------------------------------------
 # 配置加载
 # ----------------------------------------------------------------------
+
 
 def test_config_loads_repo_yaml() -> None:
     cfg = DegConfigManager(DEG_CONFIG_YAML).get_config()
@@ -111,6 +114,7 @@ def test_forced_deseq2_with_1v1_is_rejected_early() -> None:
 # 输入校验
 # ----------------------------------------------------------------------
 
+
 def test_parse_table_and_column_detection() -> None:
     svc = _service()
     rows = svc._parse_table(b"sample_name,group\nA,WT\nB,Treat\n", "m.csv", "样本表")
@@ -120,7 +124,7 @@ def test_parse_table_and_column_detection() -> None:
 
 def test_parse_table_tsv_and_sniff() -> None:
     svc = _service()
-    rows = svc._parse_table("Treat\tControl\nB\tA\n".encode(), "p.tsv", "比较对")
+    rows = svc._parse_table(b"Treat\tControl\nB\tA\n", "p.tsv", "比较对")
     assert rows[0]["Treat"] == "B"
     rows = svc._parse_table(b"Treat,Control\nB,A\n", "p.txt", "比较对")
     assert rows[0]["Control"] == "A"
@@ -146,6 +150,7 @@ def test_counts_header_and_size_limits() -> None:
 # ----------------------------------------------------------------------
 # 容器命令构造
 # ----------------------------------------------------------------------
+
 
 def test_runner_command_edger_includes_bcv_and_annotation() -> None:
     params = DegRunParams(
@@ -174,10 +179,10 @@ def test_runner_command_edger_includes_bcv_and_annotation() -> None:
 def test_runner_command_deseq2_omits_bcv() -> None:
     params = DegRunParams(
         engine="deseq2",
-        counts_path="c",
-        metadata_path="m",
-        pairs_path="p",
-        output_dir="o",
+        counts_path="/data/cygnusx/input/counts.csv",
+        metadata_path="/data/cygnusx/input/metadata.csv",
+        pairs_path="/data/cygnusx/input/pairs.csv",
+        output_dir="/data/cygnusx/output",
     )
     cmd = _runner().build_command(params, "cygnusx-deg-test2")
     assert "/opt/deg/run_deseq2.r" in cmd
@@ -189,7 +194,8 @@ def test_runner_command_deseq2_omits_bcv() -> None:
 # 结果解析
 # ----------------------------------------------------------------------
 
-def test_parse_results_edgeR_layout(tmp_path: Path) -> None:
+
+def test_parse_results_edger_layout(tmp_path: Path) -> None:
     (tmp_path / "All_Contrast_DEG_Statistics.csv").write_text(
         '"Contrast","Control","Treat","Method","Dispersion_Assumption","N_Control","N_Treat","Up_Regulated","Down_Regulated","Total_DEG"\n'
         '"Treat_vs_WT","WT","Treat","edgeR-QLF","trended+tagwise (common BCV=0.321)",3,3,2,6,8\n'

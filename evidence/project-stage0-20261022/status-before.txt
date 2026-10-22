@@ -1,0 +1,71 @@
+ M .env.example
+ M ARCHITECTURE_DESIGN/CygnusX_agent_execution_framework.md
+ M ARCHITECTURE_DESIGN/CygnusX_database_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_flow_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_log_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_mcp_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_memory_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_memory_embedding_operations.md
+ M ARCHITECTURE_DESIGN/CygnusX_platform_architecture_maps.md
+ M ARCHITECTURE_DESIGN/CygnusX_research_loop_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_skill_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_token_billing_architecture.md
+ M ARCHITECTURE_DESIGN/CygnusX_toolbox_architecture.md
+ M ARCHITECTURE_DESIGN/README.md
+ M data/ai/providers.yaml
+ M deploy/docker/docker-compose.worker.yml
+ M deploy/docker/docker-compose.yml
+ M scripts/backfill_memory_embeddings.py
+ M src/cygnusx/core/config.py
+ M src/cygnusx/infrastructure/ai_provider/litellm_provider.py
+ M src/cygnusx/infrastructure/database/repositories/ai_provider_repository.py
+ M src/cygnusx/main.py
+ M tests/unit/test_memory_embedding_cli.py
+?? .env.test
+?? ARCHITECTURE_DESIGN/CygnusX_admin_console_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_analysis_operations_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_architecture_coverage_audit.md
+?? ARCHITECTURE_DESIGN/CygnusX_async_task_queue_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_cookie_economy_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_festival_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_goal_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_identity_access_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_notification_engagement_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_project_workspace_architecture.md
+?? ARCHITECTURE_DESIGN/CygnusX_skill_mcp_integration_architecture.md
+?? "docs/info/26.10.20/CygnusX\346\265\213\350\257\225\346\212\245\345\221\212-\351\230\266\346\256\2650-\347\216\257\345\242\203\345\237\272\347\272\277.md"
+?? "docs/info/26.10.20/CygnusX\346\265\213\350\257\225\346\212\245\345\221\212-\351\230\266\346\256\2651-Embedding\344\270\216\345\220\221\351\207\217\347\273\264\346\212\244-v2.md"
+?? "docs/info/26.10.20/CygnusX\346\265\213\350\257\225\346\212\245\345\221\212-\351\230\266\346\256\2651-Embedding\344\270\216\345\220\221\351\207\217\347\273\264\346\212\244.md"
+?? "docs/info/26.10.20/CygnusX\350\256\260\345\277\206\344\270\216\347\237\245\350\257\206\345\272\223\346\265\213\350\257\225\344\273\273\345\212\241\344\271\246.md"
+?? docs/info/26.10.21/2026-10-21_16.00.56.png
+?? docs/info/26.10.21/2026-10-21_16.22.32.png
+?? docs/info/26.10.21/2026-10-21_16.30.35.png
+?? docs/info/26.10.21/2026-10-21_22.11.58.png
+?? docs/info/26.10.21/2026-10-21_6.10.36.png
+?? "docs/info/26.10.21/CygnusX-SiliconFlow-Embedding\346\216\245\345\205\245\345\256\236\346\226\275\346\212\245\345\221\212.md"
+?? "docs/info/26.10.21/CygnusX\350\256\260\345\277\206\346\216\245\347\272\277\344\277\256\345\244\215\344\270\216\351\252\214\346\224\266\350\277\233\345\261\225.md"
+?? "docs/info/26.10.21/CygnusX\350\256\260\345\277\206\346\250\241\345\235\227\345\244\215\345\256\241\344\270\216\344\274\230\345\214\226\345\273\272\350\256\256-2026-10-20.md"
+?? "docs/info/26.10.21/CygnusX\350\256\260\345\277\206\346\250\241\345\235\227\345\244\215\345\256\241\344\270\216\344\274\230\345\214\226\345\273\272\350\256\256-2026-10-21.md"
+?? "docs/info/26.10.21/CygnusX\350\256\260\345\277\206\346\250\241\345\235\227\345\244\215\345\256\241\344\270\216\344\274\230\345\214\226\345\273\272\350\256\256-2026-10-21_new.md"
+?? "docs/info/26.10.21/CygnusX\351\241\271\347\233\256\347\256\241\347\220\206\346\236\266\346\236\204\344\270\216\347\247\221\347\240\224\345\212\237\350\203\275\346\234\252\345\220\257\347\224\250\350\260\203\346\237\245.md"
+?? docs/info/26.10.22/
+?? "docs/\351\235\222\350\223\235\346\270\220\345\217\230\345\244\251\351\271\205\350\275\250\351\201\223\345\276\275\346\240\207.png"
+?? evidence/brand-logo-20261021/
+?? evidence/embedding-provider-siliconflow/
+?? evidence/home-hero-card-20261021/
+?? evidence/home-typography-20261021/
+?? evidence/home-visual-20261021/
+?? evidence/memory-go-live-v3/
+?? evidence/memory-stage1-v2/
+?? evidence/memory-stage1-v3/
+?? evidence/memory-stage1/
+?? evidence/project-stage0-20261022/
+?? evidence/project-workspace-investigation-20261021/
+?? scripts/init_memory_test_databases.sh
+?? scripts/probe_siliconflow_embedding_dimensions.py
+?? scripts/seed_memory_test_data.py
+?? scripts/verify_memory_downgrade_guards.py
+?? scripts/verify_memory_stage1_supplement.py
+?? scripts/verify_memory_stage1_zero.py
+?? tests/unit/test_ai_provider_default_switch.py
+?? tests/unit/test_embedding_provider_selection.py

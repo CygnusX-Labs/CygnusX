@@ -269,14 +269,14 @@ Phase 1 已接入独立报告 Job、不可变快照持久化、八模块 HTML �
 | AI 执行/确认门 | `src/cygnusx/application/services/analysis_flow_tool_service.py`、`domain/flow/submission_validator.py`、`tool_confirmation_service.py` |
 | 任务提交九步链 | `src/cygnusx/application/services/task_service.py` |
 | 输入文件构建器 | `src/cygnusx/infrastructure/execution/generic_builder.py` |
-| Celery 执行 | `src/cygnusx/infrastructure/celery_app/tasks/analysis.py`（`run_snakemake`）、`infrastructure/execution/local.py`（`LocalSnakemakeExecutor`） |
+| Celery 执行 | `src/cygnusx/infrastructure/celery_app/tasks/analysis.py`（`run_snakemake`）、`infrastructure/execution/local.py`（`LocalSnakemakeExecutor`）；队列/Worker/Beat 拓扑见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md) |
 | API | `src/cygnusx/api/v1/flows.py`、`api/v1/tasks.py` |
 | 监控推送 | `src/cygnusx/application/services/workflow_monitor_service.py` + FlowFrame §13.5 logger 插件 |
 | 流程 YAML 实例 | `flows/rna_seq.yaml`、`flows/atac_seq.yaml` |
 
 ### RI13 最小执行证据接线（代码/隔离层）
 
-原 `TaskService.submit` 在权威validator之后，使用原builder生成输入文件，再将v2定义、独立Task绑定和生成文件SHA写入既有 `Task.parameters._execution_evidence`；Task/证据及启用时的原预扣参数以QUEUED在队列可见前持久化。QUEUED是投递意图，投递不明必须对账，不证明broker已ACK。
+原 `TaskService.submit` 在权威validator之后，使用原builder生成输入文件，再将v2定义、独立Task绑定和生成文件SHA写入既有 `Task.parameters._execution_evidence`；Task/证据及启用时的原预扣参数以QUEUED在队列可见前持久化。QUEUED是投递意图，投递不明必须对账，不证明broker已ACK。投递使用固定 task ID `analysis-{task.id}-attempt-0`，Worker 侧以行锁 + 只接受 QUEUED 实现幂等领取；该任务的队列归属、ack 语义与超时规则见异步队列文档 §2、§6。
 
 原analysis Worker持Task行锁领取QUEUED、推进RUNNING，再做前后证据核验和队列执行参数比对；已运行/终态重复投递不会启动执行器。输入字节仍复用ResearchExecutionBinding/check_inputs；没有替代FlowFrame或新增执行引擎。PG并发、实际队列和挂载尚未验收。
 

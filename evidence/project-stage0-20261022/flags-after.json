@@ -1,0 +1,35 @@
+{
+  "cygnusx-web": {
+    "research_plan_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "project_export_enabled": false,
+    "project_report_write_enabled": false,
+    "project_report_pdf_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "agent_download_write_enabled": false,
+    "tool_gateway_read_enabled": false
+  },
+  "cygnusx-worker": {
+    "research_plan_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "project_export_enabled": false,
+    "project_report_write_enabled": false,
+    "project_report_pdf_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "agent_download_write_enabled": false,
+    "tool_gateway_read_enabled": false
+  },
+  "cygnusx-beat": {
+    "research_plan_enabled": false,
+    "research_delivery_read_enabled": false,
+    "research_delivery_write_enabled": false,
+    "project_export_enabled": false,
+    "project_report_write_enabled": false,
+    "project_report_pdf_enabled": false,
+    "agent_analysis_write_enabled": false,
+    "agent_download_write_enabled": false,
+    "tool_gateway_read_enabled": false
+  }
+}

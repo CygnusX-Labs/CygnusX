@@ -1,0 +1,13 @@
+{
+  "implementation_file_hashes_match": true,
+  "accepted_base_patch_check": true,
+  "source_settings_default_yaml_env_example_unchanged": true,
+  "production_env_not_copied": true,
+  "actual_http_pg_redis_browser_evidence_present": true,
+  "all_four_fixture_classes_and_three_discrepancy_classes_present": true,
+  "source_write_gate_and_worker_verification_false": true,
+  "no_task_report_export_created": true,
+  "global_gate_baseline_failures_disclosed": true,
+  "no_commits_push_or_deploy": true,
+  "user_acceptance": "USER_DECIDES"
+}

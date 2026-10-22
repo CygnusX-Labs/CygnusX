@@ -1,0 +1,67 @@
+[
+  {
+    "audit_id": "7f1cf543-2aa6-4ae6-a536-b164d50a3a45",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 401
+  },
+  {
+    "audit_id": "8887fe10-7669-425b-8410-c9197a9eb2c5",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403
+  },
+  {
+    "audit_id": "8425e065-c5df-47c5-9c9a-ddb8e02f6e15",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..%5Cother-only/claim",
+    "status": 422
+  },
+  {
+    "audit_id": "a08e325f-3c4a-4982-9b45-119f03e1c86f",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..%2Fother-only/claim",
+    "status": 404
+  },
+  {
+    "audit_id": "23e931d7-ae7a-47d6-837c-891ec24517db",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 200
+  },
+  {
+    "audit_id": "1ace5f42-3c12-4c0b-9d28-c616f9e26392",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403
+  },
+  {
+    "audit_id": "c50354d5-0c90-4160-a2e7-2681acd2c575",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403
+  },
+  {
+    "audit_id": "778f2ecf-47f4-4a1e-9ff3-a705b572d28d",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 403
+  },
+  {
+    "audit_id": "21d086b8-d575-4c4b-ac83-d4fbc0503dcc",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-final-source-20261022-024516/claim",
+    "status": 409
+  },
+  {
+    "audit_id": "7c8aec36-f2f3-438d-9fa0-3a3a5bf98bb5",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 409
+  },
+  {
+    "audit_id": "35cd2c31-499c-402c-9b17-ca5ef34a6848",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 200
+  },
+  {
+    "audit_id": "05abc8ac-61a4-4927-88f5-f32e947887e7",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim/approve",
+    "status": 200
+  },
+  {
+    "audit_id": "11460f69-df7d-4158-8da2-5b1c0d2a6acb",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 409
+  }
+]

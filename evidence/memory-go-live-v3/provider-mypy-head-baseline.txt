@@ -1,0 +1,5 @@
+src/cygnusx/infrastructure/ai_provider/litellm_provider.py:361: error: Module "litellm" does not explicitly export attribute "BadRequestError"  [attr-defined]
+src/cygnusx/infrastructure/ai_provider/litellm_provider.py:401: error: Incompatible types in assignment (expression has type "str", target has type "dict[str, Any]")  [assignment]
+pyproject.toml: note: unused section(s): module = ['celery.*', 'docker.*', 'flower.*', 'langchain_core.*', 'langgraph.*', 'rocketmq.*', 'snakemake.*']
+Found 2 errors in 1 file (checked 1 source file)
+warning: Ignoring unsupported Python request `omichub_3.11` in version file: /home/zj/zj_code_libarary/OmicHub/.python-version

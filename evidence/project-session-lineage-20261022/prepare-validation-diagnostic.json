@@ -1,0 +1,15 @@
+{
+  "validation": {
+    "valid": false,
+    "errors": [
+      {
+        "field": "parameters.raw_data_path",
+        "code": "INVALID_WORKSPACE_DATA",
+        "message": "双端文件数量不匹配：R1=1，R2=0",
+        "suggestion": null
+      }
+    ],
+    "warnings": []
+  },
+  "write_enabled": false
+}

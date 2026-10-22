@@ -26,8 +26,9 @@ def test_missing_explicit_dsn_never_uses_application_database(monkeypatch, capsy
 
 
 @pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("statuses", [("active",), ("archived", "superseded")])
 def test_explicit_database_and_apply_or_dry_run_are_passed_to_operator_service(
-    monkeypatch, capsys, apply
+    monkeypatch, capsys, apply, statuses
 ):
     script = run_path(str(_SCRIPT))
     result = {"status": "completed" if apply else "dry_run", "updated": 0}
@@ -35,7 +36,14 @@ def test_explicit_database_and_apply_or_dry_run_are_passed_to_operator_service(
     script["main"].__globals__["run"] = run
     monkeypatch.setenv("MEMORY_MAINTENANCE_DATABASE_URL", "postgresql://test/maintenance")
     monkeypatch.setattr(
-        "sys.argv", [str(_SCRIPT), "--mode", "mismatch", *(["--apply"] if apply else [])]
+        "sys.argv",
+        [
+            str(_SCRIPT),
+            "--mode",
+            "mismatch",
+            *(["--statuses", *statuses] if statuses != ("active",) else []),
+            *(["--apply", "--confirm-database", "maintenance"] if apply else []),
+        ],
     )
     assert script["main"]() == 0
     run.assert_awaited_once_with(
@@ -45,6 +53,8 @@ def test_explicit_database_and_apply_or_dry_run_are_passed_to_operator_service(
         limit=100,
         apply=apply,
         provider_id=None,
+        confirm_database="maintenance" if apply else None,
+        statuses=statuses,
     )
     assert json.loads(capsys.readouterr().out) == result
 
@@ -101,8 +111,9 @@ async def test_apply_resolves_provider_in_explicit_db_and_publishes_only_after_c
             assert session is db and storage == "facts"
             assert embedding_client._config is chosen
 
-        async def backfill(self, limit, *, mode, dry_run):
+        async def backfill(self, limit, *, mode, dry_run, statuses):
             assert mode == "mismatch" and not dry_run
+            assert statuses == ("archived", "superseded")
             return {"status": "completed", "updated": 1}
 
         def publish_report(self, report):
@@ -116,8 +127,49 @@ async def test_apply_resolves_provider_in_explicit_db_and_publishes_only_after_c
         }
     )
     result = await script["run"](
-        "postgresql://test/maintenance", storage="facts", mode="mismatch", limit=1, apply=True
+        "postgresql://test/maintenance",
+        storage="facts",
+        mode="mismatch",
+        limit=1,
+        apply=True,
+        confirm_database="maintenance",
+        statuses=("archived", "superseded"),
     )
     assert result["updated"] == 1
     default.assert_awaited_once()
     engine.dispose.assert_awaited_once()
+
+
+@pytest.mark.parametrize("confirmation", [None, "another_database"])
+@pytest.mark.asyncio
+async def test_apply_rejects_unconfirmed_or_wrong_database_before_connecting(confirmation):
+    script = run_path(str(_SCRIPT))
+    engine = AsyncMock()
+    script["run"].__globals__["create_async_engine"] = engine
+    with pytest.raises(ValueError, match="confirm-database"):
+        await script["run"](
+            "postgresql://test/maintenance",
+            storage="facts",
+            mode="missing",
+            limit=10,
+            apply=True,
+            confirm_database=confirmation,
+        )
+    engine.assert_not_called()
+
+
+def test_cli_rejects_wrong_target_without_provider_or_dsn_disclosure(monkeypatch, capsys):
+    script = run_path(str(_SCRIPT))
+    run = AsyncMock()
+    script["main"].__globals__["run"] = run
+    monkeypatch.setenv(
+        "MEMORY_MAINTENANCE_DATABASE_URL", "postgresql://private:secret@test/unexpected_target"
+    )
+    monkeypatch.setattr(
+        "sys.argv", [str(_SCRIPT), "--apply", "--confirm-database", "authorized_target"]
+    )
+    assert script["main"]() == 2
+    run.assert_not_awaited()
+    output = capsys.readouterr().out
+    assert json.loads(output) == {"status": "error", "error_type": "ValueError"}
+    assert "secret" not in output and "private" not in output and "unexpected_target" not in output

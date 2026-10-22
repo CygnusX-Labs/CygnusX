@@ -149,6 +149,7 @@ sequenceDiagram
 
 - **失败降级**：任务日志目录创建或 sink 添加失败时，只记录 warning，并继续执行任务，不阻断主流程。
 - **实时链路**：现有 `publish_task_log` + DB 回写 + WebSocket 不变，文件日志只是额外备份。
+- **队列与 Worker 拓扑**：`LoggedTask` 在哪些 Worker 生效、任务如何路由、RocketMQ 消费者如何复用同一 task body，见 [CygnusX_async_task_queue_architecture.md](CygnusX_async_task_queue_architecture.md)。
 
 ### 3.3 数据库任务日志边界
 

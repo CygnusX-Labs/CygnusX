@@ -1,0 +1,14 @@
+[
+  {
+    "statement": "UPDATE audit_logs SET detail=json_build_object('forged',TRUE) WHERE id=:id",
+    "id": "2414d867-6ae1-4871-b675-aa720e8fe646",
+    "blocked": true,
+    "reason": "project run claim audit is append-only"
+  },
+  {
+    "statement": "DELETE FROM audit_logs WHERE id=:id",
+    "id": "2414d867-6ae1-4871-b675-aa720e8fe646",
+    "blocked": true,
+    "reason": "project run claim audit is append-only"
+  }
+]

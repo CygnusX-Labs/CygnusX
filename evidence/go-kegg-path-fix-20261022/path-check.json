@@ -1,0 +1,37 @@
+{
+  "status": "path_mapping_verified",
+  "gene_count": 1576,
+  "files": [
+    {
+      "flag": "--input",
+      "container_path": "/data/cygnusx/users/cb79a200-b2ca-441f-9a42-d3417fbfa89d/projects/COP1-HY5_Example/runs/enrichment-20261022-141407/input/gene_list.txt",
+      "host_path": "/data/omichub/users/cb79a200-b2ca-441f-9a42-d3417fbfa89d/projects/COP1-HY5_Example/runs/enrichment-20261022-141407/input/gene_list.txt",
+      "exists": true
+    },
+    {
+      "flag": "--output",
+      "container_path": "/data/cygnusx/users/cb79a200-b2ca-441f-9a42-d3417fbfa89d/projects/COP1-HY5_Example/runs/enrichment-20261022-141407/output/enrichment_result.csv",
+      "host_path": "/data/omichub/users/cb79a200-b2ca-441f-9a42-d3417fbfa89d/projects/COP1-HY5_Example/runs/enrichment-20261022-141407/output/enrichment_result.csv",
+      "exists": false
+    },
+    {
+      "flag": "--go_obo",
+      "container_path": "/data/cygnusx/omichub_data/reference/ITAG4.1/go-basic.obo",
+      "host_path": "/data/omichub/omichub_data/reference/ITAG4.1/go-basic.obo",
+      "exists": true
+    },
+    {
+      "flag": "--go_annotation",
+      "container_path": "/data/cygnusx/omichub_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal",
+      "host_path": "/data/omichub/omichub_data/reference/ITAG4.1/ITAG4.1_blast2go_annot.annot_deal",
+      "exists": true
+    },
+    {
+      "flag": "--kegg_id_map",
+      "container_path": "/data/cygnusx/omichub_data/reference/ITAG4.1/ITAG4.1.kegg.id",
+      "host_path": "/data/omichub/omichub_data/reference/ITAG4.1/ITAG4.1.kegg.id",
+      "exists": true
+    }
+  ],
+  "docker_execution": "not_verified_socket_access_denied"
+}

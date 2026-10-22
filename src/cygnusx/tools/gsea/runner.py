@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cygnusx.tools.enrichments.runner import EnrichmentDockerRunner, EnrichmentRunResult
+from cygnusx.tools.container_paths import ToolDataMount
+from cygnusx.tools.enrichments.runner import EnrichmentDockerRunnerBase
 
 
 @dataclass
@@ -15,9 +16,10 @@ class GseaRunParams:
     q_value_cutoff: float
 
 
-class GseaDockerRunner(EnrichmentDockerRunner):
+class GseaDockerRunner(EnrichmentDockerRunnerBase[GseaRunParams]):
     def build_command(self, params: GseaRunParams, container_name: str) -> list[str]:
         settings = self._settings
+        mount = ToolDataMount(settings.enrichment_data_mount, settings.storage_path)
         command = [
             "docker",
             "run",
@@ -25,7 +27,7 @@ class GseaDockerRunner(EnrichmentDockerRunner):
             "--name",
             container_name,
             "-v",
-            f"{settings.enrichment_data_mount}:/data/cygnusx",
+            mount.volume,
             "--memory",
             settings.enrichment_memory,
             "--cpus",
@@ -34,9 +36,9 @@ class GseaDockerRunner(EnrichmentDockerRunner):
             "Rscript",
             "/app/run_gsea.R",
             "--input",
-            params.input_path,
+            mount.container_path(params.input_path),
             "--output",
-            params.output_path,
+            mount.container_path(params.output_path),
             "--gene_set",
             params.gene_set,
             "--p_value_cutoff",
@@ -45,8 +47,5 @@ class GseaDockerRunner(EnrichmentDockerRunner):
             str(params.q_value_cutoff),
         ]
         if params.go_annotation:
-            command.extend(["--go_annotation", params.go_annotation])
+            command.extend(["--go_annotation", mount.container_path(params.go_annotation)])
         return command
-
-    async def run(self, params: GseaRunParams, container_name: str) -> EnrichmentRunResult:
-        return await super().run(params, container_name)  # type: ignore[arg-type]

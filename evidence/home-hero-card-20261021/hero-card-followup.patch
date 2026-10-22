@@ -1,0 +1,93 @@
+--- a/frontend/src/views/HomeView.vue
++++ b/frontend/src/views/HomeView.vue
+@@ -229,7 +229,7 @@
+             </NButton>
+             <NButton size="large" class="hero-btn-secondary" @click="goTo('/ai')">
+               <template #icon><NIcon><SparklesOutline /></NIcon></template>
+-              让 Agent 帮我规划
++              AI 规划研究方案
+             </NButton>
+           </div>
+           <p class="hero-vision-line">{{ content.hero.vision?.title_en }} · {{ content.hero.vision?.text }}</p>
+@@ -244,7 +244,7 @@
+           </div>
+           <ol class="lifecycle-list">
+             <li v-for="(step, index) in lifecycleSteps" :key="step.label" class="lifecycle-step">
+-              <span class="lifecycle-step__node"><NIcon :size="14"><component :is="step.icon" /></NIcon></span>
++              <span class="lifecycle-step__node"><NIcon :size="16"><component :is="step.icon" /></NIcon></span>
+               <span class="lifecycle-step__label">{{ step.label }}</span>
+               <span v-if="index < lifecycleSteps.length - 1" class="lifecycle-step__connector" aria-hidden="true" />
+             </li>
+@@ -402,7 +402,7 @@
+   position: relative;
+   z-index: 2;
+   display: grid;
+-  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.85fr);
++  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr);
+   gap: 32px;
+   align-items: center;
+ }
+@@ -513,15 +513,16 @@
+ 
+ .hero-lifecycle {
+   min-width: 0;
+-  padding: 19px 20px 17px;
++  min-height: 340px;
++  padding: 28px 28px 24px;
+   border: 1px solid rgba(255, 255, 255, 0.18);
+   border-radius: 14px;
+   background: rgba(255, 255, 255, 0.10);
+   color: #fff;
+   backdrop-filter: blur(16px);
+ }
+-.hero-lifecycle__header { display: flex; gap: 11px; align-items: flex-start; }
+-.hero-lifecycle__line { width: 3px; height: 36px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
++.hero-lifecycle__header { display: flex; gap: 12px; align-items: flex-start; }
++.hero-lifecycle__line { width: 3px; height: 44px; flex: 0 0 auto; border-radius: 3px; background: rgba(255, 255, 255, 0.68); }
+ .hero-lifecycle__eyebrow {
+   margin: 0 0 3px;
+   font-size: var(--home-font-eyebrow);
+@@ -529,13 +530,13 @@
+   letter-spacing: 1.25px;
+   color: rgba(255, 255, 255, 0.85);
+ }
+-.hero-lifecycle h2 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.35; }
+-.lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 20px 0 0; padding: 0; list-style: none; }
+-.lifecycle-step { position: relative; display: flex; min-width: 0; align-items: center; gap: 7px; min-height: 40px; }
+-.lifecycle-step__node { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
+-.lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: var(--home-font-small); line-height: 1.35; }
++.hero-lifecycle h2 { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.4; }
++.lifecycle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 24px 0 0; padding: 0; list-style: none; }
++.lifecycle-step { position: relative; display: flex; min-width: 0; align-items: center; gap: 10px; min-height: 44px; }
++.lifecycle-step__node { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; background: rgba(255, 255, 255, 0.13); }
++.lifecycle-step__label { min-width: 0; color: rgba(255, 255, 255, 0.88); font-size: var(--home-font-body); line-height: 1.5; }
+ .lifecycle-step__connector { display: none; }
+-.hero-lifecycle__note { margin: 15px 0 0; color: rgba(255, 255, 255, 0.85); font-size: var(--home-font-meta); line-height: 1.5; }
++.hero-lifecycle__note { margin: 20px 0 0; color: rgba(255, 255, 255, 0.85); font-size: var(--home-font-small); line-height: 1.5; }
+ .hero-lifecycle__note--mobile { display: none; }
+ 
+ .section { margin-bottom: 31px; }
+@@ -673,9 +674,9 @@
+   .hero-title { font-size: clamp(22px, 6vw, 28px); }
+   .hero-positioning { font-size: var(--home-font-meta); letter-spacing: 1px; }
+   .hero :deep(.omic-canvas) { opacity: 0.24; }
+-  .hero-lifecycle { padding: 16px; }
+-  .lifecycle-list { grid-template-columns: minmax(0, 1fr); margin-top: 15px; }
+-  .lifecycle-step { min-height: 31px; }
++  .hero-lifecycle { min-height: 0; padding: 20px; }
++  .lifecycle-list { grid-template-columns: minmax(0, 1fr); row-gap: 4px; margin-top: 16px; }
++  .lifecycle-step { min-height: 36px; }
+   .lifecycle-step:nth-child(n + 6) { display: none; }
+   .hero-lifecycle__note--desktop { display: none; }
+   .hero-lifecycle__note--mobile { display: block; }
+--- a/ARCHITECTURE_DESIGN/CygnusX_frontend.md
++++ b/ARCHITECTURE_DESIGN/CygnusX_frontend.md
+@@ -1354,7 +1354,7 @@
+ 
+ **使用方局部压暗（不改引擎）**：首页在 `.hero :deep(.omic-canvas)` 使用 `opacity: 0.4`（`≤640px` 为 `0.24`）；另以 `.hero::after` 的 `rgba(8,11,18,0.48)` 遮罩位于画布与内容之间，保证玻璃卡副文字的对比度。遮罩 `pointer-events:none; z-index:1`，`.hero-inner` 为 `z-index:2`。登录页与动画引擎档位不变。
+ 
+-**文案与布局（首页 Hero）**：`/api/v1/site-content` 的 `hero` 段驱动平台名、标语、介绍、标签与愿景，`DEFAULT_CONTENT` 逐层兜底。桌面端 `.hero-inner` 为 `minmax(0,1.3fr) / minmax(280px,0.85fr)` 双栏；左栏依次展示平台名、问候语、唯一 H1、英文定位、介绍、能力标签、两档按钮与愿景。H1 在首个中文逗号后分行，以 `clamp(28px,3vw,44px)`、`text-wrap:balance`、`word-break:keep-all` 控制默认标语两行内排完；后台自定义长文案用 `overflow-wrap:anywhere` 兜底。Hero `min-height:380px; padding:40px 32px`，与公告间隔 `16px`；内容多时允许自然增高。右栏 `.hero-lifecycle` 展示科研生命周期，使用 `rgba(255,255,255,0.10)`、`blur(16px)`、白色主文字与 `rgba(255,255,255,0.85)` 副文字；减少透明度时退回实色。`≤1100px` 收为上下布局，`≤640px` 精简生命周期后续步骤并以说明文字保留语义。
++**文案与布局（首页 Hero）**：`/api/v1/site-content` 的 `hero` 段驱动平台名、标语、介绍、标签与愿景，`DEFAULT_CONTENT` 逐层兜底。桌面端 `.hero-inner` 为 `minmax(0,1.1fr) / minmax(320px,1fr)` 双栏；左栏依次展示平台名、问候语、唯一 H1、英文定位、介绍、能力标签、两档按钮与愿景。H1 在首个中文逗号后分行，以 `clamp(28px,3vw,44px)`、`text-wrap:balance`、`word-break:keep-all` 控制默认标语两行内排完；后台自定义长文案用 `overflow-wrap:anywhere` 兜底。Hero `min-height:380px; padding:40px 32px`，与公告间隔 `16px`；内容多时允许自然增高。主按钮仍为“开始一项研究”，次按钮文案为“AI 规划研究方案”，分别导航至 `/flows`、`/ai`。右栏 `.hero-lifecycle` 展示科研生命周期，桌面占双栏可用宽度约 48%，`min-height:340px; padding:28px 28px 24px`，标题 `20px`、步骤正文 `14px`、节点 `30px`、行距 `8px`，使用 `rgba(255,255,255,0.10)`、`blur(16px)`、白色主文字与 `rgba(255,255,255,0.85)` 副文字；减少透明度时退回实色。`≤1100px` 收为上下布局，`≤640px` 卡片取消最小高度、使用 `20px` 内边距，精简生命周期后续步骤并以说明文字保留语义。
+ 
+ **首页字号与可读性**：`HomeView.vue` 在 `.home-page` 局部定义 `--home-font-section:24px`、`--home-font-card-title:16px`、`--home-font-body:14px`、`--home-font-small:13px`、`--home-font-meta:12px` 与 `--home-font-eyebrow:11px`，首页及 `ResearchWorkbenchPanel.vue` 共同消费，避免逐区块漂移。Hero 介绍为 `15px`；标题自适应 `28–44px`，窄屏 `22–28px`。工作台项目/任务/报告名称统一 `14px`、说明/时间 `12px`，卡片标题 `16px`；中文说明使用 `--neutral-text-2`。状态标签为 `26px` 高、`12px` 字；列表行高至少 `62px`，同步增加留白。移动端区块标题 `22px`，正文和辅助文字保持可读字号，禁止通过全站 zoom 或 transform scale 放大首页。
+ 

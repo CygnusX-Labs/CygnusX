@@ -1,0 +1,15 @@
+[
+  {
+    "services": [
+      "web",
+      "beat"
+    ],
+    "exit_code": 0
+  },
+  {
+    "services": [
+      "worker"
+    ],
+    "exit_code": 0
+  }
+]

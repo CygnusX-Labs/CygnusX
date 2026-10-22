@@ -1,0 +1,26 @@
+[
+  {
+    "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+    "directories": 5,
+    "errors": [],
+    "elapsed_ms": 34.948801971040666,
+    "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+    "status": "INDEXED"
+  },
+  {
+    "project_id": "004811d1-2d8f-42c7-a72f-629a430b0fea",
+    "directories": 0,
+    "errors": [],
+    "elapsed_ms": 0.8250990067608654,
+    "owner_id": "88d7a123-5f90-4251-8fd5-c06b4c00495d",
+    "status": "INDEXED"
+  },
+  {
+    "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+    "directories": 100,
+    "errors": [],
+    "elapsed_ms": 366.42971000401303,
+    "owner_id": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+    "status": "INDEXED"
+  }
+]

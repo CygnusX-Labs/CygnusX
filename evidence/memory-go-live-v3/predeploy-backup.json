@@ -1,0 +1,9 @@
+{
+  "backup_path": "/tmp/cygnusx-memory-predeploy-51yfjq7s/omichub-before-recreate.dump",
+  "permissions": "0600 in 0700 directory outside evidence",
+  "size_bytes": 10850137,
+  "sha256": "5a29fb389f36695784479e120fd5c4a1f796bf36cfc8f85d654c65796f2d262f",
+  "pg_restore_list_exit": 0,
+  "backup_includes_memory_facts": true,
+  "reason": "Before authorized force-recreate and later controlled memory backfill; web entrypoint runs pending repository migrations"
+}

@@ -262,6 +262,8 @@ class Settings(BaseSettings):
     # ===== P4 记忆语义召回（默认关闭；失败时回退关键词召回） =====
     agent_memory_semantic_retrieval_enabled: bool = False
     agent_memory_embedding_model: str = ""
+    agent_memory_embedding_provider_id: str = ""
+    agent_memory_embedding_dimensions: int = Field(default=1024, ge=1)
     agent_memory_semantic_candidate_limit: int = 100
     agent_memory_conflict_adjudication_enabled: bool = False
     agent_memory_conflict_adjudication_model: str = ""

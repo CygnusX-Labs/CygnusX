@@ -1,0 +1,1 @@
+Controlled fixture renamed to sample1_R1.fastq to satisfy existing RNAFlow sample-prefix validator. No validator bypass. Prior failed preparation was rolled back; human reviews persisted; same session/request is reused.

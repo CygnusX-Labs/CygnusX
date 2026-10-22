@@ -1,0 +1,182 @@
+{
+  "apiChecks": [
+    {
+      "path": "/health",
+      "status": 200,
+      "itemCount": null
+    },
+    {
+      "path": "/api/v1/projects",
+      "status": 200,
+      "itemCount": 30
+    },
+    {
+      "path": "/api/v1/tasks?status=running&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/tasks?status=queued&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/reports?page=1&page_size=5",
+      "status": 200,
+      "itemCount": 5
+    }
+  ],
+  "layouts": [
+    {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "homeWidth": 1012,
+      "homeScrollWidth": 1012,
+      "workbenchTop": 675.765625,
+      "heroHeight": 446.171875,
+      "columns": "310.656px 310.672px 310.656px",
+      "sizes": {
+        ".hero-title": "38.4px",
+        ".hero-desc": "15px",
+        ".section-heading h2": "24px",
+        ".workbench-card__heading h3": "16px",
+        ".workbench-item__main strong": "14px",
+        ".workbench-item__main small": "12px",
+        ".workbench-item__meta": "12px",
+        ".entry-title": "16px",
+        ".entry-desc": "14px",
+        ".pillar-copy h3": "16px",
+        ".pillar-copy p:last-child": "14px",
+        ".ecosystem-card__copy strong": "14px",
+        ".ecosystem-card__copy > span": "14px",
+        ".capability-item small": "12px"
+      },
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 48,
+          "lineHeight": 48
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 48,
+          "lineHeight": 48
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "homeWidth": 1172,
+      "homeScrollWidth": 1172,
+      "workbenchTop": 687.765625,
+      "heroHeight": 458.171875,
+      "columns": "364px 364px 364px",
+      "sizes": {
+        ".hero-title": "43.2px",
+        ".hero-desc": "15px",
+        ".section-heading h2": "24px",
+        ".workbench-card__heading h3": "16px",
+        ".workbench-item__main strong": "14px",
+        ".workbench-item__main small": "12px",
+        ".workbench-item__meta": "12px",
+        ".entry-title": "16px",
+        ".entry-desc": "14px",
+        ".pillar-copy h3": "16px",
+        ".pillar-copy p:last-child": "14px",
+        ".ecosystem-card__copy strong": "14px",
+        ".ecosystem-card__copy > span": "14px",
+        ".capability-item small": "12px"
+      },
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 54,
+          "lineHeight": 54
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 54,
+          "lineHeight": 54
+        }
+      ]
+    },
+    {
+      "width": 2560,
+      "scrollWidth": 2560,
+      "homeWidth": 2292,
+      "homeScrollWidth": 2292,
+      "workbenchTop": 689.765625,
+      "heroHeight": 460.171875,
+      "columns": "737.328px 737.328px 737.328px",
+      "sizes": {
+        ".hero-title": "44px",
+        ".hero-desc": "15px",
+        ".section-heading h2": "24px",
+        ".workbench-card__heading h3": "16px",
+        ".workbench-item__main strong": "14px",
+        ".workbench-item__main small": "12px",
+        ".workbench-item__meta": "12px",
+        ".entry-title": "16px",
+        ".entry-desc": "14px",
+        ".pillar-copy h3": "16px",
+        ".pillar-copy p:last-child": "14px",
+        ".ecosystem-card__copy strong": "14px",
+        ".ecosystem-card__copy > span": "14px",
+        ".capability-item small": "12px"
+      },
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 55,
+          "lineHeight": 55
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 55,
+          "lineHeight": 55
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "homeWidth": 342,
+      "homeScrollWidth": 342,
+      "workbenchTop": 1191.71875,
+      "heroHeight": 904.125,
+      "columns": "310px",
+      "sizes": {
+        ".hero-title": "23.4px",
+        ".hero-desc": "15px",
+        ".section-heading h2": "22px",
+        ".workbench-card__heading h3": "16px",
+        ".workbench-item__main strong": "14px",
+        ".workbench-item__main small": "12px",
+        ".workbench-item__meta": "12px",
+        ".entry-title": "16px",
+        ".entry-desc": "14px",
+        ".pillar-copy h3": "16px",
+        ".pillar-copy p:last-child": "14px",
+        ".ecosystem-card__copy strong": "14px",
+        ".ecosystem-card__copy > span": "14px",
+        ".capability-item small": "12px"
+      },
+      "titleLines": [
+        {
+          "text": "让科学问题，",
+          "height": 29.25,
+          "lineHeight": 29.25
+        },
+        {
+          "text": "抵达可验证的发现。",
+          "height": 29.25,
+          "lineHeight": 29.25
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "mockedDataAPIs": false,
+  "servedFrom": "http://127.0.0.1:8888/"
+}

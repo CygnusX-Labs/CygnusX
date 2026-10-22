@@ -1,0 +1,69 @@
+{
+  "schema_version": "cygnusx.research_delivery.v1",
+  "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+  "datasets": [
+    {
+      "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+      "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+      "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+      "handoff_hash": "15c43390130417e3509f3e6d8f75d572081bfede73f5eef6a36e881c275bf7c7",
+      "analyses": [
+        {
+          "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+          "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+          "task_id": null,
+          "state": "HISTORICAL_CLAIMED",
+          "record_kind": "HISTORICAL_CLAIM",
+          "compute_state": "NOT_OBSERVED",
+          "delivery_state": "HISTORICAL_REFERENCE",
+          "claim": {
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.365428+00:00",
+            "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe"
+          },
+          "gaps": [
+            "HISTORICAL_NOT_EXECUTED"
+          ]
+        }
+      ],
+      "gaps": []
+    },
+    {
+      "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+      "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+      "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+      "handoff_hash": "cc63d664af13880f2c85e7a1172734146dac5d54e34d0a197b3b516b1c4167e1",
+      "analyses": [
+        {
+          "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+          "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+          "task_id": null,
+          "state": "HISTORICAL_CLAIMED",
+          "record_kind": "HISTORICAL_CLAIM",
+          "compute_state": "NOT_OBSERVED",
+          "delivery_state": "HISTORICAL_REFERENCE",
+          "claim": {
+            "purpose": "Preserve explicit historical archive references; no new computation.",
+            "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+            "claimed_at": "2026-10-22T02:09:37.218903+00:00",
+            "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6"
+          },
+          "gaps": [
+            "HISTORICAL_NOT_EXECUTED"
+          ]
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "runtime_admission": "BLOCKED",
+  "truncated": false,
+  "association_status": "VERIFIED_ASSOCIATION",
+  "association_scope": "explicit_dataset_links_only",
+  "historical_tasks": {
+    "status": "NOT_RECORDED",
+    "reason": "NO_PROJECT_FK_NO_BACKFILL"
+  },
+  "export_enabled": false
+}

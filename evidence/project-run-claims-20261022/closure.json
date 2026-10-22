@@ -1,0 +1,26 @@
+{
+  "dedicated_services_stopped": true,
+  "verified_closed_ports": [
+    18022,
+    18023,
+    18024,
+    18026,
+    55446,
+    16393
+  ],
+  "terminated_final_api_and_preview_pids": [
+    1508521,
+    1581332
+  ],
+  "retained_container_states": {
+    "cygnusx-claims-pg-9av54_1c": "exited",
+    "cygnusx-claims-redis-9av54_1c": "exited"
+  },
+  "containers_and_data_retained": true,
+  "private_root": "/tmp/cygnusx-run-claims-runtime-9av54_1c",
+  "private_credentials_mode": "0o600",
+  "production_modified": false,
+  "committed": false,
+  "pushed": false,
+  "deployed": false
+}

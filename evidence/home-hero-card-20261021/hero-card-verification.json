@@ -1,0 +1,143 @@
+{
+  "apiChecks": [
+    {
+      "path": "/health",
+      "status": 200,
+      "itemCount": null
+    },
+    {
+      "path": "/api/v1/projects",
+      "status": 200,
+      "itemCount": 30
+    },
+    {
+      "path": "/api/v1/tasks?status=running&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/tasks?status=queued&limit=5",
+      "status": 200,
+      "itemCount": 5
+    },
+    {
+      "path": "/api/v1/reports?page=1&page_size=5",
+      "status": 200,
+      "itemCount": 5
+    }
+  ],
+  "buttonLabel": "AI 规划研究方案",
+  "buttonDestination": "/ai",
+  "layouts": [
+    {
+      "width": 1280,
+      "pageScrollWidth": 1280,
+      "homeWidth": 1012,
+      "homeScrollWidth": 1012,
+      "heroHeight": 488.765625,
+      "workbenchTop": 718.359375,
+      "card": {
+        "width": 413.34375,
+        "height": 366.09375,
+        "padding": "28px 28px 24px"
+      },
+      "titleLines": [
+        {
+          "height": 48,
+          "lineHeight": 48
+        },
+        {
+          "height": 48,
+          "lineHeight": 48
+        }
+      ],
+      "beforeCard": {
+        "width": 343.15625,
+        "height": 295.890625,
+        "padding": "19px 20px 17px"
+      }
+    },
+    {
+      "width": 1440,
+      "pageScrollWidth": 1440,
+      "homeWidth": 1172,
+      "homeScrollWidth": 1172,
+      "heroHeight": 458.171875,
+      "workbenchTop": 687.765625,
+      "card": {
+        "width": 489.53125,
+        "height": 366.09375,
+        "padding": "28px 28px 24px"
+      },
+      "titleLines": [
+        {
+          "height": 54,
+          "lineHeight": 54
+        },
+        {
+          "height": 54,
+          "lineHeight": 54
+        }
+      ],
+      "beforeCard": {
+        "width": 406.40625,
+        "height": 295.890625,
+        "padding": "19px 20px 17px"
+      }
+    },
+    {
+      "width": 2560,
+      "pageScrollWidth": 2560,
+      "homeWidth": 2292,
+      "homeScrollWidth": 2292,
+      "heroHeight": 460.171875,
+      "workbenchTop": 689.765625,
+      "card": {
+        "width": 1022.859375,
+        "height": 366.09375,
+        "padding": "28px 28px 24px"
+      },
+      "titleLines": [
+        {
+          "height": 55,
+          "lineHeight": 55
+        },
+        {
+          "height": 55,
+          "lineHeight": 55
+        }
+      ],
+      "beforeCard": {
+        "width": 849.203125,
+        "height": 295.890625,
+        "padding": "19px 20px 17px"
+      }
+    },
+    {
+      "width": 390,
+      "pageScrollWidth": 390,
+      "homeWidth": 342,
+      "homeScrollWidth": 342,
+      "heroHeight": 965.828125,
+      "workbenchTop": 1253.421875,
+      "card": {
+        "width": 270,
+        "height": 361.59375,
+        "padding": "20px"
+      },
+      "titleLines": [
+        {
+          "height": 29.25,
+          "lineHeight": 29.25
+        },
+        {
+          "height": 29.25,
+          "lineHeight": 29.25
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "mockedDataAPIs": false,
+  "servedFrom": "http://127.0.0.1:8888/"
+}

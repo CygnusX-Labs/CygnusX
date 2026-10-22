@@ -1,0 +1,32 @@
+{
+  "status": "dry_run",
+  "phase": "dry",
+  "database": "omichub",
+  "limit": 10,
+  "pending": 1,
+  "planned_updates": 1,
+  "target_model": "Qwen/Qwen3-Embedding-8B",
+  "dry_run": {
+    "mode": "missing",
+    "storage": "facts",
+    "target_model": "Qwen/Qwen3-Embedding-8B",
+    "before": {
+      "status": "collected",
+      "storage": "facts",
+      "target_model": "Qwen/Qwen3-Embedding-8B",
+      "active": 1,
+      "compatible": 0,
+      "missing": 1,
+      "mismatched": 1,
+      "pending": 1,
+      "coverage": 0.0
+    },
+    "status": "dry_run",
+    "pending": 1,
+    "updated": 0
+  },
+  "backup_path": "/tmp/cygnusx-memory-facts-backup-m_weati6/memory_facts.dump",
+  "backup_size_bytes": 8525,
+  "backup_sha256": "01dcb93eef65597b8bbbc5e9a9b9fe12525f10027e240ccf9924f472f4912e9b",
+  "backup_toc_verified": true
+}

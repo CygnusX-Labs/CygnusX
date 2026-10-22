@@ -39,7 +39,7 @@ async def test_current_project_deactivation_bypasses_stale_identity_cache(projec
         connection.execute(
             text("UPDATE projects SET status='disabled' WHERE id=:id"), {"id": env.project.hex}
         )
-    assert old.status is None
+    assert old.status == "active"
     with pytest.raises(AuthorizationError):
         await env.service.download(env.owner, env.project, job.id)
 

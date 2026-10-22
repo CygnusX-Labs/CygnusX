@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "result": {
+    "mode": "missing",
+    "storage": "facts",
+    "target_model": "Qwen/Qwen3-Embedding-8B",
+    "before": {
+      "status": "collected",
+      "storage": "facts",
+      "target_model": "Qwen/Qwen3-Embedding-8B",
+      "active": 1,
+      "compatible": 1,
+      "missing": 0,
+      "mismatched": 0,
+      "pending": 0,
+      "coverage": 1.0
+    },
+    "selection_statuses": [
+      "archived",
+      "superseded"
+    ],
+    "remaining_pending": 0,
+    "status": "completed",
+    "updated": 10,
+    "failed": 0,
+    "skipped": 0,
+    "scanned": 10,
+    "after": {
+      "status": "collected",
+      "storage": "facts",
+      "target_model": "Qwen/Qwen3-Embedding-8B",
+      "active": 1,
+      "compatible": 1,
+      "missing": 0,
+      "mismatched": 0,
+      "pending": 0,
+      "coverage": 1.0
+    }
+  },
+  "backup_path": "/tmp/cygnusx-memory-historical-backup-8xlezgrx/memory_facts.dump",
+  "backup_sha256": "76acdec5b008ed8f25b1355f6a961f4efd6a75ccfad7d4dfe3e940e0fd8d54c9",
+  "dry_run_plan": "historical-backfill-plan.json",
+  "all_non_embedding_columns_unchanged": true,
+  "final_state_counts": {
+    "archived": 9,
+    "superseded": 1,
+    "active": 1
+  },
+  "all_rows": 11,
+  "all_vectors_1024_and_correct_model": true,
+  "failed_rows": []
+}

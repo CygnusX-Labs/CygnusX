@@ -1,0 +1,715 @@
+[
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "actor": "anonymous",
+    "status": 401,
+    "expected": 401,
+    "response": {
+      "detail": "未提供认证令牌"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 403,
+    "expected": 403,
+    "response": {
+      "detail": "无权访问该项目",
+      "code": "FORBIDDEN"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..%5Cother-only/claim",
+    "status": 422,
+    "expected": 422,
+    "response": {
+      "detail": "只允许该项目内的单个 run 目录名",
+      "code": "ARCHIVE_PATH_INVALID"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/..%2Fother-only/claim",
+    "status": 404,
+    "expected": 404,
+    "response": {
+      "detail": "Not Found"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 422,
+    "expected": 422,
+    "response": {
+      "detail": "请求参数校验失败",
+      "errors": [
+        {
+          "type": "extra_forbidden",
+          "loc": [
+            "body",
+            "project_id"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "input": "004811d1-2d8f-42c7-a72f-629a430b0fea"
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-missing-manifest-20261022-020758/claim",
+    "status": 422,
+    "expected": 422,
+    "response": {
+      "detail": "归档三件套缺失：manifest.json",
+      "code": "ARCHIVE_INCOMPLETE"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "归档文件大小或 SHA 不符：output/result.tsv",
+      "code": "ARCHIVE_FILE_CHANGED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "PREVIEW",
+      "confirmation_id": "7989f398-2417-4a4c-8112-bf933130ab80",
+      "parameters_hash": "405786628b676645666fcab1e54e1e1eef8b3e25c5ccc2cf76ce6bc9c2af486a",
+      "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6",
+      "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+      "files": [
+        {
+          "path": "output/result.tsv",
+          "file_record_id": "f60020ea-691b-464a-b991-bd67c89084c9",
+          "size": 23,
+          "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+          "integrity": "VERIFIED"
+        }
+      ],
+      "purpose": "Preserve explicit historical archive references; no new computation.",
+      "integrity": "VERIFIED",
+      "will_create": [
+        "Dataset",
+        "DatasetVersion",
+        "frozen Handoff",
+        "historical AnalysisLink"
+      ],
+      "task_will_be_created": false,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "等待用户在确认卡上确认后才能执行，请提醒用户点击确认卡",
+      "code": "CONFIRMATION_REQUIRED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim/approve",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "confirmation_id": "7989f398-2417-4a4c-8112-bf933130ab80",
+      "state": "APPROVED",
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": false,
+      "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+      "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+      "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+      "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false,
+      "handoff_hash": "cc63d664af13880f2c85e7a1172734146dac5d54e34d0a197b3b516b1c4167e1"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-already-claimed-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": true,
+      "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+      "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+      "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+      "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "PREVIEW",
+      "confirmation_id": "1e9b13b1-2ed9-4a0f-8a5b-c6339d71bd38",
+      "parameters_hash": "cef1b783c3931198ac839b70543b9d19d800c6c176a27339688278f3aaecab6e",
+      "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe",
+      "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+      "files": [
+        {
+          "path": "output/result.tsv",
+          "file_record_id": "95dc3887-b115-45a3-a55f-149a63c9d2c2",
+          "size": 23,
+          "sha256": "ee853b515614cea64b13df7a2aa8e1433340415ededba5001ad050ecc158cfa5",
+          "integrity": "VERIFIED"
+        }
+      ],
+      "purpose": "Preserve explicit historical archive references; no new computation.",
+      "integrity": "VERIFIED",
+      "will_create": [
+        "Dataset",
+        "DatasetVersion",
+        "frozen Handoff",
+        "historical AnalysisLink"
+      ],
+      "task_will_be_created": false,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "等待用户在确认卡上确认后才能执行，请提醒用户点击确认卡",
+      "code": "CONFIRMATION_REQUIRED"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim/approve",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "confirmation_id": "1e9b13b1-2ed9-4a0f-8a5b-c6339d71bd38",
+      "state": "APPROVED",
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": false,
+      "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+      "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+      "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+      "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false,
+      "handoff_hash": "15c43390130417e3509f3e6d8f75d572081bfede73f5eef6a36e881c275bf7c7"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-complete-20261022-020758/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": true,
+      "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+      "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+      "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+      "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/renamed-historical-archive/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": true,
+      "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+      "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+      "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+      "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "state": "HISTORICAL_CLAIMED",
+      "reused": true,
+      "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+      "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+      "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+      "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+      "task_id": null,
+      "worker_paths_verified": false,
+      "execution_allowed": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/moved-historical-archive/claim",
+    "status": 409,
+    "expected": 409,
+    "response": {
+      "detail": "归档文件大小或 SHA 不符：output/result.tsv",
+      "code": "ARCHIVE_FILE_CHANGED"
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/delivery-inventory",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "schema_version": "cygnusx.research_delivery.v1",
+      "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+      "datasets": [
+        {
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "01cd8931-ed2b-4fda-8ce2-844be7483081",
+          "dataset_version_id": "ef323e5b-a1d8-4a6d-8874-966e0d430cb2",
+          "handoff_hash": "15c43390130417e3509f3e6d8f75d572081bfede73f5eef6a36e881c275bf7c7",
+          "analyses": [
+            {
+              "analysis_link_id": "0cb849cb-0c5d-4162-ae14-5d310f99bf1f",
+              "run_id": "23d98b95-2739-4317-b0f6-24253e5ba5a0",
+              "task_id": null,
+              "state": "HISTORICAL_CLAIMED",
+              "record_kind": "HISTORICAL_CLAIM",
+              "compute_state": "NOT_OBSERVED",
+              "delivery_state": "HISTORICAL_REFERENCE",
+              "claim": {
+                "purpose": "Preserve explicit historical archive references; no new computation.",
+                "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+                "claimed_at": "2026-10-22T02:09:37.365428+00:00",
+                "manifest_sha256": "28bb360e2d4d691d4b49c149cb6ca0d87c5badbd0a1343ede8d59910083a2ffe"
+              },
+              "gaps": [
+                "HISTORICAL_NOT_EXECUTED"
+              ]
+            }
+          ],
+          "gaps": []
+        },
+        {
+          "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+          "dataset_id": "db32fb00-b9f1-4529-b28b-b9ac8f413670",
+          "dataset_version_id": "a7ddab6c-95f2-4160-9aab-c63aaa4d2295",
+          "handoff_hash": "cc63d664af13880f2c85e7a1172734146dac5d54e34d0a197b3b516b1c4167e1",
+          "analyses": [
+            {
+              "analysis_link_id": "10a074e1-1b82-47be-a001-72b09fd76c7c",
+              "run_id": "d98922f8-96d1-49ca-b80d-b7a84223a603",
+              "task_id": null,
+              "state": "HISTORICAL_CLAIMED",
+              "record_kind": "HISTORICAL_CLAIM",
+              "compute_state": "NOT_OBSERVED",
+              "delivery_state": "HISTORICAL_REFERENCE",
+              "claim": {
+                "purpose": "Preserve explicit historical archive references; no new computation.",
+                "claimed_by": "d94bb3a3-8f16-4285-b32c-edc3d71673e0",
+                "claimed_at": "2026-10-22T02:09:37.218903+00:00",
+                "manifest_sha256": "2621e2fd7a7eaa0c031f1447c969cc03a94b484fd82756f1541812cacc43afd6"
+              },
+              "gaps": [
+                "HISTORICAL_NOT_EXECUTED"
+              ]
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "runtime_admission": "BLOCKED",
+      "truncated": false,
+      "association_status": "VERIFIED_ASSOCIATION",
+      "association_scope": "explicit_dataset_links_only",
+      "historical_tasks": {
+        "status": "NOT_RECORDED",
+        "reason": "NO_PROJECT_FK_NO_BACKFILL"
+      },
+      "export_enabled": false
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/reconciliation",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "project_id": "bd94f4ce-3471-44c8-9d31-ba02437d5454",
+      "read_only": true,
+      "unclaimed_archives": [
+        {
+          "run_dir": "legacy-missing-manifest-20261022-020758",
+          "missing_parts": [
+            "manifest.json"
+          ],
+          "action": "REPAIR_ARCHIVE",
+          "next_step": "补齐归档三件套后重新预审",
+          "claim_endpoint": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-missing-manifest-20261022-020758/claim"
+        },
+        {
+          "run_dir": "legacy-tampered-20261022-020758",
+          "missing_parts": [],
+          "action": "PREVIEW_CLAIM",
+          "next_step": "owner 提交用途声明与显式文件引用，预审并人工确认认领",
+          "claim_endpoint": "/projects/bd94f4ce-3471-44c8-9d31-ba02437d5454/runs/legacy-tampered-20261022-020758/claim"
+        }
+      ],
+      "missing_archives": [
+        {
+          "run_id": "9252d371-14d4-4700-a6c6-d8ef937f89be",
+          "run_dir": "missing-directory-legacy",
+          "action": "VERIFY_STORAGE_OR_RESTORE",
+          "next_step": "核对挂载/备份及显式目录同步；不删除 Run 或重投 Task"
+        },
+        {
+          "run_id": "c315f352-2d83-4d23-866d-879850b58890",
+          "run_dir": "missing-link-legacy",
+          "action": "VERIFY_STORAGE_OR_RESTORE",
+          "next_step": "核对挂载/备份及显式目录同步；不删除 Run 或重投 Task"
+        }
+      ],
+      "binding_conflicts": [
+        {
+          "run_id": "c315f352-2d83-4d23-866d-879850b58890",
+          "analysis_link_id": "f8dfcd4b-fa82-413b-940c-1b5cba029f35",
+          "reason": "RUN_LINK_MISSING",
+          "code": "RECONCILIATION_REQUIRED",
+          "action": "MANUAL_RECONCILIATION",
+          "next_step": "人工核对原确认、Run/Link/Task 事务与队列日志；不自动纳管或重试"
+        }
+      ],
+      "automatic_repairs": 0
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/overview?run_limit=7&run_offset=0",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "project": {
+        "id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "name": "Overview benchmark",
+        "slug": "overview-benchmark",
+        "description": "",
+        "customer": "",
+        "status": "active",
+        "settings": null,
+        "created_at": "2026-10-22T02:07:58.171668+00:00",
+        "updated_at": "2026-10-22T02:07:58.171668+00:00"
+      },
+      "sessions": {
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+        "items": []
+      },
+      "runs": [
+        {
+          "id": "d3f00abb-de39-4229-9df9-da200185c73b",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-099-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.478176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "18d96dda-8591-42d9-89a3-b245b1bd31b6",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-098-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.475176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "6a346f33-13ad-4af1-8770-b391b1977b4e",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-097-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.473176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "972024a9-1f7b-4dc2-8a6d-08289fcd7c21",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-096-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.470176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "4f652be4-c7d9-4f19-bf65-966873e618e1",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-095-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.468176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "c1217faf-e118-4b44-942a-cd7fc4011aa4",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-094-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.465176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "dce63656-ed2c-426f-b06d-60f8385a753d",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-093-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.463176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        }
+      ],
+      "runs_total": 100,
+      "run_limit": 7,
+      "run_offset": 0
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/projects/67a39423-2302-4c5e-a1dc-2f502e927efd/overview?run_limit=7&run_offset=7",
+    "status": 200,
+    "expected": 200,
+    "response": {
+      "project": {
+        "id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+        "name": "Overview benchmark",
+        "slug": "overview-benchmark",
+        "description": "",
+        "customer": "",
+        "status": "active",
+        "settings": null,
+        "created_at": "2026-10-22T02:07:58.171668+00:00",
+        "updated_at": "2026-10-22T02:07:58.171668+00:00"
+      },
+      "sessions": {
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+        "items": []
+      },
+      "runs": [
+        {
+          "id": "6478a9a2-64cb-4c50-8f85-6df47bcfcb2f",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-092-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.460176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "7a75ebb9-d625-4069-97af-91d890b0b465",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-091-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.458176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "68d475e7-27ce-4a46-a563-ea9d1a436025",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-090-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.455176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "b9c69408-0642-46de-830f-6cfcbe4322de",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-089-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.453176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "7fe48fd2-4c4d-405d-9b12-41aed6de46ae",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-088-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.450176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "3a804f4e-f17d-4d5b-a405-ec0939fc3258",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-087-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.447176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        },
+        {
+          "id": "71a8ca7e-6030-476c-bd27-9c4fcdae147b",
+          "project_id": "67a39423-2302-4c5e-a1dc-2f502e927efd",
+          "status": "ARCHIVED_UNCLAIMED",
+          "attempt_number": 0,
+          "archive_present": true,
+          "has_manifest": true,
+          "index_dirty": false,
+          "name": "legacy-benchmark-086-20261022-020758",
+          "timestamp": "2026-10-22T02:07:58.445176+00:00",
+          "has_agents_md": false,
+          "has_readme": true,
+          "has_environment": true,
+          "file_count": 99,
+          "total_size_bytes": 13361
+        }
+      ],
+      "runs_total": 100,
+      "run_limit": 7,
+      "run_offset": 7
+    }
+  }
+]

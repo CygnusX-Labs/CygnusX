@@ -1,0 +1,26 @@
+{
+  "operations": [
+    {
+      "operation": "UPDATE claim",
+      "sql": "UPDATE audit_logs SET detail=json_build_object('forged',TRUE) WHERE id=:id",
+      "blocked": true
+    },
+    {
+      "operation": "DELETE claim",
+      "sql": "DELETE FROM audit_logs WHERE id=:id",
+      "blocked": true
+    },
+    {
+      "operation": "relabel nonclaim",
+      "sql": "UPDATE audit_logs SET resource_type='project_run_claim' WHERE id=:id",
+      "blocked": true
+    },
+    {
+      "operation": "TRUNCATE",
+      "sql": "TRUNCATE audit_logs",
+      "blocked": true
+    }
+  ],
+  "unrelated_audit_update_allowed_and_rolled_back": true,
+  "alembic_head": "project_run_claim_audit02"
+}

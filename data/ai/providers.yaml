@@ -80,3 +80,11 @@ providers:
   vendor: aliyun
   weight: 100
   extra_params: {}
+- name: provider-embedding-qwen3
+  provider_type: openai_compatible
+  model: Qwen/Qwen3-Embedding-8B
+  base_url: https://api.siliconflow.cn/v1
+  api_key: ${SILICONFLOW_API_KEY}
+  is_active: true
+  is_default: false
+  tier: light

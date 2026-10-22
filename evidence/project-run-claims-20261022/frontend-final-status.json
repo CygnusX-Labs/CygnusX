@@ -1,0 +1,14 @@
+{
+  "frontend_tests": {
+    "exit_code": 0,
+    "seconds": 15.161
+  },
+  "frontend_typecheck": {
+    "exit_code": 0,
+    "seconds": 16.818
+  },
+  "frontend_build": {
+    "exit_code": 0,
+    "seconds": 70.133
+  }
+}

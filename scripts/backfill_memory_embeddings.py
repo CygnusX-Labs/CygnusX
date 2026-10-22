@@ -18,12 +18,23 @@ from uuid import UUID
 
 from cygnusx.application.services.memory_embedding_service import (
     BackfillMode,
+    BackfillStatus,
     MemoryEmbeddingService,
     Storage,
 )
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+
+def validate_target(dsn: str, *, apply: bool, confirm_database: str | None = None) -> URL:
+    """Require an independently named target before opening a write connection."""
+    url = make_url(dsn)
+    if url.get_backend_name() != "postgresql":
+        raise ValueError("PostgreSQL required")
+    if apply and (not confirm_database or confirm_database != url.database):
+        raise ValueError("Apply requires --confirm-database matching the explicit DSN target")
+    return url
 
 
 async def run(
@@ -34,10 +45,12 @@ async def run(
     limit: int,
     apply: bool,
     provider_id: UUID | None = None,
+    confirm_database: str | None = None,
+    statuses: tuple[BackfillStatus, ...] = ("active",),
 ) -> dict[str, Any]:
-    url = make_url(dsn)
-    if url.get_backend_name() != "postgresql":
-        raise ValueError("PostgreSQL required")
+    url = validate_target(dsn, apply=apply, confirm_database=confirm_database)
+    if not statuses or any(s not in {"active", "archived", "superseded"} for s in statuses):
+        raise ValueError("Invalid backfill statuses")
     engine = create_async_engine(
         url.set(drivername="postgresql+asyncpg"),
         connect_args={"timeout": 10},
@@ -66,7 +79,7 @@ async def run(
                     raise ValueError("An active Provider in the maintenance DB is required")
                 client = LiteLLMProvider(config)
             service = MemoryEmbeddingService(db, storage=storage, embedding_client=client)
-            result = await service.backfill(limit, mode=mode, dry_run=not apply)
+            result = await service.backfill(limit, mode=mode, dry_run=not apply, statuses=statuses)
             if apply:
                 await db.commit()
             service.publish_report(result)
@@ -80,6 +93,13 @@ def main() -> int:
     parser.add_argument("--storage", choices=("facts", "legacy"), default="facts")
     parser.add_argument("--mode", choices=("missing", "mismatch"), default="missing")
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument(
+        "--statuses",
+        nargs="+",
+        choices=("active", "archived", "superseded"),
+        default=["active"],
+        help="Explicit row states; only vector/model fields change",
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "--apply", action="store_true", help="Write at most 500 rows and call the Provider"
@@ -89,6 +109,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--provider-id", type=UUID, help="Optional Provider ID in the explicit maintenance DB"
+    )
+    parser.add_argument(
+        "--confirm-database", help="Required for --apply: independently confirm the target DB name"
     )
     parser.add_argument("--output", type=Path, help="Aggregate JSON report, no memory content")
     args = parser.parse_args()
@@ -102,6 +125,7 @@ def main() -> int:
         }
     else:
         try:
+            validate_target(dsn, apply=args.apply, confirm_database=args.confirm_database)
             result = asyncio.run(
                 run(
                     dsn,
@@ -110,6 +134,8 @@ def main() -> int:
                     limit=args.limit,
                     apply=args.apply,
                     provider_id=args.provider_id,
+                    confirm_database=args.confirm_database,
+                    statuses=tuple(args.statuses),
                 )
             )
         except Exception as exc:
