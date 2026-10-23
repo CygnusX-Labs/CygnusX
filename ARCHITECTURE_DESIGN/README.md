@@ -14,6 +14,8 @@
 
 > **平台经营面入口（2026-10-21 补齐）**：用户与权限 → [CygnusX_identity_access_architecture.md](CygnusX_identity_access_architecture.md)；管理控制台 → [CygnusX_admin_console_architecture.md](CygnusX_admin_console_architecture.md)；饼干经济 → [CygnusX_cookie_economy_architecture.md](CygnusX_cookie_economy_architecture.md)；节日彩蛋 → [CygnusX_festival_architecture.md](CygnusX_festival_architecture.md)；通知/公告/提醒/站点内容 → [CygnusX_notification_engagement_architecture.md](CygnusX_notification_engagement_architecture.md)；项目/文件/团队 → [CygnusX_project_workspace_architecture.md](CygnusX_project_workspace_architecture.md)；目标运行时 → [CygnusX_goal_architecture.md](CygnusX_goal_architecture.md)；Skill/MCP 接入面 → [CygnusX_skill_mcp_integration_architecture.md](CygnusX_skill_mcp_integration_architecture.md)；调度与分析运维 → [CygnusX_analysis_operations_architecture.md](CygnusX_analysis_operations_architecture.md)。覆盖对账与残余缺口见 [CygnusX_architecture_coverage_audit.md](CygnusX_architecture_coverage_audit.md)。
 
+> **项目管理全面梳理（2026-10-24 审计快照）**：[CygnusX_project_management_review.md](CygnusX_project_management_review.md) 汇总页面/API/模型/权限、会话与运行归属、科研成果、生命周期和改进优先级；隔离复现改名目录分叉、默认项目绕过删除身份、科研引用删除约束三项问题。建议尚未实施，专项测试不代表生产运行验收。
+
 ## 0. 这个架构文档目录如何发挥作用
 
 `ARCHITECTURE_DESIGN` 是代码现状、修改规范和历史方案的文档索引层。开发者先依据本 README 按领域定位文档，再阅读对应的 as-built 基线或规范；修改代码时以代码、配置和迁移为事实来源，用架构文档解释模块边界、数据流、权限和验证门禁。`as-built` 文档描述当前实现，规范文档约束应该如何修改，提案/快照记录目标态或某一时点，`deprecated/` 只保留历史参考，不能覆盖活动基线。
@@ -266,6 +268,9 @@ CygnusX 前端唯一权威规范：设计目标与非协商原则、技术边界
 ---
 
 ## 7. 其他
+
+### `CygnusX_project_management_review.md` — 项目管理全面梳理（审计快照，2026-10-24）
+覆盖项目功能矩阵、数据关系图、稳定目录身份、生命周期、前后端入口、权限与科研交付成熟度；记录 10 项问题/改进及分阶段验收建议。3 项身份/删除衔接问题已离线复现，46 项后端与 18 项前端专项测试通过；异步线程等待相关扩大回归未完成，未认定生产准入。活动架构仍见项目空间、存储及科研交付专项文档。
 
 ### `ARCHITECTURE_DISCOVERY_REPORT.md` — 单文件架构审计与批量测试计划（审计快照，2026-10-18，进行中）
 首轮只读架构调查：架构全景、三条纵向切片、架构核验、分层测试策略与批量测试计划；批量测试全部未执行，结论均为静态证据，不得当作运行验收。证据根目录见文档内 `evidence/architecture-audit/arch-audit-20261018T1940+0800-e78fd1ef/`。

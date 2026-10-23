@@ -1,9 +1,11 @@
 # CygnusX 项目空间与文件管理架构（Project Workspace & Files）
 
 > **用途**：记录项目聚合、项目详情聚合、文件记录/目录/上传会话、聊天附件、文件解析引用、团队文件 ACL、项目归档与工作区归档的 as-built 实现。
-> **类型**：as-built（2026-10-21 代码基线）。
+> **类型**：as-built（2026-10-21 代码基线；2026-10-24 补充跨域生命周期核对）。
 > **适用范围**：`/api/v1/projects/*`、`/api/v1/files/*`、`/api/v1/teams`、`/api/v1/admin/workspace-archive/*`、`/api/v1/admin/storage/usage`、`projects`/`file_records`/`upload_sessions`/`user_directories`/`samples`/`workspace_archives` 表、`ProjectsView`/`ProjectDetailView`/`FilesView`/`AdminWorkspaceArchiveView`。
 > **不适用范围**：存储根解析、目录协议、`StoragePathFactory`、sync 反向对账与目录树元数据——以 [CygnusX_storage_architecture.md](CygnusX_storage_architecture.md) 为唯一权威；科研交付/导出 ZIP 的完整流程见 [CygnusX_research_delivery_architecture.md](CygnusX_research_delivery_architecture.md)；会话休眠/解包生命周期见 [CygnusX_research_loop_architecture.md](CygnusX_research_loop_architecture.md)。
+
+> **2026-10-24 核对补注**：跨页面/API/数据/权限的全面梳理见 [项目管理审计快照](CygnusX_project_management_review.md)。普通 ProjectService 的删除身份保护未覆盖会话默认项目直接创建路径；项目改名保留 slug，但部分 run 生产入口仍使用可变名称；科研 RESTRICT 引用也未全部转换为业务删除冲突。三项均已离线复现，本轮未修改实现，详见该快照 F01–F03。
 
 ## 这个模块如何发挥作用
 
@@ -88,8 +90,8 @@ sequenceDiagram
 ### 2.1 数据模型
 
 - `projects`：`user_id` + `slug` 唯一、`status`（迁移后 NOT NULL DEFAULT active；NULL 读取兼容保留至 lifecycle02）、`settings` JSONB、名称/描述等。
-- 没有 `project_members` 表；项目只属于创建者。跨项目访问由 `ProjectScopeService.resolve_agent_project_scope` 限制：绑定项目的 Agent 不能改绑其他项目。
-- 磁盘目录：`projects/{slug}`，由存储路径工厂创建；删除项目时保留物理目录，写入 project_tombstones 后删除项目行与目录索引；已删 slug 不允许重新创建或同步复活。
+- 没有 `project_members` 表；项目只属于创建者。项目读写在服务层校验所有者；`project_scope.resolve_agent_project_scope()` 另限制绑定项目的 Agent 不能改绑其他项目。
+- 磁盘目录：`projects/{slug}`，由存储路径工厂创建；删除项目时保留物理目录，写入 project_tombstones 后删除项目行与根目录索引；ProjectService 创建/同步拒绝复用已删 slug，但会话默认项目直接创建路径尚未覆盖此保护（审计快照 F02）。
 
 ### 2.2 状态与生命周期
 
@@ -97,7 +99,7 @@ sequenceDiagram
 - `create_project`：生成 slug、唯一性校验、建目录。
 - `update_project_settings`：按 JSON Merge Patch 局部合并 settings；PATCH 也支持修改 name/description，slug 和历史路径保持不变。
 - `mark_project_status`：改状态；进入 completed/handed_over 时触发 `_pack_project_sessions`，按字符串 `project_id` 匹配 Studio 会话并异步打包；忙碌会话跳过。
-- `delete_project`：原子保留删除身份并删除项目行/目录索引，物理文件保留；若存在保留的导出证据，返回 `PROJECT_EVIDENCE_RETAINED` 冲突而不是静默丢数据。
+- `delete_project`：原子保留删除身份并删除项目行及**项目根**目录索引，物理文件保留；仅在 `project_export_enabled=true` 时显式检查导出 Job 并返回 `PROJECT_EVIDENCE_RETAINED`。其他科研 RESTRICT 引用及关闭开关后已保留的证据，仍可能触发未转换的数据库约束异常；子目录与字符串关联未统一解绑，见审计快照 F03/F08。
 
 ### 2.3 API（`/api/v1/projects`）
 
@@ -119,7 +121,7 @@ sequenceDiagram
 
 1. **会话**：`chat_sessions.project_id == str(project_id)`，按状态过滤；内存分页。
 2. **房间**：AgentTeams 房间与状态映射。
-3. **磁盘 run**：扫描项目目录下符合 run 命名规则（`AGENTS.md`、`README.md`、`environment.json` 等标记）的目录，统计文件数与字节数。
+3. **磁盘 run**：扫描项目 runs 下所有非隐藏一级子目录，检查 `AGENTS.md`、`README.md`、`environment.json` 文件存在性，递归统计文件数与字节数；不以命名或标记是否齐全过滤。
 
 run 扫描所有非隐藏一级子目录，不依赖数据库或归档标记；正则仅用于解析时间，失败回退 mtime，目录重命名不会使其被过滤。
 
@@ -224,12 +226,14 @@ run 扫描所有非隐藏一级子目录，不依赖数据库或归档标记；�
 | 表 | 作用 |
 | --- | --- |
 | `projects` | 项目聚合 |
+| `project_tombstones` | 被删项目身份与 slug 保留 |
 | `file_records` | 文件记录（含生命周期/团队归属） |
 | `upload_sessions` | 分片上传会话 |
 | `user_directories` | 目录索引与系统目录标记 |
 | `samples` | 样本 |
 | `workspace_archives` | 工作区休眠包 |
 | `project_export_jobs` / `project_export_requests` | 项目导出（见科研交付） |
+| `project_report_jobs` / `project_report_requests` | 独立项目科学报告（见科研交付） |
 
 迁移以 `alembic/versions/` 中 `projects/files/uploads/user_directories/workspace_archives` 相关版本为准；改模型后必须 `make check-migrations && make check-alembic-heads`。
 
